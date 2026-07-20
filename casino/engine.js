@@ -314,6 +314,21 @@ function _setPx(png, x, y, c) {
   png.data[i + 3] = c[3];
 }
 
+function _fillRect(png, x, y, w, h, c) {
+  for (let yy = y; yy < y + h; yy++) {
+    for (let xx = x; xx < x + w; xx++) _setPx(png, xx, yy, c);
+  }
+}
+
+function _rect(png, x, y, w, h, c, th = 1) {
+  for (let t = 0; t < th; t++) {
+    _line(png, x + t, y + t, x + w - 1 - t, y + t, c, 1);
+    _line(png, x + t, y + h - 1 - t, x + w - 1 - t, y + h - 1 - t, c, 1);
+    _line(png, x + t, y + t, x + t, y + h - 1 - t, c, 1);
+    _line(png, x + w - 1 - t, y + t, x + w - 1 - t, y + h - 1 - t, c, 1);
+  }
+}
+
 function _line(png, x1, y1, x2, y2, c, th = 1) {
   const dx = Math.abs(x2 - x1), sx = x1 < x2 ? 1 : -1;
   const dy = -Math.abs(y2 - y1), sy = y1 < y2 ? 1 : -1;
@@ -340,6 +355,123 @@ function _dot(png, x, y, radius, c) {
   for (let yy = -radius; yy <= radius; yy++) {
     for (let xx = -radius; xx <= radius; xx++) {
       if ((xx * xx) + (yy * yy) <= r2) _setPx(png, x + xx, y + yy, c);
+    }
+
+    function _drawSuit(png, suit, x, y, scale = 1) {
+      const red = [231, 76, 60, 255];
+      const dark = [44, 62, 80, 255];
+      const color = suit === '♥️' || suit === '♦️' ? red : dark;
+      const r = Math.max(3, Math.round(4 * scale));
+
+      if (suit === '♥️') {
+        _dot(png, x - r, y - r, r, color);
+        _dot(png, x + r, y - r, r, color);
+        _line(png, x - (r * 2), y - r, x, y + (r * 2), color, 2);
+        _line(png, x + (r * 2), y - r, x, y + (r * 2), color, 2);
+      } else if (suit === '♦️') {
+        _line(png, x, y - (r * 2), x - (r * 2), y, color, 2);
+        _line(png, x - (r * 2), y, x, y + (r * 2), color, 2);
+        _line(png, x, y + (r * 2), x + (r * 2), y, color, 2);
+        _line(png, x + (r * 2), y, x, y - (r * 2), color, 2);
+      } else if (suit === '♣️') {
+        _dot(png, x, y - r, r, color);
+        _dot(png, x - r, y + 1, r, color);
+        _dot(png, x + r, y + 1, r, color);
+        _line(png, x, y + (r * 2), x, y + (r * 4), color, 2);
+      } else {
+        _dot(png, x, y - (r * 2), r, color);
+        _line(png, x, y - (r * 2), x - (r * 2), y + r, color, 2);
+        _line(png, x, y - (r * 2), x + (r * 2), y + r, color, 2);
+        _line(png, x, y + r, x, y + (r * 3), color, 2);
+      }
+    }
+
+    function _rankBars(card) {
+      const map = { A: 1, J: 11, Q: 12, K: 13 };
+      const n = map[card.r] ?? Number(card.r);
+      return Number.isFinite(n) ? n : 10;
+    }
+
+    function _drawCard(png, x, y, card, faceDown = false) {
+      const w = 98; const h = 138;
+      _fillRect(png, x, y, w, h, [244, 246, 249, 255]);
+      _rect(png, x, y, w, h, [130, 146, 166, 255], 2);
+      _fillRect(png, x + 4, y + 4, w - 8, h - 8, [255, 255, 255, 255]);
+
+      if (faceDown) {
+        _fillRect(png, x + 10, y + 10, w - 20, h - 20, [41, 128, 185, 255]);
+        for (let yy = y + 12; yy < y + h - 12; yy += 8) {
+          _line(png, x + 12, yy, x + w - 12, yy, [174, 214, 241, 255], 1);
+        }
+        return;
+      }
+
+      const bars = _rankBars(card);
+      const barCount = Math.max(1, Math.min(10, Math.ceil(bars / 2)));
+      for (let i = 0; i < barCount; i++) {
+        _fillRect(png, x + 10 + (i * 7), y + 10, 5, 3, [85, 98, 112, 255]);
+        _fillRect(png, x + w - 15 - (i * 7), y + h - 13, 5, 3, [85, 98, 112, 255]);
+      }
+      _drawSuit(png, card.s, x + Math.floor(w / 2), y + Math.floor(h / 2), 1.2);
+    }
+
+    function renderBlackjackTablePng({
+      dealer = [],
+      player = [],
+      splitHand = null,
+      hideDealerHole = true,
+      playingSplit = false,
+    }) {
+      const W = 1000; const H = 560;
+      const png = new PNG({ width: W, height: H, colorType: 6 });
+
+      _fillRect(png, 0, 0, W, H, [12, 60, 40, 255]);
+      _rect(png, 12, 12, W - 24, H - 24, [241, 196, 15, 255], 3);
+      _line(png, 20, 260, W - 20, 260, [22, 160, 133, 255], 2);
+
+      dealer.slice(0, 6).forEach((c, i) => _drawCard(png, 210 + (i * 108), 72, c, hideDealerHole && i === 1));
+
+      if (splitHand && splitHand.length) {
+        player.slice(0, 6).forEach((c, i) => _drawCard(png, 120 + (i * 84), 330, c, false));
+        splitHand.slice(0, 6).forEach((c, i) => _drawCard(png, 560 + (i * 84), 330, c, false));
+        if (playingSplit) _rect(png, 548, 318, 430, 170, [46, 204, 113, 255], 3);
+        else _rect(png, 108, 318, 430, 170, [46, 204, 113, 255], 3);
+      } else {
+        player.slice(0, 8).forEach((c, i) => _drawCard(png, 130 + (i * 92), 330, c, false));
+      }
+
+      return PNG.sync.write(png);
+    }
+
+    function renderCoinflipPng(choice, result) {
+      const W = 900; const H = 420;
+      const png = new PNG({ width: W, height: H, colorType: 6 });
+      _fillRect(png, 0, 0, W, H, [18, 24, 38, 255]);
+
+      for (let i = 0; i < 7; i++) _rect(png, 24 + i, 24 + i, W - 48 - (i * 2), H - 48 - (i * 2), [44 + i * 16, 62 + i * 10, 96 + i * 6, 255], 1);
+
+      const won = choice === result;
+      const centerX = Math.floor(W / 2);
+      const centerY = Math.floor(H / 2) + 8;
+      const ring = result === 'heads' ? [241, 196, 15, 255] : [149, 165, 166, 255];
+      const fill = result === 'heads' ? [252, 243, 207, 255] : [236, 240, 241, 255];
+      _dot(png, centerX, centerY, 106, ring);
+      _dot(png, centerX, centerY, 94, fill);
+      _dot(png, centerX, centerY, 72, won ? [46, 204, 113, 255] : [231, 76, 60, 255]);
+      _dot(png, centerX, centerY, 54, [255, 255, 255, 255]);
+
+      const sideColor = won ? [46, 204, 113, 255] : [231, 76, 60, 255];
+      _fillRect(png, 90, 160, 170, 90, sideColor);
+      _fillRect(png, W - 260, 160, 170, 90, sideColor);
+
+      const leftIsChoice = choice === 'heads';
+      const leftSuit = leftIsChoice ? '♥️' : '♣️';
+      const rightSuit = leftIsChoice ? '♣️' : '♥️';
+      _drawSuit(png, leftSuit, 175, 205, 1.4);
+      _drawSuit(png, rightSuit, W - 175, 205, 1.4);
+      _drawSuit(png, result === 'heads' ? '♥️' : '♠️', centerX, centerY, 2.5);
+
+      return PNG.sync.write(png);
     }
   }
 }
@@ -623,6 +755,7 @@ module.exports = {
   dealBJ, bjHit, bjDouble, bjStand, bjSplit, bjFirstHandDone,
   bjInsure, bjDeclineInsure, canSplit, canInsure, dealerPlay,
   bjResult, bjResultHand, handVal, isSoft, cStr, hStr, renderHandArt,
+  renderBlackjackTablePng, renderCoinflipPng,
   // Slots
   SLOT_SYMS, spinSlots, renderSlotsDisplay,
   // Crash

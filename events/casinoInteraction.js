@@ -107,7 +107,7 @@ async function handleButton(interaction) {
     if (!s) return expired(interaction);
     const { mainEmbed, mainRows } = require('../commands/economy/casino');
     updateSession(s.userId, { game: null, bjState: null, tradeState: null, raceState: null });
-    return interaction.update({ embeds: [mainEmbed(s.userId, s.guildId, s.lastResult)], components: mainRows() });
+    return interaction.update({ embeds: [mainEmbed(s.userId, s.guildId, s.lastResult)], components: mainRows(), attachments: [] });
   }
 
   if (type === 'again') {
@@ -449,10 +449,13 @@ async function handleModal(interaction) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function showCoinflipChoice(interaction, s) {
+  const chartName = `coinflip-choice-${s.userId}.png`;
+  const chart = new AttachmentBuilder(engine.renderCoinflipPng('heads', 'heads'), { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(0xf1c40f)
     .setTitle('🎲 Coinflip')
     .setDescription('The coin spins in the air… pick your side!')
+    .setImage(`attachment://${chartName}`)
     .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
     .setFooter({ text: 'YSER Flow Casino  •  50 / 50' });
   const row = new ActionRowBuilder().addComponents(
@@ -460,16 +463,32 @@ async function showCoinflipChoice(interaction, s) {
     new ButtonBuilder().setCustomId('cs:cf:tails').setLabel('🪙 Tails').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [chart] });
 }
 
 async function resolveCoinflip(interaction, s, choice) {
+  const spinName = `coinflip-spin-${s.userId}.png`;
+  const spinResult = Math.random() < 0.5 ? 'heads' : 'tails';
+  const spinChart = new AttachmentBuilder(engine.renderCoinflipPng(choice, spinResult), { name: spinName });
+  const spinEmbed = new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle('🎲 Coinflip — Flipping...')
+    .setDescription('🌀 The coin is in the air...')
+    .setImage(`attachment://${spinName}`)
+    .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+    .setFooter({ text: 'YSER Flow Casino' });
+
+  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinChart] });
+  await wait(750);
+
   const result = engine.coinflip(choice);
   const payout = result.won ? s.bet * 2 : 0;
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
   updateSession(s.userId, { lastResult: { label: result.won ? '🟢 WIN' : '🔴 LOSS', delta } });
+  const chartName = `coinflip-result-${s.userId}.png`;
+  const chart = new AttachmentBuilder(engine.renderCoinflipPng(choice, result.result), { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(result.won ? 0x2ecc71 : 0xe74c3c)
     .setTitle(`🎲 Coinflip — ${result.won ? 'You Win! 🎉' : 'You Lose!'}`)
@@ -480,9 +499,10 @@ async function resolveCoinflip(interaction, s, choice) {
       { name: result.won ? '🏆 Won' : '💸 Lost', value: `**${fmt(s.bet)}** coins`, inline: true },
       { name: '💰 Balance', value: `**${fmt(newBal)}** coins`, inline: true },
     )
+    .setImage(`attachment://${chartName}`)
     .setFooter({ text: 'YSER Flow Casino' });
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chart] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -778,6 +798,12 @@ async function startBlackjack(interaction, s) {
 }
 
 async function renderInsurance(interaction, s, state) {
+  const chartName = `blackjack-insurance-${s.userId}.png`;
+  const tableChart = new AttachmentBuilder(engine.renderBlackjackTablePng({
+    dealer: state.dealer,
+    player: state.player,
+    hideDealerHole: true,
+  }), { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(0xe67e22)
     .setTitle('🛡️ Blackjack — Insurance?')
@@ -789,12 +815,13 @@ async function renderInsurance(interaction, s, state) {
     .addFields(
       { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true },
     )
+    .setImage(`attachment://${chartName}`)
     .setFooter({ text: 'YSER Flow Casino' });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('cs:bj:insurance_yes').setLabel('🛡️ Take Insurance').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:bj:insurance_no').setLabel('❌ No Thanks').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [tableChart] });
 }
 
 async function renderBJ(interaction, s, state, initial = false) {
@@ -841,6 +868,16 @@ async function renderBJ(interaction, s, state, initial = false) {
     .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
     .setFooter({ text: 'YSER Flow Casino  •  Dealer hits soft 17  •  BJ pays 3:2' });
 
+  const chartName = `blackjack-state-${s.userId}.png`;
+  const tableChart = new AttachmentBuilder(engine.renderBlackjackTablePng({
+    dealer: state.dealer,
+    player: state.player,
+    splitHand: state.splitHand,
+    hideDealerHole: true,
+    playingSplit: state.playingSplit,
+  }), { name: chartName });
+  embed.setImage(`attachment://${chartName}`);
+
   const btns = [
     new ButtonBuilder().setCustomId('cs:bj:hit').setLabel('👆 Hit').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:bj:stand').setLabel('✋ Stand').setStyle(ButtonStyle.Danger),
@@ -849,7 +886,7 @@ async function renderBJ(interaction, s, state, initial = false) {
   if (canSplitNow)  btns.push(new ButtonBuilder().setCustomId('cs:bj:split').setLabel('✂️ Split').setStyle(ButtonStyle.Primary));
   if (canSurrender) btns.push(new ButtonBuilder().setCustomId('cs:bj:surrender').setLabel('🏳️ Surrender').setStyle(ButtonStyle.Secondary));
 
-  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))] });
+  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))], files: [tableChart] });
 }
 
 async function handleBJ(interaction, s, action) {
@@ -997,8 +1034,17 @@ async function finishBJ(interaction, s, state) {
   );
   if (insuranceBet > 0) embed.addFields({ name: '🛡️ Insurance', value: insurancePayout > 0 ? `Won **${fmt(insurancePayout)}**` : 'Lost', inline: true });
 
+  const chartName = `blackjack-final-${s.userId}.png`;
+  const tableChart = new AttachmentBuilder(engine.renderBlackjackTablePng({
+    dealer: final.dealer,
+    player: final.player,
+    splitHand: final.splitHand,
+    hideDealerHole: false,
+  }), { name: chartName });
+  embed.setImage(`attachment://${chartName}`);
+
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [tableChart] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1048,7 +1094,7 @@ async function showRRChoice(interaction, s) {
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
