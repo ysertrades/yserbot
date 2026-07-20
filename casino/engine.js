@@ -4,6 +4,8 @@
 // Casino Engine — pure game logic (no Discord, no side-effects)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const { PNG } = require('pngjs');
+
 const SUITS = ['♠️', '♥️', '♦️', '♣️'];
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
@@ -255,140 +257,258 @@ function renderRaceTrack(racers, progress, winnerIdx, picked) {
 
 /* ─── TRADING ───────────────────────────────────────────────────────────── */
 
-const RR_WIN_CHANCE  = { '1:1': 0.52, '1:2': 0.40, '1:3': 0.30 };
-const RR_REWARD      = { '1:1': 1,    '1:2': 2,    '1:3': 3    };
-const RR_MULTIPLIER  = { '1:1': 2,    '1:2': 3,    '1:3': 4    };
+const RR_REWARD      = { '1:1': 1, '1:2': 2, '1:3': 3 };
+const RR_MULTIPLIER  = { '1:1': 2, '1:2': 3, '1:3': 4 };
+const TRADING_GUARDRAILS = {
+  SPREAD_BPS: 5,
+  BASE_SLIPPAGE_BPS: 3,
+  MAX_MOVE_PCT: 0.022,
+  HIST_POINTS: 34,
+  FUTURE_POINTS: 26,
+};
 
-function generateChart() {
-  const candles = [];
-  let price     = 500 + Math.random() * 1500;
-  const bias    = (Math.random() - 0.5) * 0.3;
-  for (let i = 0; i < 8; i++) {
-    const bull = Math.random() > 0.5 - bias;
-    const body = price * (0.008 + Math.random() * 0.016);
-    const open = price, close = bull ? open + body : open - body;
-    const wk   = body * (0.25 + Math.random() * 0.55);
-    const high = Math.max(open, close) + wk, low = Math.min(open, close) - wk;
-    candles.push({ open, close, high, low, bull });
-    price = close;
+function _clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function _hashSeed(input) {
+  let h = 1779033703 ^ input.length;
+  for (let i = 0; i < input.length; i++) {
+    h = Math.imul(h ^ input.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
   }
-  const hHigh = Math.max(...candles.map(c => c.high));
-  const hLow  = Math.min(...candles.map(c => c.low));
-  const ru    = Math.max((hHigh - hLow) * 0.25, price * 0.018);
-  return { candles, entryPrice: price, riskUnit: ru, chartStr: renderSetupChart(candles, price) };
+  return (h >>> 0);
 }
 
-function _drawLine(grid, x1, y1, x2, y2, ROWS) {
-  const dx = x2 - x1, dy = y2 - y1;
-  if (dx === 0 && dy === 0) return;
-  const ch = dy < 0 ? '/' : dy > 0 ? '\\' : '─';
-  if (dx === 0) {
-    const step = dy > 0 ? 1 : -1;
-    for (let r = y1; r !== y2 + step; r += step) if (r >= 0 && r < ROWS) grid[r][x1] = ch;
-    return;
-  }
-  for (let x = x1; x <= x2; x++) {
-    const y = Math.round(y1 + dy * (x - x1) / dx);
-    if (y >= 0 && y < ROWS) grid[y][x] = ch;
-  }
-  if (Math.abs(dy) > 1) {
-    const step = dy > 0 ? 1 : -1;
-    for (let r = y1 + step; r !== y2; r += step) {
-      if (r < 0 || r >= ROWS) continue;
-      const x = Math.round(x1 + dx * (r - y1) / dy);
-      if (x >= x1 && x <= x2) grid[r][x] = ch;
-    }
-  }
+function _mulberry32(seed) {
+  let t = seed >>> 0;
+  return function rand() {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-function _interpolate(prices, N) {
-  const out = [], segs = prices.length - 1;
-  for (let i = 0; i < N; i++) {
-    const t = (i / (N - 1)) * segs;
-    const idx = Math.min(Math.floor(t), segs - 1);
-    out.push(prices[idx] * (1 - (t - idx)) + prices[idx + 1] * (t - idx));
+function _buildPricePath(rng, startPrice, points, maxStepPct, drift = 0) {
+  const out = [startPrice];
+  for (let i = 1; i < points; i++) {
+    const noise = (rng() - 0.5) * 2 * maxStepPct;
+    const movePct = _clamp(noise + drift, -maxStepPct, maxStepPct);
+    out.push(Math.max(1, out[i - 1] * (1 + movePct)));
   }
   return out;
 }
 
-function renderSetupChart(candles, entryPrice) {
-  const ROWS = 7, HCOLS = 18;
-  const pts   = _interpolate(candles.map(c => c.close), HCOLS);
-  const rawMin = Math.min(...pts), rawMax = Math.max(...pts);
-  const pad = (rawMax - rawMin) * 0.2, minP = rawMin - pad, maxP = rawMax + pad;
-  const range = maxP - minP || 1;
-  const toRow = v => Math.max(0, Math.min(ROWS - 1, Math.round((1 - (v - minP) / range) * (ROWS - 1))));
-  const rows  = pts.map(toRow);
-  const SEP   = HCOLS + 1, GWIDTH = SEP + 8;
-  const grid  = Array.from({ length: ROWS }, () => Array(GWIDTH).fill(' '));
-  for (let i = 1; i < pts.length; i++) _drawLine(grid, i - 1, rows[i - 1], i, rows[i], ROWS);
-  for (let r = 0; r < ROWS; r++) grid[r][SEP] = '│';
-  const er = rows[rows.length - 1];
-  '◄ENTRY'.split('').forEach((ch, i) => { grid[er][SEP + 1 + i] = ch; });
-  const axis = '└' + '─'.repeat(SEP - 1) + '┘';
-  return [...grid.map(r => '│' + r.join('').trimEnd()), axis].join('\n');
+function _calcATR(prices) {
+  if (!Array.isArray(prices) || prices.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < prices.length; i++) total += Math.abs(prices[i] - prices[i - 1]);
+  return total / (prices.length - 1);
 }
 
-function _generateOutcomePrices(entryPrice, sl, tp, won, N = 14) {
-  const prices = [], toTP = tp - entryPrice;
-  if (!won) {
-    const pk  = entryPrice + toTP * 0.28;
-    const fN  = Math.max(1, Math.floor(N * 0.38)), cN = N - fN;
-    for (let i = 0; i < fN; i++) {
-      const t = (i + 1) / fN;
-      prices.push(entryPrice + (pk - entryPrice) * t + (Math.random() - 0.3) * Math.abs(pk - entryPrice) * 0.12);
+function _setPx(png, x, y, c) {
+  if (x < 0 || y < 0 || x >= png.width || y >= png.height) return;
+  const i = (png.width * y + x) * 4;
+  png.data[i] = c[0];
+  png.data[i + 1] = c[1];
+  png.data[i + 2] = c[2];
+  png.data[i + 3] = c[3];
+}
+
+function _line(png, x1, y1, x2, y2, c, th = 1) {
+  const dx = Math.abs(x2 - x1), sx = x1 < x2 ? 1 : -1;
+  const dy = -Math.abs(y2 - y1), sy = y1 < y2 ? 1 : -1;
+  let err = dx + dy, x = x1, y = y1;
+  while (true) {
+    for (let tx = -Math.floor(th / 2); tx <= Math.floor(th / 2); tx++) {
+      for (let ty = -Math.floor(th / 2); ty <= Math.floor(th / 2); ty++) _setPx(png, x + tx, y + ty, c);
     }
-    const cs = prices[prices.length - 1], cd = sl - cs;
-    for (let i = 0; i < cN; i++) {
-      const t = Math.pow((i + 1) / cN, 1.3);
-      prices.push(i === cN - 1 ? sl : cs + cd * t + (Math.random() - 0.5) * Math.abs(cd) * 0.05);
-    }
-  } else {
-    for (let i = 0; i < N; i++) {
-      const t = Math.pow((i + 1) / N, 1.45);
-      prices.push(i === N - 1 ? tp : entryPrice + toTP * t + (Math.random() - 0.34) * Math.abs(toTP) / N * 0.3);
+    if (x === x2 && y === y2) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+}
+
+function _hLine(png, y, x1, x2, c, th = 1) {
+  for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
+    for (let t = 0; t < th; t++) _setPx(png, x, y + t, c);
+  }
+}
+
+function _dot(png, x, y, radius, c) {
+  const r2 = radius * radius;
+  for (let yy = -radius; yy <= radius; yy++) {
+    for (let xx = -radius; xx <= radius; xx++) {
+      if ((xx * xx) + (yy * yy) <= r2) _setPx(png, x + xx, y + yy, c);
     }
   }
-  return prices;
 }
 
-function renderFullChart(hPts, pPts, entryPrice, sl, tp, isBuy, rr, won) {
-  const ROWS = 9, HCOLS = 18, PCOLS = 10;
-  const hI = _interpolate(hPts, HCOLS), pI = _interpolate(pPts, PCOLS);
-  const all = [...hI, ...pI, entryPrice, sl, tp];
-  const rawMin = Math.min(...all), rawMax = Math.max(...all), span = rawMax - rawMin || 1;
-  const pad = span * 0.16, minP = rawMin - pad, maxP = rawMax + pad, range = maxP - minP;
-  const toRow  = v => Math.max(0, Math.min(ROWS - 1, Math.round((1 - (v - minP) / range) * (ROWS - 1))));
-  const eR = toRow(entryPrice), tR = toRow(tp), sR = toRow(sl);
-  const SEP = HCOLS + 1, PS = SEP + 1, PE = PS + PCOLS - 1, LS = PE + 2, GW = LS + 11;
-  const grid = Array.from({ length: ROWS }, () => Array(GW).fill(' '));
-  for (let c = PS; c <= PE; c++) { if (grid[tR]) grid[tR][c] = '─'; if (grid[eR]) grid[eR][c] = '╌'; if (grid[sR]) grid[sR][c] = '─'; }
-  for (let r = 0; r < ROWS; r++) grid[r][SEP] = '║';
-  const hR = hI.map(toRow);
-  for (let i = 1; i < hI.length; i++) _drawLine(grid, i - 1, hR[i - 1], i, hR[i], ROWS);
-  const pR = [eR, ...pI.map(toRow)], pX = [PS, ...pI.map((_, i) => PS + 1 + i)];
-  for (let i = 1; i < pR.length; i++) _drawLine(grid, pX[i - 1], pR[i - 1], pX[i], pR[i], ROWS);
-  const fR = pR[pR.length - 1], fC = pX[pX.length - 1];
-  if (fC < GW) grid[fR][fC] = won ? '▲' : '▼';
+function _renderTradeChartPng({
+  historical,
+  future = [],
+  entryPrice,
+  sl = null,
+  tp = null,
+  finalIndex = null,
+  won = null,
+}) {
+  const W = 980, H = 460;
+  const png = new PNG({ width: W, height: H, colorType: 6 });
+  const bg = [16, 22, 34, 255];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) _setPx(png, x, y, bg);
+  }
+
+  const margin = { top: 30, right: 24, bottom: 30, left: 24 };
+  const pw = W - margin.left - margin.right;
+  const ph = H - margin.top - margin.bottom;
+  const histCount = historical.length;
+  const futureCount = future.length;
+  const totalCount = Math.max(2, histCount + futureCount);
+  const allPrices = [...historical, ...future];
+  if (entryPrice != null) allPrices.push(entryPrice);
+  if (sl != null) allPrices.push(sl);
+  if (tp != null) allPrices.push(tp);
+  const minP = Math.min(...allPrices);
+  const maxP = Math.max(...allPrices);
+  const pad = (maxP - minP || 1) * 0.18;
+  const yMin = minP - pad;
+  const yMax = maxP + pad;
+  const yRange = yMax - yMin || 1;
+
+  const xOf = idx => margin.left + Math.round((idx / (totalCount - 1)) * pw);
+  const yOf = val => margin.top + Math.round((1 - ((val - yMin) / yRange)) * ph);
+
+  for (let g = 1; g <= 4; g++) {
+    const gy = margin.top + Math.round((g / 5) * ph);
+    _hLine(png, gy, margin.left, margin.left + pw, [46, 62, 88, 255], 1);
+  }
+
+  const histEndX = xOf(histCount - 1);
+  _line(png, histEndX, margin.top, histEndX, margin.top + ph, [73, 88, 117, 180], 1);
+
+  if (entryPrice != null) _hLine(png, yOf(entryPrice), margin.left, margin.left + pw, [138, 154, 181, 220], 1);
+  if (tp != null) _hLine(png, yOf(tp), margin.left, margin.left + pw, [41, 196, 116, 230], 2);
+  if (sl != null) _hLine(png, yOf(sl), margin.left, margin.left + pw, [231, 76, 60, 230], 2);
+
+  for (let i = 1; i < historical.length; i++) {
+    _line(png, xOf(i - 1), yOf(historical[i - 1]), xOf(i), yOf(historical[i]), [77, 171, 247, 255], 2);
+  }
+
+  if (future.length > 0) {
+    for (let i = 1; i < future.length; i++) {
+      const x1 = xOf(histCount + i - 1);
+      const x2 = xOf(histCount + i);
+      const y1 = yOf(future[i - 1]);
+      const y2 = yOf(future[i]);
+      _line(png, x1, y1, x2, y2, won === false ? [255, 117, 107, 255] : [52, 231, 153, 255], 3);
+    }
+    const markerIdx = finalIndex == null ? (future.length - 1) : _clamp(finalIndex, 0, future.length - 1);
+    const markerX = xOf(histCount + markerIdx);
+    const markerY = yOf(future[markerIdx]);
+    _dot(png, markerX, markerY, 6, won ? [46, 204, 113, 255] : won === false ? [231, 76, 60, 255] : [241, 196, 15, 255]);
+  }
+
+  return PNG.sync.write(png);
+}
+
+function generateChart({ bet = 0, userId = 'anon' } = {}) {
+  const entropy = `${userId}:${bet}:${Date.now()}:${Math.floor(Math.random() * 1_000_000)}`;
+  const seed = _hashSeed(entropy);
+  const rng = _mulberry32(seed);
+  const positionSize = _clamp(1 + (Number(bet) || 0) / 2500, 1, 25);
+  const start = 500 + rng() * 1500;
+  const drift = (rng() - 0.5) * 0.002;
+  const historical = _buildPricePath(rng, start, TRADING_GUARDRAILS.HIST_POINTS, TRADING_GUARDRAILS.MAX_MOVE_PCT, drift);
+  const future = _buildPricePath(rng, historical[historical.length - 1], TRADING_GUARDRAILS.FUTURE_POINTS, TRADING_GUARDRAILS.MAX_MOVE_PCT, drift * 0.6).slice(1);
+  const entryPrice = historical[historical.length - 1];
+  const atr = _calcATR(historical);
+  const riskUnit = Math.max(entryPrice * 0.01, atr * (1.15 + Math.log10(positionSize + 1) * 0.55));
+  const spread = entryPrice * (TRADING_GUARDRAILS.SPREAD_BPS / 10000);
+  const slippage = entryPrice * (TRADING_GUARDRAILS.BASE_SLIPPAGE_BPS / 10000) * (1 + Math.min(1.5, positionSize / 12));
+  const tradeId = `${seed.toString(16)}-${Math.floor(rng() * 1_000_000).toString(16)}`;
+  return {
+    tradeId,
+    seed,
+    historical,
+    future,
+    entryPrice,
+    riskUnit,
+    positionSize: Number(positionSize.toFixed(2)),
+    spread,
+    slippage,
+    setupChartPng: _renderTradeChartPng({ historical, entryPrice }),
+  };
+}
+
+function resolveTradeWithChart(tradeState, direction, rr, bet = 0) {
+  if (direction !== 'buy' && direction !== 'sell') return { validation: { ok: false, reason: 'Invalid direction.' } };
+  const valid = tradeState && Array.isArray(tradeState.historical) && Array.isArray(tradeState.future)
+    && Number.isFinite(tradeState.entryPrice) && Number.isFinite(tradeState.riskUnit)
+    && typeof tradeState.tradeId === 'string' && Number(tradeState.positionSize) >= 1;
+  if (!valid) return { validation: { ok: false, reason: 'Invalid trade state.' } };
+
   const rrReward = RR_REWARD[rr] || 1;
-  new Map([[tR, `◄TP+${rrReward}R${won ? '✓' : ''}`], [eR, `◄ENTRY`], [sR, `◄SL-1R${!won ? '✗' : ''}`]]).forEach((text, row) => {
-    if (row < 0 || row >= ROWS) return;
-    text.split('').forEach((ch, i) => { if (LS + i < GW) grid[row][LS + i] = ch; });
-  });
-  const lines = grid.map(r => '│' + r.join('').trimEnd());
-  return [...lines, '└' + '─'.repeat(SEP - 1) + '╨' + '─'.repeat(PCOLS + 1)].join('\n');
-}
-
-function resolveTradeWithChart(tradeState, direction, rr) {
-  const { candles: historical, entryPrice, riskUnit } = tradeState;
-  const rrReward = RR_REWARD[rr] || 1, mult = RR_MULTIPLIER[rr] || 2;
-  const won  = Math.random() < (RR_WIN_CHANCE[rr] || 0.5);
+  const mult = RR_MULTIPLIER[rr] || 2;
   const isBuy = direction === 'buy';
-  const sl   = isBuy ? entryPrice - riskUnit           : entryPrice + riskUnit;
-  const tp   = isBuy ? entryPrice + riskUnit * rrReward : entryPrice - riskUnit * rrReward;
-  const pPts = _generateOutcomePrices(entryPrice, sl, tp, won);
-  return { won, isBuy, sl, tp, rrReward, multiplier: mult,
-    chartStr: renderFullChart(historical.map(c => c.close), pPts, entryPrice, sl, tp, isBuy, rr, won) };
+  const spreadHalf = (tradeState.spread || 0) / 2;
+  const slippage = tradeState.slippage || 0;
+  const stateBet = Number(bet) || 0;
+  const entryPrice = tradeState.entryPrice + (isBuy ? spreadHalf : -spreadHalf);
+  const sl = isBuy ? entryPrice - tradeState.riskUnit : entryPrice + tradeState.riskUnit;
+  const tp = isBuy ? entryPrice + tradeState.riskUnit * rrReward : entryPrice - tradeState.riskUnit * rrReward;
+
+  let hitType = null;
+  let hitIndex = tradeState.future.length - 1;
+  for (let i = 0; i < tradeState.future.length; i++) {
+    const p = tradeState.future[i];
+    if (isBuy && p >= tp) { hitType = 'tp'; hitIndex = i; break; }
+    if (isBuy && p <= sl) { hitType = 'sl'; hitIndex = i; break; }
+    if (!isBuy && p <= tp) { hitType = 'tp'; hitIndex = i; break; }
+    if (!isBuy && p >= sl) { hitType = 'sl'; hitIndex = i; break; }
+  }
+
+  const won = hitType === 'tp';
+  const stopped = hitType === 'sl';
+  const finalRaw = tradeState.future[hitIndex];
+  const finalPrice = won
+    ? (isBuy ? Math.max(tp - slippage, finalRaw) : Math.min(tp + slippage, finalRaw))
+    : stopped
+      ? (isBuy ? Math.min(sl - slippage, finalRaw) : Math.max(sl + slippage, finalRaw))
+      : finalRaw;
+
+  const visibleFuture = tradeState.future.slice(0, hitIndex + 1);
+  if (visibleFuture.length > 0) visibleFuture[visibleFuture.length - 1] = finalPrice;
+
+  const chartPng = _renderTradeChartPng({
+    historical: tradeState.historical,
+    future: visibleFuture,
+    entryPrice,
+    sl,
+    tp,
+    finalIndex: visibleFuture.length - 1,
+    won: hitType ? won : null,
+  });
+
+  return {
+    won,
+    isBuy,
+    sl,
+    tp,
+    rrReward,
+    multiplier: mult,
+    entryPrice,
+    finalPrice,
+    hitType: hitType || 'timeout',
+    tradeId: tradeState.tradeId,
+    positionSize: tradeState.positionSize,
+    spread: tradeState.spread || 0,
+    slippage,
+    bet: stateBet,
+    chartPng,
+    validation: { ok: true },
+  };
 }
 
 /* ─── ROULETTE ──────────────────────────────────────────────────────────── */
