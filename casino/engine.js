@@ -1,8 +1,8 @@
 'use strict';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────
 // Casino Engine — pure game logic (no Discord, no side-effects)
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────
 
 const { PNG } = require('pngjs');
 
@@ -172,7 +172,7 @@ function renderSlotsDisplay(reels, spinning = [false, false, false]) {
   ].join('\n');
 }
 
-/* ─── CRASH ─────────────────────────────────────────────────────────────── */
+/* ─── CRASH ────────────────────────────────────────────────────────────── */
 
 function generateCrashPoint() {
   if (Math.random() < 0.01) return 1.00; // 1% instant crash
@@ -195,7 +195,6 @@ function renderCrashChart(tick, crashed, cashOutTick, crashTick) {
 
   for (let t = 0; t <= Math.min(tick, maxTick); t++) {
     const x = Math.round((t / maxTick) * (COLS - 1));
-    // exponential curve: higher t → higher row from bottom
     const yFrac = Math.min(1, Math.pow(TICK_GROWTH, t) / (Math.pow(TICK_GROWTH, maxTick) * 1.1));
     const y     = ROWS - 1 - Math.round(yFrac * (ROWS - 1));
     if (y >= 0 && y < ROWS && x >= 0 && x < COLS) grid[y][x] = t === tick && crashed ? '💥' : '•';
@@ -209,7 +208,7 @@ function renderCrashChart(tick, crashed, cashOutTick, crashTick) {
   return '```\n' + lines.join('\n') + '\n```';
 }
 
-/* ─── RACE ──────────────────────────────────────────────────────────────── */
+/* ─── RACE ─────────────────────────────────────────────────────────────── */
 
 const HORSES = [
   { id: 1, name: 'Thunder', emoji: '🐎' },
@@ -226,11 +225,9 @@ const TURTLES = [
 ];
 
 function runRace(racers) {
-  // Purely random speeds — no predictable pattern
   const speeds    = racers.map(() => Math.random() * 0.6 + Math.random() * 0.4);
   const maxSpeed  = Math.max(...speeds);
   const winnerIdx = speeds.indexOf(maxSpeed);
-  // Scale to progress % (winner always 100%, others proportionally behind)
   const progress  = speeds.map(s => Math.min(99, Math.round((s / maxSpeed) * 88 + 8)));
   progress[winnerIdx] = 100;
   return { winnerIdx, progress };
@@ -255,7 +252,7 @@ function renderRaceTrack(racers, progress, winnerIdx, picked) {
   return lines.join('\n');
 }
 
-/* ─── TRADING ───────────────────────────────────────────────────────────── */
+/* ─── TRADING ─────────────────────────────────────────────────────────── */
 
 const RR_REWARD      = { '1:1': 1, '1:2': 2, '1:3': 3 };
 const RR_MULTIPLIER  = { '1:1': 2, '1:2': 3, '1:3': 4 };
@@ -356,124 +353,124 @@ function _dot(png, x, y, radius, c) {
     for (let xx = -radius; xx <= radius; xx++) {
       if ((xx * xx) + (yy * yy) <= r2) _setPx(png, x + xx, y + yy, c);
     }
-
-    function _drawSuit(png, suit, x, y, scale = 1) {
-      const red = [231, 76, 60, 255];
-      const dark = [44, 62, 80, 255];
-      const color = suit === '♥️' || suit === '♦️' ? red : dark;
-      const r = Math.max(3, Math.round(4 * scale));
-
-      if (suit === '♥️') {
-        _dot(png, x - r, y - r, r, color);
-        _dot(png, x + r, y - r, r, color);
-        _line(png, x - (r * 2), y - r, x, y + (r * 2), color, 2);
-        _line(png, x + (r * 2), y - r, x, y + (r * 2), color, 2);
-      } else if (suit === '♦️') {
-        _line(png, x, y - (r * 2), x - (r * 2), y, color, 2);
-        _line(png, x - (r * 2), y, x, y + (r * 2), color, 2);
-        _line(png, x, y + (r * 2), x + (r * 2), y, color, 2);
-        _line(png, x + (r * 2), y, x, y - (r * 2), color, 2);
-      } else if (suit === '♣️') {
-        _dot(png, x, y - r, r, color);
-        _dot(png, x - r, y + 1, r, color);
-        _dot(png, x + r, y + 1, r, color);
-        _line(png, x, y + (r * 2), x, y + (r * 4), color, 2);
-      } else {
-        _dot(png, x, y - (r * 2), r, color);
-        _line(png, x, y - (r * 2), x - (r * 2), y + r, color, 2);
-        _line(png, x, y - (r * 2), x + (r * 2), y + r, color, 2);
-        _line(png, x, y + r, x, y + (r * 3), color, 2);
-      }
-    }
-
-    function _rankBars(card) {
-      const map = { A: 1, J: 11, Q: 12, K: 13 };
-      const n = map[card.r] ?? Number(card.r);
-      return Number.isFinite(n) ? n : 10;
-    }
-
-    function _drawCard(png, x, y, card, faceDown = false) {
-      const w = 98; const h = 138;
-      _fillRect(png, x, y, w, h, [244, 246, 249, 255]);
-      _rect(png, x, y, w, h, [130, 146, 166, 255], 2);
-      _fillRect(png, x + 4, y + 4, w - 8, h - 8, [255, 255, 255, 255]);
-
-      if (faceDown) {
-        _fillRect(png, x + 10, y + 10, w - 20, h - 20, [41, 128, 185, 255]);
-        for (let yy = y + 12; yy < y + h - 12; yy += 8) {
-          _line(png, x + 12, yy, x + w - 12, yy, [174, 214, 241, 255], 1);
-        }
-        return;
-      }
-
-      const bars = _rankBars(card);
-      const barCount = Math.max(1, Math.min(10, Math.ceil(bars / 2)));
-      for (let i = 0; i < barCount; i++) {
-        _fillRect(png, x + 10 + (i * 7), y + 10, 5, 3, [85, 98, 112, 255]);
-        _fillRect(png, x + w - 15 - (i * 7), y + h - 13, 5, 3, [85, 98, 112, 255]);
-      }
-      _drawSuit(png, card.s, x + Math.floor(w / 2), y + Math.floor(h / 2), 1.2);
-    }
-
-    function renderBlackjackTablePng({
-      dealer = [],
-      player = [],
-      splitHand = null,
-      hideDealerHole = true,
-      playingSplit = false,
-    }) {
-      const W = 1000; const H = 560;
-      const png = new PNG({ width: W, height: H, colorType: 6 });
-
-      _fillRect(png, 0, 0, W, H, [12, 60, 40, 255]);
-      _rect(png, 12, 12, W - 24, H - 24, [241, 196, 15, 255], 3);
-      _line(png, 20, 260, W - 20, 260, [22, 160, 133, 255], 2);
-
-      dealer.slice(0, 6).forEach((c, i) => _drawCard(png, 210 + (i * 108), 72, c, hideDealerHole && i === 1));
-
-      if (splitHand && splitHand.length) {
-        player.slice(0, 6).forEach((c, i) => _drawCard(png, 120 + (i * 84), 330, c, false));
-        splitHand.slice(0, 6).forEach((c, i) => _drawCard(png, 560 + (i * 84), 330, c, false));
-        if (playingSplit) _rect(png, 548, 318, 430, 170, [46, 204, 113, 255], 3);
-        else _rect(png, 108, 318, 430, 170, [46, 204, 113, 255], 3);
-      } else {
-        player.slice(0, 8).forEach((c, i) => _drawCard(png, 130 + (i * 92), 330, c, false));
-      }
-
-      return PNG.sync.write(png);
-    }
-
-    function renderCoinflipPng(choice, result) {
-      const W = 900; const H = 420;
-      const png = new PNG({ width: W, height: H, colorType: 6 });
-      _fillRect(png, 0, 0, W, H, [18, 24, 38, 255]);
-
-      for (let i = 0; i < 7; i++) _rect(png, 24 + i, 24 + i, W - 48 - (i * 2), H - 48 - (i * 2), [44 + i * 16, 62 + i * 10, 96 + i * 6, 255], 1);
-
-      const won = choice === result;
-      const centerX = Math.floor(W / 2);
-      const centerY = Math.floor(H / 2) + 8;
-      const ring = result === 'heads' ? [241, 196, 15, 255] : [149, 165, 166, 255];
-      const fill = result === 'heads' ? [252, 243, 207, 255] : [236, 240, 241, 255];
-      _dot(png, centerX, centerY, 106, ring);
-      _dot(png, centerX, centerY, 94, fill);
-      _dot(png, centerX, centerY, 72, won ? [46, 204, 113, 255] : [231, 76, 60, 255]);
-      _dot(png, centerX, centerY, 54, [255, 255, 255, 255]);
-
-      const sideColor = won ? [46, 204, 113, 255] : [231, 76, 60, 255];
-      _fillRect(png, 90, 160, 170, 90, sideColor);
-      _fillRect(png, W - 260, 160, 170, 90, sideColor);
-
-      const leftIsChoice = choice === 'heads';
-      const leftSuit = leftIsChoice ? '♥️' : '♣️';
-      const rightSuit = leftIsChoice ? '♣️' : '♥️';
-      _drawSuit(png, leftSuit, 175, 205, 1.4);
-      _drawSuit(png, rightSuit, W - 175, 205, 1.4);
-      _drawSuit(png, result === 'heads' ? '♥️' : '♠️', centerX, centerY, 2.5);
-
-      return PNG.sync.write(png);
-    }
   }
+}
+
+function _drawSuit(png, suit, x, y, scale = 1) {
+  const red = [231, 76, 60, 255];
+  const dark = [44, 62, 80, 255];
+  const color = suit === '♥️' || suit === '♦️' ? red : dark;
+  const r = Math.max(3, Math.round(4 * scale));
+
+  if (suit === '♥️') {
+    _dot(png, x - r, y - r, r, color);
+    _dot(png, x + r, y - r, r, color);
+    _line(png, x - (r * 2), y - r, x, y + (r * 2), color, 2);
+    _line(png, x + (r * 2), y - r, x, y + (r * 2), color, 2);
+  } else if (suit === '♦️') {
+    _line(png, x, y - (r * 2), x - (r * 2), y, color, 2);
+    _line(png, x - (r * 2), y, x, y + (r * 2), color, 2);
+    _line(png, x, y + (r * 2), x + (r * 2), y, color, 2);
+    _line(png, x + (r * 2), y, x, y - (r * 2), color, 2);
+  } else if (suit === '♣️') {
+    _dot(png, x, y - r, r, color);
+    _dot(png, x - r, y + 1, r, color);
+    _dot(png, x + r, y + 1, r, color);
+    _line(png, x, y + (r * 2), x, y + (r * 4), color, 2);
+  } else {
+    _dot(png, x, y - (r * 2), r, color);
+    _line(png, x, y - (r * 2), x - (r * 2), y + r, color, 2);
+    _line(png, x, y - (r * 2), x + (r * 2), y + r, color, 2);
+    _line(png, x, y + r, x, y + (r * 3), color, 2);
+  }
+}
+
+function _rankBars(card) {
+  const map = { A: 1, J: 11, Q: 12, K: 13 };
+  const n = map[card.r] ?? Number(card.r);
+  return Number.isFinite(n) ? n : 10;
+}
+
+function _drawCard(png, x, y, card, faceDown = false) {
+  const w = 98; const h = 138;
+  _fillRect(png, x, y, w, h, [244, 246, 249, 255]);
+  _rect(png, x, y, w, h, [130, 146, 166, 255], 2);
+  _fillRect(png, x + 4, y + 4, w - 8, h - 8, [255, 255, 255, 255]);
+
+  if (faceDown) {
+    _fillRect(png, x + 10, y + 10, w - 20, h - 20, [41, 128, 185, 255]);
+    for (let yy = y + 12; yy < y + h - 12; yy += 8) {
+      _line(png, x + 12, yy, x + w - 12, yy, [174, 214, 241, 255], 1);
+    }
+    return;
+  }
+
+  const bars = _rankBars(card);
+  const barCount = Math.max(1, Math.min(10, Math.ceil(bars / 2)));
+  for (let i = 0; i < barCount; i++) {
+    _fillRect(png, x + 10 + (i * 7), y + 10, 5, 3, [85, 98, 112, 255]);
+    _fillRect(png, x + w - 15 - (i * 7), y + h - 13, 5, 3, [85, 98, 112, 255]);
+  }
+  _drawSuit(png, card.s, x + Math.floor(w / 2), y + Math.floor(h / 2), 1.2);
+}
+
+function renderBlackjackTablePng({
+  dealer = [],
+  player = [],
+  splitHand = null,
+  hideDealerHole = true,
+  playingSplit = false,
+}) {
+  const W = 1000; const H = 560;
+  const png = new PNG({ width: W, height: H, colorType: 6 });
+
+  _fillRect(png, 0, 0, W, H, [12, 60, 40, 255]);
+  _rect(png, 12, 12, W - 24, H - 24, [241, 196, 15, 255], 3);
+  _line(png, 20, 260, W - 20, 260, [22, 160, 133, 255], 2);
+
+  dealer.slice(0, 6).forEach((c, i) => _drawCard(png, 210 + (i * 108), 72, c, hideDealerHole && i === 1));
+
+  if (splitHand && splitHand.length) {
+    player.slice(0, 6).forEach((c, i) => _drawCard(png, 120 + (i * 84), 330, c, false));
+    splitHand.slice(0, 6).forEach((c, i) => _drawCard(png, 560 + (i * 84), 330, c, false));
+    if (playingSplit) _rect(png, 548, 318, 430, 170, [46, 204, 113, 255], 3);
+    else _rect(png, 108, 318, 430, 170, [46, 204, 113, 255], 3);
+  } else {
+    player.slice(0, 8).forEach((c, i) => _drawCard(png, 130 + (i * 92), 330, c, false));
+  }
+
+  return PNG.sync.write(png);
+}
+
+function renderCoinflipPng(choice, result) {
+  const W = 900; const H = 420;
+  const png = new PNG({ width: W, height: H, colorType: 6 });
+  _fillRect(png, 0, 0, W, H, [18, 24, 38, 255]);
+
+  for (let i = 0; i < 7; i++) _rect(png, 24 + i, 24 + i, W - 48 - (i * 2), H - 48 - (i * 2), [44 + i * 16, 62 + i * 10, 96 + i * 6, 255], 1);
+
+  const won = choice === result;
+  const centerX = Math.floor(W / 2);
+  const centerY = Math.floor(H / 2) + 8;
+  const ring = result === 'heads' ? [241, 196, 15, 255] : [149, 165, 166, 255];
+  const fill = result === 'heads' ? [252, 243, 207, 255] : [236, 240, 241, 255];
+  _dot(png, centerX, centerY, 106, ring);
+  _dot(png, centerX, centerY, 94, fill);
+  _dot(png, centerX, centerY, 72, won ? [46, 204, 113, 255] : [231, 76, 60, 255]);
+  _dot(png, centerX, centerY, 54, [255, 255, 255, 255]);
+
+  const sideColor = won ? [46, 204, 113, 255] : [231, 76, 60, 255];
+  _fillRect(png, 90, 160, 170, 90, sideColor);
+  _fillRect(png, W - 260, 160, 170, 90, sideColor);
+
+  const leftIsChoice = choice === 'heads';
+  const leftSuit = leftIsChoice ? '♥️' : '♣️';
+  const rightSuit = leftIsChoice ? '♣️' : '♥️';
+  _drawSuit(png, leftSuit, 175, 205, 1.4);
+  _drawSuit(png, rightSuit, W - 175, 205, 1.4);
+  _drawSuit(png, result === 'heads' ? '♥️' : '♠️', centerX, centerY, 2.5);
+
+  return PNG.sync.write(png);
 }
 
 function _renderTradeChartPng({
@@ -643,13 +640,13 @@ function resolveTradeWithChart(tradeState, direction, rr, bet = 0) {
   };
 }
 
-/* ─── ROULETTE ──────────────────────────────────────────────────────────── */
+/* ─── ROULETTE ─────────────────────────────────────────────────────────── */
 
 const ROULETTE_RED   = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 const ROULETTE_BLACK = new Set([2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]);
 
 function spinRoulette() {
-  const num   = Math.floor(Math.random() * 37); // 0–36
+  const num   = Math.floor(Math.random() * 37);
   const color = num === 0 ? 'green' : ROULETTE_RED.has(num) ? 'red' : 'black';
   return { num, color };
 }
@@ -672,7 +669,6 @@ function rouletteResult(spin, betType, betValue) {
 function renderRouletteWheel(num, color) {
   const colorEmoji = color === 'red' ? '🔴' : color === 'black' ? '⚫' : '🟢';
   const rows = ['```', '  ╔══════════════════════╗'];
-  // Show a small number wheel around the result
   const neighbors = [];
   for (let i = -3; i <= 3; i++) {
     const n = ((num + i) % 37 + 37) % 37;
@@ -718,7 +714,7 @@ function renderWheelDisplay(winner, spinning = false) {
   return '```\n🎡  Wheel of Fortune\n\n' + lines.join('\n') + '\n```';
 }
 
-/* ─── DICE ──────────────────────────────────────────────────────────────── */
+/* ─── DICE ─────────────────────────────────────────────────────────────── */
 
 const DICE_FACES = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
@@ -731,7 +727,7 @@ function randomDiceOdds() {
 
 function playDiceVsBot(odds) {
   let p = rollDie(), b = rollDie();
-  if (p === b) { p = rollDie(); b = rollDie(); } // reroll once on tie
+  if (p === b) { p = rollDie(); b = rollDie(); }
   return { playerRoll: p, botRoll: b, won: p > b, push: p === b, odds };
 }
 
@@ -739,7 +735,7 @@ function playDiceVsBot(odds) {
 
 function _cardLines(card, faceDown = false) {
   if (faceDown) return ['┌────┐', '│▒▒▒▒│', '│▒▒▒▒│', '│▒▒▒▒│', '└────┘'];
-  const suit = card.s.replace(/\uFE0F/g, ''); // strip variation selector
+  const suit = card.s.replace(/\uFE0F/g, '');
   const r = card.r;
   return ['┌────┐', `│${r.padEnd(4)}│`, `│ ${suit}  │`, `│${r.padStart(4)}│`, '└────┘'];
 }
@@ -751,23 +747,15 @@ function renderHandArt(cards, faceDownIndices = []) {
 
 module.exports = {
   shuffle, coinflip,
-  // Blackjack
   dealBJ, bjHit, bjDouble, bjStand, bjSplit, bjFirstHandDone,
   bjInsure, bjDeclineInsure, canSplit, canInsure, dealerPlay,
   bjResult, bjResultHand, handVal, isSoft, cStr, hStr, renderHandArt,
   renderBlackjackTablePng, renderCoinflipPng,
-  // Slots
   SLOT_SYMS, spinSlots, renderSlotsDisplay,
-  // Crash
   generateCrashPoint, tickMultiplier, renderCrashChart, TICK_MS, TICK_GROWTH,
-  // Race
   HORSES, TURTLES, runRace, renderRaceTrack,
-  // Trading
   generateChart, resolveTradeWithChart, RR_REWARD, RR_MULTIPLIER,
-  // Roulette
   spinRoulette, rouletteResult, renderRouletteWheel, ROULETTE_RED, ROULETTE_BLACK,
-  // Wheel
   WHEEL_SEGMENTS, spinWheel, renderWheelDisplay,
-  // Dice
   DICE_FACES, rollDie, randomDiceOdds, playDiceVsBot,
 };
