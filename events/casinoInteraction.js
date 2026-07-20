@@ -798,12 +798,6 @@ async function startBlackjack(interaction, s) {
 }
 
 async function renderInsurance(interaction, s, state) {
-  const chartName = `blackjack-insurance-${s.userId}.png`;
-  const tableChart = new AttachmentBuilder(engine.renderBlackjackTablePng({
-    dealer: state.dealer,
-    player: state.player,
-    hideDealerHole: true,
-  }), { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(0xe67e22)
     .setTitle('🛡️ Blackjack — Insurance?')
@@ -815,13 +809,12 @@ async function renderInsurance(interaction, s, state) {
     .addFields(
       { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true },
     )
-    .setImage(`attachment://${chartName}`)
     .setFooter({ text: 'YSER Flow Casino' });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('cs:bj:insurance_yes').setLabel('🛡️ Take Insurance').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:bj:insurance_no').setLabel('❌ No Thanks').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row], files: [tableChart] });
+  await interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function renderBJ(interaction, s, state, initial = false) {
@@ -868,16 +861,6 @@ async function renderBJ(interaction, s, state, initial = false) {
     .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
     .setFooter({ text: 'YSER Flow Casino  •  Dealer hits soft 17  •  BJ pays 3:2' });
 
-  const chartName = `blackjack-state-${s.userId}.png`;
-  const tableChart = new AttachmentBuilder(engine.renderBlackjackTablePng({
-    dealer: state.dealer,
-    player: state.player,
-    splitHand: state.splitHand,
-    hideDealerHole: true,
-    playingSplit: state.playingSplit,
-  }), { name: chartName });
-  embed.setImage(`attachment://${chartName}`);
-
   const btns = [
     new ButtonBuilder().setCustomId('cs:bj:hit').setLabel('👆 Hit').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:bj:stand').setLabel('✋ Stand').setStyle(ButtonStyle.Danger),
@@ -886,7 +869,7 @@ async function renderBJ(interaction, s, state, initial = false) {
   if (canSplitNow)  btns.push(new ButtonBuilder().setCustomId('cs:bj:split').setLabel('✂️ Split').setStyle(ButtonStyle.Primary));
   if (canSurrender) btns.push(new ButtonBuilder().setCustomId('cs:bj:surrender').setLabel('🏳️ Surrender').setStyle(ButtonStyle.Secondary));
 
-  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))], files: [tableChart] });
+  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))] });
 }
 
 async function handleBJ(interaction, s, action) {
@@ -1034,17 +1017,8 @@ async function finishBJ(interaction, s, state) {
   );
   if (insuranceBet > 0) embed.addFields({ name: '🛡️ Insurance', value: insurancePayout > 0 ? `Won **${fmt(insurancePayout)}**` : 'Lost', inline: true });
 
-  const chartName = `blackjack-final-${s.userId}.png`;
-  const tableChart = new AttachmentBuilder(engine.renderBlackjackTablePng({
-    dealer: final.dealer,
-    player: final.player,
-    splitHand: final.splitHand,
-    hideDealerHole: false,
-  }), { name: chartName });
-  embed.setImage(`attachment://${chartName}`);
-
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [tableChart] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
