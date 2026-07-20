@@ -63,12 +63,17 @@ module.exports = {
 
   async execute(interaction) {
     const { createSession } = require('../../casino/sessions');
-    const msg = await interaction.reply({
+
+    // Acknowledge immediately to avoid Discord 10062 (Unknown interaction)
+    await interaction.deferReply();
+
+    await interaction.editReply({
       embeds: [mainEmbed(interaction.user.id, interaction.guildId, null)],
       components: mainRows(),
-      withResponse: true,
     });
-    const messageId = msg.resource?.message?.id ?? msg.id ?? null;
+
+    const msg = await interaction.fetchReply();
+    const messageId = msg?.id ?? null;
     createSession(interaction.user.id, interaction.guildId, messageId);
   },
 
