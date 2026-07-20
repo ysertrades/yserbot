@@ -10,7 +10,8 @@
   "dependencies": {
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
-    "mongodb": "^7.5.0"
+    "mongodb": "^7.5.0",
+    "pngjs": "^7.0.0"
   },
   "engines": {
     "node": ">=20.19.0"

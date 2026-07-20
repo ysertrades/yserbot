@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const {
-  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
@@ -1006,12 +1006,21 @@ async function finishBJ(interaction, s, state) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function startTrading(interaction, s) {
-  const trade = engine.generateChart();
-  updateSession(s.userId, { tradeState: trade });
+  const trade = engine.generateChart({ bet: s.bet, userId: s.userId });
+  const { setupChartPng, ...tradeState } = trade;
+  updateSession(s.userId, { tradeState });
+  const chartName = `trading-setup-${s.userId}.png`;
+  const setupChart = new AttachmentBuilder(setupChartPng, { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(0x2c3e50).setTitle('📈 Trading — Setup')
-    .setDescription(`**Historical price action:**\n\`\`\`\n${trade.chartStr}\n\`\`\`\n**Entry:** \`${trade.entryPrice.toFixed(2)}\`  |  **Risk unit:** \`${trade.riskUnit.toFixed(2)}\``)
-    .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+    .setDescription('Generated market path for this round. Choose direction, then pick RR.')
+    .setImage(`attachment://${chartName}`)
+    .addFields(
+      { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true },
+      { name: '🎯 Entry', value: `\`${tradeState.entryPrice.toFixed(2)}\``, inline: true },
+      { name: '📏 1R (Risk Unit)', value: `\`${tradeState.riskUnit.toFixed(2)}\``, inline: true },
+      { name: '📦 Position Size', value: `\`${tradeState.positionSize.toFixed(2)}\``, inline: true },
+    )
     .setFooter({ text: 'YSER Flow Casino  •  Pick direction' });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('cs:tr:buy').setLabel('📈 BUY (Long)').setStyle(ButtonStyle.Success),
@@ -1019,23 +1028,23 @@ async function startTrading(interaction, s) {
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [setupChart] });
 }
 
 async function showRRChoice(interaction, s) {
   const embed = new EmbedBuilder()
     .setColor(0x2c3e50).setTitle('📈 Trading — Risk/Reward')
-    .setDescription('Pick your **Risk:Reward** ratio. Higher reward = lower probability.')
+    .setDescription('Pick your **Risk:Reward** ratio. Outcome is resolved from this round’s generated price path.')
     .addFields(
-      { name: '1:1  (52% win)', value: 'Payout: **2×**', inline: true },
-      { name: '1:2  (40% win)', value: 'Payout: **3×**', inline: true },
-      { name: '1:3  (30% win)', value: 'Payout: **4×**', inline: true },
+      { name: '1:1', value: 'Payout: **2×**', inline: true },
+      { name: '1:2', value: 'Payout: **3×**', inline: true },
+      { name: '1:3', value: 'Payout: **4×**', inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino' });
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('cs:tr:rr:1:1').setLabel('1:1  (52%)').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('cs:tr:rr:1:2').setLabel('1:2  (40%)').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('cs:tr:rr:1:3').setLabel('1:3  (30%)').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:tr:rr:1:1').setLabel('1:1').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:tr:rr:1:2').setLabel('1:2').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:tr:rr:1:3').setLabel('1:3').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
   unlock(s.userId);
@@ -1256,22 +1265,41 @@ async function resolveWheel(interaction, s) {
 
 async function resolveTrading(interaction, s, direction, rr) {
   if (!s.tradeState) { unlock(s.userId); return expired(interaction); }
-  const res  = engine.resolveTradeWithChart(s.tradeState, direction, rr);
+  const res  = engine.resolveTradeWithChart(s.tradeState, direction, rr, s.bet);
+  if (!res.validation?.ok || res.tradeId !== s.tradeState.tradeId) {
+    addCoins(s.userId, s.bet);
+    updateSession(s.userId, { tradeState: null, lastResult: { label: '⚠️ Trade Invalid', delta: 0 } });
+    unlock(s.userId);
+    return interaction.editReply({
+      embeds: [new EmbedBuilder()
+        .setColor(0xf39c12)
+        .setTitle('📈 Trading — Round Invalidated')
+        .setDescription('Trade state validation failed. Your bet was fully refunded.')
+        .addFields({ name: '♻️ Refunded', value: `**${fmt(s.bet)}** coins`, inline: true })],
+      components: [afterRow()],
+    });
+  }
   const payout = res.won ? s.bet * res.multiplier : 0;
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
   updateSession(s.userId, { lastResult: { label: res.won ? `🟢 +${res.rrReward}R` : '🔴 LOSS', delta }, tradeState: null });
+  const chartName = `trading-result-${s.userId}.png`;
+  const chartAttachment = new AttachmentBuilder(res.chartPng, { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(res.won ? 0x2ecc71 : 0xe74c3c)
     .setTitle(`📈 Trading — ${res.won ? `WIN  +${res.rrReward}R 🎉` : 'LOSS  -1R'}`)
-    .setDescription(`**Direction:** ${direction.toUpperCase()}  |  **RR:** ${rr}\n\`\`\`\n${res.chartStr}\n\`\`\``)
+    .setDescription(`**Direction:** ${direction.toUpperCase()}  |  **RR:** ${rr}  |  **Hit:** ${res.hitType.toUpperCase()}`)
+    .setImage(`attachment://${chartName}`)
     .addFields(
       { name: '💸 Bet',     value: `**${fmt(s.bet)}** coins`,                  inline: true },
       { name: '💵 Payout',  value: payout > 0 ? `**${fmt(payout)}** coins` : '—', inline: true },
       { name: '💰 Balance', value: `**${fmt(newBal)}** coins`,                 inline: true },
+      { name: '🎯 Entry',   value: `\`${res.entryPrice.toFixed(2)}\``,         inline: true },
+      { name: '🛑 Stop',    value: `\`${res.sl.toFixed(2)}\``,                 inline: true },
+      { name: '✅ Target',  value: `\`${res.tp.toFixed(2)}\``,                 inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino' });
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chartAttachment] });
 }
