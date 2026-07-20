@@ -1,0 +1,11 @@
+{
+  "1514666709985001666": {
+    "links": {
+      "trigger": "links",
+      "embedName": "links",
+      "exact": false,
+      "cooldown": 5,
+      "enabled": true
+    }
+  }
+}

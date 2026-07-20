@@ -1,0 +1,76 @@
+{
+  "1514666709985001666": {
+    "payout": {
+      "id": "payout",
+      "embedName": "payout",
+      "label": "Payout verified",
+      "type": "role",
+      "style": "Secondary",
+      "url": null,
+      "roleId": "1515897501197008936",
+      "message": null,
+      "emoji": "<:discordownerlogo:1514687836425556021>"
+    },
+    "bg": {
+      "id": "bg",
+      "embedName": "blue guardian",
+      "label": "35% OFF",
+      "type": "link",
+      "style": "Link",
+      "color": null,
+      "url": "https://blueguardian.com/?afmc=YSER",
+      "roleId": null,
+      "message": null,
+      "emoji": "<:Blue_guardian:1517558239812784258>"
+    },
+    "lens": {
+      "id": "lens",
+      "embedName": "lens",
+      "label": "The lens",
+      "type": "link",
+      "style": "Link",
+      "color": null,
+      "url": "https://drive.google.com/drive/folders/1zKryYuUzilPmgiTpQc-eB6PTSKeKEppN",
+      "roleId": null,
+      "message": null,
+      "emoji": "<:veri:1519069805351534828>"
+    },
+    "gxt": {
+      "id": "gxt",
+      "embedName": "gxt",
+      "label": "The Anomaly",
+      "type": "link",
+      "style": "Link",
+      "color": null,
+      "url": "https://whop.com/checkout/plan_RUVAUTn8toBBa",
+      "roleId": null,
+      "message": null,
+      "emoji": "<:whop:1516233597927821533>"
+    },
+    "ig": {
+      "id": "ig",
+      "embedName": "links",
+      "label": null,
+      "type": "link",
+      "style": "Link",
+      "color": null,
+      "url": "https://www.instagram.com/yser.nq?igsh=M2Q4eDNiaTdtOGQ1&utm_source=qr",
+      "roleId": null,
+      "message": null,
+      "emoji": "<:IG:1516250189118177331>"
+    },
+    "Test": {
+      "id": "Test",
+      "embedName": "test",
+      "label": "Links",
+      "type": "embed",
+      "style": "Secondary",
+      "color": null,
+      "url": null,
+      "roleId": null,
+      "message": null,
+      "responseEmbedName": "links",
+      "emoji": null
+    }
+  }
+}

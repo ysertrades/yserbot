@@ -1,0 +1,31 @@
+{
+  "1259562926147371079": [
+    {
+      "id": "golden_cross",
+      "name": "Golden Cross",
+      "rarity": "epic",
+      "emoji": "✨",
+      "desc": "When the MAs align perfectly.",
+      "flavor": "\"A sign from the charts above.\"",
+      "collectedAt": 1784463662420
+    },
+    {
+      "id": "the_sniper",
+      "name": "The Sniper",
+      "rarity": "rare",
+      "emoji": "🎯",
+      "desc": "Waits for the perfect entry.",
+      "flavor": "\"Patience is a weapon.\"",
+      "collectedAt": 1784463756564
+    },
+    {
+      "id": "bear_cave",
+      "name": "Bear Cave",
+      "rarity": "rare",
+      "emoji": "📉",
+      "desc": "Knows when to go short.",
+      "flavor": "\"Bears make money too.\"",
+      "collectedAt": 1784464382616
+    }
+  ]
+}

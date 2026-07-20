@@ -1,0 +1,110 @@
+{
+  "1514666709985001666": {
+    "payout": {
+      "title": null,
+      "description": "`Received a payout?`\nClick below to get a payout role",
+      "color": "474747",
+      "footer": null,
+      "thumbnail": null,
+      "image": null,
+      "fields": []
+    },
+    "nyse": {
+      "title": null,
+      "description": "## 🗽 NYSE OPEN `9:30 AM EST`\n\n> Markets are live. Follow your strategy and manage risk",
+      "color": "81c784",
+      "footer": null,
+      "thumbnail": null,
+      "image": null,
+      "fields": []
+    },
+    "yser": {
+      "embeds": [
+        {
+          "title": null,
+          "description": "## USE CODE `YSER`",
+          "color": "474747",
+          "footer": null,
+          "thumbnail": null,
+          "image": null,
+          "fields": []
+        }
+      ]
+    },
+    "blue guardian": {
+      "title": null,
+      "description": "## BLUE GUARDIAN DISCOUNT\n> **`-` They offer Forex and Futures prop accounts**\n> **`-` Best propfirm to start at low price and scale profits**",
+      "color": "#3089e1",
+      "footer": null,
+      "thumbnail": null,
+      "image": "https://cdn.discordapp.com/attachments/1515880299773558835/1517556015933952040/alpha_futures_3.png?ex=6a5af6ed&is=6a59a56d&hm=6aad3d85acb0eea5f331ce301fe218ae361d725c4bd7ac14125257b8826785ae&",
+      "fields": []
+    },
+    "lens": {
+      "title": null,
+      "description": "",
+      "color": "474747",
+      "footer": null,
+      "thumbnail": null,
+      "image": "https://cdn.discordapp.com/attachments/1515880299773558835/1516266503832469584/quality_restoration_20260614013222074.jpg?ex=6a5ae339&is=6a5991b9&hm=0fd46badf45d761b36d99c948d76e4be3037dc296411080428eabfd1b3160c23&",
+      "fields": []
+    },
+    "gxt": {
+      "title": null,
+      "description": "**Trade Anomaly course**",
+      "color": "474747",
+      "footer": null,
+      "thumbnail": null,
+      "image": "https://cdn.discordapp.com/attachments/1515880299773558835/1527782767641886750/Trades.png?ex=6a5bea14&is=6a5a9894&hm=460bf148cc33d309604e7cbef3613b02735c7d3f0b23075b8d12c14eecf57fc0&",
+      "fields": []
+    },
+    "links": {
+      "title": null,
+      "description": "<:yser:1516233708015849472> **`Visit my platforms`**",
+      "color": "474747",
+      "footer": null,
+      "thumbnail": null,
+      "image": null,
+      "fields": []
+    },
+    "test": {
+      "embeds": [
+        {
+          "title": null,
+          "description": "**Test of embed sending using button**",
+          "color": "#5865F2",
+          "footer": null,
+          "thumbnail": null,
+          "image": null,
+          "fields": []
+        }
+      ]
+    },
+    "casino": {
+      "embeds": [
+        {
+          "title": null,
+          "description": "**New casino bot**\n> `-` Use /casino command to launch it\n> `-` Use /help command to see how to earn coins",
+          "color": "#5865F2",
+          "footer": null,
+          "thumbnail": null,
+          "image": null,
+          "fields": []
+        }
+      ]
+    },
+    "done": {
+      "embeds": [
+        {
+          "title": null,
+          "description": null,
+          "color": "#5865F2",
+          "footer": null,
+          "thumbnail": null,
+          "image": null,
+          "fields": []
+        }
+      ]
+    }
+  }
+}
