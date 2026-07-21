@@ -17,7 +17,7 @@ const STYLE_COLORS = {
 };
 
 const activeEdits = new Map();
-const TEMP_MS = 5000;
+const TEMP_MS = 5 * 60 * 1000; // 5 minutes
 
 // ── Delete selector (select menu) ──────────────────────────────────────────────
 
