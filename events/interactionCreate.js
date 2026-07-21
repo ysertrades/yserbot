@@ -5,6 +5,11 @@ const { createEmbed } = require('../utils/embedBuilder');
 const { readJson }    = require('../utils/jsonStorage');
 
 const embedUtil = { error: (title, desc) => createEmbed('error', { title, description: desc }) };
+const EPHEMERAL_FLAG = 64;
+
+function isUnknownInteractionError(err) {
+  return err?.code === 10062 || err?.rawError?.code === 10062;
+}
 
 // ── Cmd permission helper ─────────────────────────────────────────────────────
 const { MOD_COMMANDS, ADMIN_COMMANDS, PUBLIC_COMMANDS } = require('../commands/system/cmd');
@@ -95,7 +100,7 @@ async function handleReportAction(interaction, targetUserId, reportChannelId) {
   return interaction.reply({
     embeds: [new EmbedBuilder().setColor(0xe67e22).setTitle('⚡ Take Action').setDescription(`Choose a moderation action against <@${targetUserId}>:`)],
     components: [actionRow],
-    ephemeral: true,
+    flags: EPHEMERAL_FLAG,
   });
 }
 
@@ -151,7 +156,7 @@ async function executeReportAction(interaction, action, targetUserId, reportChan
     });
   } catch (err) {
     console.error('[REPORT ACTION]', err);
-    return interaction.reply({ content: '❌ Failed to execute action.', ephemeral: true });
+    return interaction.reply({ content: '❌ Failed to execute action.', flags: EPHEMERAL_FLAG });
   }
 }
 
@@ -176,14 +181,15 @@ module.exports = {
       if (!command) return;
 
       if (interaction.inGuild() && !checkCmdPermission(interaction)) {
-        return interaction.reply({ embeds: [embedUtil.error('No Permission', `You don't have permission to use \`/${interaction.commandName}\`.`)], ephemeral: true }).catch(() => {});
+        return interaction.reply({ embeds: [embedUtil.error('No Permission', `You don't have permission to use \`/${interaction.commandName}\`.`)], flags: EPHEMERAL_FLAG }).catch(() => {});
       }
 
       try {
         await command.execute(interaction, client);
       } catch (err) {
+        if (isUnknownInteractionError(err)) return;
         console.error(`[CMD ERROR] /${interaction.commandName}:`, err);
-        const reply = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], ephemeral: true };
+        const reply = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(reply).catch(() => {});
         else await interaction.reply(reply).catch(() => {});
       }
@@ -204,8 +210,8 @@ module.exports = {
         if (id === 'giveaway_enter') {
           if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
           const entrants = global.giveawayEntrants.get(interaction.message.id);
-          if (!entrants) return interaction.reply({ content: 'This giveaway has ended.', ephemeral: true });
-          if (entrants.has(interaction.user.id)) return interaction.reply({ content: "You've already entered!", ephemeral: true });
+          if (!entrants) return interaction.reply({ content: 'This giveaway has ended.', flags: EPHEMERAL_FLAG });
+          if (entrants.has(interaction.user.id)) return interaction.reply({ content: "You've already entered!", flags: EPHEMERAL_FLAG });
           entrants.add(interaction.user.id);
           try {
             const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
@@ -213,7 +219,7 @@ module.exports = {
             upd.setDescription(desc);
             await interaction.message.edit({ embeds: [upd] }).catch(() => {});
           } catch {}
-          return interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', ephemeral: true });
+          return interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 
         // Giveaway — participants (first page)
@@ -221,7 +227,7 @@ module.exports = {
           const giveawayMsgId = interaction.message.id;
           const { embed, totalPages, currentPage } = buildParticipantsEmbed(giveawayMsgId, 1);
           const row = buildParticipantsRow(giveawayMsgId, currentPage, totalPages);
-          return interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+          return interaction.reply({ embeds: [embed], components: [row], flags: EPHEMERAL_FLAG });
         }
 
         // Giveaway — prev/next page (updates in-place, no new message)
@@ -282,7 +288,7 @@ module.exports = {
           if (!global.cardDrops) global.cardDrops = new Map();
           const drop = global.cardDrops.get(interaction.message.id);
           if (!drop || drop.grabbed) {
-            return interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', ephemeral: true });
+            return interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', flags: EPHEMERAL_FLAG });
           }
           drop.grabbed = true;
           global.cardDrops.delete(interaction.message.id);
@@ -307,7 +313,7 @@ module.exports = {
         if (id.startsWith('restore_confirm:')) {
           const [, guildId, userId] = id.split(':');
           if (interaction.user.id !== userId || interaction.guild.id !== guildId) {
-            return interaction.reply({ content: '❌ Only the admin who initiated this restore can confirm it.', ephemeral: true });
+            return interaction.reply({ content: '❌ Only the admin who initiated this restore can confirm it.', flags: EPHEMERAL_FLAG });
           }
           return client.commands.get('restore')?.handleRestoreConfirm(interaction);
         }
@@ -316,7 +322,7 @@ module.exports = {
         if (id.startsWith('restore_cancel:')) {
           const [, guildId, userId] = id.split(':');
           if (interaction.user.id !== userId || interaction.guild.id !== guildId) {
-            return interaction.reply({ content: '❌ Only the admin who initiated this restore can cancel it.', ephemeral: true });
+            return interaction.reply({ content: '❌ Only the admin who initiated this restore can cancel it.', flags: EPHEMERAL_FLAG });
           }
           return client.commands.get('restore')?.handleRestoreCancel(interaction);
         }
@@ -330,29 +336,29 @@ module.exports = {
         if (btnConfig) {
           if (btnConfig.type === 'role' && btnConfig.roleId) {
             const role   = interaction.guild.roles.cache.get(btnConfig.roleId);
-            if (!role) return interaction.reply({ content: '❌ Role not found.', ephemeral: true });
+            if (!role) return interaction.reply({ content: '❌ Role not found.', flags: EPHEMERAL_FLAG });
             const member = interaction.member;
             if (member.roles.cache.has(btnConfig.roleId)) {
               await member.roles.remove(role);
-              return interaction.reply({ content: `✅ Removed **${role.name}**.`, ephemeral: true });
+              return interaction.reply({ content: `✅ Removed **${role.name}**.`, flags: EPHEMERAL_FLAG });
             } else {
               await member.roles.add(role);
-              return interaction.reply({ content: `✅ You now have **${role.name}**.`, ephemeral: true });
+              return interaction.reply({ content: `✅ You now have **${role.name}**.`, flags: EPHEMERAL_FLAG });
             }
           } else if (btnConfig.type === 'custom') {
-            return interaction.reply({ content: btnConfig.message || '✅', ephemeral: true });
+            return interaction.reply({ content: btnConfig.message || '✅', flags: EPHEMERAL_FLAG });
           } else if (btnConfig.type === 'embed') {
             const { buildEmbedPayload } = require('../commands/utility/embed');
             const payload = buildEmbedPayload(interaction.guild, btnConfig.responseEmbedName || btnConfig.embedName);
-            if (!payload) return interaction.reply({ content: '❌ Embed template not found.', ephemeral: true });
-            return interaction.reply({ embeds: payload.embeds, components: payload.components.length ? payload.components : undefined, ephemeral: true });
+            if (!payload) return interaction.reply({ content: '❌ Embed template not found.', flags: EPHEMERAL_FLAG });
+            return interaction.reply({ embeds: payload.embeds, components: payload.components.length ? payload.components : undefined, flags: EPHEMERAL_FLAG });
           }
           return;
         }
 
       } catch (err) {
         console.error(`[BTN ERROR] ${id}:`, err);
-        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], ephemeral: true };
+        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
       }
@@ -380,7 +386,7 @@ module.exports = {
         }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);
-        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], ephemeral: true };
+        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
       }
@@ -404,7 +410,7 @@ module.exports = {
         if (handler?.handleSelect) await handler.handleSelect(interaction, args, client);
       } catch (err) {
         console.error(`[SEL ERROR] ${id}:`, err);
-        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], ephemeral: true };
+        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
       }
