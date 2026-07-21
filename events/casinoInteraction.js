@@ -586,16 +586,12 @@ async function startCrash(interaction, s) {
     const title = crashed    ? `🛩️ Crash — CRASHED at ${mult}x! 💥`
                 : cashedOut  ? `🛩️ Crash — Cashed Out at ${cashOutMult}x! 🎉`
                 :              `🛩️ Crash — Flying at ${mult}x…`;
-    const chart = engine.renderCrashChart(tick, crashed, cashedOut ? tick : null, crashed ? tick : null);
+    const chart = engine.renderCrashChart(tick, crashed, null, null);
     return new EmbedBuilder()
       .setColor(color)
       .setTitle(title)
       .setDescription(chart)
-      .addFields(
-        { name: '⚡ Live', value: `**${mult}x**`, inline: true },
-        { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true },
-        { name: '📊 Status', value: crashed ? 'Crashed' : cashedOut ? 'Cashed out' : 'In flight', inline: true },
-      )
+      .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
       .setFooter({ text: crashed ? '💥 The plane crashed!' : cashedOut ? '✈️ You jumped out in time!' : '✈️ Click Cash Out before it crashes!' });
   };
 
