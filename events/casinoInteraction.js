@@ -1163,27 +1163,32 @@ async function showDicePvpChallenge(interaction, s) {
 
 async function showRoulettePick(interaction, s) {
   const embed = new EmbedBuilder()
-    .setColor(0xC0392B)
-    .setTitle('🎡  Roulette — Pick Your Bet Type')
+    .setColor(0x2F3136)
+    .setTitle('🎡  Roulette — Choose Your Table Bet')
     .setDescription(
-      '**Outside Bets** (1:1) — Red, Black, Odd, Even\n' +
-      '**Dozens** (2:1) — 1–12, 13–24, 25–36\n' +
-      '**Straight Up** (35:1) — Pick any single number 0–36\n\u200b',
+      'Select a bet type, then choose your amount.\n\n' +
+      '• **Outside (1:1):** Red, Black, Odd, Even\n' +
+      '• **Dozens (2:1):** 1–12, 13–24, 25–36\n' +
+      '• **Straight (35:1):** single number 0–36',
     )
-    .setFooter({ text: 'YSER Flow Casino  •  European Roulette (single zero)' });
+    .addFields(
+      { name: '🧭 Table Info', value: 'European wheel with a single **0** pocket.', inline: true },
+      { name: '🎯 Next Step', value: 'After bet type, select stake and spin.', inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Roulette controls are neutral/secondary for clarity' });
 
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('cs:rl:red').setLabel('🔴 Red').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('cs:rl:red').setLabel('🔴 Red').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:rl:black').setLabel('⚫ Black').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('cs:rl:odd').setLabel('🔢 Odd').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('cs:rl:even').setLabel('🔢 Even').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:rl:odd').setLabel('🔢 Odd').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:even').setLabel('🔢 Even').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('cs:rl:1-12').setLabel('1–12').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('cs:rl:13-24').setLabel('13–24').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('cs:rl:25-36').setLabel('25–36').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('cs:rl:straight').setLabel('🎯 Straight (35:1)').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:rl:1-12').setLabel('1–12').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:13-24').setLabel('13–24').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:25-36').setLabel('25–36').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:straight').setLabel('🎯 Straight (35:1)').setStyle(ButtonStyle.Secondary),
   );
   await interaction.editReply({ embeds: [embed], components: [row1, row2] });
 }
@@ -1202,6 +1207,18 @@ async function resolveRoulette(interaction, s) {
   const betLabel = betType === 'straight' ? `Straight #${betValue}` : betType.replace(/-/g, '–').replace(/^./, c => c.toUpperCase());
   const colorEmoji = spin.color === 'red' ? '🔴' : spin.color === 'black' ? '⚫' : '🟢';
 
+  const spinEmbed = new EmbedBuilder()
+    .setColor(0x2F3136)
+    .setTitle('🎡  Roulette — Spinning...')
+    .setDescription('Ball is rolling across the wheel.\nFinal pocket is being determined...')
+    .addFields(
+      { name: '📋 Bet', value: `**${betLabel}**`, inline: true },
+      { name: '💸 Stake', value: `**${fmt(s.bet)}** coins`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Secure random spin in progress' });
+  await interaction.editReply({ embeds: [spinEmbed], components: [] });
+  await wait(900);
+
   updateSession(s.userId, {
     lastResult: { label: result.won ? `🟢 WIN ×${result.mult}` : '🔴 LOSS', delta },
     rouletteState: null,
@@ -1209,16 +1226,16 @@ async function resolveRoulette(interaction, s) {
 
   const embed = new EmbedBuilder()
     .setColor(result.won ? 0x2ECC71 : 0xE74C3C)
-    .setTitle(`🎡  Roulette — ${result.won ? 'Winner! 🎉' : 'No Luck'}`)
+    .setTitle(`🎡  Roulette — ${result.won ? 'Hit! 🎉' : 'Miss'}`)
     .setDescription(engine.renderRouletteWheel(spin.num, spin.color))
     .addFields(
-      { name: '🎯 Result',   value: `${colorEmoji} **${spin.num}** (${spin.color})`,              inline: true },
-      { name: '📋 Your Bet', value: `**${betLabel}** — ${result.won ? `×${result.mult}` : 'miss'}`, inline: true },
+      { name: '🎯 Ball Landed', value: `${colorEmoji} **${spin.num}** (${spin.color.toUpperCase()})`, inline: true },
+      { name: '📋 Your Bet',    value: `**${betLabel}** — ${result.won ? `×${result.mult}` : 'miss'}`, inline: true },
       { name: '💸 Bet',      value: `**${fmt(s.bet)}** coins`,                                     inline: true },
       { name: '💵 Payout',   value: payout > 0 ? `**${fmt(payout)}** coins` : '—',                 inline: true },
       { name: '💰 Balance',  value: `**${fmt(newBal)}** coins`,                                    inline: true },
     )
-    .setFooter({ text: 'YSER Flow Casino  •  European Roulette' });
+    .setFooter({ text: 'YSER Flow Casino  •  European Roulette  •  Cryptographically secure number selection' });
 
   unlock(s.userId);
   await interaction.editReply({ embeds: [embed], components: [afterRow()] });
