@@ -5,6 +5,7 @@
 // ────────────────────────────────────────────────────────────────
 
 const { PNG } = require('pngjs');
+const { randomInt } = require('crypto');
 
 const SUITS = ['♠️', '♥️', '♦️', '♣️'];
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -644,9 +645,10 @@ function resolveTradeWithChart(tradeState, direction, rr, bet = 0) {
 
 const ROULETTE_RED   = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 const ROULETTE_BLACK = new Set([2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]);
+const ROULETTE_WHEEL = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
 
 function spinRoulette() {
-  const num   = Math.floor(Math.random() * 37);
+  const num   = ROULETTE_WHEEL[randomInt(ROULETTE_WHEEL.length)];
   const color = num === 0 ? 'green' : ROULETTE_RED.has(num) ? 'red' : 'black';
   return { num, color };
 }
@@ -668,16 +670,19 @@ function rouletteResult(spin, betType, betValue) {
 
 function renderRouletteWheel(num, color) {
   const colorEmoji = color === 'red' ? '🔴' : color === 'black' ? '⚫' : '🟢';
-  const rows = ['```', '  ╔══════════════════════╗'];
+  const rows = ['```', '╭──────────────────────────────────────────────╮'];
   const neighbors = [];
-  for (let i = -3; i <= 3; i++) {
-    const n = ((num + i) % 37 + 37) % 37;
+  const center = ROULETTE_WHEEL.indexOf(num);
+  for (let i = -4; i <= 4; i++) {
+    const idx = (center + i + ROULETTE_WHEEL.length) % ROULETTE_WHEEL.length;
+    const n = ROULETTE_WHEEL[idx];
     const c = n === 0 ? '🟢' : ROULETTE_RED.has(n) ? '🔴' : '⚫';
-    neighbors.push(i === 0 ? `[${c}${String(n).padStart(2, '0')}]` : ` ${c}${String(n).padStart(2, '0')} `);
+    neighbors.push(i === 0 ? `⟪${c}${String(n).padStart(2, '0')}⟫` : ` ${c}${String(n).padStart(2, '0')} `);
   }
-  rows.push('  ║  ' + neighbors.join('') + '  ║');
-  rows.push(`  ║         ▲  ${colorEmoji} ${String(num).padStart(2, '0')}  ▲         ║`);
-  rows.push('  ╚══════════════════════╝', '```');
+  rows.push('│                🎡 European Wheel             │');
+  rows.push('│   ' + neighbors.join('') + '   │');
+  rows.push(`│                ▼  ${colorEmoji} ${String(num).padStart(2, '0')}  ▼                │`);
+  rows.push('╰──────────────────────────────────────────────╯', '```');
   return rows.join('\n');
 }
 
