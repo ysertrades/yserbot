@@ -5,6 +5,7 @@
 // ────────────────────────────────────────────────────────────────
 
 const { PNG } = require('pngjs');
+const { randomInt } = require('node:crypto');
 
 const SUITS = ['♠️', '♥️', '♦️', '♣️'];
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -646,7 +647,7 @@ const ROULETTE_RED   = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36
 const ROULETTE_BLACK = new Set([2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]);
 
 function spinRoulette() {
-  const num   = Math.floor(Math.random() * 37);
+  const num   = randomInt(37);
   const color = num === 0 ? 'green' : ROULETTE_RED.has(num) ? 'red' : 'black';
   return { num, color };
 }
@@ -668,16 +669,15 @@ function rouletteResult(spin, betType, betValue) {
 
 function renderRouletteWheel(num, color) {
   const colorEmoji = color === 'red' ? '🔴' : color === 'black' ? '⚫' : '🟢';
-  const rows = ['```', '  ╔══════════════════════╗'];
+  const rows = ['```', '╔════════════════════════════════════╗', `║  🎡 EURO TABLE   BALL: ${colorEmoji} ${String(num).padStart(2, '0')}       ║`, '╠════════════════════════════════════╣'];
   const neighbors = [];
   for (let i = -3; i <= 3; i++) {
     const n = ((num + i) % 37 + 37) % 37;
     const c = n === 0 ? '🟢' : ROULETTE_RED.has(n) ? '🔴' : '⚫';
-    neighbors.push(i === 0 ? `[${c}${String(n).padStart(2, '0')}]` : ` ${c}${String(n).padStart(2, '0')} `);
+    neighbors.push(i === 0 ? `[${c}${String(n).padStart(2, '0')}]` : ` ${c}${String(n).padStart(2, '0')}`);
   }
-  rows.push('  ║  ' + neighbors.join('') + '  ║');
-  rows.push(`  ║         ▲  ${colorEmoji} ${String(num).padStart(2, '0')}  ▲         ║`);
-  rows.push('  ╚══════════════════════╝', '```');
+  rows.push(`║ TRACK:${neighbors.join('')} ║`);
+  rows.push('╚════════════════════════════════════╝', '```');
   return rows.join('\n');
 }
 
