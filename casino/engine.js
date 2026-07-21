@@ -189,47 +189,24 @@ function tickMultiplier(tick) {
 }
 
 function renderCrashChart(tick, crashed, cashOutTick, crashTick) {
-  const milestones = [1.25, 1.5, 2, 3, 5, 10, 20, 50];
-  const current = tickMultiplier(tick);
-  const status = crashed
-    ? '💥 **CRASHED**'
-    : Number.isInteger(cashOutTick)
-      ? '✅ **CASHED OUT**'
-      : '✈️ **IN FLIGHT**';
+  const COLS   = 20;
+  const ROWS   = 8;
+  const maxTick = Math.max(tick, 3);
+  const grid    = Array.from({ length: ROWS }, () => Array(COLS).fill(' '));
 
-  let target = milestones.find(m => current < m) || milestones[milestones.length - 1];
-  let previous = 1.0;
-  for (const m of milestones) {
-    if (m >= target) break;
-    previous = m;
-  }
-  if (current >= milestones[milestones.length - 1]) {
-    target = current + 10;
-    previous = current;
+  for (let t = 0; t <= Math.min(tick, maxTick); t++) {
+    const x = Math.round((t / maxTick) * (COLS - 1));
+    const yFrac = Math.min(1, Math.pow(TICK_GROWTH, t) / (Math.pow(TICK_GROWTH, maxTick) * 1.1));
+    const y     = ROWS - 1 - Math.round(yFrac * (ROWS - 1));
+    if (y >= 0 && y < ROWS && x >= 0 && x < COLS) grid[y][x] = t === tick && crashed ? '💥' : '•';
   }
 
-  const progressRatio = Math.max(0, Math.min(1, (current - previous) / Math.max(0.0001, target - previous)));
-  const segments = 12;
-  const filled = Math.max(1, Math.min(segments, Math.round(progressRatio * segments)));
-  const bar = '🟦'.repeat(filled) + '⬛'.repeat(segments - filled);
-  const recentStart = Math.max(0, tick - 4);
-  const trail = Array.from({ length: tick - recentStart + 1 }, (_, i) => tickMultiplier(recentStart + i))
-    .map(m => `\`${m}x\``)
-    .join(' → ');
-
-  const resultMarker = crashed
-    ? `\n**Result:** Crashed at \`${tickMultiplier(crashTick ?? tick)}x\``
-    : Number.isInteger(cashOutTick)
-      ? `\n**Result:** Cashed out at \`${tickMultiplier(cashOutTick)}x\``
-      : '';
-
-  return (
-    `${status}\n` +
-    `**Multiplier:** \`${current}x\`\n` +
-    `**Momentum:** ${bar} \`${Math.round(progressRatio * 100)}%\` to \`${target}x\`\n` +
-    `**Flight Path:** ${trail || `\`${current}x\``}` +
-    resultMarker
-  );
+  const lines = grid.map((row, i) => {
+    const border = i === ROWS - 1 ? '└' : '│';
+    return border + row.join('');
+  });
+  lines[ROWS - 1] = '└' + '─'.repeat(COLS);
+  return '```\n' + lines.join('\n') + '\n```';
 }
 
 /* ─── RACE ─────────────────────────────────────────────────────────────── */
@@ -668,7 +645,6 @@ function resolveTradeWithChart(tradeState, direction, rr, bet = 0) {
 
 const ROULETTE_RED   = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
 const ROULETTE_BLACK = new Set([2,4,6,8,10,11,13,15,17,20,22,24,26,28,29,31,33,35]);
-const EURO_WHEEL_ORDER = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
 
 function spinRoulette() {
   const num   = randomInt(37);
@@ -693,24 +669,16 @@ function rouletteResult(spin, betType, betValue) {
 
 function renderRouletteWheel(num, color) {
   const colorEmoji = color === 'red' ? '🔴' : color === 'black' ? '⚫' : '🟢';
-  const landedIdx = EURO_WHEEL_ORDER.indexOf(num);
+  const rows = ['```', '╔════════════════════════════════════╗', `║  🎡 EURO TABLE   BALL: ${colorEmoji} ${String(num).padStart(2, '0')}       ║`, '╠════════════════════════════════════╣'];
   const neighbors = [];
-  for (let offset = -4; offset <= 4; offset++) {
-    const idx = (landedIdx + offset + EURO_WHEEL_ORDER.length) % EURO_WHEEL_ORDER.length;
-    const pocket = EURO_WHEEL_ORDER[idx];
-    const pocketColor = pocket === 0 ? '🟢' : ROULETTE_RED.has(pocket) ? '🔴' : '⚫';
-    const label = `${pocketColor}${String(pocket).padStart(2, '0')}`;
-    neighbors.push(offset === 0 ? `**${label}**` : label);
+  for (let i = -3; i <= 3; i++) {
+    const n = ((num + i) % 37 + 37) % 37;
+    const c = n === 0 ? '🟢' : ROULETTE_RED.has(n) ? '🔴' : '⚫';
+    neighbors.push(i === 0 ? `[${c}${String(n).padStart(2, '0')}]` : ` ${c}${String(n).padStart(2, '0')}`);
   }
-
-  const parity = num === 0 ? 'None (0)' : num % 2 === 0 ? 'Even' : 'Odd';
-  const dozen = num === 0 ? 'None (0)' : num <= 12 ? '1st 12' : num <= 24 ? '2nd 12' : '3rd 12';
-
-  return [
-    `🎯 **Ball landed:** ${colorEmoji} **${String(num).padStart(2, '0')}**`,
-    `🧭 **Wheel neighborhood:** ${neighbors.join('  •  ')}`,
-    `📌 **Properties:** ${color.toUpperCase()} • ${parity} • ${dozen}`,
-  ].join('\n');
+  rows.push(`║ TRACK:${neighbors.join('')} ║`);
+  rows.push('╚════════════════════════════════════╝', '```');
+  return rows.join('\n');
 }
 
 /* ─── WHEEL OF FORTUNE ──────────────────────────────────────────────────── */
