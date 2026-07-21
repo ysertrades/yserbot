@@ -258,9 +258,10 @@ module.exports = {
       activeEdits.delete(sessKey);
       return interaction.update({ content: null, embeds: [createServerEmbed('info', { title: '❌ Cancelled', description: 'No changes saved.' }, interaction.guild)], components: [] });
     }
-    if (action === 'style' && parts[1] === 'select') {
+    if (id.startsWith('be_style_select_')) {
       const order = ['Primary', 'Secondary', 'Success', 'Danger'];
-      btn.style   = order[(order.indexOf(btn.style) + 1) % order.length];
+      const currentStyle = order.includes(btn.style) ? btn.style : 'Primary';
+      btn.style = order[(order.indexOf(currentStyle) + 1) % order.length];
       buttons[session.guildId][session.id] = btn;
       writeJson('buttons.json', buttons);
       return interaction.update({ embeds: [editorEmbed(btn)], components: editorRows(sessKey) });
