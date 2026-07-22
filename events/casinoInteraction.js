@@ -14,7 +14,7 @@ const { getSettings } = require('../casino/settings');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const engine = require('../casino/engine');
 
-const WHEEL_DAILY_LIMIT = 5;
+const WHEEL_DAILY_LIMIT = 10;
 
 function getTodayStr() {
   const d = new Date();
