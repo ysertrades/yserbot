@@ -81,7 +81,7 @@ function editorRows(sessionId) {
     ),
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`be_url_${sessionId}`).setLabel('🔗 URL').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`be_stylecycle_${sessionId}`).setLabel('🔄 Cycle Style').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`be_style_select_${sessionId}`).setLabel('🔄 Cycle Style').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`be_save_${sessionId}`).setLabel('💾 Save').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`be_cancel_${sessionId}`).setLabel('❌ Cancel').setStyle(ButtonStyle.Danger),
     ),
@@ -258,7 +258,7 @@ module.exports = {
       activeEdits.delete(sessKey);
       return interaction.update({ content: null, embeds: [createServerEmbed('info', { title: '❌ Cancelled', description: 'No changes saved.' }, interaction.guild)], components: [] });
     }
-    if (id.startsWith('be_stylecycle_')) {
+    if (id.startsWith('be_style_select_')) {
       const order = ['Primary', 'Secondary', 'Success', 'Danger'];
       const currentStyle = order.includes(btn.style) ? btn.style : 'Primary';
       btn.style = order[(order.indexOf(currentStyle) + 1) % order.length];
