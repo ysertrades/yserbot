@@ -1295,7 +1295,7 @@ async function resolveWheel(interaction, s) {
       { name: '💰 Balance',    value: `**${fmt(newBal)}** coins`,                                       inline: true },
       { name: '🎡 Spins Left', value: spinsAfter > 0 ? `**${spinsAfter}** remaining today` : '**0** — come back tomorrow!', inline: true },
     )
-    .setFooter({ text: 'YSER Flow Casino  •  Wheel of Fortune  •  5 spins/day' });
+    .setFooter({ text: 'YSER Flow Casino  •  Wheel of Fortune  •  10 spins/day' });
 
   await interaction.editReply({ embeds: [embed], components: [afterRow()] });
 }
