@@ -215,10 +215,21 @@ module.exports = {
 
   // ── Button handler (confirm / back / edit session) ────────────────────────
   handleButtonEdit: async function(interaction) {
-    const id      = interaction.customId;
-    const parts   = id.replace(/^be_/, '').split('_');
-    const action  = parts[0];
-    const sessKey = parts.slice(1).join('_');
+    const id = interaction.customId;
+
+    // 'be_style_select_<sessKey>' has an underscore in the prefix, so the
+    // generic split would produce 'select_<sessKey>' instead of '<sessKey>'.
+    // Detect and handle it before the generic parser runs.
+    let action, sessKey;
+    if (id.startsWith('be_style_select_')) {
+      action  = 'style_select';
+      sessKey = id.slice('be_style_select_'.length);
+    } else {
+      const parts = id.replace(/^be_/, '').split('_');
+      action  = parts[0];
+      sessKey = parts.slice(1).join('_');
+    }
+
     const session = activeEdits.get(sessKey);
 
     // Delete confirm / back
