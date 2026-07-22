@@ -383,7 +383,7 @@ async function showBetSelection(interaction, game) {
     new ButtonBuilder().setCustomId('cs:close').setLabel('Close').setStyle(ButtonStyle.Danger),
   );
 
-  await interaction.editReply({ embeds: [embed], components: [row1, row2] });
+  await interaction.editReply({ embeds: [embed], components: [row1, row2], attachments: [] });
 }
 
 async function handleModal(interaction) {
@@ -1190,7 +1190,7 @@ async function showRoulettePick(interaction, s) {
     new ButtonBuilder().setCustomId('cs:rl:straight').setLabel('🎯 Straight (35:1)').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row1, row2] });
+  await interaction.editReply({ embeds: [embed], components: [row1, row2], attachments: [] });
 }
 
 async function resolveRoulette(interaction, s) {
@@ -1216,7 +1216,7 @@ async function resolveRoulette(interaction, s) {
       { name: '💸 Stake', value: `**${fmt(s.bet)}** coins`, inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino  •  Secure random spin in progress' });
-  await interaction.editReply({ embeds: [spinEmbed], components: [] });
+  await interaction.editReply({ embeds: [spinEmbed], components: [], attachments: [] });
   await wait(900);
 
   updateSession(s.userId, {
