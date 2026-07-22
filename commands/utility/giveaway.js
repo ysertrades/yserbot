@@ -12,6 +12,68 @@ const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
 
 const giveawayTimers = new Map();
 const ID_CHARS       = 'abcdefghijklmnopqrstuvwxyz0123456789';
+const ACTIVE_FILE    = 'giveaways_active.json';
+
+// ── Active-giveaway persistence (survives bot restarts) ───────────────────────
+
+function saveActiveGiveaway(msgId, data) {
+  const all = readJson(ACTIVE_FILE, {});
+  all[msgId] = data;
+  writeJson(ACTIVE_FILE, all);
+}
+
+function removeActiveGiveaway(msgId) {
+  const all = readJson(ACTIVE_FILE, {});
+  if (!all[msgId]) return;
+  delete all[msgId];
+  writeJson(ACTIVE_FILE, all);
+}
+
+function getActiveGiveaway(msgId) {
+  return readJson(ACTIVE_FILE, {})[msgId] ?? null;
+}
+
+function persistGiveawayEntry(msgId, entrants) {
+  const all = readJson(ACTIVE_FILE, {});
+  if (!all[msgId]) return;
+  all[msgId].entrants = Array.from(entrants);
+  writeJson(ACTIVE_FILE, all);
+}
+
+async function restoreGiveaways(client) {
+  const active = readJson(ACTIVE_FILE, {});
+  const now    = Date.now();
+  if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
+  if (!global.giveawayMeta)     global.giveawayMeta     = new Map();
+
+  for (const [msgId, data] of Object.entries(active)) {
+    global.giveawayEntrants.set(msgId, new Set(data.entrants || []));
+    global.giveawayMeta.set(msgId, {
+      prize: data.prize, winners: data.winnersCount, imageUrl: data.imageUrl,
+      hostId: data.hostId, endTime: data.endTime, guildId: data.guildId,
+    });
+
+    // Re-fetch the message so the end-timer can edit it
+    let msg;
+    try {
+      const ch = await client.channels.fetch(data.channelId);
+      msg = await ch.messages.fetch(msgId);
+    } catch {
+      // Channel or message deleted while bot was offline — clean up
+      removeActiveGiveaway(msgId);
+      global.giveawayEntrants.delete(msgId);
+      global.giveawayMeta.delete(msgId);
+      continue;
+    }
+
+    const remaining = Math.max(data.endTime - now, 0);
+    if (giveawayTimers.has(msgId)) clearTimeout(giveawayTimers.get(msgId));
+    giveawayTimers.set(msgId, setTimeout(
+      () => endGiveaway(msg, data.prize, data.winnersCount, data.imageUrl, data.hostId, data.guildId),
+      remaining,
+    ));
+  }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -201,6 +263,12 @@ async function launchGiveaway(interaction, data, sessionId) {
   global.giveawayEntrants.set(msg.id, new Set());
   global.giveawayMeta.set(msg.id, { prize, winners, imageUrl, hostId: interaction.user.id, endTime, guildId });
 
+  // Persist so entries and the timer survive a bot restart
+  saveActiveGiveaway(msg.id, {
+    prize, winnersCount: winners, imageUrl: imageUrl || null,
+    hostId: interaction.user.id, endTime, guildId, channelId: msg.channelId, entrants: [],
+  });
+
   if (giveawayTimers.has(msg.id)) clearTimeout(giveawayTimers.get(msg.id));
   giveawayTimers.set(msg.id, setTimeout(() => endGiveaway(msg, prize, winners, imageUrl, interaction.user.id, guildId), durationMs));
 
@@ -375,6 +443,7 @@ async function endGiveaway(message, prize, winnersCount, imageUrl, hostId, guild
       .setTimestamp();
     if (imageUrl) embed.setImage(imageUrl);
     await message.edit({ embeds: [embed], components: [disabledRow] });
+    removeActiveGiveaway(message.id);
     global.giveawayEntrants.delete(message.id);
     global.giveawayMeta?.delete(message.id);
     giveawayTimers.delete(message.id);
@@ -412,12 +481,17 @@ async function endGiveaway(message, prize, winnersCount, imageUrl, hostId, guild
   if (imageUrl) embed.setImage(imageUrl);
 
   await message.edit({ embeds: [embed], components: [disabledRow] });
+  removeActiveGiveaway(message.id);
   global.giveawayEntrants.delete(message.id);
   global.giveawayMeta?.delete(message.id);
   giveawayTimers.delete(message.id);
 }
 
 // ── Reroll ────────────────────────────────────────────────────────────────────
+
+module.exports.getActiveGiveaway    = getActiveGiveaway;
+module.exports.persistGiveawayEntry = persistGiveawayEntry;
+module.exports.restoreGiveaways     = restoreGiveaways;
 
 module.exports.reroll = async function(message, shortId) {
   if (!shortId)
