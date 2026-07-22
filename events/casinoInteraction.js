@@ -1182,13 +1182,13 @@ async function showRoulettePick(interaction, s) {
     new ButtonBuilder().setCustomId('cs:rl:black').setLabel('⚫ Black').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:rl:odd').setLabel('🔢 Odd').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:rl:even').setLabel('🔢 Even').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('cs:rl:1-12').setLabel('1–12').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:rl:13-24').setLabel('13–24').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:rl:25-36').setLabel('25–36').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('cs:rl:straight').setLabel('🎯 Straight (35:1)').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
   await interaction.editReply({ embeds: [embed], components: [row1, row2] });
 }
