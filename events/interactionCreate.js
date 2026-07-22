@@ -209,7 +209,24 @@ module.exports = {
         // Giveaway — enter
         if (id === 'giveaway_enter') {
           if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
-          const entrants = global.giveawayEntrants.get(interaction.message.id);
+          let entrants = global.giveawayEntrants.get(interaction.message.id);
+
+          // Not in memory — bot may have restarted during a long giveaway.
+          // Check persisted active-giveaway state before declaring it ended.
+          if (!entrants) {
+            const giveawayCmd = client.commands.get('giveaway');
+            const saved = giveawayCmd?.getActiveGiveaway?.(interaction.message.id);
+            if (saved && saved.endTime > Date.now()) {
+              if (!global.giveawayMeta) global.giveawayMeta = new Map();
+              entrants = new Set(saved.entrants || []);
+              global.giveawayEntrants.set(interaction.message.id, entrants);
+              global.giveawayMeta.set(interaction.message.id, {
+                prize: saved.prize, winners: saved.winnersCount, imageUrl: saved.imageUrl,
+                hostId: saved.hostId, endTime: saved.endTime, guildId: saved.guildId,
+              });
+            }
+          }
+
           if (!entrants) return interaction.reply({ content: 'This giveaway has ended.', flags: EPHEMERAL_FLAG });
           if (entrants.has(interaction.user.id)) return interaction.reply({ content: "You've already entered!", flags: EPHEMERAL_FLAG });
           entrants.add(interaction.user.id);
@@ -219,6 +236,8 @@ module.exports = {
             upd.setDescription(desc);
             await interaction.message.edit({ embeds: [upd] }).catch(() => {});
           } catch {}
+          // Persist the new entry so it survives future restarts
+          client.commands.get('giveaway')?.persistGiveawayEntry?.(interaction.message.id, entrants);
           return interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 
