@@ -1224,10 +1224,13 @@ async function resolveRoulette(interaction, s) {
     rouletteState: null,
   });
 
+  const rlChartName = `roulette-result-${s.userId}.png`;
+  const rlChart = new AttachmentBuilder(engine.renderRoulettePng(spin.num), { name: rlChartName });
+
   const embed = new EmbedBuilder()
     .setColor(result.won ? 0x2ECC71 : 0xE74C3C)
     .setTitle(`🎡  Roulette — ${result.won ? 'Hit! 🎉' : 'Miss'}`)
-    .setDescription(engine.renderRouletteWheel(spin.num, spin.color))
+    .setImage(`attachment://${rlChartName}`)
     .addFields(
       { name: '🎯 Ball Landed', value: `${colorEmoji} **${spin.num}** (${spin.color.toUpperCase()})`, inline: true },
       { name: '📋 Your Bet',    value: `**${betLabel}** — ${result.won ? `×${result.mult}` : 'miss'}`, inline: true },
@@ -1238,7 +1241,7 @@ async function resolveRoulette(interaction, s) {
     .setFooter({ text: 'YSER Flow Casino  •  European Roulette  •  Cryptographically secure number selection' });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [rlChart] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
