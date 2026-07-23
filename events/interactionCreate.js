@@ -170,7 +170,10 @@ module.exports = {
     if (interaction.isAutocomplete()) {
       const command = client.commands.get(interaction.commandName);
       if (command?.autocomplete) {
-try { await command.autocomplete(interaction); } catch (err) { console.error(`[AC ERROR] ${interaction.commandName}:`, err); }
+        try { await command.autocomplete(interaction); } catch (err) {
+          if (err.code === 10062) return; // interaction expired before we could respond — normal on restarts/load
+          console.error(`[AC ERROR] ${interaction.commandName}:`, err);
+        }
       }
       return;
     }
