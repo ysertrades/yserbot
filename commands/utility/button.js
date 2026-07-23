@@ -115,7 +115,7 @@ module.exports = {
       .addStringOption(o => o.setName('emoji').setDescription('Button emoji').setRequired(false))
       .addStringOption(o => o.setName('response-embed').setDescription('Embed to show privately (Embed type only — pick from saved templates)').setRequired(false).setAutocomplete(true)))
     .addSubcommand(s => s.setName('edit').setDescription('Edit an existing button interactively')
-      .addStringOption(o => o.setName('id').setDescription('Button ID to edit').setRequired(true)))
+      .addStringOption(o => o.setName('id').setDescription('Button ID to edit').setRequired(true).setAutocomplete(true)))
     .addSubcommand(s => s.setName('remove').setDescription('Delete a button — choose from a dropdown'))
     .addSubcommand(s => s.setName('list').setDescription('List all buttons')),
 
@@ -191,8 +191,22 @@ module.exports = {
 
   // ── Autocomplete (response-embed option) ─────────────────────────────────
   autocomplete: async function(interaction) {
-    const focused  = interaction.options.getFocused().toLowerCase();
-    const guildId  = interaction.guild.id;
+    const focused     = interaction.options.getFocused().toLowerCase();
+    const focusedName = interaction.options.getFocused(true).name;
+    const guildId     = interaction.guild.id;
+
+    // /button edit — autocomplete the button ID field
+    if (focusedName === 'id') {
+      const buttons = readJson('buttons.json', {});
+      const ids     = Object.keys(buttons[guildId] || {});
+      const filtered = ids.filter(id => id.toLowerCase().includes(focused)).slice(0, 25);
+      return interaction.respond(filtered.map(id => {
+        const b = buttons[guildId][id];
+        return { name: `${id}  [${b.embedName}  ·  ${b.style}]`, value: id };
+      }));
+    }
+
+    // /button add — autocomplete the embed name fields
     const all      = readJson('embeds.json', {});
     const names    = Object.keys(all[guildId] || {});
     const filtered = names.filter(n => n.includes(focused)).slice(0, 25);
