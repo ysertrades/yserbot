@@ -173,7 +173,10 @@ module.exports = {
       .filter(n => n.includes(focused))
       .slice(0, 25)
       .map(n => ({ name: n, value: n }));
-    await interaction.respond(filtered);
+    await interaction.respond(filtered).catch(err => {
+      if (err.code !== 10062) throw err;
+      // 10062 = interaction expired before respond() — harmless, discard silently
+    });
   },
 
   async execute(interaction) {
