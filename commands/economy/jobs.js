@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { getEffect } = require('../../utils/effectsManager');
 
@@ -97,87 +97,77 @@ const JOBS = [
   },
 ];
 
+// ── Shared embed/row builders (used by slash command + button handler) ────────
+
+function buildJobsEmbed(userId, guildId) {
+  const boost    = getEffect(userId, guildId, 'coin_boost');
+  const boostLine = boost ? '\n💰 **Coin Boost active** — all earnings are **1.5×** this session!\n' : '';
+
+  const lines = JOBS.map(j => {
+    const cd    = checkCooldown(userId, `job_${j.id}`, j.cooldownMs);
+    const ready = cd <= 0;
+    const ts    = Math.floor((Date.now() + cd) / 1000);
+    const status = ready ? '✅' : `⏳ <t:${ts}:R>`;
+    return `${j.emoji} **${j.name}**${j.variance ? ' ⚡' : ''} · \`${fmt(j.min)}–${fmt(j.max)}\` · \`${j.cooldownLabel}\` · ${status}`;
+  });
+
+  const readyCount = JOBS.filter(j => checkCooldown(userId, `job_${j.id}`, j.cooldownMs) <= 0).length;
+
+  return new EmbedBuilder()
+    .setColor(boost ? 0xFFD700 : 0xF59E0B)
+    .setTitle('💼  Jobs Hub')
+    .setDescription(
+      `Clock in at any available job for instant pay. Stack them all for maximum income.${boostLine}\n` +
+      lines.join('\n') +
+      `\n\u200b`
+    )
+    .addFields(
+      { name: '✅ Jobs Ready', value: `**${readyCount}** / ${JOBS.length}`, inline: true },
+      { name: '💰 Boost',      value: boost ? '**Active 1.5×**' : 'None', inline: true },
+    )
+    .setFooter({ text: 'YSER Jobs  •  Click a job button to clock in  •  ⚡ = high-variance pay' })
+    .setTimestamp();
+}
+
+function buildJobsRows(userId) {
+  const row1Ids = JOBS.slice(0, 5);
+  const row2Ids = JOBS.slice(5, 8);
+
+  function makeBtn(j) {
+    const ready = checkCooldown(userId, `job_${j.id}`, j.cooldownMs) <= 0;
+    return new ButtonBuilder()
+      .setCustomId(`job:work:${j.id}`)
+      .setLabel(`${j.emoji} ${j.name}`)
+      .setStyle(ready ? ButtonStyle.Success : ButtonStyle.Secondary);
+  }
+
+  const row1 = new ActionRowBuilder().addComponents(...row1Ids.map(makeBtn));
+  const row2 = new ActionRowBuilder().addComponents(
+    ...row2Ids.map(makeBtn),
+    new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+  );
+
+  return [row1, row2];
+}
+
+// ── Slash command ─────────────────────────────────────────────────────────────
+
 module.exports = {
+  JOBS,
+  buildJobsEmbed,
+  buildJobsRows,
+
   data: new SlashCommandBuilder()
     .setName('jobs')
-    .setDescription('Work multiple jobs with separate cooldowns to maximize earnings')
-    .addSubcommand(sub => sub.setName('list').setDescription('View all jobs, pay rates, and your cooldown status'))
-    .addSubcommand(sub => sub.setName('work').setDescription('Clock into a specific job')
-      .addStringOption(o => o.setName('job').setDescription('Which job to work').setRequired(true)
-        .addChoices(...JOBS.map(j => ({ name: `${j.emoji} ${j.name}`, value: j.id }))))),
+    .setDescription('Open the Jobs Hub — clock into any job from a single interactive embed'),
 
   async execute(interaction) {
-    const sub    = interaction.options.getSubcommand();
-    const userId = interaction.user.id;
+    const userId  = interaction.user.id;
+    const guildId = interaction.guild?.id;
 
-    if (sub === 'list') {
-      const fields = JOBS.map(j => {
-        const cd    = checkCooldown(userId, `job_${j.id}`, j.cooldownMs);
-        const ready = cd <= 0;
-        const ts    = Math.floor((Date.now() + cd) / 1000);
-        return {
-          name:   `${j.emoji} ${j.name}`,
-          value:  `💸 \`${fmt(j.min)}–${fmt(j.max)}\`${j.variance ? ' ⚡' : ''}\n⏱️ \`${j.cooldownLabel}\`\n${ready ? '✅ **Ready**' : `⏳ <t:${ts}:R>`}`,
-          inline: true,
-        };
-      });
-
-      return interaction.reply({ embeds: [new EmbedBuilder()
-        .setColor(0xF59E0B)
-        .setTitle('💼  Available Jobs')
-        .setDescription('Each job has its own cooldown — stack them all for maximum income.\n⚡ = high-variance pay (luck-based)\n\u200b')
-        .addFields(fields)
-        .setFooter({ text: 'Use /jobs work <job> to clock in  •  Coin Boost items increase earnings by 1.5×' })
-        .setTimestamp()] });
-    }
-
-    if (sub === 'work') {
-      const jobId = interaction.options.getString('job');
-      const job   = JOBS.find(j => j.id === jobId);
-      if (!job) return interaction.reply({ content: '❌ Unknown job.', ephemeral: true });
-
-      const cd = checkCooldown(userId, `job_${job.id}`, job.cooldownMs);
-      if (cd > 0) {
-        const ts = Math.floor((Date.now() + cd) / 1000);
-        return interaction.reply({ embeds: [new EmbedBuilder()
-          .setColor(0xFF4757)
-          .setTitle('⏳  Still on Shift')
-          .setDescription(`You're recovering from your last **${job.emoji} ${job.name}** shift.\nAvailable again <t:${ts}:R>.`)], ephemeral: true });
-      }
-
-      // Calculate earnings (variance jobs spike on 15% chance)
-      let earnings;
-      if (job.variance) {
-        const spike = Math.random() < 0.15;
-        earnings    = spike
-          ? Math.floor(job.max * (0.80 + Math.random() * 0.20))
-          : Math.floor(job.min + Math.random() * (job.max - job.min) * 0.4);
-      } else {
-        earnings = Math.floor(job.min + Math.random() * (job.max - job.min));
-      }
-
-      // Apply coin boost effect
-      const boost = getEffect(userId, interaction.guild?.id, 'coin_boost');
-      if (boost) earnings = Math.floor(earnings * 1.5);
-
-      addCoins(userId, earnings);
-      setCooldown(userId, `job_${job.id}`);
-
-      const task        = job.tasks[Math.floor(Math.random() * job.tasks.length)];
-      const isHighPay   = earnings >= job.max * 0.8;
-      const nextTs      = Math.floor((Date.now() + job.cooldownMs) / 1000);
-
-      return interaction.reply({ embeds: [new EmbedBuilder()
-        .setColor(isHighPay ? 0xFFD700 : 0x2ECC71)
-        .setTitle(`${isHighPay ? '🤑' : '✅'}  Shift Complete — ${job.emoji} ${job.name}`)
-        .setDescription(`> You ${task}.\n\u200b`)
-        .addFields(
-          { name: '💸 Earned',      value: `**${fmt(earnings)}** coins${boost ? ' 💰' : ''}`, inline: true },
-          { name: '💰 Balance',     value: `**${fmt(getBalance(userId))}** coins`, inline: true },
-          { name: '⏱️ Next Shift',  value: `<t:${nextTs}:R>`,                    inline: true },
-        )
-        .setFooter({ text: `${job.emoji} ${job.name}  •  Check /jobs list for all cooldowns${boost ? '  •  💰 Coin Boost active' : ''}` })
-        .setTimestamp()] });
-    }
+    await interaction.reply({
+      embeds:     [buildJobsEmbed(userId, guildId)],
+      components: buildJobsRows(userId),
+    });
   },
 };
