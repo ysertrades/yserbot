@@ -443,108 +443,33 @@ function renderBlackjackTablePng({
   return PNG.sync.write(png);
 }
 
-function _drawCrown(png, cx, cy, scale, col) {
-  const s = scale;
-  const base = [Math.round(col[0] * 0.7), Math.round(col[1] * 0.7), Math.round(col[2] * 0.3), 255];
-  _fillRect(png, Math.round(cx - 48 * s), Math.round(cy + 20 * s), Math.round(96 * s), Math.round(14 * s), base);
-  _line(png, Math.round(cx - 38 * s), Math.round(cy + 20 * s), Math.round(cx - 52 * s), Math.round(cy - 12 * s), base, Math.max(1, Math.round(7 * s)));
-  _line(png, cx, Math.round(cy + 20 * s), cx, Math.round(cy - 30 * s), base, Math.max(1, Math.round(7 * s)));
-  _line(png, Math.round(cx + 38 * s), Math.round(cy + 20 * s), Math.round(cx + 52 * s), Math.round(cy - 12 * s), base, Math.max(1, Math.round(7 * s)));
-  _dot(png, Math.round(cx - 52 * s), Math.round(cy - 14 * s), Math.max(1, Math.round(8 * s)), col);
-  _dot(png, cx, Math.round(cy - 32 * s), Math.max(1, Math.round(10 * s)), col);
-  _dot(png, Math.round(cx + 52 * s), Math.round(cy - 14 * s), Math.max(1, Math.round(8 * s)), col);
-  _dot(png, Math.round(cx - 52 * s), Math.round(cy - 14 * s), Math.max(1, Math.round(4 * s)), [180, 80, 20, 255]);
-  _dot(png, cx, Math.round(cy - 32 * s), Math.max(1, Math.round(5 * s)), [200, 60, 30, 255]);
-  _dot(png, Math.round(cx + 52 * s), Math.round(cy - 14 * s), Math.max(1, Math.round(4 * s)), [180, 80, 20, 255]);
-}
-
-function _drawEagle(png, cx, cy, scale, col) {
-  const s = scale;
-  const dark  = [Math.round(col[0] * 0.65), Math.round(col[1] * 0.65), Math.round(col[2] * 0.65), 255];
-  const talon = [200, 155, 40, 255];
-  _dot(png, cx, Math.round(cy + 6 * s), Math.max(1, Math.round(15 * s)), dark);
-  _dot(png, cx, Math.round(cy + 6 * s), Math.max(1, Math.round(8 * s)), col);
-  _dot(png, Math.round(cx + 4 * s), Math.round(cy - 20 * s), Math.max(1, Math.round(11 * s)), col);
-  _dot(png, Math.round(cx + 7 * s), Math.round(cy - 20 * s), Math.max(1, Math.round(6 * s)), [Math.min(255, col[0] + 30), Math.min(255, col[1] + 30), Math.min(255, col[2] + 30), 255]);
-  _fillRect(png, Math.round(cx + 14 * s), Math.round(cy - 24 * s), Math.max(1, Math.round(11 * s)), Math.max(1, Math.round(5 * s)), talon);
-  _line(png, Math.round(cx - 8 * s), Math.round(cy - 2 * s), Math.round(cx - 68 * s), Math.round(cy - 18 * s), col,  Math.max(1, Math.round(5 * s)));
-  _line(png, Math.round(cx - 8 * s), Math.round(cy + 4 * s), Math.round(cx - 63 * s), Math.round(cy + 10 * s), dark, Math.max(1, Math.round(5 * s)));
-  _line(png, Math.round(cx - 8 * s), Math.round(cy + 10 * s), Math.round(cx - 55 * s), Math.round(cy + 30 * s), dark, Math.max(1, Math.round(4 * s)));
-  _line(png, Math.round(cx + 8 * s), Math.round(cy - 2 * s), Math.round(cx + 68 * s), Math.round(cy - 18 * s), col,  Math.max(1, Math.round(5 * s)));
-  _line(png, Math.round(cx + 8 * s), Math.round(cy + 4 * s), Math.round(cx + 63 * s), Math.round(cy + 10 * s), dark, Math.max(1, Math.round(5 * s)));
-  _line(png, Math.round(cx + 8 * s), Math.round(cy + 10 * s), Math.round(cx + 55 * s), Math.round(cy + 30 * s), dark, Math.max(1, Math.round(4 * s)));
-  _line(png, Math.round(cx - 10 * s), Math.round(cy + 20 * s), Math.round(cx - 22 * s), Math.round(cy + 46 * s), col, Math.max(1, Math.round(4 * s)));
-  _line(png, cx, Math.round(cy + 20 * s), cx, Math.round(cy + 50 * s), col, Math.max(1, Math.round(4 * s)));
-  _line(png, Math.round(cx + 10 * s), Math.round(cy + 20 * s), Math.round(cx + 22 * s), Math.round(cy + 46 * s), col, Math.max(1, Math.round(4 * s)));
-  _line(png, Math.round(cx - 14 * s), Math.round(cy + 20 * s), Math.round(cx - 28 * s), Math.round(cy + 33 * s), talon, Math.max(1, Math.round(3 * s)));
-  _line(png, Math.round(cx + 14 * s), Math.round(cy + 20 * s), Math.round(cx + 28 * s), Math.round(cy + 33 * s), talon, Math.max(1, Math.round(3 * s)));
-}
-
 function renderCoinflipPng(choice, result) {
   const W = 900; const H = 420;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   _fillRect(png, 0, 0, W, H, [18, 24, 38, 255]);
 
-  // Border frame (unchanged)
   for (let i = 0; i < 7; i++) _rect(png, 24 + i, 24 + i, W - 48 - (i * 2), H - 48 - (i * 2), [44 + i * 16, 62 + i * 10, 96 + i * 6, 255], 1);
 
   const won = choice === result;
-  const isHeads = result === 'heads';
-  const cx = Math.floor(W / 2), cy = Math.floor(H / 2) + 8;
+  const centerX = Math.floor(W / 2);
+  const centerY = Math.floor(H / 2) + 8;
+  const ring = result === 'heads' ? [241, 196, 15, 255] : [149, 165, 166, 255];
+  const fill = result === 'heads' ? [252, 243, 207, 255] : [236, 240, 241, 255];
+  _dot(png, centerX, centerY, 106, ring);
+  _dot(png, centerX, centerY, 94, fill);
+  _dot(png, centerX, centerY, 72, won ? [46, 204, 113, 255] : [231, 76, 60, 255]);
+  _dot(png, centerX, centerY, 54, [255, 255, 255, 255]);
 
-  // Coin palette: gold for heads, silver for tails
-  const ring  = isHeads ? [212, 175, 55, 255]  : [155, 168, 180, 255];
-  const face  = isHeads ? [238, 210, 95, 255]   : [198, 210, 220, 255];
-  const inner = isHeads ? [248, 228, 138, 255]  : [222, 232, 240, 255];
-  const glow  = won     ? [46, 204, 113, 255]   : [231, 76, 60, 255];
-
-  // Win/loss glow ring (drawn first so coin body covers the inside)
-  for (let r = 116; r >= 107; r--) {
-    const alpha = Math.round(200 * (1 - (r - 107) / 9));
-    for (let a = 0; a < 3600; a++) {
-      const ang = (a / 3600) * 2 * Math.PI;
-      _setPx(png, Math.round(cx + Math.cos(ang) * r), Math.round(cy + Math.sin(ang) * r), [glow[0], glow[1], glow[2], alpha]);
-    }
-  }
-
-  // Coin body layers
-  _dot(png, cx, cy, 105, ring);
-  _dot(png, cx, cy, 95, face);
-  _dot(png, cx, cy, 83, inner);
-
-  // Engraved border ring on coin face
-  const darkRing = [Math.round(ring[0] * 0.6), Math.round(ring[1] * 0.6), Math.round(ring[2] * 0.3), 255];
-  for (let a = 0; a < 3600; a++) {
-    const ang = (a / 3600) * 2 * Math.PI;
-    _setPx(png, Math.round(cx + Math.cos(ang) * 88), Math.round(cy + Math.sin(ang) * 88), darkRing);
-    _setPx(png, Math.round(cx + Math.cos(ang) * 89), Math.round(cy + Math.sin(ang) * 89), darkRing);
-  }
-
-  // Coin face: crown (heads) or eagle (tails)
-  if (isHeads) {
-    _drawCrown(png, cx, cy, 1.0, ring);
-  } else {
-    _drawEagle(png, cx, cy, 1.0, inner);
-  }
-
-  // Side panels (win/loss color, unchanged positions)
   const sideColor = won ? [46, 204, 113, 255] : [231, 76, 60, 255];
-  _fillRect(png, 60, 155, 155, 96, sideColor);
-  _fillRect(png, W - 215, 155, 155, 96, sideColor);
+  _fillRect(png, 90, 160, 170, 90, sideColor);
+  _fillRect(png, W - 260, 160, 170, 90, sideColor);
 
-  // Left panel icon — choice side
-  if (choice === 'heads') {
-    _drawCrown(png, 138, 203, 0.38, [255, 255, 255, 255]);
-  } else {
-    _drawEagle(png, 138, 203, 0.38, [255, 255, 255, 255]);
-  }
-
-  // Right panel icon — opposite side
-  if (choice !== 'heads') {
-    _drawCrown(png, W - 215 + 78, 203, 0.38, [255, 255, 255, 255]);
-  } else {
-    _drawEagle(png, W - 215 + 78, 203, 0.38, [255, 255, 255, 255]);
-  }
+  const leftIsChoice = choice === 'heads';
+  const leftSuit = leftIsChoice ? '♥️' : '♣️';
+  const rightSuit = leftIsChoice ? '♣️' : '♥️';
+  _drawSuit(png, leftSuit, 175, 205, 1.4);
+  _drawSuit(png, rightSuit, W - 175, 205, 1.4);
+  _drawSuit(png, result === 'heads' ? '♥️' : '♠️', centerX, centerY, 2.5);
 
   return PNG.sync.write(png);
 }
@@ -742,83 +667,131 @@ function rouletteResult(spin, betType, betValue) {
   }
 }
 
-function renderRoulettePng(num) {
-  const W = 980, H = 560;
+function renderRouletteWheel(num, color) {
+  const colorEmoji = color === 'red' ? '🔴' : color === 'black' ? '⚫' : '🟢';
+  const rows = ['```', '╔════════════════════════════════════╗', `║  🎡 EURO TABLE   BALL: ${colorEmoji} ${String(num).padStart(2, '0')}       ║`, '╠════════════════════════════════════╣'];
+  const neighbors = [];
+  for (let i = -3; i <= 3; i++) {
+    const n = ((num + i) % 37 + 37) % 37;
+    const c = n === 0 ? '🟢' : ROULETTE_RED.has(n) ? '🔴' : '⚫';
+    neighbors.push(i === 0 ? `[${c}${String(n).padStart(2, '0')}]` : ` ${c}${String(n).padStart(2, '0')}`);
+  }
+  rows.push(`║ TRACK:${neighbors.join('')} ║`);
+  rows.push('╚════════════════════════════════════╝', '```');
+  return rows.join('\n');
+}
+
+function renderRoulettePng({ num, color, won }) {
+  const W = 980, H = 460;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  const bg = [16, 22, 34, 255];
+
+  // ── Background ──────────────────────────────────────────────────────────────
   for (let y = 0; y < H; y++)
-    for (let x = 0; x < W; x++) _setPx(png, x, y, bg);
+    for (let x = 0; x < W; x++) _setPx(png, x, y, [12, 17, 28, 255]);
 
-  // European roulette wheel number order (clockwise from top)
-  const WHEEL_ORDER = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-  const N = WHEEL_ORDER.length; // 37
-  const segAngle = (2 * Math.PI) / N;
-  const winIdx = WHEEL_ORDER.indexOf(num);
+  // Subtle horizontal grid lines on right panel only
+  for (let gy = 80; gy < H - 20; gy += 60)
+    for (let gx = 500; gx < W - 10; gx++) _setPx(png, gx, gy, [22, 30, 46, 255]);
 
-  const cx = Math.floor(W / 2), cy = Math.floor(H / 2);
-  const outerR = 265, rimW = 18, innerR = 108;
+  // ── European wheel pocket sequence (clockwise, 0 at 12 o'clock) ─────────────
+  const WHEEL  = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+  const N      = 37;
+  const SLICE  = (2 * Math.PI) / N;
+  const winIdx = WHEEL.indexOf(num);
+  const GOLD   = [200, 165, 55, 255];
+  const cx = 230, cy = 230; // wheel centre on the image
 
-  for (let py = 0; py < H; py++) {
-    for (let px = 0; px < W; px++) {
+  // ── Wheel pixels ────────────────────────────────────────────────────────────
+  for (let py = cy - 215; py <= cy + 215; py++) {
+    for (let px = cx - 215; px <= cx + 215; px++) {
+      if (px < 0 || px >= 490 || py < 0 || py >= H) continue;
       const dx = px - cx, dy = py - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > outerR) continue;
+      const d  = Math.sqrt(dx * dx + dy * dy);
+      if (d > 212) continue;
 
-      // Outer gold rim
-      if (dist > outerR - rimW) {
-        const t = (dist - (outerR - rimW)) / rimW;
-        _setPx(png, px, py, [Math.round(200 - 30 * t), Math.round(162 - 22 * t), Math.round(52 - 16 * t), 255]);
-        continue;
-      }
+      if (d > 200) { _setPx(png, px, py, GOLD); continue; }                      // outer gold rim
+      if (d > 188) { _setPx(png, px, py, [16, 20, 32, 255]); continue; }         // ball track
+      if (d > 182) { _setPx(png, px, py, GOLD); continue; }                      // outer fret strip
+      if (d < 72)  { _setPx(png, px, py, [14, 18, 28, 255]); continue; }         // hub centre
+      if (d < 80)  { _setPx(png, px, py, GOLD); continue; }                      // hub ring
 
-      // Dark inner hub
-      if (dist < innerR) {
-        _setPx(png, px, py, [dist < innerR - 22 ? 30 : 26, dist < innerR - 22 ? 38 : 32, dist < innerR - 22 ? 54 : 46, 255]);
-        continue;
-      }
+      // Pocket region (80 ≤ d ≤ 182) — determine pocket index from angle
+      let cw = Math.atan2(dy, dx) + Math.PI / 2;
+      if (cw < 0) cw += 2 * Math.PI;
+      else if (cw >= 2 * Math.PI) cw -= 2 * Math.PI;
 
-      // Segment angle (0 at top, clockwise)
-      let angle = Math.atan2(dy, dx);
-      if (angle < 0) angle += 2 * Math.PI;
-      angle = (angle - Math.PI / 2 + 2 * Math.PI) % (2 * Math.PI);
-      const segIdx = Math.floor(angle / segAngle) % N;
-      const segNum = WHEEL_ORDER[segIdx];
-      const isWin  = segIdx === winIdx;
+      const pIdx = Math.floor(cw / SLICE) % N;
+      const frac = (cw - pIdx * SLICE) / SLICE;
+      if (frac < 0.05 || frac > 0.95) { _setPx(png, px, py, GOLD); continue; }  // pocket dividers
 
-      // Gold divider lines between pockets
-      const relAngle = angle - segIdx * segAngle;
-      if (relAngle < 0.022 || relAngle > segAngle - 0.022) {
-        _setPx(png, px, py, [185, 150, 48, 210]);
-        continue;
-      }
-
-      // Pocket color — winning pocket is noticeably brighter
-      let c;
-      if (segNum === 0) {
-        c = isWin ? [56, 230, 118, 255] : [26, 150, 72, 255];
-      } else if (ROULETTE_RED.has(segNum)) {
-        c = isWin ? [255, 78, 68, 255] : [182, 34, 34, 255];
-      } else {
-        c = isWin ? [86, 88, 110, 255] : [21, 23, 36, 255];
-      }
-      _setPx(png, px, py, c);
+      const n = WHEEL[pIdx], isWin = (n === num);
+      let pc;
+      if (n === 0)                  pc = isWin ? [38, 220, 105, 255] : [15, 105, 45, 255];
+      else if (ROULETTE_RED.has(n)) pc = isWin ? [255, 72, 72, 255]  : [148, 28, 28, 255];
+      else                          pc = isWin ? [115, 120, 135, 255] : [20, 22, 30, 255];
+      _setPx(png, px, py, pc);
     }
   }
 
-  // Inner hub rim ring
-  for (let a = 0; a < 3600; a++) {
-    const ang = (a / 3600) * 2 * Math.PI;
-    _setPx(png, Math.round(cx + Math.cos(ang) * innerR),       Math.round(cy + Math.sin(ang) * innerR),       [188, 152, 48, 255]);
-    _setPx(png, Math.round(cx + Math.cos(ang) * (innerR + 1)), Math.round(cy + Math.sin(ang) * (innerR + 1)), [188, 152, 48, 255]);
+  // ── Ball on ball track at winning pocket ────────────────────────────────────
+  const bAng = (winIdx + 0.5) * SLICE - Math.PI / 2;
+  const bx = Math.round(cx + Math.cos(bAng) * 194);
+  const by = Math.round(cy + Math.sin(bAng) * 194);
+  _dot(png, bx, by, 10, [255, 255, 255, 255]);
+  _dot(png, bx, by,  7, [241, 196, 15, 255]);
+  _dot(png, bx, by,  3, [255, 255, 255, 255]);
+
+  // ── Panel separator ─────────────────────────────────────────────────────────
+  for (let sy = 18; sy < H - 18; sy++) _setPx(png, 488, sy, [42, 56, 80, 255]);
+
+  // ── Right panel ─────────────────────────────────────────────────────────────
+
+  // Large result ball — shows landing colour with win/loss glow ring
+  const rcx = 735, rcy = 150;
+  const glowC = won ? [46, 204, 113, 255] : [231, 76, 60, 255];
+  const ringC = color === 'green' ? [30, 200, 90, 255]
+              : color === 'red'   ? [215, 52, 52, 255]
+              :                     [72, 76, 92, 255];
+  const fillC = color === 'green' ? [14, 106, 48, 255]
+              : color === 'red'   ? [126, 22, 22, 255]
+              :                     [30, 32, 46, 255];
+  _dot(png, rcx, rcy, 90, glowC);
+  _dot(png, rcx, rcy, 83, ringC);
+  _dot(png, rcx, rcy, 67, fillC);
+  _dot(png, rcx, rcy, 18, [255, 255, 255, 255]);
+  _dot(png, rcx, rcy,  9, [12, 17, 28, 255]);
+
+  // Neighbourhood track — 7 pockets surrounding the winner
+  const TY = 328, TX0 = 543, TGAP = 64;
+  for (let i = 0; i < 7; i++) {
+    const ni = ((winIdx + (i - 3)) % N + N) % N;
+    const nn = WHEEL[ni], isCenter = (i === 3);
+    const tcx = TX0 + i * TGAP, tRad = isCenter ? 25 : 17;
+    let tc;
+    if (nn === 0)                  tc = isCenter ? [38, 220, 105, 255] : [14, 110, 48, 255];
+    else if (ROULETTE_RED.has(nn)) tc = isCenter ? [255, 72, 72, 255]  : [160, 28, 28, 255];
+    else                           tc = isCenter ? [115, 120, 135, 255] : [28, 28, 40, 255];
+    _dot(png, tcx, TY, tRad, tc);
+    // Gold ring around the winning centre pocket
+    if (isCenter) {
+      for (let a = 0; a < 360; a += 2) {
+        const gx = Math.round(tcx + Math.cos(a * Math.PI / 180) * (tRad + 6));
+        const gy = Math.round(TY  + Math.sin(a * Math.PI / 180) * (tRad + 6));
+        if (gx >= 0 && gx < W && gy >= 0 && gy < H) _setPx(png, gx, gy, GOLD);
+      }
+    }
   }
 
-  // White ball on the winning pocket
-  const ballAng  = ((winIdx + 0.5) * segAngle) - Math.PI / 2;
-  const ballDist = innerR + (outerR - rimW - innerR) * 0.52;
-  const bx = Math.round(cx + Math.cos(ballAng) * ballDist);
-  const by = Math.round(cy + Math.sin(ballAng) * ballDist);
-  _dot(png, bx, by, 14, [255, 255, 255, 255]);
-  _dot(png, bx - 4, by - 4, 4, [242, 242, 242, 255]);
+  // Win/loss result bar
+  _fillRect(png, 506, 385, 455, 58, won ? [26, 150, 74, 255] : [176, 36, 36, 255]);
+  _rect(png, 506, 385, 455, 58, [255, 255, 255, 255], 1);
+  if (won) {
+    _line(png, 536, 415, 558, 435, [255, 255, 255, 255], 4);
+    _line(png, 558, 435, 595, 400, [255, 255, 255, 255], 4);
+  } else {
+    _line(png, 534, 397, 590, 437, [255, 255, 255, 255], 4);
+    _line(png, 534, 437, 590, 397, [255, 255, 255, 255], 4);
+  }
 
   return PNG.sync.write(png);
 }
@@ -897,7 +870,7 @@ module.exports = {
   generateCrashPoint, tickMultiplier, renderCrashChart, TICK_MS, TICK_GROWTH,
   HORSES, TURTLES, runRace, renderRaceTrack,
   generateChart, resolveTradeWithChart, RR_REWARD, RR_MULTIPLIER,
-  spinRoulette, rouletteResult, renderRoulettePng, ROULETTE_RED, ROULETTE_BLACK,
+  spinRoulette, rouletteResult, renderRouletteWheel, renderRoulettePng, ROULETTE_RED, ROULETTE_BLACK,
   WHEEL_SEGMENTS, spinWheel, renderWheelDisplay,
   DICE_FACES, rollDie, randomDiceOdds, playDiceVsBot,
 };
