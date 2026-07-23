@@ -9,6 +9,7 @@ const {
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
+const { getEffect } = require('../utils/effectsManager');
 const { getSession, updateSession, tryLock, unlock } = require('../casino/sessions');
 const { getSettings } = require('../casino/settings');
 const { readJson, writeJson } = require('../utils/jsonStorage');
@@ -41,6 +42,14 @@ function recordWheelSpin(userId) {
 
 const fmt  = n => Number(n).toLocaleString();
 const wait = ms => new Promise(r => setTimeout(r, ms));
+
+// Applies the coin_boost shop effect: adds 50% of the profit on top of the payout.
+// payout > bet means a real win; push/loss are returned unchanged.
+function _applyBoost(payout, bet, userId, guildId) {
+  if (payout <= bet) return payout;
+  if (!getEffect(userId, guildId, 'coin_boost')) return payout;
+  return payout + Math.floor((payout - bet) * 0.5);
+}
 
 // Global map for live crash sessions (userId → { interval, message, state })
 if (!global.crashSessions) global.crashSessions = new Map();
@@ -482,7 +491,8 @@ async function resolveCoinflip(interaction, s, choice) {
   await wait(750);
 
   const result = engine.coinflip(choice);
-  const payout = result.won ? s.bet * 2 : 0;
+  let payout = result.won ? s.bet * 2 : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
@@ -545,7 +555,8 @@ async function startSlots(interaction, s) {
   // Reveal reel 3 + result
   await wait(900);
 
-  const payout = result.won ? Math.floor(s.bet * result.mult) : 0;
+  let payout = result.won ? Math.floor(s.bet * result.mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
@@ -675,7 +686,7 @@ async function handleCrashCashOut(interaction) {
   global.crashSessions.delete(cs.userId);
 
   const cashOutMult = engine.tickMultiplier(cs.tick);
-  const payout      = Math.floor(cs.bet * cashOutMult);
+  let payout        = _applyBoost(Math.floor(cs.bet * cashOutMult), cs.bet, cs.userId, interaction.guild?.id);
   addCoins(cs.userId, payout);
   const delta  = payout - cs.bet;
   const newBal = getBalance(cs.userId);
@@ -757,7 +768,8 @@ async function runRaceGame(interaction, s) {
   const { winnerIdx, progress } = engine.runRace(racers);
   const won = winnerIdx === picked;
 
-  const payout = won ? Math.floor(s.bet * mult) : 0;
+  let payout = won ? Math.floor(s.bet * mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
@@ -964,6 +976,7 @@ async function finishBJ(interaction, s, state) {
   if (main === 'blackjack') payout += Math.floor(s.bet * 2.5);
   else if (main === 'win' || main === 'dealer_bust') payout += s.bet * 2;
   else if (main === 'push') payout += s.bet;
+  payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
 
   let splitPayout = 0;
   const splitBet = s.splitBet || 0;
@@ -972,6 +985,7 @@ async function finishBJ(interaction, s, state) {
     if (sp === 'blackjack' || sp === 'win' || sp === 'dealer_bust') splitPayout += splitBet * 2;
     else if (sp === 'push') splitPayout += splitBet;
   }
+  splitPayout = _applyBoost(splitPayout, splitBet, s.userId, interaction.guild?.id);
 
   let insurancePayout = 0;
   const insuranceBet  = s.insuranceBet || 0;
@@ -1103,7 +1117,7 @@ async function resolveDiceVsBot(interaction, s) {
   const result = engine.playDiceVsBot(odds);
   let payout = 0;
   if (result.push)     payout = s.bet;
-  else if (result.won) payout = Math.floor(s.bet * odds);
+  else if (result.won) payout = _applyBoost(Math.floor(s.bet * odds), s.bet, s.userId, interaction.guild?.id);
   if (payout > 0) addCoins(s.userId, payout);
   const delta  = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
@@ -1198,7 +1212,8 @@ async function resolveRoulette(interaction, s) {
   const { betType, betValue } = s.rouletteState;
   const spin    = engine.spinRoulette();
   const result  = engine.rouletteResult(spin, betType, betValue);
-  const payout  = result.won ? Math.floor(s.bet * result.mult) : 0;
+  let payout  = result.won ? Math.floor(s.bet * result.mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
   if (payout > 0) addCoins(s.userId, payout);
   const delta   = payout - s.bet;
   const newBal  = getBalance(s.userId);
@@ -1276,7 +1291,8 @@ async function resolveWheel(interaction, s) {
   await wait(1500);
 
   const segment = engine.spinWheel();
-  const payout  = segment.mult > 0 ? Math.floor(s.bet * segment.mult) : 0;
+  let payout  = segment.mult > 0 ? Math.floor(s.bet * segment.mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
   if (payout > 0) addCoins(s.userId, payout);
   const delta   = payout - s.bet;
   const newBal  = getBalance(s.userId);
@@ -1319,7 +1335,8 @@ async function resolveTrading(interaction, s, direction, rr) {
       components: [afterRow()],
     });
   }
-  const payout = res.won ? s.bet * res.multiplier : 0;
+  let payout = res.won ? s.bet * res.multiplier : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
