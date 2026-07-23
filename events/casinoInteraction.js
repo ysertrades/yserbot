@@ -122,6 +122,22 @@ async function handleButton(interaction) {
   if (type === 'again') {
     const s = getSession(interaction.user.id);
     if (!s || !s.game || !s.bet) return expired(interaction);
+
+    // Race and roulette still need the user to pick a racer / bet-type before
+    // committing a stake, so navigate back to the selection screen WITHOUT
+    // deducting coins here — the normal betamt handler deducts when confirmed.
+    if (s.game === 'horse' || s.game === 'turtle') {
+      updateSession(s.userId, { raceState: null });
+      await interaction.deferUpdate();
+      return showRacePick(interaction, getSession(s.userId));
+    }
+    if (s.game === 'roulette') {
+      updateSession(s.userId, { rouletteState: null });
+      await interaction.deferUpdate();
+      return showRoulettePick(interaction, getSession(s.userId));
+    }
+
+    // All other games resolve immediately — deduct the bet now.
     if (!hasEnough(s.userId, s.bet))
       return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
     removeCoins(s.userId, s.bet);
@@ -133,10 +149,8 @@ async function handleButton(interaction) {
     if (s.game === 'trading')   return startTrading(interaction, upd);
     if (s.game === 'slots')     return startSlots(interaction, upd);
     if (s.game === 'crash')     return startCrash(interaction, upd);
-    if (s.game === 'horse' || s.game === 'turtle') return showRacePick(interaction, upd);
-    if (s.game === 'wheel')    return resolveWheel(interaction, upd);
-    if (s.game === 'roulette') return showRoulettePick(interaction, upd);
-    if (s.game === 'dice')     return showDiceModeSelect(interaction, upd);
+    if (s.game === 'wheel')     return resolveWheel(interaction, upd);
+    if (s.game === 'dice')      return showDiceModeSelect(interaction, upd);
     return expired(interaction);
   }
 
@@ -248,7 +262,7 @@ async function handleButton(interaction) {
     if (bet < settings.minBet)     return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
     if (bet > settings.maxBet)     return interaction.reply({ content: `❌ Max bet is **${fmt(settings.maxBet)}** coins.`, flags: 64 });
     if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(bal)}**.`, flags: 64 });
-    const cd = checkCooldown(s.userId, 'casino');
+    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
     if (cd > 0)                    return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
     removeCoins(s.userId, bet);
     updateSession(s.userId, { bet, game, bjState: null, tradeState: null, raceState: null });
@@ -412,7 +426,7 @@ async function handleModal(interaction) {
     if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
     if (bet > settings.maxBet) return interaction.reply({ content: `❌ Max bet is **${fmt(settings.maxBet)}** coins.`, flags: 64 });
     if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
-    const cd = checkCooldown(s.userId, 'casino');
+    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
     if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
     removeCoins(s.userId, bet);
     updateSession(s.userId, { bet, game: 'roulette', rouletteState: { betType: 'straight', betValue: num } });
@@ -433,7 +447,7 @@ async function handleModal(interaction) {
   if (bet > settings.maxBet) return interaction.reply({ content: `❌ Max bet is **${fmt(settings.maxBet)}** coins.`, flags: 64 });
   if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
 
-  const cd = checkCooldown(s.userId, 'casino');
+  const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
   if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
 
   removeCoins(s.userId, bet);
@@ -520,6 +534,7 @@ async function resolveCoinflip(interaction, s, choice) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function startSlots(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
   const result = engine.spinSlots();
 
   // ── Animated spin ───────────────────────────────────────────────────────
@@ -581,6 +596,7 @@ async function startSlots(interaction, s) {
 
   if (result.resultType === 'jackpot') embed.setDescription(engine.renderSlotsDisplay(result.reels, [false, false, false]) + '\n🎊 **JACKPOT! You hit the big one!** 🎊');
 
+  unlock(s.userId);
   await interaction.editReply({ embeds: [embed], components: [afterRow()] });
 }
 
@@ -745,6 +761,7 @@ async function showRacePick(interaction, s) {
 }
 
 async function runRaceGame(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
   const isHorse = s.game === 'horse';
   const racers  = isHorse ? engine.HORSES : engine.TURTLES;
   const picked  = (s.racePick ?? 1) - 1; // 0-indexed
@@ -793,6 +810,7 @@ async function runRaceGame(interaction, s) {
     )
     .setFooter({ text: 'YSER Flow Casino' });
 
+  unlock(s.userId);
   await interaction.editReply({ embeds: [embed], components: [afterRow()] });
 }
 
@@ -1208,6 +1226,7 @@ async function showRoulettePick(interaction, s) {
 }
 
 async function resolveRoulette(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
   if (!s.rouletteState?.betType) { unlock(s.userId); return expired(interaction); }
   const { betType, betValue } = s.rouletteState;
   const spin    = engine.spinRoulette();
@@ -1264,11 +1283,14 @@ async function resolveRoulette(interaction, s) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function resolveWheel(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
+
   // ── Daily spin limit ───────────────────────────────────────────────────────
   const { spinsLeft, used } = checkWheelLimit(s.userId);
   if (spinsLeft <= 0) {
     // Refund the bet since we're blocking after coins were already removed
     addCoins(s.userId, s.bet);
+    unlock(s.userId);
     return interaction.editReply({ embeds: [new EmbedBuilder()
       .setColor(0xE74C3C)
       .setTitle('🎰  Wheel of Fortune — Daily Limit Reached')
@@ -1276,6 +1298,10 @@ async function resolveWheel(interaction, s) {
       .addFields({ name: '♻️ Refunded', value: `**${fmt(s.bet)}** coins returned to your balance`, inline: true })
       .setFooter({ text: 'Limit resets at midnight UTC' })], components: [] });
   }
+
+  // Record the spin IMMEDIATELY (before any await) so a concurrent "Play Again"
+  // click can never pass the limit check before this spin is counted.
+  recordWheelSpin(s.userId);
 
   // Spin animation
   const spinEmbed = new EmbedBuilder()
@@ -1296,7 +1322,6 @@ async function resolveWheel(interaction, s) {
   if (payout > 0) addCoins(s.userId, payout);
   const delta   = payout - s.bet;
   const newBal  = getBalance(s.userId);
-  recordWheelSpin(s.userId);
   setCooldown(s.userId, 'casino');
   updateSession(s.userId, {
     lastResult: { label: segment.mult > 1 ? `🟢 ×${segment.mult}` : segment.mult === 1 ? '⚪ Push' : '🔴 Bankrupt', delta },
@@ -1316,6 +1341,7 @@ async function resolveWheel(interaction, s) {
     )
     .setFooter({ text: 'YSER Flow Casino  •  Wheel of Fortune  •  10 spins/day' });
 
+  unlock(s.userId);
   await interaction.editReply({ embeds: [embed], components: [afterRow()] });
 }
 
