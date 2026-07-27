@@ -166,17 +166,17 @@ function _glassPanel(png, px, py, w, h, opts = {}) {
     radius = 18,
     tint = [255, 255, 255],
     tintAlpha = 0.07,
-    tintAlphaBottom = 0.025,
+    // tintAlphaBottom accepted-but-ignored: kept so existing call sites don't
+    // need updating. The panel fill is one flat translucent color (a solid
+    // "gloss" tint), never a top-to-bottom gradient wash.
     border = [255, 255, 255],
     borderAlpha = 0.25,
   } = opts;
 
   for (let y = 0; y < h; y++) {
-    const t = y / h;
-    const a = tintAlpha + (tintAlphaBottom - tintAlpha) * t;
     for (let x = 0; x < w; x++) {
       if (!_roundedMask(w, h, radius, x, y)) continue;
-      _setPxBlend(png, px + x, py + y, tint, a);
+      _setPxBlend(png, px + x, py + y, tint, tintAlpha);
     }
   }
   for (let y = 0; y < h; y++) {
