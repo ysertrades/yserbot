@@ -7,6 +7,7 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const MOD_COMMANDS = [
   'warn', 'ban', 'kick', 'mute', 'unmute', 'unban',
   'purge', 'report', 'warnings', 'clearwarnings', 'warn-settings',
+  'lock', 'unlock',
 ];
 
 const ADMIN_COMMANDS = [

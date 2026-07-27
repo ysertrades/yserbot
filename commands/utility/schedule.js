@@ -57,7 +57,7 @@ module.exports = {
     .setName('schedule').setDescription('Schedule an embed template to be sent automatically')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(sub => sub.setName('create').setDescription('Schedule an embed to be sent')
-      .addStringOption(opt => opt.setName('embed').setDescription('Embed template name').setRequired(true))
+      .addStringOption(opt => opt.setName('embed').setDescription('Embed template name').setRequired(true).setAutocomplete(true))
       .addChannelOption(opt => opt.setName('channel').setDescription('Channel to send to').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
       .addStringOption(opt => opt.setName('time').setDescription('HH:mm, YYYY-MM-DD HH:mm, or relative like 30m/2h/1d').setRequired(true))
       .addStringOption(opt => opt.setName('frequency').setDescription('How often to repeat').setRequired(true)
@@ -66,6 +66,16 @@ module.exports = {
       .addStringOption(opt => opt.setName('timezone').setDescription('UTC offset, e.g. -4 or +5:30 (default: UTC)').setRequired(false)))
     .addSubcommand(sub => sub.setName('list').setDescription('List all scheduled embeds'))
     .addSubcommand(sub => sub.setName('cancel').setDescription('Cancel a schedule — choose from a dropdown')),
+
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused(true);
+    if (focused.name !== 'embed') return interaction.respond([]).catch(() => {});
+    const guildId  = interaction.guild.id;
+    const q        = String(focused.value || '').toLowerCase();
+    const all      = readJson('embeds.json', {});
+    const choices  = Object.keys(all[guildId] || {}).filter(n => n.includes(q)).slice(0, 25).map(n => ({ name: n, value: n }));
+    await interaction.respond(choices).catch(() => {});
+  },
 
   async execute(interaction) {
     const sub       = interaction.options.getSubcommand();

@@ -54,21 +54,51 @@ module.exports = {
     .setDescription('Browse, buy, and use items in the server shop')
     .addSubcommand(sub => sub.setName('browse').setDescription('View all items for sale'))
     .addSubcommand(sub => sub.setName('buy').setDescription('Purchase an item from the shop')
-      .addStringOption(o => o.setName('item').setDescription('Item ID to buy').setRequired(true))
+      .addStringOption(o => o.setName('item').setDescription('Item ID to buy').setRequired(true).setAutocomplete(true))
       .addIntegerOption(o => o.setName('quantity').setDescription('How many to buy').setMinValue(1).setMaxValue(10).setRequired(false)))
     .addSubcommand(sub => sub.setName('inventory').setDescription('View your owned items and active effects'))
     .addSubcommand(sub => sub.setName('use').setDescription('Use/activate an item from your inventory')
-      .addStringOption(o => o.setName('item').setDescription('Item ID to use').setRequired(true)))
+      .addStringOption(o => o.setName('item').setDescription('Item ID to use').setRequired(true).setAutocomplete(true)))
     .addSubcommand(sub => sub.setName('manage').setDescription('Manage the shop (admin only)')
       .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
         .addChoices({ name: '➕ Add Item', value: 'add' }, { name: '🗑️ Remove Item', value: 'remove' }, { name: '📋 View All', value: 'list' }))
-      .addStringOption(o => o.setName('id').setDescription('Item ID (slug, e.g. coin_boost_s)').setRequired(false))
+      .addStringOption(o => o.setName('id').setDescription('Item ID (slug, e.g. coin_boost_s)').setRequired(false).setAutocomplete(true))
       .addStringOption(o => o.setName('name').setDescription('Display name').setRequired(false))
       .addIntegerOption(o => o.setName('price').setDescription('Price in coins').setMinValue(1).setRequired(false))
       .addStringOption(o => o.setName('type').setDescription('Item effect type').setRequired(false)
         .addChoices(...ITEM_TYPES))
       .addStringOption(o => o.setName('emoji').setDescription('Emoji for the item').setRequired(false))
       .addStringOption(o => o.setName('description').setDescription('Item description').setRequired(false))),
+
+  async autocomplete(interaction) {
+    const sub     = interaction.options.getSubcommand();
+    const focused = interaction.options.getFocused(true);
+    const guildId = interaction.guild.id;
+    const q       = String(focused.value || '').toLowerCase();
+    const items   = getShop(guildId);
+    let ids       = [];
+
+    if (sub === 'manage') {
+      const action = interaction.options.getString('action');
+      if (focused.name === 'id' && action === 'remove') ids = Object.keys(items);
+    } else if (focused.name === 'item') {
+      ids = Object.keys(items);
+      if (sub === 'use') {
+        const inv   = getInv(interaction.user.id, guildId);
+        const owned = Object.entries(inv).filter(([, qty]) => qty > 0).map(([itemId]) => itemId);
+        if (owned.length) ids = owned;
+      }
+    }
+
+    const choices = ids
+      .filter(id => id.includes(q))
+      .slice(0, 25)
+      .map(id => {
+        const item = items[id];
+        return { name: (item ? `${item.emoji || '📦'} ${item.name} (${id})` : id).slice(0, 100), value: id };
+      });
+    await interaction.respond(choices).catch(() => {});
+  },
 
   async execute(interaction) {
     const sub     = interaction.options.getSubcommand();

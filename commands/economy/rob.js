@@ -1,8 +1,13 @@
 'use strict';
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { randomInt } = require('node:crypto');
 const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { hasEffect, setEffect } = require('../../utils/effectsManager');
+
+// Secure randomness for the success/failure roll — outcomes that move coins
+// between users should never be derivable from a predictable PRNG.
+const _rand = () => randomInt(0, 1_000_000_000) / 1_000_000_000;
 
 const ROB_COOLDOWN  = 90 * 60 * 1000; // 1.5 hours
 const SUCCESS_RATE  = 0.55;
@@ -74,14 +79,14 @@ module.exports = {
         .setDescription(`<@${target.id}> only has **${fmt(targetBal)}** coins — not worth getting caught for.`)], ephemeral: true });
 
     setCooldown(userId, 'rob');
-    const won = Math.random() < SUCCESS_RATE;
+    const won = _rand() < SUCCESS_RATE;
 
     if (won) {
-      const pct    = 0.10 + Math.random() * 0.20;
+      const pct    = 0.10 + _rand() * 0.20;
       const stolen = Math.min(MAX_STEAL, Math.floor(targetBal * pct));
       removeCoins(target.id, stolen);
       addCoins(userId, stolen);
-      const line = WIN_LINES[Math.floor(Math.random() * WIN_LINES.length)];
+      const line = WIN_LINES[randomInt(WIN_LINES.length)];
 
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0x2ECC71)
@@ -98,7 +103,7 @@ module.exports = {
       const fine      = Math.min(1000, Math.floor(targetBal * 0.05));
       const actualFine = Math.min(fine, getBalance(userId));
       if (actualFine > 0) removeCoins(userId, actualFine);
-      const line = LOSE_LINES[Math.floor(Math.random() * LOSE_LINES.length)];
+      const line = LOSE_LINES[randomInt(LOSE_LINES.length)];
 
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0xE74C3C)

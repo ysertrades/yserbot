@@ -55,6 +55,26 @@ function parseColor(colorInput) {
     return null;
 }
 
+// Strict format check for user-submitted hex colors — used to reject bad
+// input at the point of entry (modals) instead of silently falling back to
+// the default blurple, which used to hide typos from the user.
+function isValidHexColor(input) {
+    if (!input || typeof input !== 'string') return false;
+    return /^#?[0-9A-Fa-f]{6}$/.test(input.trim());
+}
+
+// Loose but useful URL check for image/thumbnail/icon/link fields — requires
+// an http(s) URL so Discord doesn't silently reject the embed/button later.
+function isValidUrl(input) {
+    if (!input || typeof input !== 'string') return false;
+    try {
+        const u = new URL(input.trim());
+        return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
+
 function decorateTitle(type, title) {
     if (!title) return title;
     if (LEADING_EMOJI.test(title)) return title;
@@ -94,4 +114,4 @@ const author = options.author || (guild ? { name: 'YSER Flow', iconURL: guild.ic
 return createEmbed(type, { ...options, footer: footerText, author});
 }
 
-module.exports = { createEmbed, createServerEmbed, colors, parseColor };
+module.exports = { createEmbed, createServerEmbed, colors, parseColor, isValidHexColor, isValidUrl };

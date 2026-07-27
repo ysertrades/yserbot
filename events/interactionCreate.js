@@ -2,10 +2,15 @@
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } = require('discord.js');
 const { createEmbed } = require('../utils/embedBuilder');
-const { readJson }    = require('../utils/jsonStorage');
+const { readJson, writeJson } = require('../utils/jsonStorage');
 
 const embedUtil = { error: (title, desc) => createEmbed('error', { title, description: desc }) };
 const EPHEMERAL_FLAG = 64;
+
+// Per-user, per-button cooldown tracking for stored buttons. In-memory by
+// design (mirrors how lightweight cooldowns are handled elsewhere in the
+// bot) — cooldowns reset on restart, which is an acceptable trade-off.
+const buttonCooldowns = new Map();
 
 function isUnknownInteractionError(err) {
   return err?.code === 10062 || err?.rawError?.code === 10062;
@@ -272,8 +277,8 @@ module.exports = {
           return client.commands.get('poll')?.handleButton(interaction, [], client);
         }
 
-        // Embed editor + delete-selector buttons
-        if (id.startsWith('embed_edit_') || id.startsWith('embed_del')) {
+        // Embed editor + delete-selector + list-pager + preview-send buttons
+        if (id.startsWith('embed_edit_') || id.startsWith('embed_del') || id.startsWith('embed_list:') || id.startsWith('embed_previewsend:')) {
           return client.commands.get('embed')?.handleEmbedButton(interaction);
         }
 
@@ -352,28 +357,76 @@ module.exports = {
         // Casino — skip (handled by casinoInteraction.js)
         if (id.startsWith('cs:')) return;
 
-        // Stored buttons (role / custom)
+        // Stored buttons (role / custom / embed / random)
         const buttons   = readJson('buttons.json', {});
         const btnConfig = (buttons[interaction.guildId] || {})[id];
         if (btnConfig) {
+          // Per-user cooldown — checked up front, but only *consumed* below
+          // once we know the click actually did something. A denied click
+          // (missing prerequisite role, misconfigured button, etc.) must not
+          // burn the user's cooldown window for a benefit they never got.
+          const cdKey = `${interaction.guildId}:${id}:${interaction.user.id}`;
+          if (btnConfig.cooldown) {
+            const last   = buttonCooldowns.get(cdKey) || 0;
+            const remain = (last + btnConfig.cooldown * 1000) - Date.now();
+            if (remain > 0) {
+              return interaction.reply({ content: `⏳ Please wait **${Math.ceil(remain / 1000)}s** before using this button again.`, flags: EPHEMERAL_FLAG });
+            }
+          }
+
+          let success = false; // only true for a genuine, effective action
+
           if (btnConfig.type === 'role' && btnConfig.roleId) {
-            const role   = interaction.guild.roles.cache.get(btnConfig.roleId);
-            if (!role) return interaction.reply({ content: '❌ Role not found.', flags: EPHEMERAL_FLAG });
-            const member = interaction.member;
-            if (member.roles.cache.has(btnConfig.roleId)) {
-              await member.roles.remove(role);
-              return interaction.reply({ content: `✅ Removed **${role.name}**.`, flags: EPHEMERAL_FLAG });
+            const role = interaction.guild.roles.cache.get(btnConfig.roleId);
+            if (!role) {
+              await interaction.reply({ content: '❌ Role not found (it may have been deleted).', flags: EPHEMERAL_FLAG });
             } else {
-              await member.roles.add(role);
-              return interaction.reply({ content: `✅ You now have **${role.name}**.`, flags: EPHEMERAL_FLAG });
+              const member = interaction.member;
+              if (btnConfig.requiredRoleId && !member.roles.cache.has(btnConfig.requiredRoleId)) {
+                const reqRole = interaction.guild.roles.cache.get(btnConfig.requiredRoleId);
+                await interaction.reply({ content: `❌ You need the **${reqRole?.name || 'required'}** role first.`, flags: EPHEMERAL_FLAG });
+              } else {
+                const has  = member.roles.cache.has(btnConfig.roleId);
+                const mode = btnConfig.mode || 'toggle';
+                if (mode === 'give') {
+                  if (has) { await interaction.reply({ content: `ℹ️ You already have **${role.name}**.`, flags: EPHEMERAL_FLAG }); }
+                  else { await member.roles.add(role); await interaction.reply({ content: `✅ You now have **${role.name}**.`, flags: EPHEMERAL_FLAG }); success = true; }
+                } else if (mode === 'remove') {
+                  if (!has) { await interaction.reply({ content: `ℹ️ You don't have **${role.name}**.`, flags: EPHEMERAL_FLAG }); }
+                  else { await member.roles.remove(role); await interaction.reply({ content: `✅ Removed **${role.name}**.`, flags: EPHEMERAL_FLAG }); success = true; }
+                } else if (has) {
+                  await member.roles.remove(role);
+                  await interaction.reply({ content: `✅ Removed **${role.name}**.`, flags: EPHEMERAL_FLAG });
+                  success = true;
+                } else {
+                  await member.roles.add(role);
+                  await interaction.reply({ content: `✅ You now have **${role.name}**.`, flags: EPHEMERAL_FLAG });
+                  success = true;
+                }
+              }
             }
           } else if (btnConfig.type === 'custom') {
-            return interaction.reply({ content: btnConfig.message || '✅', flags: EPHEMERAL_FLAG });
+            await interaction.reply({ content: btnConfig.message || '✅', flags: EPHEMERAL_FLAG });
+            success = true;
           } else if (btnConfig.type === 'embed') {
             const { buildEmbedPayload } = require('../commands/utility/embed');
-            const payload = buildEmbedPayload(interaction.guild, btnConfig.responseEmbedName || btnConfig.embedName);
-            if (!payload) return interaction.reply({ content: '❌ Embed template not found.', flags: EPHEMERAL_FLAG });
-            return interaction.reply({ embeds: payload.embeds, components: payload.components.length ? payload.components : undefined, flags: EPHEMERAL_FLAG });
+            const payload = buildEmbedPayload(interaction.guild, btnConfig.responseEmbedName || btnConfig.embedName, { user: interaction.user, channel: interaction.channel });
+            if (!payload) { await interaction.reply({ content: '❌ Embed template not found.', flags: EPHEMERAL_FLAG }); }
+            else { await interaction.reply({ embeds: payload.embeds, components: payload.components.length ? payload.components : undefined, flags: EPHEMERAL_FLAG }); success = true; }
+          } else if (btnConfig.type === 'random') {
+            const list = (btnConfig.responses || '').split('|').map(s => s.trim()).filter(Boolean);
+            if (list.length === 0) { await interaction.reply({ content: '❌ This button has no responses configured.', flags: EPHEMERAL_FLAG }); }
+            else { await interaction.reply({ content: list[Math.floor(Math.random() * list.length)], flags: EPHEMERAL_FLAG }); success = true; }
+          } else {
+            // Misconfigured (e.g. role type missing its role) — always acknowledge
+            // rather than leaving the interaction to time out looking "failed".
+            await interaction.reply({ content: '❌ This button is misconfigured. Ask an admin to check `/button edit`.', flags: EPHEMERAL_FLAG });
+          }
+
+          if (success) {
+            if (btnConfig.cooldown) buttonCooldowns.set(cdKey, Date.now());
+            btnConfig.uses = (btnConfig.uses || 0) + 1;
+            writeJson('buttons.json', buttons);
           }
           return;
         }
@@ -418,8 +471,8 @@ module.exports = {
     if (interaction.isStringSelectMenu()) {
       const id = interaction.customId;
       try {
-        // Delete / cancel selectors
-        if (id === 'embed_delselect')
+        // Delete / cancel selectors (+ embed field-removal selector)
+        if (id === 'embed_delselect' || id.startsWith('embed_fieldsel_'))
           return client.commands.get('embed')?.handleEmbedSelect(interaction);
         if (id === 'btn_delselect')
           return client.commands.get('button')?.handleButtonSelect(interaction);
