@@ -1,6 +1,11 @@
 'use strict';
 
 const { EmbedBuilder } = require('discord.js');
+const { randomInt } = require('node:crypto');
+
+// Secure randomness — card rarity odds are a "chance to win" mechanic just
+// like the casino games, so they shouldn't be derivable from a predictable PRNG.
+const _rand = () => randomInt(0, 1_000_000_000) / 1_000_000_000;
 
 // ── Rarity config ─────────────────────────────────────────────────────────────
 const RARITY = {
@@ -54,20 +59,20 @@ const TOTAL_WEIGHT = Object.values(RARITY).reduce((s, r) => s + r.weight, 0);
 
 function pickRandomCard(bonusChancePct = 0) {
   // Rarity selection (weighted)
-  let r = Math.random() * TOTAL_WEIGHT;
+  let r = _rand() * TOTAL_WEIGHT;
   let selectedRarity = 'common';
   for (const [key, cfg] of Object.entries(RARITY)) {
     r -= cfg.weight;
     if (r <= 0) { selectedRarity = key; break; }
   }
   // Extra bonus: slight upward rarity nudge if card_magnet active
-  if (bonusChancePct > 0 && Math.random() * 100 < bonusChancePct) {
+  if (bonusChancePct > 0 && _rand() * 100 < bonusChancePct) {
     const rarityOrder = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
     const idx = rarityOrder.indexOf(selectedRarity);
     if (idx < rarityOrder.length - 1) selectedRarity = rarityOrder[idx + 1];
   }
   const pool = CARDS.filter(c => c.rarity === selectedRarity);
-  return pool[Math.floor(Math.random() * pool.length)];
+  return pool[randomInt(pool.length)];
 }
 
 function buildDropEmbed(card, expired = false) {

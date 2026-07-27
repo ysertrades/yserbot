@@ -6,6 +6,7 @@ const {
   EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const { randomInt } = require('node:crypto');
 
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
@@ -415,9 +416,11 @@ module.exports = {
 // ── Pick winners ──────────────────────────────────────────────────────────────
 
 function pickWinners(entrantIds, count) {
+  // Secure shuffle — a giveaway winner pick is a "chance to win" mechanic
+  // just like the casino games and must not be derivable from a predictable PRNG.
   const shuffled = [...entrantIds];
   for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = randomInt(i + 1);
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
   return shuffled.slice(0, count);

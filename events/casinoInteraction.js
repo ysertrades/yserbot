@@ -491,7 +491,7 @@ async function showCoinflipChoice(interaction, s) {
 
 async function resolveCoinflip(interaction, s, choice) {
   const spinName = `coinflip-spin-${s.userId}.png`;
-  const spinResult = Math.random() < 0.5 ? 'heads' : 'tails';
+  const spinResult = engine.coinflip(choice).result; // cosmetic mid-flip frame only — the real outcome is decided independently below
   const spinChart = new AttachmentBuilder(engine.renderCoinflipPng(choice, spinResult), { name: spinName });
   const spinEmbed = new EmbedBuilder()
     .setColor(0x3498db)
@@ -536,38 +536,29 @@ async function resolveCoinflip(interaction, s, choice) {
 async function startSlots(interaction, s) {
   if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
   const result = engine.spinSlots();
+  const slotsImg = (spinning) => {
+    const name = `slots-${s.userId}-${Date.now()}.png`;
+    return { name, file: new AttachmentBuilder(engine.renderSlotsPng(result.reels, spinning), { name }) };
+  };
 
   // ── Animated spin ───────────────────────────────────────────────────────
-  const spinEmbed = () => new EmbedBuilder()
-    .setColor(0x9b59b6)
-    .setTitle('🎰 Slots — Spinning…')
-    .setDescription(engine.renderSlotsDisplay(result.reels, [true, true, true]))
-    .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
-    .setFooter({ text: 'YSER Flow Casino' });
+  const spinFrame = async (spinning) => {
+    const img = slotsImg(spinning);
+    await interaction.editReply({
+      embeds: [new EmbedBuilder().setColor(0x9b59b6).setTitle('🎰 Slots — Spinning…')
+        .setImage(`attachment://${img.name}`)
+        .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+        .setFooter({ text: 'YSER Flow Casino' })],
+      components: [],
+      files: [img.file],
+    });
+  };
 
-  await interaction.editReply({ embeds: [spinEmbed()], components: [] });
-
-  // Reveal reel 1
+  await spinFrame([true, true, true]);
   await wait(900);
-  await interaction.editReply({
-    embeds: [new EmbedBuilder().setColor(0x9b59b6).setTitle('🎰 Slots — Spinning…')
-      .setDescription(engine.renderSlotsDisplay(result.reels, [false, true, true]))
-      .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
-      .setFooter({ text: 'YSER Flow Casino' })],
-    components: [],
-  });
-
-  // Reveal reel 2
+  await spinFrame([false, true, true]);
   await wait(900);
-  await interaction.editReply({
-    embeds: [new EmbedBuilder().setColor(0x9b59b6).setTitle('🎰 Slots — Spinning…')
-      .setDescription(engine.renderSlotsDisplay(result.reels, [false, false, true]))
-      .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
-      .setFooter({ text: 'YSER Flow Casino' })],
-    components: [],
-  });
-
-  // Reveal reel 3 + result
+  await spinFrame([false, false, true]);
   await wait(900);
 
   let payout = result.won ? Math.floor(s.bet * result.mult) : 0;
@@ -581,11 +572,12 @@ async function startSlots(interaction, s) {
   const typeColors = { jackpot: 0xf1c40f, triple: 0x2ecc71, pair: 0x3498db, lose: 0xe74c3c };
 
   const symbolInfo = result.reels.map(r => r.name).join(' · ');
+  const finalImg = slotsImg([false, false, false]);
 
   const embed = new EmbedBuilder()
     .setColor(typeColors[result.resultType] || 0xe74c3c)
     .setTitle(`🎰 Slots — ${typeLabels[result.resultType] || 'No Match'}`)
-    .setDescription(engine.renderSlotsDisplay(result.reels, [false, false, false]))
+    .setImage(`attachment://${finalImg.name}`)
     .addFields(
       { name: '🎯 Result',    value: symbolInfo,                                               inline: false },
       { name: '💸 Bet',       value: `**${fmt(s.bet)}** coins`,                               inline: true  },
@@ -594,10 +586,10 @@ async function startSlots(interaction, s) {
     )
     .setFooter({ text: 'YSER Flow Casino' });
 
-  if (result.resultType === 'jackpot') embed.setDescription(engine.renderSlotsDisplay(result.reels, [false, false, false]) + '\n🎊 **JACKPOT! You hit the big one!** 🎊');
+  if (result.resultType === 'jackpot') embed.setDescription('🎊 **JACKPOT! You hit the big one!** 🎊');
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalImg.file] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -608,18 +600,20 @@ async function startCrash(interaction, s) {
   const crashPoint = engine.generateCrashPoint();
   let tick = 0;
 
-  const buildEmbed = (mult, crashed = false, cashedOut = false, cashOutMult = null) => {
+  const buildPayload = (mult, crashed = false, cashedOut = false, cashOutMult = null) => {
     const color = crashed ? 0xe74c3c : cashedOut ? 0x2ecc71 : 0x3498db;
     const title = crashed    ? `🛩️ Crash — CRASHED at ${mult}x! 💥`
                 : cashedOut  ? `🛩️ Crash — Cashed Out at ${cashOutMult}x! 🎉`
                 :              `🛩️ Crash — Flying at ${mult}x…`;
-    const chart = engine.renderCrashChart(tick, crashed, null, null);
-    return new EmbedBuilder()
+    const imgName = `crash-${s.userId}-${Date.now()}.png`;
+    const file = new AttachmentBuilder(engine.renderCrashChart(tick, crashed), { name: imgName });
+    const embed = new EmbedBuilder()
       .setColor(color)
       .setTitle(title)
-      .setDescription(chart)
+      .setImage(`attachment://${imgName}`)
       .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
       .setFooter({ text: crashed ? '💥 The plane crashed!' : cashedOut ? '✈️ You jumped out in time!' : '✈️ Click Cash Out before it crashes!' });
+    return { embed, file };
   };
 
   const cashOutRow = () => new ActionRowBuilder().addComponents(
@@ -629,7 +623,8 @@ async function startCrash(interaction, s) {
 
   // Initial render
   const initialMult = engine.tickMultiplier(0);
-  await interaction.editReply({ embeds: [buildEmbed(initialMult)], components: [cashOutRow()] });
+  const initialPayload = buildPayload(initialMult);
+  await interaction.editReply({ embeds: [initialPayload.embed], components: [cashOutRow()], files: [initialPayload.file] });
 
   // Store crash session
   const crashState = {
@@ -667,9 +662,11 @@ async function startCrash(interaction, s) {
       updateSession(cs.userId, { lastResult: { label: `💥 CRASH ${cs.crashPoint}x`, delta: -cs.bet } });
 
       try {
+        const payload = buildPayload(cs.crashPoint, true);
         await cs.interaction.editReply({
-          embeds: [buildEmbed(cs.crashPoint, true)],
+          embeds: [payload.embed],
           components: [afterRow()],
+          files: [payload.file],
         });
       } catch {}
       return;
@@ -677,9 +674,11 @@ async function startCrash(interaction, s) {
 
     // Still flying — update embed
     try {
+      const payload = buildPayload(currentMult);
       await cs.interaction.editReply({
-        embeds: [buildEmbed(currentMult)],
+        embeds: [payload.embed],
         components: [cashOutRow()],
+        files: [payload.file],
       });
     } catch { clearInterval(interval); global.crashSessions.delete(cs.userId); }
   }, engine.TICK_MS);
@@ -709,10 +708,12 @@ async function handleCrashCashOut(interaction) {
   setCooldown(cs.userId, 'casino');
   updateSession(cs.userId, { lastResult: { label: `✅ CASH OUT ×${cashOutMult}`, delta } });
 
+  const imgName = `crash-cashout-${cs.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderCrashChart(cs.tick, false), { name: imgName });
   const embed = new EmbedBuilder()
     .setColor(0x2ecc71)
     .setTitle(`🛩️ Crash — Cashed Out! 🎉`)
-    .setDescription(engine.renderCrashChart(cs.tick, false, cs.tick, null))
+    .setImage(`attachment://${imgName}`)
     .addFields(
       { name: '⚡ Multiplier', value: `**${cashOutMult}x**`,           inline: true },
       { name: '💸 Bet',        value: `**${fmt(cs.bet)}** coins`,       inline: true },
@@ -722,7 +723,7 @@ async function handleCrashCashOut(interaction) {
     )
     .setFooter({ text: 'YSER Flow Casino' });
 
-  await interaction.update({ embeds: [embed], components: [afterRow()] });
+  await interaction.update({ embeds: [embed], components: [afterRow()], files: [file] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -768,16 +769,14 @@ async function runRaceGame(interaction, s) {
   const mult    = isHorse ? 4.5 : 2.8;
 
   // Animate: show all at start line
+  const startImgName = `race-start-${s.userId}.png`;
+  const startFile = new AttachmentBuilder(engine.renderRaceTrack(racers, racers.map(() => 0), -1, picked), { name: startImgName });
   const startEmbed = new EmbedBuilder()
     .setColor(isHorse ? 0xe67e22 : 0x27ae60)
     .setTitle(`${isHorse ? '🐎' : '🐢'} ${isHorse ? 'Horse' : 'Turtle'} Race — On your marks…`)
-    .setDescription(engine.renderRaceTrack(
-      racers,
-      racers.map(() => 0),
-      -1, picked,
-    ))
+    .setImage(`attachment://${startImgName}`)
     .setFooter({ text: 'YSER Flow Casino' });
-  await interaction.editReply({ embeds: [startEmbed], components: [] });
+  await interaction.editReply({ embeds: [startEmbed], components: [], files: [startFile] });
 
   await wait(1200);
 
@@ -797,10 +796,12 @@ async function runRaceGame(interaction, s) {
   const winner     = racers[winnerIdx];
   const pickedRacer = racers[picked];
 
+  const finalImgName = `race-final-${s.userId}.png`;
+  const finalFile = new AttachmentBuilder(engine.renderRaceTrack(racers, progress, winnerIdx, picked), { name: finalImgName });
   const embed = new EmbedBuilder()
     .setColor(won ? 0x2ecc71 : 0xe74c3c)
     .setTitle(`${isHorse ? '🐎' : '🐢'} ${isHorse ? 'Horse' : 'Turtle'} Race — ${won ? `${pickedRacer.name} Wins! 🎉` : `${winner.name} Wins!`}`)
-    .setDescription(engine.renderRaceTrack(racers, progress, winnerIdx, picked))
+    .setImage(`attachment://${finalImgName}`)
     .addFields(
       { name: '🏆 Winner',   value: `#${winner.id} ${winner.emoji} **${winner.name}**`,          inline: true },
       { name: '🎯 Your Pick', value: `#${pickedRacer.id} ${pickedRacer.emoji} **${pickedRacer.name}**`, inline: true },
@@ -811,7 +812,7 @@ async function runRaceGame(interaction, s) {
     .setFooter({ text: 'YSER Flow Casino' });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalFile] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -828,15 +829,19 @@ async function startBlackjack(interaction, s) {
 }
 
 async function renderInsurance(interaction, s, state) {
+  const imgName = `bj-insurance-${s.userId}.png`;
+  const file = new AttachmentBuilder(engine.renderBlackjackTablePng({ dealer: state.dealer, player: state.player, hideDealerHole: true }), { name: imgName });
   const embed = new EmbedBuilder()
     .setColor(0xe67e22)
     .setTitle('🛡️ Blackjack — Insurance?')
+    .setImage(`attachment://${imgName}`)
     .setDescription(
-      `\`\`\`\nDEALER — ${state.dealer[0].r} + ?\n${engine.renderHandArt(state.dealer, [1])}\n\nYOU — ${engine.handVal(state.player)}\n${engine.renderHandArt(state.player)}\n\`\`\`` +
-      `\nDealer may have Blackjack. Take **insurance** for half your bet (**${fmt(Math.floor(s.bet / 2))}** coins)?\n` +
+      `Dealer may have Blackjack. Take **insurance** for half your bet (**${fmt(Math.floor(s.bet / 2))}** coins)?\n` +
       `Insurance pays **2:1** if dealer has Blackjack.`,
     )
     .addFields(
+      { name: '🂠 Dealer', value: `${state.dealer[0].r}${state.dealer[0].s} + ❓`, inline: true },
+      { name: '🃏 Your Hand', value: `${engine.hStr(state.player)} — **${engine.handVal(state.player)}**`, inline: true },
       { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino' });
@@ -844,7 +849,7 @@ async function renderInsurance(interaction, s, state) {
     new ButtonBuilder().setCustomId('cs:bj:insurance_yes').setLabel('🛡️ Take Insurance').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:bj:insurance_no').setLabel('❌ No Thanks').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [file] });
 }
 
 async function renderBJ(interaction, s, state, initial = false) {
@@ -871,24 +876,29 @@ async function renderBJ(interaction, s, state, initial = false) {
   const canSplitNow  = engine.canSplit(state) && initial && hasEnough(s.userId, s.bet);
   const canSurrender = !state.playingSplit && state.player.length === 2 && !state.splitHand;
 
-  const dealerArt = engine.renderHandArt(state.dealer, [1]);
-  let desc;
+  const imgName = `bj-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderBlackjackTablePng({
+    dealer: state.dealer, player: state.player, splitHand: state.splitHand,
+    hideDealerHole: true, playingSplit: state.playingSplit,
+  }), { name: imgName });
+
+  const handFields = [{ name: '🂠 Dealer', value: `${state.dealer[0].r}${state.dealer[0].s} + ❓`, inline: true }];
   if (state.splitHand) {
-    const h1Art = engine.renderHandArt(state.player);
-    const h2Art = engine.renderHandArt(state.splitHand);
-    const h1Tag = !state.playingSplit ? '▶ HAND 1' : 'HAND 1';
-    const h2Tag =  state.playingSplit ? '▶ HAND 2' : 'HAND 2';
-    desc = `\`\`\`\nDEALER — ${state.dealer[0].r} + ?\n${dealerArt}\n\n${h1Tag} — ${engine.handVal(state.player)}\n${h1Art}\n\n${h2Tag} — ${engine.handVal(state.splitHand)}\n${h2Art}\n\`\`\``;
+    const h1Tag = !state.playingSplit ? '▶ Hand 1' : 'Hand 1';
+    const h2Tag =  state.playingSplit ? '▶ Hand 2' : 'Hand 2';
+    handFields.push(
+      { name: h1Tag, value: `${engine.hStr(state.player)} — **${engine.handVal(state.player)}**`, inline: true },
+      { name: h2Tag, value: `${engine.hStr(state.splitHand)} — **${engine.handVal(state.splitHand)}**`, inline: true },
+    );
   } else {
-    const playerArt = engine.renderHandArt(state.player);
-    desc = `\`\`\`\nDEALER — ${state.dealer[0].r} + ?\n${dealerArt}\n\nYOU — ${activeVal}\n${playerArt}\n\`\`\``;
+    handFields.push({ name: '🃏 Your Hand', value: `${engine.hStr(state.player)} — **${activeVal}**`, inline: true });
   }
 
   const embed = new EmbedBuilder()
     .setColor(0x3498db)
     .setTitle('🃏 Blackjack')
-    .setDescription(desc)
-    .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+    .setImage(`attachment://${imgName}`)
+    .addFields(...handFields, { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
     .setFooter({ text: 'YSER Flow Casino  •  Dealer hits soft 17  •  BJ pays 3:2' });
 
   const btns = [
@@ -899,7 +909,7 @@ async function renderBJ(interaction, s, state, initial = false) {
   if (canSplitNow)  btns.push(new ButtonBuilder().setCustomId('cs:bj:split').setLabel('✂️ Split').setStyle(ButtonStyle.Primary));
   if (canSurrender) btns.push(new ButtonBuilder().setCustomId('cs:bj:surrender').setLabel('🏳️ Surrender').setStyle(ButtonStyle.Secondary));
 
-  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))] });
+  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))], files: [file] });
 }
 
 async function handleBJ(interaction, s, action) {
@@ -1023,20 +1033,24 @@ async function finishBJ(interaction, s, state) {
   setCooldown(s.userId, 'casino');
   updateSession(s.userId, { lastResult: { label: RLABELS[main] || main, delta }, bjState: null, splitBet: null, insuranceBet: null });
 
-  const dealerFinalArt = engine.renderHandArt(final.dealer);
-  const playerFinalArt = engine.renderHandArt(final.player);
-  let desc = `\`\`\`\nDEALER — ${dv}\n${dealerFinalArt}\n\nYOU — ${pv}\n${playerFinalArt}`;
-  if (final.splitHand) {
-    const splitArt = engine.renderHandArt(final.splitHand);
-    desc += `\n\nSPLIT — ${engine.handVal(final.splitHand)}\n${splitArt}`;
-  }
-  desc += '\n\`\`\`';
+  const imgName = `bj-final-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderBlackjackTablePng({
+    dealer: final.dealer, player: final.player, splitHand: final.splitHand,
+    hideDealerHole: false, playingSplit: false,
+  }), { name: imgName });
+
+  const handFields = [
+    { name: '🂠 Dealer', value: `${engine.hStr(final.dealer)} — **${dv}**`, inline: true },
+    { name: '🃏 Your Hand', value: `${engine.hStr(final.player)} — **${pv}**`, inline: true },
+  ];
+  if (final.splitHand) handFields.push({ name: '✂️ Split Hand', value: `${engine.hStr(final.splitHand)} — **${engine.handVal(final.splitHand)}**`, inline: true });
 
   const embed = new EmbedBuilder()
     .setColor(COLORS[main] ?? 0x95a5a6)
     .setTitle(`🃏 Blackjack — ${LABELS[main] ?? main}`)
-    .setDescription(desc)
+    .setImage(`attachment://${imgName}`)
     .addFields(
+      ...handFields,
       { name: '💸 Bet',     value: `**${fmt(s.bet)}** coins`,                  inline: true },
       { name: '💵 Payout',  value: payout > 0 ? `**${fmt(payout)}** coins` : '—', inline: true },
       { name: '💰 Balance', value: `**${fmt(newBal)}** coins`,                 inline: true },
@@ -1050,7 +1064,7 @@ async function finishBJ(interaction, s, state) {
   if (insuranceBet > 0) embed.addFields({ name: '🛡️ Insurance', value: insurancePayout > 0 ? `Won **${fmt(insurancePayout)}**` : 'Lost', inline: true });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1144,9 +1158,13 @@ async function resolveDiceVsBot(interaction, s) {
     diceOdds: null,
   });
   const title = result.push ? '⚖️ Tie — Push!' : result.won ? '🏆 You Win!' : '💀 Bot Wins!';
+  const outcome = result.push ? 'push' : result.won ? 'win' : 'loss';
+  const imgName = `dice-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderDicePng(result.playerRoll, result.botRoll, outcome), { name: imgName });
   const embed = new EmbedBuilder()
     .setColor(result.push ? 0x95a5a6 : result.won ? 0x2ecc71 : 0xe74c3c)
     .setTitle(`🎲 Dice — ${title}`)
+    .setImage(`attachment://${imgName}`)
     .setDescription(
       `You rolled ${engine.DICE_FACES[result.playerRoll]} **${result.playerRoll}**\n` +
       `Bot rolled ${engine.DICE_FACES[result.botRoll]} **${result.botRoll}**`,
@@ -1160,7 +1178,7 @@ async function resolveDiceVsBot(interaction, s) {
     )
     .setFooter({ text: 'YSER Flow Casino' });
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file] });
 }
 
 async function showDicePvpChallenge(interaction, s) {
@@ -1304,16 +1322,18 @@ async function resolveWheel(interaction, s) {
   recordWheelSpin(s.userId);
 
   // Spin animation
+  const spinImgName = `wheel-spin-${s.userId}.png`;
+  const spinFile = new AttachmentBuilder(engine.renderWheelPng(null, true), { name: spinImgName });
   const spinEmbed = new EmbedBuilder()
     .setColor(0xFF6B35)
     .setTitle('🎰  Wheel of Fortune — Spinning…')
-    .setDescription(engine.renderWheelDisplay(null, true))
+    .setImage(`attachment://${spinImgName}`)
     .addFields(
       { name: '💸 Bet',        value: `**${fmt(s.bet)}** coins`,                          inline: true },
       { name: '🎡 Spins Left', value: `**${spinsLeft - 1}** remaining today`, inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino' });
-  await interaction.editReply({ embeds: [spinEmbed], components: [] });
+  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinFile] });
   await wait(1500);
 
   const segment = engine.spinWheel();
@@ -1329,20 +1349,24 @@ async function resolveWheel(interaction, s) {
 
   const spinsAfter  = WHEEL_DAILY_LIMIT - (used + 1);
   const colorMap = { jackpot: 0xFFD700, bigwin: 0x27AE60, win: 0x2ECC71, push: 0x95A5A6, lose: 0xE74C3C };
+  const resultImgName = `wheel-result-${s.userId}.png`;
+  const resultFile = new AttachmentBuilder(engine.renderWheelPng(segment, false), { name: resultImgName });
+  const paytable = engine.WHEEL_SEGMENTS.map(seg => seg.id === segment.id ? `**[ ${seg.label} ]**` : seg.label).join('  ·  ');
   const embed = new EmbedBuilder()
     .setColor(colorMap[segment.color] || 0xE74C3C)
     .setTitle(`🎰  Wheel of Fortune — ${segment.label}${segment.mult >= 10 ? ' 🎊' : ''}`)
-    .setDescription(engine.renderWheelDisplay(segment))
+    .setImage(`attachment://${resultImgName}`)
     .addFields(
       { name: '💸 Bet',        value: `**${fmt(s.bet)}** coins`,                                        inline: true },
       { name: '💵 Payout',     value: payout > 0 ? `**${fmt(payout)}** coins (${segment.label})` : '—', inline: true },
       { name: '💰 Balance',    value: `**${fmt(newBal)}** coins`,                                       inline: true },
       { name: '🎡 Spins Left', value: spinsAfter > 0 ? `**${spinsAfter}** remaining today` : '**0** — come back tomorrow!', inline: true },
+      { name: '🎡 Wheel Segments', value: paytable, inline: false },
     )
     .setFooter({ text: 'YSER Flow Casino  •  Wheel of Fortune  •  10 spins/day' });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [resultFile] });
 }
 
 async function resolveTrading(interaction, s, direction, rr) {

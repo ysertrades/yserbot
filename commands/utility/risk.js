@@ -1,5 +1,6 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { calculateRisk, formatUsd, FUTURES_SPECS } = require('../../utils/riskCalculator.js');
+const { generateRiskImage } = require('../../utils/riskVisual.js');
 
 const symbolChoices = Object.keys(FUTURES_SPECS).map((sym) => ({
   name: sym,
@@ -52,8 +53,11 @@ module.exports = {
       });
     }
 
-    const embed = buildRiskEmbed(result);
-    return interaction.reply({ embeds: [embed] });
+    const imageName = `risk_${symbol}_${Date.now()}.png`;
+    const attachment = new AttachmentBuilder(generateRiskImage(result), { name: imageName });
+
+    const embed = buildRiskEmbed(result).setImage(`attachment://${imageName}`);
+    return interaction.reply({ embeds: [embed], files: [attachment] });
   },
 };
 

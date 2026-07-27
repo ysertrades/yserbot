@@ -21,6 +21,7 @@ const GUILD_FILES = new Set([
   'wheel_limits.json',
   'giveaways_ended.json',
   'active_effects.json',
+  'member_history.json',
 ]);
 
 // In-memory store for pending restore sessions

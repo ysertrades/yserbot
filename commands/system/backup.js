@@ -21,6 +21,12 @@ const GUILD_FILES = [
   'wheel_limits.json',
   'giveaways_ended.json',
   'active_effects.json',
+  'member_history.json',
+  // locked_channels.json is intentionally excluded: it's a live snapshot of
+  // actual Discord channel permission overwrites, not portable bot state —
+  // restoring it without re-applying the real overwrites via the API would
+  // leave the bot's lock bookkeeping out of sync with the channel's real
+  // permissions.
 ];
 
 module.exports = {
