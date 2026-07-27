@@ -40,16 +40,23 @@ module.exports = {
     writeJson(LOCK_FILE, locks);
 
     const embed = createServerEmbed('success', {
-      title: '🔓 Channel Unlocked',
-      description: `${channel} has been unlocked. Everyone can send messages again.`,
-      fields: [{ name: '👮 Unlocked By', value: `<@${interaction.user.id}>`, inline: true }],
+      title: '🔓  Channel Unlocked',
+      color: 0x27AE60,
+      thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f513.png',
+      description: `${channel} is open again — everyone can send messages.`,
+      fields: [{ name: '👮 By', value: `<@${interaction.user.id}>`, inline: true }],
     }, interaction.guild);
 
     await interaction.editReply({ embeds: [embed] });
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ embeds: [createServerEmbed('success', { title: '🔓 Channel Unlocked', description: `This channel has been unlocked by <@${interaction.user.id}>.` }, interaction.guild)] });
+        await channel.send({ embeds: [createServerEmbed('success', {
+          title: '🔓  Channel Unlocked',
+          color: 0x27AE60,
+          thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f513.png',
+          description: `Unlocked by <@${interaction.user.id}> — everyone can chat again.`,
+        }, interaction.guild)] });
       } catch {}
     }
   },

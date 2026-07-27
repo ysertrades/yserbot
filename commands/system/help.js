@@ -49,6 +49,8 @@ const MOD_CATALOGUE = [
   ['unban',        'Unban a user by ID'],
   ['purge',        'Bulk-delete messages'],
   ['warn-settings','Configure warning thresholds & punishments'],
+  ['lock',         'Lock a channel to moderators/admins only'],
+  ['unlock',       'Unlock a previously locked channel'],
 ];
 
 const ADMIN_CATALOGUE = [
@@ -62,8 +64,8 @@ const ADMIN_CATALOGUE = [
   ['casino-settings','Set bet limits & cooldowns for casino'],
   ['give-coins',     'Grant coins to a member'],
   ['ticket',         'Configure the support ticket system'],
-  ['shop manage',    'Add / remove items from the server shop'],
-  ['cards config',   'Set how many messages between card drops (server-wide)'],
+  ['shopsettings',   'Add / remove items from the server shop'],
+  ['cardsettings',   'Set how many messages between card drops (server-wide)'],
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

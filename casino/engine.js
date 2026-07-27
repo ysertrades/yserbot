@@ -416,30 +416,23 @@ function _oval(png, x, y, rx, ry, c) {
   }
 }
 
-/** Soft radial glow — many concentric alpha-fading rings, the workhorse of
- *  the neon/glass accent lighting used across every game. */
-function _radialGlow(png, cx, cy, radius, color, maxAlpha = 0.4) {
-  const x0 = Math.max(0, cx - radius), x1 = Math.min(png.width - 1, cx + radius);
-  const y0 = Math.max(0, cy - radius), y1 = Math.min(png.height - 1, cy + radius);
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const d = Math.hypot(x - cx, y - cy);
-      if (d > radius) continue;
-      _setPxBlend(png, x, y, color, maxAlpha * (1 - d / radius));
-    }
+/** Flat single-color background fill — deliberately not a gradient. */
+function _flatBg(png, color) {
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) _setPx(png, x, y, color);
   }
 }
 
-function _vGradientBg(png, top, bottom) {
-  for (let y = 0; y < png.height; y++) {
-    const t = y / Math.max(1, png.height - 1);
-    const c = [
-      Math.round(top[0] + (bottom[0] - top[0]) * t),
-      Math.round(top[1] + (bottom[1] - top[1]) * t),
-      Math.round(top[2] + (bottom[2] - top[2]) * t),
-      255,
-    ];
-    for (let x = 0; x < png.width; x++) _setPx(png, x, y, c);
+/** Flat, solid-color ring stroke — used in place of a soft radial glow to
+ *  flag a winner/highlight without introducing a gradient look. */
+function _ringStroke(png, cx, cy, radius, color, th = 3) {
+  const half = Math.floor(th / 2);
+  for (let a = 0; a < 1440; a++) {
+    const ang = (a / 1440) * 2 * Math.PI;
+    for (let t = -half; t <= half; t++) {
+      const r = radius + t;
+      _setPx(png, Math.round(cx + Math.cos(ang) * r), Math.round(cy + Math.sin(ang) * r), color);
+    }
   }
 }
 
@@ -489,10 +482,6 @@ function _glassPanel(png, px, py, w, h, opts = {}) {
   for (let x = radius; x < sheenEnd; x++) _setPxBlend(png, px + x, py + 2, [255, 255, 255], 0.20);
 }
 
-function _ambientBackdrop(png, blooms) {
-  for (const [cx, cy, r, color, a] of blooms) _radialGlow(png, cx, cy, r, color, a);
-}
-
 /* ─── Suit / card art (blackjack, coinflip) ─────────────────────────────── */
 
 function _drawSuit(png, suit, x, y, scale = 1) {
@@ -534,7 +523,6 @@ function _drawCard(png, x, y, card, faceDown = false, highlight = false) {
   const w = 98; const h = 138;
   // drop shadow
   _fillRectBlend(png, x + 4, y + 6, w, h, [0, 0, 0, 255], 0.35);
-  if (highlight) _radialGlow(png, x + w / 2, y + h / 2, Math.round(w * 0.9), [241, 196, 15, 255], 0.22);
   _fillRect(png, x, y, w, h, [244, 246, 249, 255]);
   _rect(png, x, y, w, h, highlight ? [241, 196, 15, 255] : [130, 146, 166, 255], 2);
   _fillRect(png, x + 4, y + 4, w - 8, h - 8, [255, 255, 255, 255]);
@@ -546,7 +534,6 @@ function _drawCard(png, x, y, card, faceDown = false, highlight = false) {
     for (let yy = y + 12; yy < y + h - 12; yy += 8) {
       _line(png, x + 12, yy, x + w - 12, yy, [174, 214, 241, 255], 1);
     }
-    _radialGlow(png, x + w / 2, y + h / 2, 46, [255, 255, 255, 255], 0.12);
     return;
   }
 
@@ -569,11 +556,7 @@ function renderBlackjackTablePng({
   const W = 1000; const H = 560;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
-  _vGradientBg(png, [8, 46, 34, 255], [6, 26, 20, 255]);
-  _ambientBackdrop(png, [
-    [140, 90, 220, [40, 190, 130, 255], 0.16],
-    [860, 460, 260, [20, 120, 90, 255], 0.14],
-  ]);
+  _flatBg(png, [7, 38, 28, 255]);
 
   _glassPanel(png, 16, 16, W - 32, H - 32, {
     radius: 26, tint: [241, 196, 15], tintAlpha: 0.05, tintAlphaBottom: 0.02,
@@ -598,19 +581,13 @@ function renderBlackjackTablePng({
 function renderCoinflipPng(choice, result) {
   const W = 900; const H = 420;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  _vGradientBg(png, [14, 18, 30, 255], [22, 27, 42, 255]);
+  _flatBg(png, [17, 21, 34, 255]);
 
   const won = choice === result;
   const centerX = Math.floor(W / 2);
   const centerY = Math.floor(H / 2) + 4;
 
-  _ambientBackdrop(png, [
-    [centerX, centerY, 260, won ? [46, 204, 113, 255] : [231, 76, 60, 255], 0.14],
-    [140, 90, 180, [120, 140, 255, 255], 0.10],
-    [W - 140, H - 90, 180, [255, 200, 90, 255], 0.08],
-  ]);
-
-  _glassPanel(png, 24, 24, W - 48, H - 48, { radius: 26, tintAlpha: 0.05, tintAlphaBottom: 0.015, borderAlpha: 0.18 });
+  _glassPanel(png, 24, 24, W - 48, H - 48, { radius: 26, tintAlpha: 0.05, borderAlpha: 0.18 });
 
   // Metallic coin: layered concentric rings + a bright glint for a 3D feel.
   const isHeads = result === 'heads';
@@ -619,7 +596,7 @@ function renderCoinflipPng(choice, result) {
   const inner  = isHeads ? [252, 236, 176, 255] : [236, 241, 245, 255];
   const glowC  = won ? [46, 204, 113, 255] : [231, 76, 60, 255];
 
-  _radialGlow(png, centerX, centerY, 150, glowC, 0.45);
+  _ringStroke(png, centerX, centerY, 114, glowC, 4);
   _dot(png, centerX, centerY, 106, ring);
   _dot(png, centerX, centerY, 94, face);
   _dot(png, centerX, centerY, 72, inner);
@@ -706,11 +683,7 @@ function _drawSlotIcon(png, sym, cx, cy, r) {
 function renderSlotsPng(reels, spinning = [false, false, false]) {
   const W = 900, H = 420;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  _vGradientBg(png, [16, 12, 24, 255], [28, 20, 40, 255]);
-  _ambientBackdrop(png, [
-    [W / 2, H / 2, 320, [155, 89, 182, 255], 0.14],
-    [110, 90, 160, [241, 196, 15, 255], 0.08],
-  ]);
+  _flatBg(png, [20, 15, 30, 255]);
 
   _glassPanel(png, 40, 40, W - 80, H - 80, {
     radius: 26, tint: [155, 89, 182], tintAlpha: 0.06, tintAlphaBottom: 0.02, borderAlpha: 0.28,
@@ -733,7 +706,6 @@ function renderSlotsPng(reels, spinning = [false, false, false]) {
       }
       for (let yy = reelY; yy < reelY + reelH; yy += 3) _hLineBlend(png, yy, rx + 8, rx + reelW - 8, [255, 255, 255, 255], 0.03, 1);
     } else {
-      _radialGlow(png, cx, cy, 90, [241, 196, 15, 255], 0.12);
       _drawSlotIcon(png, reels[i], cx, cy, 56);
     }
   }
@@ -752,8 +724,7 @@ function renderSlotsPng(reels, spinning = [false, false, false]) {
 function renderCrashChart(tick, crashed = false) {
   const W = 900, H = 420;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  _vGradientBg(png, [10, 14, 24, 255], [18, 14, 26, 255]);
-  _ambientBackdrop(png, [[W - 120, 90, 220, crashed ? [231, 76, 60, 255] : [52, 152, 219, 255], 0.16]]);
+  _flatBg(png, [13, 16, 26, 255]);
 
   const margin = { top: 30, right: 34, bottom: 30, left: 34 };
   _glassPanel(png, margin.left - 14, margin.top - 14, W - margin.left - margin.right + 28, H - margin.top - margin.bottom + 28, {
@@ -780,16 +751,13 @@ function renderCrashChart(tick, crashed = false) {
     const m = tickMultiplier(t);
     const x = xOf(t), y = yOf(m);
     _lineBlend(png, px, py, x, y, trailColor, 0.9, 4);
-    _radialGlow(png, x, y, 14, trailColor, 0.12);
     px = x; py = y;
   }
 
   if (crashed) {
-    _radialGlow(png, px, py, 46, [255, 60, 60, 255], 0.55);
     _dot(png, px, py, 8, [255, 255, 255, 255]);
     _dot(png, px, py, 5, [231, 76, 60, 255]);
   } else {
-    _radialGlow(png, px, py, 26, [120, 230, 255, 255], 0.4);
     // little plane marker: a bright triangle nose pointing along the trend
     const nose = [px + 10, py - 8], w1 = [px - 6, py + 6], w2 = [px - 2, py - 4];
     _line(png, nose[0], nose[1], w1[0], w1[1], [255, 255, 255, 255], 2);
@@ -828,8 +796,7 @@ function renderRaceTrack(racers, progress, winnerIdx, picked) {
   const W = 960, laneH = 74, top = 60;
   const H = top + laneH * racers.length + 40;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  _vGradientBg(png, isHorse ? [26, 20, 12, 255] : [10, 26, 18, 255], isHorse ? [16, 12, 8, 255] : [8, 18, 14, 255]);
-  _ambientBackdrop(png, [[W - 100, top, 260, isHorse ? [230, 126, 34, 255] : [39, 174, 96, 255], 0.14]]);
+  _flatBg(png, isHorse ? [18, 14, 9, 255] : [9, 20, 15, 255]);
 
   const trackX = 60, trackW = W - 120;
 
@@ -846,7 +813,7 @@ function renderRaceTrack(racers, progress, winnerIdx, picked) {
     const fillW = Math.round((trackW - 16) * pct);
     if (fillW > 2) _fillRectBlend(png, trackX + 8, ly + (laneH - 12) / 2 - 5, fillW, 10, color, 0.5);
     const racerX = trackX + 20 + fillW, racerY = ly + (laneH - 12) / 2;
-    if (isWinner) _radialGlow(png, racerX, racerY, 30, [241, 196, 15, 255], 0.35);
+    if (isWinner) _ringStroke(png, racerX, racerY, 22, [241, 196, 15, 255], 3);
     _drawRacer(png, racerX, racerY, isHorse, color);
   });
 
@@ -891,13 +858,11 @@ function spinWheel() {
 function renderWheelPng(winner, spinning = false) {
   const W = 640, H = 640;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  _vGradientBg(png, [12, 16, 26, 255], [20, 16, 30, 255]);
+  _flatBg(png, [16, 13, 23, 255]);
 
   const cx = W / 2, cy = H / 2, R = 260;
   const n = WHEEL_SEGMENTS.length;
   const winIdx = winner ? WHEEL_SEGMENTS.indexOf(winner) : -1;
-
-  _ambientBackdrop(png, [[cx, cy, R + 60, [241, 196, 15, 255], spinning ? 0.10 : 0.16]]);
 
   for (let py = cy - R - 6; py <= cy + R + 6; py++) {
     for (let pxl = cx - R - 6; pxl <= cx + R + 6; pxl++) {
@@ -934,8 +899,6 @@ function renderWheelPng(winner, spinning = false) {
       const rad = a * Math.PI / 180;
       _dotBlend(png, Math.round(cx + Math.cos(rad) * (R + 20)), Math.round(cy + Math.sin(rad) * (R + 20)), 4, [255, 255, 255, 255], 0.10);
     }
-  } else if (winner) {
-    _radialGlow(png, cx, cy - R + 30, 40, [255, 255, 255, 255], 0.25);
   }
 
   return PNG.sync.write(png);
@@ -968,9 +931,9 @@ const PIP_LAYOUT = {
 };
 
 function _drawDie(png, x, y, size, value, glow) {
-  if (glow) _radialGlow(png, x + size / 2, y + size / 2, size * 0.85, glow, 0.35);
   _fillRectBlend(png, x + 5, y + 8, size, size, [0, 0, 0, 255], 0.3);
-  _glassPanel(png, x, y, size, size, { radius: 16, tint: [255, 255, 255], tintAlpha: 0.85, tintAlphaBottom: 0.7, border: glow || [255, 255, 255], borderAlpha: 0.5 });
+  _glassPanel(png, x, y, size, size, { radius: 16, tint: [255, 255, 255], tintAlpha: 0.85, border: glow || [255, 255, 255], borderAlpha: 0.5 });
+  if (glow) _rect(png, x, y, size, size, glow, 3);
   const step = size * 0.27;
   const cx = x + size / 2, cy = y + size / 2;
   for (const [dx, dy] of PIP_LAYOUT[value] || []) {
@@ -981,10 +944,8 @@ function _drawDie(png, x, y, size, value, glow) {
 function renderDicePng(playerRoll, botRoll, outcome) {
   const W = 700, H = 340;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  const glowColor = outcome === 'win' ? [46, 204, 113, 255] : outcome === 'push' ? [149, 165, 166, 255] : [231, 76, 60, 255];
-  _vGradientBg(png, [16, 12, 24, 255], [24, 18, 34, 255]);
-  _ambientBackdrop(png, [[W / 2, H / 2, 300, glowColor, 0.14]]);
-  _glassPanel(png, 30, 30, W - 60, H - 60, { radius: 24, tintAlpha: 0.05, tintAlphaBottom: 0.02, borderAlpha: 0.2 });
+  _flatBg(png, [18, 14, 26, 255]);
+  _glassPanel(png, 30, 30, W - 60, H - 60, { radius: 24, tintAlpha: 0.05, borderAlpha: 0.2 });
 
   const size = 140;
   _drawDie(png, W / 2 - size - 40, H / 2 - size / 2, size, playerRoll, outcome === 'win' ? [46, 204, 113, 255] : null);
@@ -1011,12 +972,11 @@ function _renderTradeChartPng({
 }) {
   const W = 980, H = 460;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  _vGradientBg(png, [10, 14, 24, 255], [16, 20, 32, 255]);
-  _ambientBackdrop(png, [[W - 140, 80, 220, won === false ? [231, 76, 60, 255] : [46, 213, 145, 255], 0.10]]);
+  _flatBg(png, [12, 16, 26, 255]);
 
   const margin = { top: 30, right: 26, bottom: 28, left: 26 };
   _glassPanel(png, margin.left - 14, margin.top - 14, W - margin.left - margin.right + 28, H - margin.top - margin.bottom + 28, {
-    radius: 20, tintAlpha: 0.045, tintAlphaBottom: 0.015, borderAlpha: 0.18,
+    radius: 20, tintAlpha: 0.045, borderAlpha: 0.18,
   });
 
   const pw = W - margin.left - margin.right;
@@ -1077,7 +1037,7 @@ function _renderTradeChartPng({
     const markerX = xOf(histCandles.length + markerCandleIdx);
     const markerY = yOf(mc.close);
     const markerColor = won ? [46, 204, 113, 255] : won === false ? [231, 76, 60, 255] : [241, 196, 15, 255];
-    _radialGlow(png, markerX, markerY, 20, markerColor, 0.55);
+    _ringStroke(png, markerX, markerY, 9, markerColor, 2);
     _dot(png, markerX, markerY, 5, markerColor);
     _dot(png, markerX, markerY, 2, [255, 255, 255, 255]);
   }
@@ -1214,8 +1174,7 @@ function rouletteResult(spin, betType, betValue) {
 function renderRoulettePng({ num, color, won }) {
   const W = 980, H = 460;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  _vGradientBg(png, [10, 13, 22, 255], [15, 19, 30, 255]);
-  _ambientBackdrop(png, [[230, 230, 260, [200, 165, 55, 255], 0.10]]);
+  _flatBg(png, [12, 16, 26, 255]);
 
   const WHEEL  = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
   const N      = 37;
@@ -1271,7 +1230,7 @@ function renderRoulettePng({ num, color, won }) {
   const fillC = color === 'green' ? [14, 106, 48, 255]
               : color === 'red'   ? [126, 22, 22, 255]
               :                     [30, 32, 46, 255];
-  _radialGlow(png, rcx, rcy, 110, glowC, 0.4);
+  _ringStroke(png, rcx, rcy, 92, glowC, 4);
   _dot(png, rcx, rcy, 83, ringC);
   _dot(png, rcx, rcy, 67, fillC);
   _dot(png, rcx, rcy, 18, [255, 255, 255, 255]);

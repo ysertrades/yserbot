@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { calculateRisk, formatUsd, FUTURES_SPECS } = require('../../utils/riskCalculator.js');
+const { calculateRisk, FUTURES_SPECS } = require('../../utils/riskCalculator.js');
 const { generateRiskImage } = require('../../utils/riskVisual.js');
 
 const symbolChoices = Object.keys(FUTURES_SPECS).map((sym) => ({
@@ -62,105 +62,28 @@ module.exports = {
 };
 
 /**
- * Build the risk calculator embed with beautiful formatting
+ * Build the risk calculator embed. Nearly everything (symbol, risk, stop,
+ * contract counts, per-contract cost, leftover budget, recommendation) now
+ * lives in the generated image — the embed text is intentionally just a
+ * title and a one-line name lookup for the contract(s) involved.
  * @param {object} result - Output from calculateRisk()
  * @returns {EmbedBuilder}
  */
 function buildRiskEmbed(result) {
-  const { standard, micro, needsMicro, riskUsd, stopPoints, symbol, name, color } = result;
+  const { standard, micro, name, color } = result;
 
   // Strip trailing " Futures" so the header stays clean and short
   const displayName      = name.replace(/ Futures$/i, '');
   const microDisplayName = micro ? micro.name.replace(/ Futures$/i, '') : '';
 
-  const embed = new EmbedBuilder()
+  const nameLine = micro
+    ? `${displayName} (${standard.symbol}) · ${microDisplayName} (${micro.symbol})`
+    : `${displayName} (${standard.symbol})`;
+
+  return new EmbedBuilder()
     .setColor(color)
     .setTitle('⚖️ Risk Calculator')
-    .setDescription(
-      [
-        '```',
-        `  Symbol  │  ${symbol}`,
-        `  Risk    │  ${formatUsd(riskUsd)}`,
-        `  Stop    │  ${stopPoints} pts`,
-        '```',
-      ].join('\n')
-    )
+    .setDescription(nameLine)
     .setTimestamp()
     .setFooter({ text: 'Always trade within your plan.' });
-
-  // ── Standard contract block ────────────────────────────────────────────────
-  if (standard.contracts >= 1) {
-    embed.addFields({
-      name: '🏛️ Standard Contract',
-      value: [
-        `> 📦 **Contracts:** \`${standard.contracts}\``,
-        `> 💸 **Risk / contract:** \`${formatUsd(standard.riskPerContract)}\``,
-        `> 💵 **Total risk used:** \`${formatUsd(standard.totalRisk)}\``,
-        `> 🪙 **Leftover:** \`${formatUsd(riskUsd - standard.totalRisk)}\``,
-      ].join('\n'),
-      inline: false,
-    });
-  } else {
-    embed.addFields({
-      name: '🏛️ Standard Contract',
-      value: [
-        `> 🚫 \`0 contracts\` — stop too wide for ${formatUsd(riskUsd)} risk.`,
-        `> 📏 **Minimum needed:** \`${formatUsd(standard.riskPerContract)}\``,
-      ].join('\n'),
-      inline: false,
-    });
-  }
-
-  // ── Micro contract block ───────────────────────────────────────────────────
-  if (micro) {
-    embed.addFields({ name: '\u200b', value: '\u200b', inline: false });
-
-    const microLabel = needsMicro
-      ? '🔬 Micro Contract *(fallback)*'
-      : '🔬 Micro Contract *(alternative)*';
-
-    if (micro.contracts >= 1) {
-      embed.addFields({
-        name: microLabel,
-        value: [
-          `> 🏷️ **Symbol:** \`${micro.symbol}\` — ${microDisplayName}`,
-          `> 📦 **Contracts:** \`${micro.contracts}\``,
-          `> 💵 **Total risk used:** \`${formatUsd(micro.totalRisk)}\``,
-          `> 🪙 **Leftover:** \`${formatUsd(riskUsd - micro.totalRisk)}\``,
-        ].join('\n'),
-        inline: false,
-      });
-    } else {
-      embed.addFields({
-        name: microLabel,
-        value: [
-          `> 🚫 \`0 contracts\` — even micro too wide for ${formatUsd(riskUsd)}.`,
-          `> 📉 Lower your stop or increase risk budget.`,
-        ].join('\n'),
-        inline: false,
-      });
-    }
-  }
-
-  // ── Recommendation ─────────────────────────────────────────────────────────
-  embed.addFields({ name: '\u200b', value: '\u200b', inline: false });
-
-  let recValue;
-  if (standard.contracts >= 1 && micro?.contracts >= 1) {
-    recValue = `✅ **${standard.contracts}× ${standard.symbol}** or **${micro.contracts}× ${micro.symbol}** — both fit your risk.`;
-  } else if (standard.contracts >= 1) {
-    recValue = `✅ Trade **${standard.contracts}× ${standard.symbol}** — within budget.`;
-  } else if (micro?.contracts >= 1) {
-    recValue = `⚡ Standard too large. Trade **${micro.contracts}× ${micro.symbol}** instead.`;
-  } else {
-    recValue = `❌ Risk budget too small for any contract. Widen budget or tighten stop.`;
-  }
-
-  embed.addFields({
-    name: '🎯 Recommendation',
-    value: recValue,
-    inline: false,
-  });
-
-  return embed;
 }
