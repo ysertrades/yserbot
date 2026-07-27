@@ -1,25 +1,22 @@
 /**
  * riskVisual.js
  *
- * Renders a glassmorphism-styled PNG for the /risk command: a dark gradient
- * backdrop, a translucent "glass" outer panel, and two inner glass cards
- * (standard contract / micro contract) with icon glyphs, a usage gauge, and
- * status badges (viable / warning / recommended / unavailable).
+ * Renders a glassmorphism-styled PNG for the /risk command. The image
+ * carries the actual numbers (symbol, risk, stop, contract counts, dollar
+ * amounts) via a hand-drawn pixel font, not decorative placeholder shapes —
+ * the embed text stays to a couple of short lines and the image does the
+ * rest of the talking.
  *
  * This module intentionally does NOT import from casino/engine.js — the
  * casino module is off-limits and this feature must stay decoupled. The
- * small set of pixel-drawing primitives below (alpha blending, rounded
- * glass panels, radial glow, guarded Bresenham lines) mirrors the visual
- * language already established there so the bot's look stays consistent,
- * but is implemented independently.
- *
- * Only pure graphics are drawn here — exact numbers/labels stay in the
- * Discord embed text, matching how the rest of the bot's game visuals work.
+ * small set of pixel-drawing primitives below mirrors the visual language
+ * already established there (flat single-color backgrounds and panels, no
+ * gradients) but is implemented independently.
  */
 
 const { PNG } = require('pngjs');
 
-/* ─── Pixel-drawing primitives (glassmorphism helpers) ──────────────────── */
+/* ─── Pixel-drawing primitives (glassmorphism helpers, flat — no gradients) ─── */
 
 function _setPx(png, x, y, c) {
   if (x < 0 || y < 0 || x >= png.width || y >= png.height) return;
@@ -40,7 +37,7 @@ function _blendColor(bg, fg, alpha) {
 }
 
 /** Alpha-blend a color onto whatever pixel is already there — the core
- *  trick that makes translucent "glass" panels/glows possible. */
+ *  trick that makes translucent "glass" panels possible. */
 function _setPxBlend(png, x, y, color, alpha) {
   if (x < 0 || y < 0 || x >= png.width || y >= png.height || alpha <= 0) return;
   if (alpha >= 1) { _setPx(png, x, y, color); return; }
@@ -98,8 +95,7 @@ function _dotBlend(png, x, y, radius, c, alpha) {
   }
 }
 
-/** Circular ring outline (used for the target/reticle emblem + "unavailable"
- *  glyph) — a bounded double loop, no stepping loop involved, so it can't hang. */
+/** Circular ring outline — a bounded double loop, no stepping loop involved. */
 function _ringBlend(png, cx, cy, r, th, color, alpha) {
   cx = Math.round(cx); cy = Math.round(cy);
   const r0 = Math.max(0, r - th), r1 = r;
@@ -113,30 +109,22 @@ function _ringBlend(png, cx, cy, r, th, color, alpha) {
   }
 }
 
-/** Soft radial glow — many concentric alpha-fading rings. */
-function _radialGlow(png, cx, cy, radius, color, maxAlpha = 0.4) {
-  cx = Math.round(cx); cy = Math.round(cy);
-  const x0 = Math.max(0, cx - radius), x1 = Math.min(png.width - 1, cx + radius);
-  const y0 = Math.max(0, cy - radius), y1 = Math.min(png.height - 1, cy + radius);
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const d = Math.hypot(x - cx, y - cy);
-      if (d > radius) continue;
-      _setPxBlend(png, x, y, color, maxAlpha * (1 - d / radius));
+/** Flat, solid-color ring stroke — a crisp highlight ring, never a soft/blurred glow. */
+function _ringStroke(png, cx, cy, radius, color, th = 3) {
+  const half = Math.floor(th / 2);
+  for (let a = 0; a < 1440; a++) {
+    const ang = (a / 1440) * 2 * Math.PI;
+    for (let t = -half; t <= half; t++) {
+      const r = radius + t;
+      _setPx(png, Math.round(cx + Math.cos(ang) * r), Math.round(cy + Math.sin(ang) * r), color);
     }
   }
 }
 
-function _vGradientBg(png, top, bottom) {
+/** Flat single-color background fill — deliberately not a gradient. */
+function _flatBg(png, color) {
   for (let y = 0; y < png.height; y++) {
-    const t = y / Math.max(1, png.height - 1);
-    const c = [
-      Math.round(top[0] + (bottom[0] - top[0]) * t),
-      Math.round(top[1] + (bottom[1] - top[1]) * t),
-      Math.round(top[2] + (bottom[2] - top[2]) * t),
-      255,
-    ];
-    for (let x = 0; x < png.width; x++) _setPx(png, x, y, c);
+    for (let x = 0; x < png.width; x++) _setPx(png, x, y, color);
   }
 }
 
@@ -149,7 +137,7 @@ function _roundedMask(w, h, radius, x, y) {
   return true;
 }
 
-/** Solid/translucent rounded-rect fill — used for icon "chips" and gauges. */
+/** Solid/translucent rounded-rect fill — used for gauges/chips. */
 function _fillRoundedRectBlend(png, px, py, w, h, radius, color, alpha) {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -159,16 +147,13 @@ function _fillRoundedRectBlend(png, px, py, w, h, radius, color, alpha) {
   }
 }
 
-/** The signature "glass panel": a rounded, faintly-tinted translucent card
- *  with a soft border and a top sheen highlight. */
+/** The signature "glass panel": a rounded, flat-tinted translucent card with
+ *  a soft border and a top sheen highlight — one flat color, no gradient. */
 function _glassPanel(png, px, py, w, h, opts = {}) {
   const {
     radius = 18,
     tint = [255, 255, 255],
     tintAlpha = 0.07,
-    // tintAlphaBottom accepted-but-ignored: kept so existing call sites don't
-    // need updating. The panel fill is one flat translucent color (a solid
-    // "gloss" tint), never a top-to-bottom gradient wash.
     border = [255, 255, 255],
     borderAlpha = 0.25,
   } = opts;
@@ -197,33 +182,95 @@ function _hexToRgb(hex) {
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255, 255];
 }
 
-/* ─── Glyphs / icons ──────────────────────────────────────────────────────── */
+/* ─── Pixel font (5×7) — digits, A–Z, and the punctuation needed to render
+ *     real dollar amounts, contract counts, and symbol codes in-image ──── */
 
-/** Central "target" emblem — thematically ties to risk/aim, symbol-tinted. */
-function _drawTargetEmblem(png, cx, cy, color) {
-  _radialGlow(png, cx, cy, 90, color, 0.30);
-  _ringBlend(png, cx, cy, 44, 3, color, 0.9);
-  _ringBlend(png, cx, cy, 28, 2, color, 0.55);
-  _dotBlend(png, cx, cy, 6, color, 0.95);
-  _line(png, cx - 62, cy, cx - 50, cy, color, 2);
-  _line(png, cx + 50, cy, cx + 62, cy, color, 2);
-  _line(png, cx, cy - 62, cx, cy - 50, color, 2);
-  _line(png, cx, cy + 50, cx, cy + 62, color, 2);
-}
+const GLYPH_W = 5, GLYPH_H = 7;
+const FONT = {
+  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+  '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+  '3': ['.###.', '#...#', '....#', '..##.', '....#', '#...#', '.###.'],
+  '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+  '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  '6': ['..##.', '.#...', '#....', '####.', '#...#', '#...#', '.###.'],
+  '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+  '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+  '9': ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
+  'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  'C': ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+  'D': ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  'E': ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+  'G': ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.###.'],
+  'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  'I': ['.###.', '..#..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  'J': ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
+  'K': ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
+  'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#', '#...#', '#...#'],
+  'N': ['#...#', '##..#', '#.#.#', '#.#.#', '#..##', '#...#', '#...#'],
+  'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  'Q': ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+  'R': ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+  'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  'V': ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+  'W': ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '#.#.#', '.#.#.'],
+  'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+  'Y': ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+  'Z': ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+  '$': ['..#..', '.####', '#.#..', '.###.', '..#.#', '####.', '..#..'],
+  '.': ['.....', '.....', '.....', '.....', '.....', '.##..', '.##..'],
+  ',': ['.....', '.....', '.....', '.....', '.##..', '.##..', '.#...'],
+  '-': ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
+  '/': ['....#', '...#.', '..#..', '..#..', '.#...', '#....', '#....'],
+  ':': ['.....', '.##..', '.##..', '.....', '.##..', '.##..', '.....'],
+  '%': ['#...#', '#..#.', '...#.', '..#..', '.#...', '.#..#', '#...#'],
+  '×': ['.....', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '.....'],
+  ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+};
 
-/** Stack of chip-like blocks representing "contracts" — bigger/fewer for
- *  standard, smaller/more numerous for micro (visually reads as "smaller
- *  denomination"). */
-function _drawStackIcon(png, cx, topY, color, opts = {}) {
-  const { count = 3, blockW = 140, blockH = 16, gap = 10, alphaBase = 0.85, alphaStep = 0.13 } = opts;
-  for (let i = 0; i < count; i++) {
-    const w = Math.max(20, blockW - i * (blockW * 0.14));
-    const y = topY + i * (blockH + gap);
-    const alpha = Math.max(0.25, alphaBase - i * alphaStep);
-    _fillRoundedRectBlend(png, Math.round(cx - w / 2), y, Math.round(w), blockH, 5, color, alpha);
-    _setPxBlend(png, Math.round(cx - w / 2) + 4, y + 2, [255, 255, 255, 255], 0.25);
+/** Draw one character at (x, y) top-left, `scale` px per font pixel. Unknown
+ *  characters fall back to a blank space rather than throwing. */
+function _drawChar(png, ch, x, y, scale, color) {
+  const glyph = FONT[ch.toUpperCase()] || FONT[' '];
+  for (let row = 0; row < GLYPH_H; row++) {
+    for (let col = 0; col < GLYPH_W; col++) {
+      if (glyph[row][col] !== '#') continue;
+      _fillRect(png, x + col * scale, y + row * scale, scale, scale, color);
+    }
   }
 }
+
+const GLYPH_GAP = 1; // columns of spacing between characters, in font-pixel units
+
+function _textWidth(text, scale) {
+  return text.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
+}
+
+/** Draw a string left-to-right starting at (x, y). */
+function _drawText(png, text, x, y, scale, color) {
+  let cx = x;
+  for (const ch of text) {
+    _drawChar(png, ch, cx, y, scale, color);
+    cx += (GLYPH_W + GLYPH_GAP) * scale;
+  }
+}
+
+/** Draw a string horizontally centered on `cx`. */
+function _drawTextCentered(png, text, cx, y, scale, color) {
+  _drawText(png, text, Math.round(cx - _textWidth(text, scale) / 2), y, scale, color);
+}
+
+function _fmtUsdPx(v) {
+  return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/* ─── Glyphs / icons ──────────────────────────────────────────────────────── */
 
 function _drawCheckIcon(png, cx, cy, size, color) {
   _line(png, cx - size * 0.5, cy, cx - size * 0.1, cy + size * 0.45, color, 3);
@@ -247,18 +294,6 @@ function _drawUnavailableIcon(png, cx, cy, r, color) {
   _line(png, cx - r * 0.68, cy + r * 0.68, cx + r * 0.68, cy - r * 0.68, color, 3);
 }
 
-/** Horizontal "budget used" gauge — empty track + colored fill, glass style. */
-function _drawGauge(png, x, y, w, h, ratio, fillColor) {
-  const r = Math.floor(h / 2);
-  _fillRoundedRectBlend(png, x, y, w, h, r, [255, 255, 255, 255], 0.12);
-  const clamped = Math.min(1, Math.max(0, ratio));
-  const fw = Math.round(w * clamped);
-  if (fw >= 2) {
-    _fillRoundedRectBlend(png, x, y, Math.max(fw, h), h, r, fillColor, 0.85);
-    _setPxBlend(png, x + 2, y + 1, [255, 255, 255, 255], 0.35);
-  }
-}
-
 /* ─── Card composition ───────────────────────────────────────────────────── */
 
 const GOOD = [46, 204, 113, 255];
@@ -272,35 +307,41 @@ function _drawStandardCard(png, x, y, w, h, standard, accent, riskUsd) {
   const panelAccent = viable ? accent : WARN;
 
   _glassPanel(png, x, y, w, h, {
-    radius: 20,
-    tint: panelAccent,
-    tintAlpha: viable ? 0.06 : 0.10,
-    tintAlphaBottom: 0.02,
-    border: panelAccent,
-    borderAlpha: viable ? 0.32 : 0.5,
+    radius: 20, tint: panelAccent, tintAlpha: viable ? 0.07 : 0.11,
+    border: panelAccent, borderAlpha: viable ? 0.35 : 0.5,
   });
 
   const cx = x + w / 2;
-  _drawStackIcon(png, cx, y + 24, viable ? accent : GRAY, { count: 3, blockW: 150, blockH: 18, gap: 12 });
+  _drawTextCentered(png, 'STANDARD', cx, y + 16, 2, WHITE);
+
+  // Big contract-count number — the headline figure this card exists to show.
+  const bigScale = 6;
+  const countStr = String(standard.contracts);
+  _drawTextCentered(png, countStr, cx, y + 40, bigScale, viable ? accent : WARN);
 
   // status badge, top-right corner of the card
-  const badgeCx = x + w - 34, badgeCy = y + 32;
-  _dotBlend(png, badgeCx, badgeCy, 18, viable ? GOOD : WARN, 0.20);
-  if (viable) _drawCheckIcon(png, badgeCx, badgeCy, 16, GOOD);
-  else _drawWarningIcon(png, badgeCx, badgeCy, 20, WARN);
+  const badgeCx = x + w - 30, badgeCy = y + 30;
+  _dotBlend(png, badgeCx, badgeCy, 16, viable ? GOOD : WARN, 0.22);
+  if (viable) _drawCheckIcon(png, badgeCx, badgeCy, 14, GOOD);
+  else _drawWarningIcon(png, badgeCx, badgeCy, 18, WARN);
 
-  // usage gauge near the bottom
-  const ratio = viable ? standard.totalRisk / riskUsd : 0;
-  _drawGauge(png, x + 36, y + h - 40, w - 72, 16, ratio, viable ? GOOD : WARN);
+  const lineY1 = y + 40 + bigScale * GLYPH_H + 18;
+  if (viable) {
+    _drawTextCentered(png, `${_fmtUsdPx(standard.riskPerContract)} EACH`, cx, lineY1, 2, WHITE);
+    _drawTextCentered(png, `${_fmtUsdPx(riskUsd - standard.totalRisk)} LEFT`, cx, lineY1 + 22, 2, GOOD);
+  } else {
+    _drawTextCentered(png, 'STOP TOO WIDE', cx, lineY1, 2, WARN);
+    _drawTextCentered(png, `MIN ${_fmtUsdPx(standard.riskPerContract)}`, cx, lineY1 + 22, 2, WHITE);
+  }
 }
 
 function _drawMicroCard(png, x, y, w, h, micro, needsMicro, accent, riskUsd) {
   if (!micro) {
-    _glassPanel(png, x, y, w, h, {
-      radius: 20, tint: GRAY, tintAlpha: 0.05, tintAlphaBottom: 0.015,
-      border: GRAY, borderAlpha: 0.22,
-    });
-    _drawUnavailableIcon(png, x + w / 2, y + h / 2 - 6, 34, GRAY);
+    _glassPanel(png, x, y, w, h, { radius: 20, tint: GRAY, tintAlpha: 0.06, border: GRAY, borderAlpha: 0.24 });
+    const cx = x + w / 2;
+    _drawTextCentered(png, 'MICRO', cx, y + 16, 2, WHITE);
+    _drawUnavailableIcon(png, cx, y + h / 2 + 4, 30, GRAY);
+    _drawTextCentered(png, 'NOT AVAILABLE', cx, y + h - 30, 2, GRAY);
     return;
   }
 
@@ -308,64 +349,81 @@ function _drawMicroCard(png, x, y, w, h, micro, needsMicro, accent, riskUsd) {
   const recommended = needsMicro && viable;
   const panelAccent = recommended ? REC : viable ? accent : WARN;
 
-  if (recommended) _radialGlow(png, x + w / 2, y + h / 2, Math.round(Math.max(w, h) * 0.65), REC, 0.10);
-
   _glassPanel(png, x, y, w, h, {
-    radius: 20,
-    tint: panelAccent,
-    tintAlpha: viable ? (recommended ? 0.08 : 0.06) : 0.10,
-    tintAlphaBottom: 0.02,
-    border: panelAccent,
-    borderAlpha: viable ? (recommended ? 0.5 : 0.32) : 0.5,
+    radius: 20, tint: panelAccent, tintAlpha: viable ? (recommended ? 0.09 : 0.07) : 0.11,
+    border: panelAccent, borderAlpha: viable ? (recommended ? 0.55 : 0.35) : 0.5,
   });
 
   const cx = x + w / 2;
-  _drawStackIcon(png, cx, y + 20, viable ? panelAccent : GRAY, { count: 5, blockW: 110, blockH: 10, gap: 6 });
+  _drawTextCentered(png, `MICRO ${micro.symbol}`, cx, y + 16, 2, WHITE);
 
-  const badgeCx = x + w - 34, badgeCy = y + 32;
+  const bigScale = 6;
+  const countStr = String(micro.contracts);
+  _drawTextCentered(png, countStr, cx, y + 40, bigScale, viable ? panelAccent : WARN);
+
+  const badgeCx = x + w - 30, badgeCy = y + 30;
   const badgeColor = recommended ? REC : viable ? GOOD : WARN;
-  _dotBlend(png, badgeCx, badgeCy, 18, badgeColor, 0.20);
-  if (viable) _drawCheckIcon(png, badgeCx, badgeCy, 16, badgeColor);
-  else _drawWarningIcon(png, badgeCx, badgeCy, 20, WARN);
+  _dotBlend(png, badgeCx, badgeCy, 16, badgeColor, 0.22);
+  if (viable) _drawCheckIcon(png, badgeCx, badgeCy, 14, badgeColor);
+  else _drawWarningIcon(png, badgeCx, badgeCy, 18, WARN);
 
-  const ratio = viable ? micro.totalRisk / riskUsd : 0;
-  _drawGauge(png, x + 36, y + h - 40, w - 72, 16, ratio, recommended ? REC : viable ? GOOD : WARN);
+  const lineY1 = y + 40 + bigScale * GLYPH_H + 18;
+  if (viable) {
+    _drawTextCentered(png, `${_fmtUsdPx(micro.riskPerContract)} EACH`, cx, lineY1, 2, WHITE);
+    _drawTextCentered(png, `${_fmtUsdPx(riskUsd - micro.totalRisk)} LEFT`, cx, lineY1 + 22, 2, recommended ? REC : GOOD);
+  } else {
+    _drawTextCentered(png, 'STOP TOO WIDE', cx, lineY1, 2, WARN);
+    _drawTextCentered(png, `MIN ${_fmtUsdPx(micro.riskPerContract)}`, cx, lineY1 + 22, 2, WHITE);
+  }
 }
 
 /* ─── Public entry point ─────────────────────────────────────────────────── */
 
 /**
- * Render the risk-calculator visual as a PNG buffer.
+ * Render the risk-calculator visual as a PNG buffer. Every number shown is
+ * pulled straight from `result` — nothing here is decorative placeholder art.
  * @param {object} result - Output of riskCalculator.calculateRisk() (must not be an error result)
  * @returns {Buffer} PNG image data
  */
 function generateRiskImage(result) {
-  const { standard, micro, needsMicro, riskUsd, color } = result;
+  const { standard, micro, needsMicro, riskUsd, stopPoints, symbol, color } = result;
 
   const W = 900, H = 420;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   const accent = _hexToRgb(color);
 
-  _vGradientBg(png, [13, 16, 26, 255], [21, 25, 38, 255]);
-  _radialGlow(png, 130, 90, 220, accent, 0.12);
-  _radialGlow(png, W - 130, H - 90, 240, needsMicro ? WARN : GOOD, 0.10);
+  _flatBg(png, [15, 18, 28, 255]);
 
-  _glassPanel(png, 20, 20, W - 40, H - 40, {
-    radius: 28, tint: accent, tintAlpha: 0.05, tintAlphaBottom: 0.02,
-    border: accent, borderAlpha: 0.35,
-  });
+  _glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: accent, tintAlpha: 0.05, border: accent, borderAlpha: 0.35 });
 
-  const cx = Math.floor(W / 2);
-  _drawTargetEmblem(png, cx, 92, accent);
+  // ── Header strip: the inputs (symbol / risk / stop), pixel-rendered ──────
+  const headerY = 40;
+  const headerText = `${symbol}   RISK ${_fmtUsdPx(riskUsd)}   STOP ${stopPoints} PTS`;
+  _drawTextCentered(png, headerText, W / 2, headerY, 3, accent);
+  for (let x = 70; x < W - 70; x++) _setPxBlend(png, x, headerY + 3 * GLYPH_H + 14, accent, 0.4);
 
-  for (let x = 70; x < W - 70; x++) _setPxBlend(png, x, 150, accent, 0.16);
-
-  const cardY = 168, cardH = 210, cardW = 380, gap = 28;
-  const leftX = 56;
+  const cardY = headerY + 3 * GLYPH_H + 32;
+  const cardH = H - cardY - 66;
+  const cardW = 380, gap = 28;
+  const totalCardsW = cardW * 2 + gap;
+  const leftX = Math.round((W - totalCardsW) / 2);
   const rightX = leftX + cardW + gap;
 
   _drawStandardCard(png, leftX, cardY, cardW, cardH, standard, accent, riskUsd);
   _drawMicroCard(png, rightX, cardY, cardW, cardH, micro, needsMicro, accent, riskUsd);
+
+  // ── Bottom recommendation strip ───────────────────────────────────────────
+  let rec, recColor;
+  if (standard.contracts >= 1 && micro?.contracts >= 1) {
+    rec = `USE ${standard.contracts}× ${symbol} OR ${micro.contracts}× ${micro.symbol}`; recColor = GOOD;
+  } else if (standard.contracts >= 1) {
+    rec = `TRADE ${standard.contracts}× ${symbol}`; recColor = GOOD;
+  } else if (micro?.contracts >= 1) {
+    rec = `TRADE ${micro.contracts}× ${micro.symbol}`; recColor = REC;
+  } else {
+    rec = 'RAISE RISK OR TIGHTEN STOP'; recColor = WARN;
+  }
+  _drawTextCentered(png, rec, W / 2, H - 44, 3, recColor);
 
   return PNG.sync.write(png);
 }

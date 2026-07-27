@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { addCoins, getBalance }  = require('../../utils/economyManager');
 const { CARDS, RARITY, SELL_PRICE } = require('../../utils/cardsManager');
@@ -17,14 +17,7 @@ module.exports = {
       .addIntegerOption(o => o.setName('page').setDescription('Page number').setMinValue(1).setRequired(false)))
     .addSubcommand(sub => sub.setName('sell').setDescription('Sell a card from your collection for coins')
       .addStringOption(o => o.setName('card').setDescription('Card to sell — start typing to search').setRequired(true).setAutocomplete(true)))
-    .addSubcommand(sub => sub.setName('leaderboard').setDescription('Top card collectors in this server'))
-    .addSubcommand(sub => sub.setName('config').setDescription('Configure card drops (admin only)')
-      .addStringOption(o => o.setName('setting').setDescription('What to configure').setRequired(true)
-        .addChoices(
-          { name: '🔢 Set messages between drops', value: 'interval' },
-          { name: '📋 View config',                value: 'view' },
-        ))
-      .addIntegerOption(o => o.setName('interval').setDescription('How many messages before a card drops (10–500)').setMinValue(10).setMaxValue(500).setRequired(false))),
+    .addSubcommand(sub => sub.setName('leaderboard').setDescription('Top card collectors in this server')),
 
   // ── Autocomplete ─────────────────────────────────────────────────────────────
   async autocomplete(interaction) {
@@ -57,7 +50,6 @@ module.exports = {
 
   async execute(interaction) {
     const sub     = interaction.options.getSubcommand();
-    const guildId = interaction.guild.id;
 
     // ── Collection ───────────────────────────────────────────────────────────
     if (sub === 'collection') {
@@ -177,36 +169,6 @@ module.exports = {
         .setDescription(desc)
         .setFooter({ text: 'Collect cards by grabbing drops in chat!' })
         .setTimestamp()] });
-    }
-
-    // ── Config (admin) ───────────────────────────────────────────────────────
-    if (sub === 'config') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild))
-        return interaction.reply({ content: '❌ You need **Manage Server** to configure card drops.', ephemeral: true });
-
-      const setting = interaction.options.getString('setting');
-      const config  = readJson('cards_config.json', {});
-      if (!config[guildId]) config[guildId] = { interval: 50 };
-      const cfg = config[guildId];
-      if (!cfg.interval) cfg.interval = 50;
-
-      if (setting === 'view') {
-        return interaction.reply({ embeds: [new EmbedBuilder()
-          .setColor(0xE91E63)
-          .setTitle('🃏  Card Drop Config')
-          .setDescription('Cards drop in whichever channel reaches the message count — no single restricted channel.')
-          .addFields({ name: '🔢 Drop Interval', value: `Every **${cfg.interval}** messages (per channel)`, inline: false })
-          .setFooter({ text: 'Use /cards config interval to change the number' })], ephemeral: true });
-      }
-
-      if (setting === 'interval') {
-        const interval = interaction.options.getInteger('interval');
-        if (!interval) return interaction.reply({ content: '❌ Provide an interval value (10–500).', ephemeral: true });
-        cfg.interval = interval;
-        config[guildId] = cfg;
-        writeJson('cards_config.json', config);
-        return interaction.reply({ content: `✅ Card drops set to every **${interval} messages** per channel.`, ephemeral: true });
-      }
     }
   },
 };

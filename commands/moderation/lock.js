@@ -75,12 +75,14 @@ module.exports = {
     };
     writeJson(LOCK_FILE, locks);
 
-    const embed = createServerEmbed('success', {
-      title: '🔒 Channel Locked',
-      description: `${channel} has been locked.\nOnly **moderators and admins** can send messages here until \`/unlock\` is run.`,
+    const embed = createServerEmbed('error', {
+      title: '🔒  Channel Locked',
+      color: 0xC0392B,
+      thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f512.png',
+      description: `${channel} is locked — only **moderators and admins** can speak here.`,
       fields: [
-        { name: '📋 Reason', value: reason, inline: false },
-        { name: '👮 Locked By', value: `<@${interaction.user.id}>`, inline: true },
+        { name: '📋 Reason', value: reason, inline: true },
+        { name: '👮 By', value: `<@${interaction.user.id}>`, inline: true },
       ],
     }, interaction.guild);
 
@@ -88,7 +90,12 @@ module.exports = {
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ embeds: [createServerEmbed('warning', { title: '🔒 Channel Locked', description: `This channel has been locked by <@${interaction.user.id}>.\n**Reason:** ${reason}` }, interaction.guild)] });
+        await channel.send({ embeds: [createServerEmbed('error', {
+          title: '🔒  Channel Locked',
+          color: 0xC0392B,
+          thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f512.png',
+          description: `Locked by <@${interaction.user.id}> — **${reason}**`,
+        }, interaction.guild)] });
       } catch {}
     }
   },

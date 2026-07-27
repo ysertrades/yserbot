@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-  SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits,
+  SlashCommandBuilder, EmbedBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } = require('discord.js');
 const { getBalance, removeCoins } = require('../../utils/economyManager');
@@ -11,9 +11,6 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const SHOP_FILE = 'shop.json';
 const INV_FILE  = 'inventory.json';
 const fmt = n => Number(n).toLocaleString();
-
-// Built-in item type definitions
-const ITEM_TYPES = Object.entries(EFFECT_TYPES).map(([id, e]) => ({ value: id, name: `${e.label}` }));
 
 function getShop(guildId) {
   const data = readJson(SHOP_FILE, {});
@@ -58,17 +55,7 @@ module.exports = {
       .addIntegerOption(o => o.setName('quantity').setDescription('How many to buy').setMinValue(1).setMaxValue(10).setRequired(false)))
     .addSubcommand(sub => sub.setName('inventory').setDescription('View your owned items and active effects'))
     .addSubcommand(sub => sub.setName('use').setDescription('Use/activate an item from your inventory')
-      .addStringOption(o => o.setName('item').setDescription('Item ID to use').setRequired(true).setAutocomplete(true)))
-    .addSubcommand(sub => sub.setName('manage').setDescription('Manage the shop (admin only)')
-      .addStringOption(o => o.setName('action').setDescription('What to do').setRequired(true)
-        .addChoices({ name: '➕ Add Item', value: 'add' }, { name: '🗑️ Remove Item', value: 'remove' }, { name: '📋 View All', value: 'list' }))
-      .addStringOption(o => o.setName('id').setDescription('Item ID (slug, e.g. coin_boost_s)').setRequired(false).setAutocomplete(true))
-      .addStringOption(o => o.setName('name').setDescription('Display name').setRequired(false))
-      .addIntegerOption(o => o.setName('price').setDescription('Price in coins').setMinValue(1).setRequired(false))
-      .addStringOption(o => o.setName('type').setDescription('Item effect type').setRequired(false)
-        .addChoices(...ITEM_TYPES))
-      .addStringOption(o => o.setName('emoji').setDescription('Emoji for the item').setRequired(false))
-      .addStringOption(o => o.setName('description').setDescription('Item description').setRequired(false))),
+      .addStringOption(o => o.setName('item').setDescription('Item ID to use').setRequired(true).setAutocomplete(true))),
 
   async autocomplete(interaction) {
     const sub     = interaction.options.getSubcommand();
@@ -78,10 +65,7 @@ module.exports = {
     const items   = getShop(guildId);
     let ids       = [];
 
-    if (sub === 'manage') {
-      const action = interaction.options.getString('action');
-      if (focused.name === 'id' && action === 'remove') ids = Object.keys(items);
-    } else if (focused.name === 'item') {
+    if (focused.name === 'item') {
       ids = Object.keys(items);
       if (sub === 'use') {
         const inv   = getInv(interaction.user.id, guildId);
@@ -110,7 +94,7 @@ module.exports = {
       const items = getShop(guildId);
       const list  = Object.entries(items);
       if (list.length === 0)
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('🛒  Shop Empty').setDescription('No items available yet.\nAn admin can add items with `/shop manage add`.')], ephemeral: true });
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('🛒  Shop Empty').setDescription('No items available yet.\nAn admin can add items with `/shopsettings action:Add Item`.')], ephemeral: true });
 
       const fields = list.map(([id, item]) => {
         const def = EFFECT_TYPES[item.type];
@@ -223,65 +207,6 @@ module.exports = {
         .addFields({ name: '⏳ Expires', value: `<t:${expiresTs}:R>`, inline: true })
         .setFooter({ text: 'Check /shop inventory to see all active effects' })
         .setTimestamp()] });
-    }
-
-    // ── Manage (admin) ───────────────────────────────────────────────────────
-    if (sub === 'manage') {
-      if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild))
-        return interaction.reply({ content: '❌ You need **Manage Server** to manage the shop.', ephemeral: true });
-
-      const action = interaction.options.getString('action');
-
-      if (action === 'list') {
-        const items = getShop(guildId);
-        const list  = Object.entries(items);
-        if (list.length === 0)
-          return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('📋 Shop is Empty').setDescription('Add items with `/shop manage add`.')], ephemeral: true });
-        return interaction.reply({ embeds: [new EmbedBuilder()
-          .setColor(0x2ECC71)
-          .setTitle('📋 All Shop Items')
-          .setDescription(list.map(([id, i]) => `**${i.emoji || '📦'} ${i.name}** \`${id}\`  •  ${fmt(i.price)} coins  •  \`${i.type}\``).join('\n'))
-          .setTimestamp()], ephemeral: true });
-      }
-
-      if (action === 'add') {
-        const id   = interaction.options.getString('id')?.toLowerCase().replace(/\s+/g, '_');
-        const name = interaction.options.getString('name');
-        const price = interaction.options.getInteger('price');
-        const type  = interaction.options.getString('type');
-        const emoji = interaction.options.getString('emoji') || '📦';
-        const desc  = interaction.options.getString('description') || '';
-        if (!id || !name || !price || !type)
-          return interaction.reply({ content: '❌ `id`, `name`, `price`, and `type` are all required.', ephemeral: true });
-
-        const data = readJson(SHOP_FILE, {});
-        if (!data[guildId]) data[guildId] = { items: {} };
-        if (!data[guildId].items) data[guildId].items = {};
-        data[guildId].items[id] = { name, price, type, emoji, description: desc };
-        writeJson(SHOP_FILE, data);
-
-        return interaction.reply({ embeds: [new EmbedBuilder()
-          .setColor(0x2ECC71)
-          .setTitle('✅  Item Added')
-          .addFields(
-            { name: '🆔 ID',       value: `\`${id}\``,           inline: true },
-            { name: '📦 Name',     value: name,                   inline: true },
-            { name: '💸 Price',    value: `${fmt(price)} coins`,  inline: true },
-            { name: '⚙️ Type',    value: `\`${type}\``,          inline: true },
-          )
-          .setTimestamp()], ephemeral: true });
-      }
-
-      if (action === 'remove') {
-        const id   = interaction.options.getString('id')?.toLowerCase();
-        if (!id) return interaction.reply({ content: '❌ Provide an item ID to remove.', ephemeral: true });
-        const data = readJson(SHOP_FILE, {});
-        if (!data[guildId]?.items?.[id])
-          return interaction.reply({ content: `❌ No item \`${id}\` found.`, ephemeral: true });
-        delete data[guildId].items[id];
-        writeJson(SHOP_FILE, data);
-        return interaction.reply({ content: `✅ Item \`${id}\` removed from the shop.`, ephemeral: true });
-      }
     }
   },
 };

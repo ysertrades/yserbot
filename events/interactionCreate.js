@@ -231,12 +231,26 @@ module.exports = {
               global.giveawayMeta.set(interaction.message.id, {
                 prize: saved.prize, winners: saved.winnersCount, imageUrl: saved.imageUrl,
                 hostId: saved.hostId, endTime: saved.endTime, guildId: saved.guildId,
+                requiredRoleId: saved.requiredRoleId || null, bonusRoleId: saved.bonusRoleId || null,
+                minAccountAgeDays: saved.minAccountAgeDays || 0,
               });
             }
           }
 
           if (!entrants) return interaction.reply({ content: 'This giveaway has ended.', flags: EPHEMERAL_FLAG });
           if (entrants.has(interaction.user.id)) return interaction.reply({ content: "You've already entered!", flags: EPHEMERAL_FLAG });
+
+          const gawMeta = global.giveawayMeta?.get(interaction.message.id);
+          if (gawMeta?.requiredRoleId && !interaction.member.roles.cache.has(gawMeta.requiredRoleId)) {
+            return interaction.reply({ content: `❌ You need the <@&${gawMeta.requiredRoleId}> role to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+          }
+          if (gawMeta?.minAccountAgeDays > 0) {
+            const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86400000;
+            if (ageDays < gawMeta.minAccountAgeDays) {
+              return interaction.reply({ content: `❌ Your account must be at least **${gawMeta.minAccountAgeDays} days** old to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+            }
+          }
+
           entrants.add(interaction.user.id);
           try {
             const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
