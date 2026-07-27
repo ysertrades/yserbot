@@ -16,14 +16,33 @@ module.exports = {
         .addSubcommand(sub => sub.setName('add').setDescription('Add auto-reply')
             .addStringOption(opt => opt.setName('name').setDescription('Name').setRequired(true))
             .addStringOption(opt => opt.setName('trigger').setDescription('Trigger text').setRequired(true))
-            .addStringOption(opt => opt.setName('embed').setDescription('Embed template name').setRequired(true))
+            .addStringOption(opt => opt.setName('embed').setDescription('Embed template name').setRequired(true).setAutocomplete(true))
             .addBooleanOption(opt => opt.setName('exact').setDescription('Exact match?').setRequired(false))
             .addIntegerOption(opt => opt.setName('cooldown').setDescription('Cooldown in seconds').setMinValue(1).setMaxValue(3600).setRequired(false)))
         .addSubcommand(sub => sub.setName('remove').setDescription('Remove auto-reply')
-            .addStringOption(opt => opt.setName('name').setDescription('Name').setRequired(true)))
+            .addStringOption(opt => opt.setName('name').setDescription('Name').setRequired(true).setAutocomplete(true)))
         .addSubcommand(sub => sub.setName('list').setDescription('List auto-replies'))
         .addSubcommand(sub => sub.setName('toggle').setDescription('Toggle auto-reply')
-            .addStringOption(opt => opt.setName('name').setDescription('Name').setRequired(true))),
+            .addStringOption(opt => opt.setName('name').setDescription('Name').setRequired(true).setAutocomplete(true))),
+
+    async autocomplete(interaction) {
+        const sub     = interaction.options.getSubcommand();
+        const focused = interaction.options.getFocused(true);
+        const guildId = interaction.guild.id;
+        const q       = String(focused.value || '').toLowerCase();
+        let choices   = [];
+
+        if (focused.name === 'embed') {
+            const all = readJson('embeds.json', {});
+            choices = Object.keys(all[guildId] || {}).filter(n => n.includes(q)).map(n => ({ name: n, value: n }));
+        } else if (focused.name === 'name' && (sub === 'remove' || sub === 'toggle')) {
+            const autoreplies = readJson('autoreplies.json', {});
+            choices = Object.keys(autoreplies[guildId] || {}).filter(n => n.includes(q)).map(n => ({ name: n, value: n }));
+        }
+
+        await interaction.respond(choices.slice(0, 25)).catch(() => {});
+    },
+
     async execute(interaction) {
         const autoreplies = readJson('autoreplies.json', {});
         const guildId = interaction.guild.id;

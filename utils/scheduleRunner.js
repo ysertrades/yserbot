@@ -58,7 +58,7 @@ async function fireSchedule(guild, schedule) {
 
     // Required lazily to avoid a require cycle at module-load time.
     const { buildEmbedPayload } = require('../commands/utility/embed');
-    const payload = buildEmbedPayload(guild, schedule.embedName);
+    const payload = buildEmbedPayload(guild, schedule.embedName, { channel });
     if (!payload) {
         return { ok: false, reason: 'template-missing' };
     }

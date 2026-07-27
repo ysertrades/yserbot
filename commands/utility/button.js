@@ -5,7 +5,7 @@ const {
   ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, isValidHexColor, isValidUrl } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 const STYLE_COLORS = {
@@ -18,6 +18,36 @@ const STYLE_COLORS = {
 
 const activeEdits = new Map();
 const TEMP_MS = 5 * 60 * 1000; // 5 minutes
+
+// ── customId collision guard ────────────────────────────────────────────────────
+// These prefixes/exact ids are already used elsewhere in the bot's interaction
+// routing (embeds, tickets, giveaways, casino, reports, etc). A saved button
+// sharing one of these would either get hijacked by that other feature's
+// handler, or silently never fire because the other handler intercepts it first.
+const RESERVED_EXACT = new Set([
+  'giveaway_enter', 'giveaway_participants', 'create_ticket', 'close_ticket',
+  'ticket_still_here', 'card_grab', 'card_claimed', 'embed_delno', 'btn_delno', 'sch_delno',
+]);
+const RESERVED_PREFIXES = [
+  'gaw_', 'poll_vote_', 'embed_edit_', 'embed_del', 'embed_modal_', 'embed_list:',
+  'embed_fieldsel_', 'embed_previewsend:', 'be_', 'btn_del', 'sch_del', 'rpt_', 'cs:',
+  'restore_confirm:', 'restore_cancel:',
+];
+function isReservedId(id) {
+  if (!id) return true;
+  if (id.includes(':')) return true; // avoid colliding with any colon-delimited scheme used elsewhere
+  if (RESERVED_EXACT.has(id)) return true;
+  return RESERVED_PREFIXES.some(p => id.startsWith(p));
+}
+
+// ── Emoji validation ─────────────────────────────────────────────────────────────
+const CUSTOM_EMOJI_RE = /^<a?:\w{2,32}:\d{15,20}>$/;
+function isValidEmoji(str) {
+  if (!str) return false;
+  const s = str.trim();
+  if (CUSTOM_EMOJI_RE.test(s)) return true;
+  return /\p{Extended_Pictographic}/u.test(s) && s.length <= 8;
+}
 
 // ── Delete selector (select menu) ──────────────────────────────────────────────
 
@@ -56,19 +86,26 @@ function buildDeleteSelector(guildId, interaction) {
 }
 
 function editorEmbed(btn) {
+  const modeLabel = { give: 'Give only', remove: 'Remove only' }[btn.mode] || 'Toggle (add/remove)';
+  const fields = [
+    { name: 'Label',   value: btn.label   || '*(none)*',  inline: true },
+    { name: 'Style',   value: btn.style   || 'Primary',   inline: true },
+    { name: 'Emoji',   value: btn.emoji   || '*(none)*',  inline: true },
+    { name: 'Type',    value: btn.type    || '—',         inline: true },
+    { name: 'Message', value: btn.message || '*(none)*',  inline: true },
+    { name: 'URL',     value: btn.url     || '*(none)*',  inline: true },
+    { name: 'Embed',   value: btn.embedName || '—',       inline: true },
+    { name: 'Cooldown', value: btn.cooldown ? `${btn.cooldown}s` : '*(none)*', inline: true },
+    { name: 'Uses',    value: String(btn.uses || 0),      inline: true },
+  ];
+  if (btn.type === 'role') fields.push({ name: 'Role Mode', value: modeLabel, inline: true });
+  if (btn.requiredRoleId)  fields.push({ name: 'Requires Role', value: `<@&${btn.requiredRoleId}>`, inline: true });
+  if (btn.type === 'random') fields.push({ name: 'Responses', value: btn.responses ? String(btn.responses.split('|').filter(Boolean).length) : '0', inline: true });
   return new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle(`🔘 Editing Button: ${btn.id}`)
-    .setDescription('Click a field below to edit it, then **Save**.')
-    .addFields(
-      { name: 'Label',   value: btn.label   || '*(none)*',  inline: true },
-      { name: 'Style',   value: btn.style   || 'Primary',   inline: true },
-      { name: 'Emoji',   value: btn.emoji   || '*(none)*',  inline: true },
-      { name: 'Type',    value: btn.type    || '—',         inline: true },
-      { name: 'Message', value: btn.message || '*(none)*',  inline: true },
-      { name: 'URL',     value: btn.url     || '*(none)*',  inline: true },
-      { name: 'Embed',   value: btn.embedName || '—',       inline: true },
-    );
+    .setDescription('Click a field below to edit it, then **Save**.\n*Note: role mode / prerequisite role / type can\'t be changed here — delete and recreate the button to change those.*')
+    .addFields(fields);
 }
 
 function editorRows(sessionId) {
@@ -82,6 +119,10 @@ function editorRows(sessionId) {
     new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`be_url_${sessionId}`).setLabel('🔗 URL').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`be_style_select_${sessionId}`).setLabel('🔄 Cycle Style').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`be_cooldown_${sessionId}`).setLabel('⏱️ Cooldown').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`be_responses_${sessionId}`).setLabel('🎲 Responses').setStyle(ButtonStyle.Secondary),
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`be_save_${sessionId}`).setLabel('💾 Save').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`be_cancel_${sessionId}`).setLabel('❌ Cancel').setStyle(ButtonStyle.Danger),
     ),
@@ -95,10 +136,11 @@ module.exports = {
     .setName('button').setDescription('Manage buttons')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(s => s.setName('add').setDescription('Add a button to an embed')
-      .addStringOption(o => o.setName('embed').setDescription('Embed template name').setRequired(true))
+      .addStringOption(o => o.setName('embed').setDescription('Embed template name').setRequired(true).setAutocomplete(true))
       .addStringOption(o => o.setName('id').setDescription('Button ID').setRequired(true))
       .addStringOption(o => o.setName('type').setDescription('Type').setRequired(true).addChoices(
-        { name: 'Link', value: 'link' }, { name: 'Role', value: 'role' }, { name: 'Custom', value: 'custom' }, { name: 'Embed', value: 'embed' },
+        { name: 'Link', value: 'link' }, { name: 'Role', value: 'role' }, { name: 'Custom', value: 'custom' },
+        { name: 'Embed', value: 'embed' }, { name: 'Random Response', value: 'random' },
       ))
       .addStringOption(o => o.setName('style').setDescription('Button style').setRequired(true).addChoices(
         { name: 'Primary   [Blurple]', value: 'Primary'   },
@@ -111,11 +153,19 @@ module.exports = {
       .addStringOption(o => o.setName('color').setDescription('Custom accent color hex').setRequired(false))
       .addStringOption(o => o.setName('url').setDescription('URL (Link type only)').setRequired(false))
       .addRoleOption(o => o.setName('role').setDescription('Role (Role type only)').setRequired(false))
+      .addStringOption(o => o.setName('mode').setDescription('Role behavior (Role type only, default: Toggle)').setRequired(false).addChoices(
+        { name: 'Toggle (add if missing, remove if present)', value: 'toggle' },
+        { name: 'Give only',   value: 'give'   },
+        { name: 'Remove only', value: 'remove' },
+      ))
+      .addRoleOption(o => o.setName('required-role').setDescription('Role a member must already have (Role type only)').setRequired(false))
       .addStringOption(o => o.setName('message').setDescription('Reply message (Custom type only)').setRequired(false))
+      .addStringOption(o => o.setName('responses').setDescription('Random replies, separated by | (Random type only)').setRequired(false))
       .addStringOption(o => o.setName('emoji').setDescription('Button emoji').setRequired(false))
+      .addIntegerOption(o => o.setName('cooldown').setDescription('Per-user cooldown in seconds (optional)').setMinValue(0).setMaxValue(86400).setRequired(false))
       .addStringOption(o => o.setName('response-embed').setDescription('Embed to show privately (Embed type only — pick from saved templates)').setRequired(false).setAutocomplete(true)))
     .addSubcommand(s => s.setName('edit').setDescription('Edit an existing button interactively')
-      .addStringOption(o => o.setName('id').setDescription('Button ID to edit').setRequired(true)))
+      .addStringOption(o => o.setName('id').setDescription('Button ID to edit').setRequired(true).setAutocomplete(true)))
     .addSubcommand(s => s.setName('remove').setDescription('Delete a button — choose from a dropdown'))
     .addSubcommand(s => s.setName('list').setDescription('List all buttons')),
 
@@ -133,28 +183,53 @@ module.exports = {
       const emoji     = interaction.options.getString('emoji') || null;
       const embedName = interaction.options.getString('embed').toLowerCase();
       const colorHex  = interaction.options.getString('color') || null;
+      const cooldown  = interaction.options.getInteger('cooldown') || 0;
 
       if (!label && !emoji)
         return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'A button needs at least a **label** or an **emoji**.' }, interaction.guild)], flags: 64 });
       if (buttons[guildId][id])
         return interaction.reply({ embeds: [createServerEmbed('error', { title: 'ID Taken', description: `Button **${id}** already exists.` }, interaction.guild)], flags: 64 });
+      if (isReservedId(id))
+        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Reserved ID', description: `\`${id}\` collides with a built-in bot feature. Pick a different button ID (avoid colons and prefixes like \`be_\`, \`embed_\`, \`sch_\`, \`gaw_\`, \`rpt_\`, \`cs:\`).` }, interaction.guild)], flags: 64 });
+      if (emoji && !isValidEmoji(emoji))
+        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Emoji', description: 'Use a real emoji (😀) or a custom emoji like `<:name:id>`.' }, interaction.guild)], flags: 64 });
+      if (colorHex && !isValidHexColor(colorHex))
+        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)], flags: 64 });
+
       if (type === 'link') {
         const url = interaction.options.getString('url');
         if (!url)             return interaction.reply({ embeds: [createServerEmbed('error', { title: 'URL Required' }, interaction.guild)], flags: 64 });
+        if (!isValidUrl(url)) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
         if (style !== 'Link') return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Use Link Style', description: 'Link buttons must use the **Link** style.' }, interaction.guild)], flags: 64 });
       }
+
+      const role = interaction.options.getRole('role');
+      if (type === 'role' && !role)
+        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Role Required', description: 'Choose a role in the **role** option for a Role-type button.' }, interaction.guild)], flags: 64 });
 
       const responseEmbedName = interaction.options.getString('response-embed')?.toLowerCase() || null;
       if (type === 'embed' && !responseEmbedName)
         return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Embed Required', description: 'Choose a saved embed template in the **response-embed** option.' }, interaction.guild)], flags: 64 });
 
+      const responses = interaction.options.getString('responses') || null;
+      if (type === 'random') {
+        const list = (responses || '').split('|').map(s => s.trim()).filter(Boolean);
+        if (list.length === 0)
+          return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Responses Required', description: 'Provide at least one reply in **responses**, separated by `|` for multiple (e.g. `Heads!|Tails!|Try again`).' }, interaction.guild)], flags: 64 });
+      }
+
       buttons[guildId][id] = {
         id, embedName, label, type, style, color: colorHex,
         url:              interaction.options.getString('url')    || null,
-        roleId:           interaction.options.getRole('role')?.id || null,
+        roleId:           role?.id || null,
+        mode:             type === 'role' ? (interaction.options.getString('mode') || 'toggle') : null,
+        requiredRoleId:   type === 'role' ? (interaction.options.getRole('required-role')?.id || null) : null,
         message:          interaction.options.getString('message') || null,
+        responses,
         responseEmbedName,
         emoji,
+        cooldown,
+        uses: 0,
       };
       writeJson('buttons.json', buttons);
 
@@ -178,25 +253,34 @@ module.exports = {
 
     else if (sub === 'list') {
       const list = Object.values(buttons[guildId] || {});
+      let desc = list.length
+        ? list.map(b => `• **${b.id}** → \`${b.embedName}\` · ${b.style}${b.label ? ` · "${b.label}"` : ''}${b.roleId ? ` <@&${b.roleId}>` : ''}${b.cooldown ? ` · ⏱️${b.cooldown}s` : ''} · 🖱️${b.uses || 0}`).join('\n')
+        : 'No buttons configured.';
+      if (desc.length > 4000) desc = desc.slice(0, 3990) + '\n…(truncated)';
       return interaction.reply({
-        embeds: [createServerEmbed('info', {
-          title: '🔘 Buttons',
-          description: list.length
-            ? list.map(b => `• **${b.id}** → \`${b.embedName}\` · ${b.style}${b.label ? ` · "${b.label}"` : ''}${b.roleId ? ` <@&${b.roleId}>` : ''}`).join('\n')
-            : 'No buttons configured.',
-        }, interaction.guild)],
+        embeds: [createServerEmbed('info', { title: '🔘 Buttons', description: desc }, interaction.guild)],
       });
     }
   },
 
-  // ── Autocomplete (response-embed option) ─────────────────────────────────
+  // ── Autocomplete (embed / response-embed / id options) ────────────────────
   autocomplete: async function(interaction) {
-    const focused  = interaction.options.getFocused().toLowerCase();
-    const guildId  = interaction.guild.id;
+    const focused = interaction.options.getFocused(true);
+    const guildId = interaction.guild.id;
+    const q       = String(focused.value || '').toLowerCase();
+
+    if (focused.name === 'id') {
+      const buttons  = readJson('buttons.json', {});
+      const ids      = Object.keys(buttons[guildId] || {});
+      const filtered = ids.filter(i => i.toLowerCase().includes(q)).slice(0, 25).map(i => ({ name: i, value: i }));
+      return interaction.respond(filtered).catch(() => {});
+    }
+
+    // 'embed' or 'response-embed' — both reference saved embed templates
     const all      = readJson('embeds.json', {});
     const names    = Object.keys(all[guildId] || {});
-    const filtered = names.filter(n => n.includes(focused)).slice(0, 25);
-    await interaction.respond(filtered.map(n => ({ name: n, value: n })));
+    const filtered = names.filter(n => n.includes(q)).slice(0, 25).map(n => ({ name: n, value: n }));
+    await interaction.respond(filtered).catch(() => {});
   },
 
   // ── Select menu handler (delete pick) ─────────────────────────────────────
@@ -279,21 +363,24 @@ module.exports = {
     }
 
     const fieldMeta = {
-      label:   { label: 'Label',        style: TextInputStyle.Short,     max: 80   },
-      emoji:   { label: 'Emoji',        style: TextInputStyle.Short,     max: 50   },
-      color:   { label: 'Color (hex)',  style: TextInputStyle.Short,     max: 7    },
-      message: { label: 'Custom Reply', style: TextInputStyle.Paragraph, max: 2000 },
-      url:     { label: 'URL',          style: TextInputStyle.Short,     max: 512  },
+      label:     { label: 'Label',                        style: TextInputStyle.Short,     max: 80   },
+      emoji:     { label: 'Emoji',                         style: TextInputStyle.Short,     max: 50   },
+      color:     { label: 'Color (hex)',                   style: TextInputStyle.Short,     max: 7    },
+      message:   { label: 'Custom Reply',                  style: TextInputStyle.Paragraph, max: 2000 },
+      url:       { label: 'URL',                           style: TextInputStyle.Short,     max: 512  },
+      cooldown:  { label: 'Cooldown seconds (0 = none)',   style: TextInputStyle.Short,     max: 6    },
+      responses: { label: 'Random replies, separate w/ |', style: TextInputStyle.Paragraph, max: 1000 },
     };
     const meta = fieldMeta[action];
     if (!meta) return;
 
+    const currentValue = action === 'cooldown' ? String(btn.cooldown || 0) : (btn[action] || '');
     const modal = new ModalBuilder()
       .setCustomId(`be_modal_${action}_${sessKey}`)
       .setTitle(`Edit Button — ${meta.label}`)
       .addComponents(new ActionRowBuilder().addComponents(
         new TextInputBuilder().setCustomId('value').setLabel(meta.label).setStyle(meta.style)
-          .setValue(btn[action] || '').setMaxLength(meta.max).setRequired(false),
+          .setValue(currentValue).setMaxLength(meta.max).setRequired(false),
       ));
     return interaction.showModal(modal);
   },
@@ -311,8 +398,31 @@ module.exports = {
     const buttons = readJson('buttons.json', {});
     const btn     = buttons[session.guildId]?.[session.id];
     if (!btn) return;
-    const map = { label: 'label', emoji: 'emoji', color: 'color', message: 'message', url: 'url' };
-    if (map[action]) btn[map[action]] = value || null;
+
+    if (action === 'emoji' && value && !isValidEmoji(value))
+      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Emoji', description: 'Use a real emoji (😀) or a custom emoji like `<:name:id>`.' }, interaction.guild)], flags: 64 });
+    if (action === 'color' && value && !isValidHexColor(value))
+      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)], flags: 64 });
+    if (action === 'url' && value && !isValidUrl(value))
+      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
+    if (action === 'url' && !value && btn.type === 'link')
+      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'URL Required', description: 'This is a **Link**-style button — it can\'t be saved without a URL.' }, interaction.guild)], flags: 64 });
+    if (action === 'cooldown' && value && !/^\d+$/.test(value.trim()))
+      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Cooldown', description: 'Cooldown must be a whole number of seconds (0–86400).' }, interaction.guild)], flags: 64 });
+
+    // Guard against ending up with neither a label nor an emoji — such a
+    // button can't be sent to Discord at all.
+    if (action === 'label' && !value && !btn.emoji)
+      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'This button has no emoji set, so it needs a label. Set an emoji first if you want to clear the label.' }, interaction.guild)], flags: 64 });
+    if (action === 'emoji' && !value && !btn.label)
+      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'This button has no label set, so it needs an emoji. Set a label first if you want to clear the emoji.' }, interaction.guild)], flags: 64 });
+
+    if (action === 'cooldown') {
+      btn.cooldown = value ? Math.min(86400, parseInt(value.trim(), 10)) : 0;
+    } else {
+      const map = { label: 'label', emoji: 'emoji', color: 'color', message: 'message', url: 'url', responses: 'responses' };
+      if (map[action]) btn[map[action]] = value || null;
+    }
     buttons[session.guildId][session.id] = btn;
     writeJson('buttons.json', buttons);
     return interaction.update({
