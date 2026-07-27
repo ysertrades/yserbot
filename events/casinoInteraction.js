@@ -1259,7 +1259,7 @@ async function resolveRoulette(interaction, s) {
   });
 
   const rlChartName = `roulette-result-${s.userId}.png`;
-  const rlChart = new AttachmentBuilder(engine.renderRoulettePng(spin.num), { name: rlChartName });
+  const rlChart = new AttachmentBuilder(engine.renderRoulettePng({ num: spin.num, color: spin.color, won: result.won }), { name: rlChartName });
 
   const embed = new EmbedBuilder()
     .setColor(result.won ? 0x2ECC71 : 0xE74C3C)
