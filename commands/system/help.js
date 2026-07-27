@@ -24,7 +24,6 @@ const ECONOMY_CMDS = [
 ];
 
 const COMMUNITY_CMDS = [
-  ['giveaway',   'Enter or view active giveaways'],
   ['cards',      'Collect, view & sell trading cards that drop in chat'],
   ['poll',       'Create a vote poll'],
   ['rank',       'View your XP rank card'],
@@ -66,6 +65,7 @@ const ADMIN_CATALOGUE = [
   ['ticket',         'Configure the support ticket system'],
   ['shopsettings',   'Add / remove items from the server shop'],
   ['cardsettings',   'Set how many messages between card drops (server-wide)'],
+  ['giveaway',       'Create, end, reroll & list giveaways'],
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
