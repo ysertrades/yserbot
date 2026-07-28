@@ -918,7 +918,18 @@ function renderWheelPng(winner, spinning = false) {
 
   const cx = W / 2, cy = H / 2, R = 260;
   const n = WHEEL_SEGMENTS.length;
+  const segW = (2 * Math.PI) / n;
   const winIdx = winner ? WHEEL_SEGMENTS.indexOf(winner) : -1;
+
+  // The pointer is drawn fixed at the top (screen angle 0) — the wheel itself
+  // has to be the thing that "spins" to bring the winner under it. `midAngle`
+  // is the winning segment's angle in the wheel's own (unrotated) layout;
+  // rotating every pixel lookup by that amount makes the winner's wedge land
+  // exactly at the top, the same way a real prize wheel comes to rest with
+  // the winning slice under the pointer instead of the pointer being purely
+  // decorative and the highlighted wedge staying wherever it started.
+  const twoPi = 2 * Math.PI;
+  const midAngle = winIdx >= 0 ? (winIdx + 0.5) * segW : 0;
 
   for (let py = cy - R - 6; py <= cy + R + 6; py++) {
     for (let pxl = cx - R - 6; pxl <= cx + R + 6; pxl++) {
@@ -929,9 +940,11 @@ function renderWheelPng(winner, spinning = false) {
       if (d < 32) { _setPx(png, pxl, py, [200, 165, 55, 255]); continue; }
 
       let ang = Math.atan2(dy, dx) + Math.PI / 2;
-      if (ang < 0) ang += 2 * Math.PI;
-      const idx = Math.floor((ang / (2 * Math.PI)) * n) % n;
-      const frac = (ang - idx * (2 * Math.PI / n)) / (2 * Math.PI / n);
+      if (ang < 0) ang += twoPi;
+      let sampleAng = ang + midAngle;
+      if (sampleAng >= twoPi) sampleAng -= twoPi;
+      const idx = Math.floor(sampleAng / segW) % n;
+      const frac = (sampleAng - idx * segW) / segW;
       if (frac < 0.02 || frac > 0.98) { _setPx(png, pxl, py, [200, 165, 55, 255]); continue; }
 
       const seg = WHEEL_SEGMENTS[idx];
@@ -945,14 +958,16 @@ function renderWheelPng(winner, spinning = false) {
 
   // Segment labels — one short label centered inside each wedge, radiating
   // out from the hub, so the payout is readable straight off the wheel art
-  // instead of a separate text paytable.
+  // instead of a separate text paytable. Rotated by the same amount as the
+  // wedge colors above so a label always sits inside its own wedge.
   if (!spinning) {
     const labelR = R * 0.62;
     for (let idx = 0; idx < n; idx++) {
       const seg = WHEEL_SEGMENTS[idx];
-      const mid = (idx + 0.5) * (2 * Math.PI / n);
-      const lx = cx + labelR * Math.cos(mid - Math.PI / 2);
-      const ly = cy + labelR * Math.sin(mid - Math.PI / 2);
+      let screenAngle = (idx + 0.5) * segW - midAngle;
+      screenAngle = ((screenAngle % twoPi) + twoPi) % twoPi;
+      const lx = cx + labelR * Math.cos(screenAngle - Math.PI / 2);
+      const ly = cy + labelR * Math.sin(screenAngle - Math.PI / 2);
       _drawWheelLabel(png, seg.short, lx, ly, 3);
     }
   }
