@@ -67,4 +67,29 @@ async function dmUser(targetUser, action, guild, reason, extra = {}) {
   await targetUser.send({ embeds: [embed] }).catch(() => {});
 }
 
-module.exports = { sendModLog, dmUser };
+// Message IDs that some other code path (auto-mod filters, /purge) already
+// deleted and logged its own way, so the generic passive message-delete
+// listener doesn't post a second, redundant entry for the same message.
+if (!global.suppressDeleteLog) global.suppressDeleteLog = new Set();
+function suppressDeleteLog(messageId) {
+  global.suppressDeleteLog.add(messageId);
+  setTimeout(() => global.suppressDeleteLog.delete(messageId), 60_000);
+}
+function isDeleteLogSuppressed(messageId) {
+  return global.suppressDeleteLog.has(messageId);
+}
+
+/** Post an already-built embed straight to the guild's mod-log channel —
+ *  used by passive logging (message edits/deletes, joins/leaves, role
+ *  changes, purges, auto-mod actions) that don't fit the fixed
+ *  User/Moderator/Reason layout `sendModLog` uses for manual actions. */
+async function postCustomLog(guild, embed, components = []) {
+  const config    = readJson('config.json', {});
+  const channelId = config[guild.id]?.logsChannel;
+  if (!channelId) return null;
+  const channel = guild.channels.cache.get(channelId);
+  if (!channel) return null;
+  return channel.send({ embeds: [embed], components }).catch(() => null);
+}
+
+module.exports = { sendModLog, dmUser, postCustomLog, suppressDeleteLog, isDeleteLogSuppressed };

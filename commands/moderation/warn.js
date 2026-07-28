@@ -2,8 +2,7 @@
 
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
-const { readJson, writeJson } = require('../../utils/jsonStorage');
-const { sendModLog, dmUser } = require('../../utils/modLog');
+const { issueWarning } = require('../../utils/warnUtil');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -21,20 +20,7 @@ module.exports = {
     if (member.roles.highest.position >= interaction.member.roles.highest.position)
       return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'You cannot warn this user.' }, interaction.guild)], ephemeral: true });
 
-    // Record case
-    const cases     = readJson('cases.json', {});
-    const guildCases = cases[interaction.guild.id] || [];
-    const caseId    = guildCases.length + 1;
-    guildCases.push({ id: caseId, type: 'warn', userId: user.id, userTag: user.tag, moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason, timestamp: Date.now() });
-    cases[interaction.guild.id] = guildCases;
-    writeJson('cases.json', cases);
-
-    // Count active warns
-    const warnCount = guildCases.filter(c => c.type === 'warn' && c.userId === user.id).length;
-
-    // DM + log
-    await dmUser(user, 'warn', interaction.guild, reason, { caseId });
-    await sendModLog(interaction.guild, 'warn', user, interaction.user, reason, { caseId });
+    const { caseId, warnCount, autoPunish } = await issueWarning(interaction.guild, interaction.user, user, member, reason);
 
     // Public reply
     await interaction.reply({
@@ -49,27 +35,13 @@ module.exports = {
       }, interaction.guild)],
     });
 
-    // Auto-punish
-    const config      = readJson('config.json', {});
-    const warnSettings = config[interaction.guild.id]?.warnSettings;
-    if (warnSettings?.threshold && warnCount >= warnSettings.threshold) {
-      const action = warnSettings.action || 'kick';
-      try {
-        if (action === 'kick') {
-          await member.kick(`Auto-punish: reached ${warnSettings.threshold} warnings`);
-        } else if (action === 'ban') {
-          await interaction.guild.members.ban(user.id, { reason: `Auto-punish: reached ${warnSettings.threshold} warnings` });
-        } else if (action === 'mute') {
-          const duration = warnSettings.muteDuration || 3600000;
-          await member.timeout(duration, `Auto-punish: reached ${warnSettings.threshold} warnings`);
-        }
-        await interaction.followUp({
-          embeds: [createServerEmbed('info', {
-            title: `🤖 Auto-Punishment: ${action.toUpperCase()}`,
-            description: `<@${user.id}> was automatically ${action}ed after reaching **${warnSettings.threshold}** warnings.`,
-          }, interaction.guild)],
-        });
-      } catch {}
+    if (autoPunish) {
+      await interaction.followUp({
+        embeds: [createServerEmbed('info', {
+          title: `🤖 Auto-Punishment: ${autoPunish.action.toUpperCase()}`,
+          description: `<@${user.id}> was automatically ${autoPunish.action}ed after reaching **${autoPunish.threshold}** warnings.`,
+        }, interaction.guild)],
+      });
     }
   },
 };

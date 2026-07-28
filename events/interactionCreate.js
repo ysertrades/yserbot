@@ -388,6 +388,25 @@ module.exports = {
           return client.commands.get('restore')?.handleRestoreCancel(interaction);
         }
 
+        // Auto-mod — panel toggles
+        if (id.startsWith('automod_toggle:')) {
+          return client.commands.get('automod')?.handleToggle(interaction, id.slice('automod_toggle:'.length));
+        }
+        if (id.startsWith('modlog_toggle:')) {
+          return client.commands.get('modlog')?.handleToggle(interaction, id.slice('modlog_toggle:'.length));
+        }
+
+        // Auto-mod — link request flow
+        if (id.startsWith('automod_link_request:')) {
+          return client.commands.get('automod')?.handleLinkRequestButton(interaction, id.slice('automod_link_request:'.length));
+        }
+        if (id.startsWith('automod_link_approve:')) {
+          return client.commands.get('automod')?.handleLinkApprove(interaction, id.slice('automod_link_approve:'.length));
+        }
+        if (id.startsWith('automod_link_deny:')) {
+          return client.commands.get('automod')?.handleLinkDeny(interaction, id.slice('automod_link_deny:'.length));
+        }
+
         // Casino — skip (handled by casinoInteraction.js)
         if (id.startsWith('cs:')) return;
 
@@ -497,6 +516,11 @@ module.exports = {
         // Verification — rules text modal
         if (id === 'verify_rules_modal') {
           return client.commands.get('verify')?.handleRulesModal(interaction);
+        }
+
+        // Auto-mod — link request modal (link + reason)
+        if (id.startsWith('automod_link_modal:')) {
+          return client.commands.get('automod')?.handleLinkModalSubmit(interaction, id.slice('automod_link_modal:'.length));
         }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);

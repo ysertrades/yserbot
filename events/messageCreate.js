@@ -36,6 +36,12 @@ module.exports = {
       return;
     }
 
+    // ── Auto-mod (bad-word / link filter) ─────────────────────────────────
+    // Runs before XP/cards/autoreply — a filtered message shouldn't earn XP,
+    // drop a card, or trigger an autoreply.
+    const handled = await client?.commands?.get('automod')?.handleMessage(message, client).catch(() => false);
+    if (handled) return;
+
     await handleLeveling(message);
     await handleAutoReply(message);
     await handleCardDrop(message);
