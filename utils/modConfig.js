@@ -3,7 +3,7 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { readJson, writeJson } = require('./jsonStorage');
 
-const AUTOMOD_DEFAULTS = { badWords: false, linkFilter: false, customWords: [] };
+const AUTOMOD_DEFAULTS = { badWords: false, linkFilter: false, customWords: [], mentionSpamProtection: false, mentionSpamRuleId: null };
 const MODLOG_DEFAULTS  = { members: true, messages: true, roles: true, purges: true };
 
 function getGuildConfig(guildId) {
