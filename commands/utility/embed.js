@@ -19,20 +19,32 @@ const MAX_FIELDS       = 25;   // Discord's max fields per embed
 const MAX_TOTAL_CHARS  = 6000; // Discord's max combined character count across all embeds in a message
 const LIST_PAGE_SIZE   = 10;
 
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Typing "#channel-name" the way you would in normal chat doesn't become a
 // real mention in an embed the way it does in a message box — there's no
 // live autocomplete inside a modal text field. So on resolve, turn any
 // "#name" that matches a real channel in the guild into an actual `<#id>`
 // mention (which Discord then renders as a clickable, always-up-to-date
-// pill). Left untouched if preceded by a word character or "/" (so URL
-// fragments like "example.com/page#section" aren't touched) or if no
-// channel with that name exists.
+// pill). Matches against each channel's *actual* name rather than a fixed
+// character pattern, since real channel names routinely include emoji and
+// unicode separators (e.g. "📅┃economic-news") that a plain
+// letters/digits/hyphen regex would never catch. Checked longest name
+// first so one channel's name can't shadow-match inside another's.
 function resolveChannelMentions(text, guild) {
   if (!text || !guild) return text;
-  return text.replace(/(^|[^\w#/])#([a-zA-Z0-9_-]{1,100})/g, (match, pre, name) => {
-    const channel = guild.channels.cache.find(c => c.name?.toLowerCase() === name.toLowerCase());
-    return channel ? `${pre}<#${channel.id}>` : match;
-  });
+  const channels = [...guild.channels.cache.values()]
+    .filter(c => c.name)
+    .sort((a, b) => b.name.length - a.name.length);
+
+  let result = text;
+  for (const channel of channels) {
+    const pattern = new RegExp(`(^|[^\\w/])#${escapeRegExp(channel.name)}`, 'gi');
+    result = result.replace(pattern, (match, pre) => `${pre}<#${channel.id}>`);
+  }
+  return result;
 }
 
 // ── Placeholder variables ───────────────────────────────────────────────────────
