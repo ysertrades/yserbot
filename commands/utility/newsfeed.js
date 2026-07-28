@@ -1,8 +1,33 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { getNewsFeedSettings, setNewsFeedSettings } = require('../../utils/modConfig');
+const { TOPICS } = require('../../utils/newsTopics');
+
+function buildTopicsPanel(guild, settings) {
+  const selected = new Set(settings.filterTopics);
+  const embed = createServerEmbed('info', {
+    title: '📰 News Topics',
+    description:
+      'Pick the topics you want — no need to know keywords, each one is a pre-built bundle grounded in real Financial Juice headlines.\n\n' +
+      TOPICS.map(t => `${t.emoji} **${t.label}** — ${t.description}${selected.has(t.key) ? ' ✅' : ''}`).join('\n') +
+      `\n\nThis only decides *which* headlines match — set the filter mode with \`/newsfeed filter-mode\` (block-list mutes matches, allow-list only posts matches).`,
+  }, guild);
+
+  const menu = new StringSelectMenuBuilder()
+    .setCustomId('newsfeed_topics_select')
+    .setPlaceholder('Select topics…')
+    .setMinValues(0)
+    .setMaxValues(TOPICS.length)
+    .addOptions(TOPICS.map(t => new StringSelectMenuOptionBuilder()
+      .setLabel(`${t.emoji} ${t.label}`)
+      .setDescription(t.description)
+      .setValue(t.key)
+      .setDefault(selected.has(t.key))));
+
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] };
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -23,7 +48,8 @@ module.exports = {
       .addStringOption(o => o.setName('word').setDescription('Word or phrase to match against the headline/body').setRequired(true)))
     .addSubcommand(s => s.setName('filter-remove').setDescription('Remove a keyword from the filter list')
       .addStringOption(o => o.setName('word').setDescription('Word or phrase to remove').setRequired(true)))
-    .addSubcommand(s => s.setName('filter-list').setDescription('View the current filter mode and keyword list')),
+    .addSubcommand(s => s.setName('filter-list').setDescription('View the current filter mode and keyword list'))
+    .addSubcommand(s => s.setName('topics').setDescription('Pick news topics to filter by from a list — no keyword typing needed')),
 
   async execute(interaction) {
     const sub     = interaction.options.getSubcommand();
@@ -90,25 +116,41 @@ module.exports = {
     if (sub === 'filter-list') {
       const settings = getNewsFeedSettings(guildId);
       const modeLabels = { off: 'Off', block: 'Block-list', allow: 'Allow-list' };
+      const topicLabels = settings.filterTopics.map(key => TOPICS.find(t => t.key === key)?.label).filter(Boolean);
       return interaction.reply({ embeds: [createServerEmbed('info', {
         title: '📰 News Feed Filter',
         description:
           `**Mode:** ${modeLabels[settings.filterMode] ?? 'Off'}\n` +
-          `**Keywords (${settings.filterWords.length}):** ${settings.filterWords.length ? settings.filterWords.map(w => `\`${w}\``).join(', ') : '— none —'}`,
+          `**Topics (${topicLabels.length}):** ${topicLabels.length ? topicLabels.join(', ') : '— none — pick some with `/newsfeed topics`'}\n` +
+          `**Custom keywords (${settings.filterWords.length}):** ${settings.filterWords.length ? settings.filterWords.map(w => `\`${w}\``).join(', ') : '— none —'}`,
       }, interaction.guild)], ephemeral: true });
+    }
+
+    if (sub === 'topics') {
+      const settings = getNewsFeedSettings(guildId);
+      return interaction.reply({ ...buildTopicsPanel(interaction.guild, settings), ephemeral: true });
     }
 
     // status
     const settings   = getNewsFeedSettings(guildId);
     const channel    = settings.channelId ? interaction.guild.channels.cache.get(settings.channelId) : null;
     const modeLabels = { off: 'Off', block: 'Block-list', allow: 'Allow-list' };
+    const filterCount = settings.filterTopics.length + settings.filterWords.length;
     return interaction.reply({ embeds: [createServerEmbed('info', {
       title: '📰 News Feed Status',
       description:
         `**State:** ${settings.enabled ? '🟢 Enabled' : '🔴 Disabled'}\n` +
         `**Channel:** ${channel ? `${channel}` : '— Not set —'}\n` +
-        `**Filter:** ${modeLabels[settings.filterMode] ?? 'Off'} (${settings.filterWords.length} keyword${settings.filterWords.length === 1 ? '' : 's'})\n` +
+        `**Filter:** ${modeLabels[settings.filterMode] ?? 'Off'} (${filterCount} topic${filterCount === 1 ? '' : 's'}/keyword${filterCount === 1 ? '' : 's'})\n` +
         `**Source:** Financial Juice (live, ~20s polling)`,
     }, interaction.guild)], ephemeral: true });
+  },
+
+  // ── Topics select menu ──────────────────────────────────────────────────
+  async handleTopicsSelect(interaction) {
+    const guildId = interaction.guild.id;
+    setNewsFeedSettings(guildId, { filterTopics: interaction.values });
+    const settings = getNewsFeedSettings(guildId);
+    return interaction.update(buildTopicsPanel(interaction.guild, settings));
   },
 };
