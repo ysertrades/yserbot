@@ -5,7 +5,7 @@ const { readJson, writeJson } = require('./jsonStorage');
 
 const AUTOMOD_DEFAULTS  = { badWords: false, linkFilter: false, customWords: [], mentionSpamProtection: false, mentionSpamRuleId: null };
 const MODLOG_DEFAULTS   = { members: true, messages: true, roles: true, purges: true };
-const NEWSFEED_DEFAULTS = { enabled: false, channelId: null, lastGuid: null, filterMode: 'off', filterWords: [] };
+const NEWSFEED_DEFAULTS = { enabled: false, channelId: null, lastGuid: null, filterMode: 'off', filterWords: [], filterTopics: [] };
 
 function getGuildConfig(guildId) {
   const config = readJson('config.json', {});

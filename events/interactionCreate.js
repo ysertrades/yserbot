@@ -570,6 +570,8 @@ module.exports = {
           return client.commands.get('automod')?.handleCooldownSelect(interaction);
         if (id === 'automod_req_select')
           return client.commands.get('automod')?.handleRequestsSelect(interaction);
+        if (id === 'newsfeed_topics_select')
+          return client.commands.get('newsfeed')?.handleTopicsSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');

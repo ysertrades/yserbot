@@ -8,6 +8,7 @@
 
 const { readJson, writeJson } = require('./jsonStorage');
 const { createEmbed, isValidUrl } = require('./embedBuilder');
+const { expandTopicKeywords } = require('./newsTopics');
 
 const FEED_URL          = 'https://www.financialjuice.com/feed.ashx';
 const POLL_INTERVAL_MS  = 20_000;
@@ -167,7 +168,7 @@ async function buildNewsEmbed(item) {
 }
 
 function matchesFilter(item, settings) {
-  const words = settings.filterWords || [];
+  const words = [...(settings.filterWords || []), ...expandTopicKeywords(settings.filterTopics)];
   if (!settings.filterMode || settings.filterMode === 'off' || words.length === 0) return true;
   const haystack = `${item.title} ${item.body || ''}`.toLowerCase();
   const matchesAny = words.some(w => haystack.includes(w));
