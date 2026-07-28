@@ -32,6 +32,15 @@ function clearRecord(guildId, userId) {
   writeJson(FILE, all);
 }
 
+/** Every permit record for a guild, for the /automod cooldowns list. */
+function getAllPermits(guildId) {
+  const all    = readJson(FILE, {});
+  const prefix = `${guildId}:`;
+  return Object.entries(all)
+    .filter(([k]) => k.startsWith(prefix))
+    .map(([k, rec]) => ({ userId: k.slice(prefix.length), ...rec }));
+}
+
 /** Called when an admin approves a request. Starts the cooldown clock —
  *  the just-approved/reposted link IS their one link for this cycle, so
  *  the next one isn't allowed until a full cooldown from now. */
@@ -78,4 +87,4 @@ function lockAfterViolation(guildId, userId) {
   setRecord(guildId, userId, rec);
 }
 
-module.exports = { getRecord, grantPermit, evaluate, consumeAllowed, lockAfterViolation, clearRecord };
+module.exports = { getRecord, grantPermit, evaluate, consumeAllowed, lockAfterViolation, clearRecord, getAllPermits };

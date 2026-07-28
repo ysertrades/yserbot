@@ -407,6 +407,12 @@ module.exports = {
           return client.commands.get('automod')?.handleLinkDeny(interaction, id.slice('automod_link_deny:'.length));
         }
 
+        // Auto-mod — cooldowns list (manage/adjust/delete)
+        if (id === 'automod_cd_back' || id.startsWith('automod_cd_delete:') || id.startsWith('automod_cd_delyes:')
+          || id.startsWith('automod_cd_delno:') || id.startsWith('automod_cd_adjust:')) {
+          return client.commands.get('automod')?.handleCooldownButton(interaction);
+        }
+
         // Casino — skip (handled by casinoInteraction.js)
         if (id.startsWith('cs:')) return;
 
@@ -527,6 +533,11 @@ module.exports = {
         if (id.startsWith('automod_link_approve_modal:')) {
           return client.commands.get('automod')?.handleLinkApproveModalSubmit(interaction, id.slice('automod_link_approve_modal:'.length));
         }
+
+        // Auto-mod — cooldowns list: adjust modal
+        if (id.startsWith('automod_cd_adjust_modal:')) {
+          return client.commands.get('automod')?.handleCooldownAdjustModalSubmit(interaction, id.slice('automod_cd_adjust_modal:'.length));
+        }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
@@ -548,6 +559,8 @@ module.exports = {
           return client.commands.get('schedule')?.handleScheduleSelect(interaction);
         if (id === 'gaw_list_delsel')
           return client.commands.get('giveaway')?.handleListSelect(interaction);
+        if (id === 'automod_cd_select')
+          return client.commands.get('automod')?.handleCooldownSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
