@@ -4,9 +4,11 @@ const {
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  AutoModerationRuleTriggerType, AutoModerationActionType, AutoModerationRuleEventType,
 } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { getAutoModSettings, setAutoModSettings, isAutoModExempt, getModLogChannel } = require('../../utils/modConfig');
+const { readJson } = require('../../utils/jsonStorage');
 const { findBadWord } = require('../../utils/badWords');
 const { issueWarning } = require('../../utils/warnUtil');
 const { postCustomLog, suppressDeleteLog } = require('../../utils/modLog');
@@ -17,8 +19,9 @@ const {
 const { evaluate, consumeAllowed, lockAfterViolation, grantPermit, getRecord, clearRecord, getAllPermits } = require('../../utils/linkPermits');
 
 const FEATURES = [
-  { key: 'badWords',   label: '🤬 Bad Word / Harassment Filter', desc: 'Deletes messages containing filtered words and warns the sender in-channel.' },
-  { key: 'linkFilter',  label: '🔗 Link Posting Approval',        desc: 'Non-moderators need admin approval before a posted link goes through.' },
+  { key: 'badWords',              label: '🤬 Bad Word / Harassment Filter',        desc: 'Deletes messages containing filtered words and warns the sender in-channel.' },
+  { key: 'linkFilter',            label: '🔗 Link Posting Approval',               desc: 'Non-moderators need admin approval before a posted link goes through.' },
+  { key: 'mentionSpamProtection', label: '🚨 Mass-Mention Raid Protection (native)', desc: 'Uses Discord\'s built-in Auto Moderation to instantly block messages with excessive @mentions — a common raid tactic.' },
 ];
 
 function buildPanelEmbed(guild, settings) {
@@ -117,7 +120,21 @@ module.exports = {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
       return interaction.reply({ content: '❌ Only Administrators can change auto-mod settings.', ephemeral: true });
     }
-    const current  = getAutoModSettings(interaction.guild.id);
+    const current = getAutoModSettings(interaction.guild.id);
+
+    // This one isn't a plain flag — it has to actually create/delete a real
+    // Discord AutoModerationRule, so it needs its own path with error
+    // handling (missing Manage Server permission, API failures, etc.)
+    // instead of the simple flip-a-boolean the other filters use.
+    if (feature === 'mentionSpamProtection') {
+      const result = await setMentionSpamRule(interaction.guild, !current.mentionSpamProtection);
+      if (!result.ok) {
+        return interaction.reply({ content: `❌ Couldn't update mass-mention protection: ${result.error}\nMake sure the bot has **Manage Server** permission.`, ephemeral: true });
+      }
+      const settings = getAutoModSettings(interaction.guild.id);
+      return interaction.update({ embeds: [buildPanelEmbed(interaction.guild, settings)], components: [buildPanelRow(settings)] });
+    }
+
     const settings = setAutoModSettings(interaction.guild.id, { [feature]: !current[feature] });
     return interaction.update({ embeds: [buildPanelEmbed(interaction.guild, settings)], components: [buildPanelRow(settings)] });
   },
@@ -722,5 +739,55 @@ async function handleRequestsButton(interaction) {
     const requestId = id.slice('automod_req_delno:'.length);
     const request   = getRequest(requestId);
     return interaction.update(request ? buildRequestManagePayload(request) : buildRequestsListPayload(interaction.guild));
+  }
+}
+
+// ── Native Discord AutoMod integration ──────────────────────────────────
+// Everything else in this file is our own custom moderation (message
+// events + bot-side deletes) — Discord only credits a bot as "using
+// AutoMod" for rules created through its actual Auto Moderation API. This
+// is a genuinely separate, additive protection (mass-mention/raid
+// blocking, enforced instantly by Discord itself before the message even
+// reaches our bot) rather than a reimplementation of the custom filters
+// above, so turning it on/off never changes badWords/linkFilter behavior.
+async function setMentionSpamRule(guild, enable) {
+  const settings = getAutoModSettings(guild.id);
+
+  if (!enable) {
+    if (settings.mentionSpamRuleId) {
+      try { await guild.autoModerationRules.delete(settings.mentionSpamRuleId, 'Disabled via /automod panel'); }
+      catch { /* rule may already be gone — fine, we're clearing our record of it either way */ }
+    }
+    setAutoModSettings(guild.id, { mentionSpamProtection: false, mentionSpamRuleId: null });
+    return { ok: true };
+  }
+
+  // Already have a live rule — just flip our own flag back on.
+  if (settings.mentionSpamRuleId) {
+    try {
+      await guild.autoModerationRules.fetch(settings.mentionSpamRuleId);
+      setAutoModSettings(guild.id, { mentionSpamProtection: true });
+      return { ok: true };
+    } catch { /* rule was deleted outside the bot (manually, etc.) — recreate below */ }
+  }
+
+  const config   = readJson('config.json', {});
+  const modRoles = config[guild.id]?.cmdSetup?.modRoles || [];
+
+  try {
+    const rule = await guild.autoModerationRules.create({
+      name: 'YSER Flow — Mass-Mention Raid Protection',
+      eventType: AutoModerationRuleEventType.MessageSend,
+      triggerType: AutoModerationRuleTriggerType.MentionSpam,
+      triggerMetadata: { mentionTotalLimit: 6, mentionRaidProtectionEnabled: true },
+      actions: [{ type: AutoModerationActionType.BlockMessage }],
+      enabled: true,
+      exemptRoles: modRoles,
+      reason: 'Enabled via /automod panel',
+    });
+    setAutoModSettings(guild.id, { mentionSpamProtection: true, mentionSpamRuleId: rule.id });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 }
