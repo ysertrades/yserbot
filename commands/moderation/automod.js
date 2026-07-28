@@ -305,7 +305,7 @@ async function handleLinkApprove(interaction, requestId) {
 
   const modal = new ModalBuilder().setCustomId(`automod_link_approve_modal:${requestId}`).setTitle('Approve Link Request').addComponents(
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('cooldown').setLabel('Cooldown before their next link (e.g. 1h, 24h, 7d)')
+      new TextInputBuilder().setCustomId('cooldown').setLabel('Cooldown until next link (1h/24h/7d)')
         .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue('24h'),
     ),
   );
