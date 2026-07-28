@@ -19,16 +19,33 @@ const MAX_FIELDS       = 25;   // Discord's max fields per embed
 const MAX_TOTAL_CHARS  = 6000; // Discord's max combined character count across all embeds in a message
 const LIST_PAGE_SIZE   = 10;
 
+// Typing "#channel-name" the way you would in normal chat doesn't become a
+// real mention in an embed the way it does in a message box — there's no
+// live autocomplete inside a modal text field. So on resolve, turn any
+// "#name" that matches a real channel in the guild into an actual `<#id>`
+// mention (which Discord then renders as a clickable, always-up-to-date
+// pill). Left untouched if preceded by a word character or "/" (so URL
+// fragments like "example.com/page#section" aren't touched) or if no
+// channel with that name exists.
+function resolveChannelMentions(text, guild) {
+  if (!text || !guild) return text;
+  return text.replace(/(^|[^\w#/])#([a-zA-Z0-9_-]{1,100})/g, (match, pre, name) => {
+    const channel = guild.channels.cache.find(c => c.name?.toLowerCase() === name.toLowerCase());
+    return channel ? `${pre}<#${channel.id}>` : match;
+  });
+}
+
 // ── Placeholder variables ───────────────────────────────────────────────────────
 // Resolved at send/preview time so templates stay generic and reusable.
 function resolvePlaceholders(text, ctx) {
   if (!text || !ctx) return text;
-  return text
+  const resolved = text
     .replace(/\{user\}/gi, ctx.user ? `<@${ctx.user.id}>` : '')
     .replace(/\{username\}/gi, ctx.user?.username || '')
     .replace(/\{server\}/gi, ctx.guild?.name || '')
     .replace(/\{membercount\}/gi, ctx.guild?.memberCount != null ? String(ctx.guild.memberCount) : '')
     .replace(/\{channel\}/gi, ctx.channel ? `<#${ctx.channel.id}>` : '');
+  return resolveChannelMentions(resolved, ctx.guild);
 }
 
 // ── Data helpers ───────────────────────────────────────────────────────────────
