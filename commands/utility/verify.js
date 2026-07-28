@@ -146,7 +146,7 @@ module.exports = {
         new ActionRowBuilder().addComponents(
           new TextInputBuilder()
             .setCustomId('rules')
-            .setLabel('Server Rules (shown on the verification panel)')
+            .setLabel('Server Rules (shown to members)')
             .setStyle(TextInputStyle.Paragraph)
             .setMaxLength(3500)
             .setRequired(true)
