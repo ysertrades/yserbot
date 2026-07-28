@@ -20,7 +20,11 @@ const TOPICS = [
   },
   {
     key: 'stocks_indices', emoji: '📈', label: 'Stocks & Indices', description: 'S&P, Nasdaq, Dow & earnings',
-    keywords: ['s&p', 'nasdaq', 'dow', 'russell', 'nyse', 'earnings', 'guidance', 'stocks', 'index', 'mag 7'],
+    keywords: [
+      's&p', 'nasdaq', 'dow', 'russell', 'nyse', 'earnings', 'guidance', 'stocks', 'stock', 'shares',
+      'index', 'imbalance', 'mag 7', 'ipo', 'buyback', 'dividend', 'market cap', 'sec filing',
+      'apple', 'microsoft', 'amazon', 'alphabet', 'google', 'meta', 'tesla', 'nvidia',
+    ],
   },
   {
     key: 'bonds_yields', emoji: '💵', label: 'Bonds & Yields', description: 'Treasuries, auctions & yields',
