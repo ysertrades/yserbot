@@ -10,7 +10,10 @@ const { getAutoModSettings, setAutoModSettings, isAutoModExempt, getModLogChanne
 const { findBadWord } = require('../../utils/badWords');
 const { issueWarning } = require('../../utils/warnUtil');
 const { postCustomLog, suppressDeleteLog } = require('../../utils/modLog');
-const { createRequest, getRequest, updateRequest, findActiveRequest, LINK_REGEX } = require('../../utils/linkRequests');
+const {
+  createRequest, getRequest, updateRequest, deleteRequest,
+  findActiveRequest, getAllActiveRequests, LINK_REGEX,
+} = require('../../utils/linkRequests');
 const { evaluate, consumeAllowed, lockAfterViolation, grantPermit, getRecord, clearRecord, getAllPermits } = require('../../utils/linkPermits');
 
 const FEATURES = [
@@ -54,7 +57,8 @@ module.exports = {
     .addSubcommand(s => s.setName('removeword').setDescription('Remove a custom word/phrase from this server\'s filter')
       .addStringOption(o => o.setName('word').setDescription('Word or phrase to remove').setRequired(true)))
     .addSubcommand(s => s.setName('wordlist').setDescription('View this server\'s custom-added filter words'))
-    .addSubcommand(s => s.setName('cooldowns').setDescription('List every active link cooldown, and adjust or delete one')),
+    .addSubcommand(s => s.setName('cooldowns').setDescription('List every active link cooldown, and adjust or delete one'))
+    .addSubcommand(s => s.setName('requests').setDescription('List every pending link request by user, and approve/deny/delete one')),
 
   async execute(interaction) {
     const sub     = interaction.options.getSubcommand();
@@ -101,6 +105,10 @@ module.exports = {
 
     if (sub === 'cooldowns') {
       return interaction.reply({ ...buildCooldownListPayload(interaction.guild), ephemeral: true });
+    }
+
+    if (sub === 'requests') {
+      return interaction.reply({ ...buildRequestsListPayload(interaction.guild), ephemeral: true });
     }
   },
 
@@ -169,6 +177,10 @@ module.exports = {
   handleCooldownSelect,
   handleCooldownButton,
   handleCooldownAdjustModalSubmit,
+
+  // ── /automod requests — list/select/manage (routed from interactionCreate.js) ──
+  handleRequestsSelect,
+  handleRequestsButton,
 };
 
 // ── Bad-word filter action ──────────────────────────────────────────────
@@ -319,13 +331,37 @@ async function handleLinkRequestButton(interaction, requestId) {
   return interaction.showModal(modal);
 }
 
+// Shared by the mod-log approval card and /automod requests' manage panel —
+// both need the exact same request details and Approve/Deny buttons.
+function buildRequestCardEmbed(request) {
+  return new EmbedBuilder()
+    .setColor(0xF39C12)
+    .setTitle('🔗 Link Approval Request')
+    .addFields(
+      { name: 'User',             value: `<@${request.userId}> \`${request.userTag}\``, inline: true },
+      { name: 'Channel',          value: `<#${request.channelId}>`,                      inline: true },
+      { name: 'Link',             value: request.link || '*(none)*',                     inline: false },
+      { name: 'Reason',           value: request.reason || '*(none)*',                   inline: false },
+      { name: 'Original Message', value: request.originalContent ? (request.originalContent.length > 300 ? `${request.originalContent.slice(0, 300)}…` : request.originalContent) : '*(link only)*', inline: false },
+    )
+    .setFooter({ text: `Request #${request.id} • Admins only` })
+    .setTimestamp();
+}
+
+function buildRequestCardRow(requestId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`automod_link_approve:${requestId}`).setLabel('✅ Approve').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`automod_link_deny:${requestId}`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger),
+  );
+}
+
 async function handleLinkModalSubmit(interaction, requestId) {
   const request = getRequest(requestId);
   if (!request) return interaction.reply({ content: '⌛ This request has expired.', ephemeral: true });
 
   const link   = interaction.fields.getTextInputValue('link').trim();
   const reason = interaction.fields.getTextInputValue('reason').trim();
-  updateRequest(requestId, { link, reason, status: 'pending_review' });
+  const updated = updateRequest(requestId, { link, reason, status: 'pending_review' });
 
   const guild          = interaction.client.guilds.cache.get(request.guildId);
   const modLogChannel  = guild ? getModLogChannel(guild) : null;
@@ -333,23 +369,7 @@ async function handleLinkModalSubmit(interaction, requestId) {
     return interaction.reply({ content: '⚠️ This server hasn\'t set up a mod-log channel yet, so your request can\'t be reviewed. Contact an admin about `/config logs`.', ephemeral: true });
   }
 
-  const embed = new EmbedBuilder()
-    .setColor(0xF39C12)
-    .setTitle('🔗 Link Approval Request')
-    .addFields(
-      { name: 'User',             value: `<@${request.userId}> \`${request.userTag}\``, inline: true },
-      { name: 'Channel',          value: `<#${request.channelId}>`,                      inline: true },
-      { name: 'Link',             value: link,                                            inline: false },
-      { name: 'Reason',           value: reason,                                          inline: false },
-      { name: 'Original Message', value: request.originalContent ? (request.originalContent.length > 300 ? `${request.originalContent.slice(0, 300)}…` : request.originalContent) : '*(link only)*', inline: false },
-    )
-    .setFooter({ text: `Request #${requestId} • Admins only` })
-    .setTimestamp();
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`automod_link_approve:${requestId}`).setLabel('✅ Approve').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`automod_link_deny:${requestId}`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger),
-  );
-  await modLogChannel.send({ embeds: [embed], components: [row] }).catch(() => {});
+  await modLogChannel.send({ embeds: [buildRequestCardEmbed(updated)], components: [buildRequestCardRow(requestId)] }).catch(() => {});
 
   return interaction.reply({
     embeds: [createServerEmbed('success', { title: '📨 Request Sent', description: 'Your link request has been sent to the moderators for review. You\'ll be notified when it\'s handled.' }, interaction.guild)],
@@ -585,4 +605,122 @@ async function handleCooldownAdjustModalSubmit(interaction, userId) {
 
   const payload = buildCooldownManagePayload(interaction.guild, userId);
   return interaction.update(payload || buildCooldownListPayload(interaction.guild));
+}
+
+// ── /automod requests — list every pending link request, select-to-manage ──
+// Same pattern as /automod cooldowns and /giveaway list. Selecting a
+// pending_review request opens the exact same card + Approve/Deny buttons
+// as the mod-log posting (so an admin can act on it right from the list,
+// not just from wherever it landed in mod-log), plus a delete option to
+// clear a stuck/orphaned request without notifying anyone — the fix for a
+// request that got stuck and kept blocking that user from requesting again.
+
+const REQUEST_STATUS_LABEL = {
+  pending: '📝 Awaiting their submission',
+  pending_review: '⏳ Awaiting admin review',
+};
+
+function buildRequestsListPayload(guild) {
+  const requests = getAllActiveRequests(guild.id);
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle('🔗 Pending Link Requests')
+    .setFooter({ text: `${requests.length} active request${requests.length !== 1 ? 's' : ''} • Admins only` })
+    .setTimestamp();
+
+  if (requests.length === 0) {
+    embed.setDescription('_No pending link requests right now._');
+  } else {
+    embed.setDescription(requests.map(r => {
+      const member = guild.members.cache.get(r.userId);
+      return `${member || `<@${r.userId}>`} — ${REQUEST_STATUS_LABEL[r.status] || r.status} · <t:${Math.floor(r.createdAt / 1000)}:R>`;
+    }).join('\n'));
+  }
+
+  const components = [];
+  if (requests.length > 0) {
+    const options = requests.slice(0, 25).map(r => {
+      const member = guild.members.cache.get(r.userId);
+      return new StringSelectMenuOptionBuilder()
+        .setLabel((member?.user.tag || r.userTag || `User ${r.userId}`).slice(0, 100))
+        .setDescription((REQUEST_STATUS_LABEL[r.status] || r.status).slice(0, 100))
+        .setValue(r.id);
+    });
+    components.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('automod_req_select').setPlaceholder('📨 Manage a pending request…').addOptions(options),
+    ));
+  }
+  return { embeds: [embed], components };
+}
+
+function buildRequestManagePayload(request) {
+  if (request.status === 'pending_review') {
+    const rows = [
+      buildRequestCardRow(request.id),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`automod_req_delete:${request.id}`).setLabel('🗑️ Delete Without Notifying').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('automod_req_back').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+    return { embeds: [buildRequestCardEmbed(request)], components: rows };
+  }
+
+  // status === 'pending' — they clicked "Request Approval" but haven't
+  // submitted the link/reason modal yet (or their notice already expired).
+  const embed = new EmbedBuilder()
+    .setColor(0x95A5A6)
+    .setTitle('📝 Awaiting Submission')
+    .setDescription(
+      `<@${request.userId}> \`${request.userTag}\` hasn't filled in the link/reason yet.\n` +
+      `Created <t:${Math.floor(request.createdAt / 1000)}:R> in <#${request.channelId}>.`,
+    );
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`automod_req_delete:${request.id}`).setLabel('🗑️ Delete Request').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('automod_req_back').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+  );
+  return { embeds: [embed], components: [row] };
+}
+
+async function handleRequestsSelect(interaction) {
+  if (interaction.customId !== 'automod_req_select') return;
+  const requestId = interaction.values[0];
+  const request    = getRequest(requestId);
+  if (!request) return interaction.update(buildRequestsListPayload(interaction.guild));
+  return interaction.update(buildRequestManagePayload(request));
+}
+
+async function handleRequestsButton(interaction) {
+  const id = interaction.customId;
+
+  if (id === 'automod_req_back') {
+    return interaction.update(buildRequestsListPayload(interaction.guild));
+  }
+
+  if (id.startsWith('automod_req_delete:')) {
+    const requestId = id.slice('automod_req_delete:'.length);
+    const request   = getRequest(requestId);
+    const label     = request ? `<@${request.userId}> \`${request.userTag}\`` : requestId;
+    const embed = new EmbedBuilder()
+      .setColor(0xE74C3C)
+      .setTitle('⚠️ Confirm Deletion')
+      .setDescription(`Delete this pending request for ${label}?\nThey will **not** be notified — they'll just be free to submit a new link request.\n**This cannot be undone.**`);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`automod_req_delyes:${requestId}`).setLabel('🗑️ Yes, Delete').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`automod_req_delno:${requestId}`).setLabel('← Back').setStyle(ButtonStyle.Secondary),
+    );
+    return interaction.update({ embeds: [embed], components: [row] });
+  }
+
+  if (id.startsWith('automod_req_delyes:')) {
+    const requestId = id.slice('automod_req_delyes:'.length);
+    deleteRequest(requestId);
+    return interaction.update(buildRequestsListPayload(interaction.guild));
+  }
+
+  if (id.startsWith('automod_req_delno:')) {
+    const requestId = id.slice('automod_req_delno:'.length);
+    const request   = getRequest(requestId);
+    return interaction.update(request ? buildRequestManagePayload(request) : buildRequestsListPayload(interaction.guild));
+  }
 }
