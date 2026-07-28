@@ -27,6 +27,17 @@ function getRequest(id) {
   return readJson(FILE, {})[id] || null;
 }
 
+// A user should never be able to have more than one live request at once —
+// without this, spamming links and clicking "Request Approval" repeatedly
+// would pile up parallel approval cards in the mod-log channel.
+function findActiveRequest(guildId, userId) {
+  const all = readJson(FILE, {});
+  return Object.values(all).find(r =>
+    r.guildId === guildId && r.userId === userId &&
+    (r.status === 'pending' || r.status === 'pending_review'),
+  ) || null;
+}
+
 function updateRequest(id, patch) {
   const all = readJson(FILE, {});
   if (!all[id]) return null;
@@ -35,4 +46,4 @@ function updateRequest(id, patch) {
   return all[id];
 }
 
-module.exports = { createRequest, getRequest, updateRequest, extractLink, LINK_REGEX };
+module.exports = { createRequest, getRequest, updateRequest, findActiveRequest, extractLink, LINK_REGEX };
