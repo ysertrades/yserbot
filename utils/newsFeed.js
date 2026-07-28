@@ -15,15 +15,24 @@ const POLL_INTERVAL_MS  = 20_000;
 const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
 
+// Financial Juice's own feed double-encodes entities in places (raw XML has
+// literally "S&amp;amp;P 500" for "S&P 500" — the HTML-escaped "&amp;" got
+// XML-escaped again on top). A single decode pass leaves "S&amp;P 500"
+// behind as literal text, so decode repeatedly until nothing changes.
 function decodeEntities(str) {
-  return str
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .trim();
+  let prev = str;
+  for (let i = 0; i < 5; i++) {
+    const next = prev
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&');
+    if (next === prev) break;
+    prev = next;
+  }
+  return prev.trim();
 }
 
 function extractTag(block, tag) {
@@ -167,12 +176,14 @@ async function buildNewsEmbed(item) {
   return embed;
 }
 
+// Picking topics via /newsfeed topics is the only filter — no picked topics
+// means everything posts; picking any means only headlines matching one of
+// them do.
 function matchesFilter(item, settings) {
-  const words = [...(settings.filterWords || []), ...expandTopicKeywords(settings.filterTopics)];
-  if (!settings.filterMode || settings.filterMode === 'off' || words.length === 0) return true;
+  const words = expandTopicKeywords(settings.filterTopics);
+  if (words.length === 0) return true;
   const haystack = `${item.title} ${item.body || ''}`.toLowerCase();
-  const matchesAny = words.some(w => haystack.includes(w));
-  return settings.filterMode === 'block' ? !matchesAny : matchesAny;
+  return words.some(w => haystack.includes(w));
 }
 
 async function runTick(client) {
