@@ -119,7 +119,7 @@ module.exports = {
         .setTitle('🔐  Server Verification')
         .setDescription(
           `Welcome to **${interaction.guild.name}**! Complete a quick memory challenge below to verify you're a real person and unlock the rest of the server.\n\n` +
-          `**📜 Server Rules**\n${rulesText}`,
+          `**📜 Server Rules**\n\n${rulesText}`,
         )
         .setFooter({ text: 'Click Start Verification to begin' });
       const row = new ActionRowBuilder().addComponents(
