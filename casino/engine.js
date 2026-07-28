@@ -487,32 +487,51 @@ function _glassPanel(png, px, py, w, h, opts = {}) {
 /* ─── Pixel font (5×7) — a small in-image label set (digits, key letters,
  *     '.', 'X'). Kept local to this module rather than shared with
  *     utils/riskVisual.js's own font, matching that file's original
- *     decoupling — each renderer owns its glyph set. ──────────────────── */
+ *     decoupling — each renderer owns its glyph set. Shared by the wheel's
+ *     segment labels and the blackjack card ranks. ─────────────────────── */
 
 const _GLYPH_W = 5, _GLYPH_H = 7;
-const _WHEEL_FONT = {
+const _PIXEL_FONT = {
   '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
   '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
   '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
   '3': ['.###.', '#...#', '....#', '..##.', '....#', '#...#', '.###.'],
+  '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
   '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  '6': ['..##.', '.#...', '#....', '####.', '#...#', '#...#', '.###.'],
+  '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+  '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+  '9': ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
+  'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
   'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  'D': ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+  'E': ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
   'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  'J': ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
+  'K': ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
+  'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  'N': ['#...#', '##..#', '#.#.#', '#.#.#', '#..##', '#...#', '#...#'],
+  'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
   'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  'Q': ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+  'R': ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
   'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
   'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
   'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
   'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+  'Y': ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+  '-': ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
+  '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.##..', '.##..'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
 
-function _wheelTextWidth(text, scale) {
+function _pixelTextWidth(text, scale) {
   return text.length * (_GLYPH_W + 1) * scale - scale;
 }
 
-function _drawWheelChar(png, ch, x, y, scale, color) {
-  const glyph = _WHEEL_FONT[ch.toUpperCase()] || _WHEEL_FONT[' '];
+function _drawPixelChar(png, ch, x, y, scale, color) {
+  const glyph = _PIXEL_FONT[ch.toUpperCase()] || _PIXEL_FONT[' '];
   for (let row = 0; row < _GLYPH_H; row++) {
     for (let col = 0; col < _GLYPH_W; col++) {
       if (glyph[row][col] !== '#') continue;
@@ -521,24 +540,24 @@ function _drawWheelChar(png, ch, x, y, scale, color) {
   }
 }
 
-function _drawWheelText(png, text, x, y, scale, color) {
+function _drawPixelText(png, text, x, y, scale, color) {
   let cx = x;
   for (const ch of text) {
-    _drawWheelChar(png, ch, cx, y, scale, color);
+    _drawPixelChar(png, ch, cx, y, scale, color);
     cx += (_GLYPH_W + 1) * scale;
   }
 }
 
-/** Centered label with a black outline so it stays legible on any wedge color. */
-function _drawWheelLabel(png, text, cx, cy, scale, color = [255, 255, 255, 255]) {
-  const w = _wheelTextWidth(text, scale);
+/** Centered label with a black outline so it stays legible on any background. */
+function _drawPixelLabel(png, text, cx, cy, scale, color = [255, 255, 255, 255]) {
+  const w = _pixelTextWidth(text, scale);
   const h = _GLYPH_H * scale;
   const x = Math.round(cx - w / 2), y = Math.round(cy - h / 2);
   const outline = [20, 15, 10, 255];
   for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    _drawWheelText(png, text, x + dx, y + dy, scale, outline);
+    _drawPixelText(png, text, x + dx, y + dy, scale, outline);
   }
-  _drawWheelText(png, text, x, y, scale, color);
+  _drawPixelText(png, text, x, y, scale, color);
 }
 
 /* ─── Suit / card art (blackjack, coinflip) ─────────────────────────────── */
@@ -572,37 +591,57 @@ function _drawSuit(png, suit, x, y, scale = 1) {
   }
 }
 
-function _rankBars(card) {
-  const map = { A: 1, J: 11, Q: 12, K: 13 };
-  const n = map[card.r] ?? Number(card.r);
-  return Number.isFinite(n) ? n : 10;
-}
+// Compact card-grid layout — a rounded near-black panel with "DEALER — N" /
+// "YOU — N" labels over each hand, each card its own small rounded-rect tile
+// showing its actual rank + suit (rather than the old glass-table scene).
+function _drawCard(png, x, y, w, h, card, faceDown = false, highlight = false) {
+  const radius = Math.max(8, Math.round(w * 0.14));
+  _fillRectBlend(png, x + 3, y + 5, w, h, [0, 0, 0, 255], 0.35); // drop shadow
 
-function _drawCard(png, x, y, card, faceDown = false, highlight = false) {
-  const w = 98; const h = 138;
-  // drop shadow
-  _fillRectBlend(png, x + 4, y + 6, w, h, [0, 0, 0, 255], 0.35);
-  _fillRect(png, x, y, w, h, [244, 246, 249, 255]);
-  _rect(png, x, y, w, h, highlight ? [241, 196, 15, 255] : [130, 146, 166, 255], 2);
-  _fillRect(png, x + 4, y + 4, w - 8, h - 8, [255, 255, 255, 255]);
-  // glassy sheen streak across the card face
-  for (let i = 0; i < 14; i++) _lineBlend(png, x + 10 + i, y + 8, x + i - 6, y + h - 8, [255, 255, 255, 255], 0.06, 1);
+  const paintMask = (color) => {
+    for (let yy = 0; yy < h; yy++) {
+      for (let xx = 0; xx < w; xx++) {
+        if (!_roundedMask(w, h, radius, xx, yy)) continue;
+        _setPx(png, x + xx, y + yy, color);
+      }
+    }
+  };
+  const strokeMask = (color, th = 2) => {
+    for (let yy = 0; yy < h; yy++) {
+      for (let xx = 0; xx < w; xx++) {
+        if (!_roundedMask(w, h, radius, xx, yy)) continue;
+        const edge = xx < th || yy < th || xx >= w - th || yy >= h - th
+          || !_roundedMask(w, h, radius, xx - th, yy) || !_roundedMask(w, h, radius, xx + th, yy)
+          || !_roundedMask(w, h, radius, xx, yy - th) || !_roundedMask(w, h, radius, xx, yy + th);
+        if (edge) _setPx(png, x + xx, y + yy, color);
+      }
+    }
+  };
 
   if (faceDown) {
-    _fillRect(png, x + 10, y + 10, w - 20, h - 20, [41, 128, 185, 255]);
-    for (let yy = y + 12; yy < y + h - 12; yy += 8) {
-      _line(png, x + 12, yy, x + w - 12, yy, [174, 214, 241, 255], 1);
-    }
+    paintMask([32, 88, 156, 255]);
+    for (let yy = y + 14; yy < y + h - 14; yy += 10) _line(png, x + 14, yy, x + w - 14, yy, [90, 150, 210, 255], 1);
+    strokeMask(highlight ? [241, 196, 15, 255] : [20, 60, 110, 255]);
     return;
   }
 
-  const bars = _rankBars(card);
-  const barCount = Math.max(1, Math.min(10, Math.ceil(bars / 2)));
-  for (let i = 0; i < barCount; i++) {
-    _fillRect(png, x + 10 + (i * 7), y + 10, 5, 3, [85, 98, 112, 255]);
-    _fillRect(png, x + w - 15 - (i * 7), y + h - 13, 5, 3, [85, 98, 112, 255]);
-  }
-  _drawSuit(png, card.s, x + Math.floor(w / 2), y + Math.floor(h / 2), 1.2);
+  paintMask([250, 250, 252, 255]);
+  strokeMask(highlight ? [241, 196, 15, 255] : [200, 205, 214, 255]);
+
+  const isRed  = card.s === '♥️' || card.s === '♦️';
+  const color  = isRed ? [211, 47, 47, 255] : [30, 33, 40, 255];
+  const scale  = Math.max(2, Math.round(w / 55));
+  const rank   = card.r;
+  const rankW  = _pixelTextWidth(rank, scale);
+  const suitR  = Math.max(0.5, scale * 0.35);
+
+  _drawPixelText(png, rank, x + 10, y + 8, scale, color);
+  _drawSuit(png, card.s, x + 10 + Math.round(rankW / 2), y + 8 + _GLYPH_H * scale + 12, suitR);
+
+  _drawPixelText(png, rank, x + w - 10 - rankW, y + h - 8 - _GLYPH_H * scale, scale, color);
+  _drawSuit(png, card.s, x + w - 10 - Math.round(rankW / 2), y + h - 8 - _GLYPH_H * scale - 12, suitR);
+
+  _drawSuit(png, card.s, x + Math.floor(w / 2), y + Math.floor(h / 2), Math.max(1, scale * 0.75));
 }
 
 function renderBlackjackTablePng({
@@ -612,24 +651,73 @@ function renderBlackjackTablePng({
   hideDealerHole = true,
   playingSplit = false,
 }) {
-  const W = 1000; const H = 560;
+  const W = 640;
+  const pad = 32;
+  const usableW = W - pad * 2;
+  const gap = 16;
+  const baseCardW = 170, baseCardH = 238;
+  const labelScale = 3;
+  const labelH = _GLYPH_H * labelScale + 10;
+  const rowGap = 14;
+  const sectionGap = 30;
+  const topPad = 26, bottomPad = 26;
+
+  function rowLayout(n) {
+    n = Math.max(1, Math.min(8, n));
+    const naturalW = n * baseCardW + (n - 1) * gap;
+    if (naturalW <= usableW) return { n, cardW: baseCardW, cardH: baseCardH, rowW: naturalW };
+    const cardW = Math.floor((usableW - (n - 1) * gap) / n);
+    const cardH = Math.round(cardW * (baseCardH / baseCardW));
+    return { n, cardW, cardH, rowW: cardW * n + (n - 1) * gap };
+  }
+
+  const dealerLayout = rowLayout(dealer.length);
+  const mainLayout   = rowLayout(player.length);
+  const splitLayout  = splitHand && splitHand.length ? rowLayout(splitHand.length) : null;
+
+  let H = topPad + labelH + rowGap + dealerLayout.cardH + sectionGap
+    + labelH + rowGap + mainLayout.cardH + bottomPad;
+  if (splitLayout) H += sectionGap + labelH + rowGap + splitLayout.cardH;
+
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
-  _flatBg(png, [7, 38, 28, 255]);
+  // Rounded, near-black panel — pixels outside the mask stay fully
+  // transparent so Discord's own embed background shows through the
+  // corners instead of a visible square edge around the card.
+  const panelRadius = 22;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!_roundedMask(W, H, panelRadius, x, y)) continue;
+      _setPx(png, x, y, [17, 18, 22, 255]);
+    }
+  }
 
-  _glassPanel(png, 16, 16, W - 32, H - 32, {
-    radius: 26, tint: [241, 196, 15], tintAlpha: 0.05, tintAlphaBottom: 0.02,
-    border: [241, 196, 15], borderAlpha: 0.4,
-  });
-  _hLineBlend(png, 258, 40, W - 40, [120, 220, 190, 255], 0.25, 2);
+  const drawRow = (cards, layout, y, hideIdx = -1, highlightAll = false) => {
+    const startX = pad + Math.round((usableW - layout.rowW) / 2);
+    cards.slice(0, 8).forEach((c, i) => {
+      const cx = startX + i * (layout.cardW + gap);
+      _drawCard(png, cx, y, layout.cardW, layout.cardH, c, i === hideIdx, highlightAll);
+    });
+  };
 
-  dealer.slice(0, 6).forEach((c, i) => _drawCard(png, 210 + (i * 108), 72, c, hideDealerHole && i === 1));
+  let cy = topPad;
+  const dealerTotal = hideDealerHole ? '?' : String(handVal(dealer));
+  _drawPixelText(png, `DEALER - ${dealerTotal}`, pad, cy, labelScale, [190, 195, 205, 255]);
+  cy += labelH + rowGap;
+  drawRow(dealer, dealerLayout, cy, hideDealerHole ? 1 : -1);
+  cy += dealerLayout.cardH + sectionGap;
 
-  if (splitHand && splitHand.length) {
-    player.slice(0, 6).forEach((c, i) => _drawCard(png, 120 + (i * 84), 330, c, false, !playingSplit));
-    splitHand.slice(0, 6).forEach((c, i) => _drawCard(png, 560 + (i * 84), 330, c, false, playingSplit));
-  } else {
-    player.slice(0, 8).forEach((c, i) => _drawCard(png, 130 + (i * 92), 330, c, false));
+  const mainLabel = splitLayout ? 'HAND 1' : 'YOU';
+  _drawPixelText(png, `${mainLabel} - ${handVal(player)}`, pad, cy, labelScale, [190, 195, 205, 255]);
+  cy += labelH + rowGap;
+  drawRow(player, mainLayout, cy, -1, splitLayout ? !playingSplit : false);
+  cy += mainLayout.cardH;
+
+  if (splitLayout) {
+    cy += sectionGap;
+    _drawPixelText(png, `HAND 2 - ${handVal(splitHand)}`, pad, cy, labelScale, [190, 195, 205, 255]);
+    cy += labelH + rowGap;
+    drawRow(splitHand, splitLayout, cy, -1, playingSplit);
   }
 
   return PNG.sync.write(png);
@@ -968,7 +1056,7 @@ function renderWheelPng(winner, spinning = false) {
       screenAngle = ((screenAngle % twoPi) + twoPi) % twoPi;
       const lx = cx + labelR * Math.cos(screenAngle - Math.PI / 2);
       const ly = cy + labelR * Math.sin(screenAngle - Math.PI / 2);
-      _drawWheelLabel(png, seg.short, lx, ly, 3);
+      _drawPixelLabel(png, seg.short, lx, ly, 3);
     }
   }
 
@@ -1055,11 +1143,11 @@ function _renderTradeChartPng({
   finalIndex = null,
   won = null,
 }) {
-  const W = 980, H = 460;
+  const W = 700, H = 330;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   _flatBg(png, [12, 16, 26, 255]);
 
-  const margin = { top: 30, right: 26, bottom: 28, left: 26 };
+  const margin = { top: 22, right: 19, bottom: 20, left: 19 };
   _glassPanel(png, margin.left - 14, margin.top - 14, W - margin.left - margin.right + 28, H - margin.top - margin.bottom + 28, {
     radius: 20, tintAlpha: 0.045, borderAlpha: 0.18,
   });
