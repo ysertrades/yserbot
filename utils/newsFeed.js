@@ -7,7 +7,7 @@
 // headline going out.
 
 const { readJson, writeJson } = require('./jsonStorage');
-const { createEmbed } = require('./embedBuilder');
+const { createEmbed, isValidUrl } = require('./embedBuilder');
 
 const FEED_URL          = 'https://www.financialjuice.com/feed.ashx';
 const POLL_INTERVAL_MS  = 20_000;
@@ -30,6 +30,25 @@ function extractTag(block, tag) {
   return m ? decodeEntities(m[1]) : '';
 }
 
+// Some items ship a picture either as a standard RSS <enclosure> (the usual
+// way a feed attaches media) or as an <img> inside the HTML description —
+// Financial Juice has used both depending on item type, so check either.
+function extractEnclosureImage(block) {
+  const m = block.match(/<enclosure\b[^>]*\/?>/i);
+  if (!m) return null;
+  const urlMatch  = m[0].match(/url="([^"]+)"/i);
+  const typeMatch = m[0].match(/type="([^"]+)"/i);
+  if (!urlMatch) return null;
+  if (typeMatch && !/^image\//i.test(typeMatch[1])) return null;
+  return urlMatch[1];
+}
+
+function extractImageFromHtml(html) {
+  if (!html) return null;
+  const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+  return m ? m[1] : null;
+}
+
 // Returns items newest-first, matching the feed's own order.
 function parseFeedItems(xml) {
   const blocks = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
@@ -42,7 +61,9 @@ function parseFeedItems(xml) {
     const link = extractTag(block, 'link');
     const pubDateRaw = extractTag(block, 'pubDate');
     const pubDate = pubDateRaw ? new Date(pubDateRaw) : new Date();
-    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate });
+    const description = extractTag(block, 'description');
+    const imageUrl = extractEnclosureImage(block) || extractImageFromHtml(description);
+    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl });
   }
   return items;
 }
@@ -80,8 +101,9 @@ function buildNewsEmbed(item) {
     title: isBreaking ? '🔴 BREAKING — Financial Juice' : '📰 Financial Juice',
     description: item.link ? `[${item.title}](${item.link})` : item.title,
     footer: 'Financial Juice • Live Market News',
+    image: isValidUrl(item.imageUrl) ? item.imageUrl : undefined,
   });
-  embed.setTimestamp(item.pubDate);
+  embed.setTimestamp(null); // headline age is already obvious from post order — no timestamp on these
   return embed;
 }
 
