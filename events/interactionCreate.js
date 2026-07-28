@@ -291,6 +291,21 @@ module.exports = {
           return client.commands.get('ticket')?.handleButton(interaction, [], client);
         }
 
+        // Verification — memory-sequence challenge
+        if (id === 'verify_start') {
+          return client.commands.get('verify')?.handleStart(interaction);
+        }
+        if (id.startsWith('verify_ready:')) {
+          return client.commands.get('verify')?.handleReady(interaction, id.slice('verify_ready:'.length));
+        }
+        if (id.startsWith('verify_pick:')) {
+          const [, sessionId, idxStr] = id.split(':');
+          return client.commands.get('verify')?.handlePick(interaction, sessionId, parseInt(idxStr, 10));
+        }
+        if (id.startsWith('verify_cancel:')) {
+          return client.commands.get('verify')?.handleCancel(interaction, id.slice('verify_cancel:'.length));
+        }
+
         // Poll
         if (id.startsWith('poll_vote_')) {
           return client.commands.get('poll')?.handleButton(interaction, [], client);
@@ -477,6 +492,11 @@ module.exports = {
         // Button editor modals
         if (id.startsWith('be_modal_')) {
           return client.commands.get('button')?.handleButtonEditModal(interaction);
+        }
+
+        // Verification — rules text modal
+        if (id === 'verify_rules_modal') {
+          return client.commands.get('verify')?.handleRulesModal(interaction);
         }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);

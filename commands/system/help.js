@@ -66,6 +66,7 @@ const ADMIN_CATALOGUE = [
   ['shopsettings',   'Add / remove items from the server shop'],
   ['cardsettings',   'Set how many messages between card drops (server-wide)'],
   ['giveaway',       'Create, end, reroll & list giveaways'],
+  ['verify',         'Set up member verification (memory challenge + role)'],
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
