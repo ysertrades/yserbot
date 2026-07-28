@@ -47,8 +47,28 @@ function parseFeedItems(xml) {
   return items;
 }
 
+// Financial Juice's Cloudflare front-end enforces its own rate limit on this
+// endpoint (confirmed: a request too soon after the last one gets a 429 with
+// a `retry-after` header). Polling faster than that limit doesn't get
+// headlines out any sooner — it just gets the bot locked out, which makes
+// delivery slower. So instead of guessing an interval, we poll on
+// POLL_INTERVAL_MS and, if the server ever does hand back a 429, honor its
+// `retry-after` exactly and go quiet until it lifts rather than hammering it.
+let blockedUntil = 0;
+
 async function fetchFeedItems() {
+  if (Date.now() < blockedUntil) return null;
+
   const res = await fetch(FEED_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' } });
+
+  if (res.status === 429) {
+    const retryAfterSec = parseInt(res.headers.get('retry-after'), 10);
+    const waitMs = (Number.isFinite(retryAfterSec) ? retryAfterSec : 60) * 1000 + 2000;
+    blockedUntil = Date.now() + waitMs;
+    console.warn(`[NEWSFEED] Rate-limited by Financial Juice — pausing polling for ${Math.round(waitMs / 1000)}s`);
+    return null;
+  }
+
   if (!res.ok) throw new Error(`Financial Juice feed request failed: ${res.status}`);
   const xml = await res.text();
   return parseFeedItems(xml);
@@ -67,7 +87,7 @@ function buildNewsEmbed(item) {
 
 async function runTick(client) {
   const items = await fetchFeedItems();
-  if (items.length === 0) return;
+  if (!items || items.length === 0) return;
 
   const config = readJson('config.json', {});
   let changed = false;
