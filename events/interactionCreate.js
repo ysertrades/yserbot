@@ -572,6 +572,10 @@ module.exports = {
           return client.commands.get('automod')?.handleRequestsSelect(interaction);
         if (id === 'newsfeed_topics_select')
           return client.commands.get('newsfeed')?.handleTopicsSelect(interaction);
+        if (id === 'econcal_impact_select')
+          return client.commands.get('econcal')?.handleImpactSelect(interaction);
+        if (id === 'econcal_currency_select')
+          return client.commands.get('econcal')?.handleCurrencySelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
@@ -591,6 +595,8 @@ module.exports = {
       try {
         if (id.startsWith('gaw_role_select:'))
           return client.commands.get('giveaway')?.handleRoleSelect(interaction);
+        if (id === 'econcal_role_select')
+          return client.commands.get('econcal')?.handleRoleSelect(interaction);
       } catch (err) {
         console.error(`[ROLE SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };

@@ -6,6 +6,13 @@ const { readJson, writeJson } = require('./jsonStorage');
 const AUTOMOD_DEFAULTS  = { badWords: false, linkFilter: false, customWords: [], mentionSpamProtection: false, mentionSpamRuleId: null };
 const MODLOG_DEFAULTS   = { members: true, messages: true, roles: true, purges: true };
 const NEWSFEED_DEFAULTS = { enabled: false, channelId: null, lastGuid: null, filterTopics: [] };
+const ECONCAL_DEFAULTS  = {
+  enabled: false, channelId: null, roleId: null,
+  impactFilter: [], currencyFilter: [], // empty = everything
+  weeklyPost: { enabled: false, weekday: 1, hour: 0, minute: 0, offsetMinutes: 0 }, // weekday: 0=Sun..6=Sat
+  lastWeeklyPostAt: null,
+  firedKeys: [], // dedupes reminder/release sends across runner ticks
+};
 
 function getGuildConfig(guildId) {
   const config = readJson('config.json', {});
@@ -49,6 +56,20 @@ function setNewsFeedSettings(guildId, patch) {
   return config[guildId].newsFeedSettings;
 }
 
+function getEconCalSettings(guildId) {
+  const config   = readJson('config.json', {});
+  const stored   = config[guildId]?.econCalSettings || {};
+  return { ...ECONCAL_DEFAULTS, ...stored, weeklyPost: { ...ECONCAL_DEFAULTS.weeklyPost, ...(stored.weeklyPost || {}) } };
+}
+
+function setEconCalSettings(guildId, patch) {
+  const config  = getGuildConfig(guildId);
+  const current = getEconCalSettings(guildId);
+  config[guildId].econCalSettings = { ...current, ...patch, weeklyPost: { ...current.weeklyPost, ...(patch.weeklyPost || {}) } };
+  writeJson('config.json', config);
+  return config[guildId].econCalSettings;
+}
+
 function getModLogChannel(guild) {
   const config    = readJson('config.json', {});
   const channelId = config[guild.id]?.logsChannel;
@@ -67,9 +88,10 @@ function isAutoModExempt(member) {
 }
 
 module.exports = {
-  AUTOMOD_DEFAULTS, MODLOG_DEFAULTS, NEWSFEED_DEFAULTS,
+  AUTOMOD_DEFAULTS, MODLOG_DEFAULTS, NEWSFEED_DEFAULTS, ECONCAL_DEFAULTS,
   getAutoModSettings, setAutoModSettings,
   getModLogSettings, setModLogSettings,
   getNewsFeedSettings, setNewsFeedSettings,
+  getEconCalSettings, setEconCalSettings,
   getModLogChannel, isAutoModExempt,
 };

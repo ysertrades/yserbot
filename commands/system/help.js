@@ -70,6 +70,7 @@ const ADMIN_CATALOGUE = [
   ['automod',        'Toggle bad-word & link-approval auto-mod filters'],
   ['modlog',         'Toggle which events get logged to the mod-log channel'],
   ['newsfeed',       'Post live Financial Juice market news headlines to a channel'],
+  ['econcal',        'Weekly economic calendar with release reminders (ForexFactory data)'],
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
