@@ -1,7 +1,9 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
+const { getModLogSettings } = require('../../utils/modConfig');
+const { postCustomLog, suppressDeleteLog } = require('../../utils/modLog');
 
 const DEL_DELAY  = 2000; // 2 seconds for clear messages
 const TWO_WEEKS  = 1209600000; // Discord's bulkDelete cutoff, in ms
@@ -10,12 +12,30 @@ const TWO_WEEKS  = 1209600000; // Discord's bulkDelete cutoff, in ms
 // have to go through individual message.delete() calls instead. Those aren't
 // batched, so they're slower and subject to normal per-message rate limits —
 // callers should expect this to take longer for larger old-message counts.
+// Each is marked suppressed first so the generic message-delete logger
+// doesn't post one noisy log entry per message on top of the summary below.
 async function deleteOld(messages) {
   let count = 0;
   for (const msg of messages.values()) {
+    suppressDeleteLog(msg.id);
     try { await msg.delete(); count++; } catch { /* already gone / no perms on this one — skip it */ }
   }
   return count;
+}
+
+async function logPurge(guild, moderator, channel, deleted, targetUser = null) {
+  if (!getModLogSettings(guild.id).purges) return;
+  const embed = new EmbedBuilder()
+    .setColor(0x95A5A6)
+    .setTitle('🧹 Purge Run')
+    .addFields(
+      { name: 'Moderator', value: `${moderator}`, inline: true },
+      { name: 'Channel',   value: `${channel}`,    inline: true },
+      { name: 'Deleted',   value: `${deleted}`,     inline: true },
+    )
+    .setTimestamp();
+  if (targetUser) embed.addFields({ name: 'Target User', value: `${targetUser}`, inline: true });
+  await postCustomLog(guild, embed);
 }
 
 module.exports = {
@@ -64,6 +84,7 @@ module.exports = {
         const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
         await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages.${note}` }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
+        await logPurge(interaction.guild, interaction.user, channel, deleted);
       } catch {
         await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
@@ -96,6 +117,7 @@ module.exports = {
         const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
         await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages from **${user.tag}**.${note}` }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
+        await logPurge(interaction.guild, interaction.user, channel, deleted, user);
       } catch {
         await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);

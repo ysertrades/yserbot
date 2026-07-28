@@ -1,12 +1,26 @@
-const { Events } = require('discord.js');
+const { Events, EmbedBuilder } = require('discord.js');
 const { readJson } = require('../utils/jsonStorage');
 const { createServerEmbed } = require('../utils/embedBuilder');
+const { getModLogSettings } = require('../utils/modConfig');
+const { postCustomLog } = require('../utils/modLog');
 
 module.exports = {
     name: Events.GuildMemberRemove,
     async execute(member) {
         const config = readJson('config.json', {});
         const guildConfig = config[member.guild.id] || {};
+
+        if (getModLogSettings(member.guild.id).members) {
+            await postCustomLog(member.guild, new EmbedBuilder()
+                .setColor(0xE67E22)
+                .setTitle('📤 Member Left')
+                .addFields(
+                    { name: 'Member',       value: `\`${member.user.tag}\` (${member.id})`, inline: true },
+                    { name: 'Roles',        value: member.roles?.cache?.filter(r => r.id !== member.guild.id).map(r => `${r}`).join(', ') || '*(none)*', inline: false },
+                    { name: 'Member Count', value: `${member.guild.memberCount}`, inline: true },
+                )
+                .setTimestamp());
+        }
 
         if (guildConfig.leaveChannel) {
             const channel = member.guild.channels.cache.get(guildConfig.leaveChannel);

@@ -67,6 +67,8 @@ const ADMIN_CATALOGUE = [
   ['cardsettings',   'Set how many messages between card drops (server-wide)'],
   ['giveaway',       'Create, end, reroll & list giveaways'],
   ['verify',         'Set up member verification (memory challenge + role)'],
+  ['automod',        'Toggle bad-word & link-approval auto-mod filters'],
+  ['modlog',         'Toggle which events get logged to the mod-log channel'],
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

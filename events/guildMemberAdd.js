@@ -1,7 +1,9 @@
-const { Events } = require('discord.js');
+const { Events, EmbedBuilder } = require('discord.js');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createServerEmbed } = require('../utils/embedBuilder');
 const { addCoins } = require('../utils/economyManager');
+const { getModLogSettings } = require('../utils/modConfig');
+const { postCustomLog } = require('../utils/modLog');
 
 const WELCOME_BONUS = 500;
 const MEMBER_HISTORY_FILE = 'member_history.json';
@@ -46,6 +48,19 @@ module.exports = {
             if (role) {
                 try { await member.roles.add(role); } catch {}
             }
+        }
+
+        if (getModLogSettings(member.guild.id).members) {
+            const ageDays = Math.floor((Date.now() - member.user.createdTimestamp) / 86400000);
+            await postCustomLog(member.guild, new EmbedBuilder()
+                .setColor(0x2ECC71)
+                .setTitle('📥 Member Joined')
+                .addFields(
+                    { name: 'Member',       value: `${member} \`${member.user.tag}\``, inline: true },
+                    { name: 'Account Age',  value: `${ageDays} day${ageDays !== 1 ? 's' : ''}${ageDays < 7 ? ' ⚠️' : ''}`, inline: true },
+                    { name: 'Member Count', value: `${member.guild.memberCount}`, inline: true },
+                )
+                .setTimestamp());
         }
 
         // Bots joining (app installs) don't take part in the coin economy or
