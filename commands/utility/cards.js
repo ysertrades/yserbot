@@ -4,6 +4,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { addCoins, getBalance }  = require('../../utils/economyManager');
 const { CARDS, RARITY, SELL_PRICE } = require('../../utils/cardsManager');
+const { filterNonBotIds } = require('../../utils/discordHelpers');
 
 const PAGE_SIZE = 6;
 const fmt = n => Number(n).toLocaleString();
@@ -145,7 +146,7 @@ module.exports = {
     // ── Leaderboard ──────────────────────────────────────────────────────────
     if (sub === 'leaderboard') {
       const all    = readJson('cards.json', {});
-      const scores = Object.entries(all)
+      const ranked = Object.entries(all)
         .map(([uid, cards]) => ({
           uid,
           total:     cards.length,
@@ -153,7 +154,9 @@ module.exports = {
           legendary: cards.filter(c => c.rarity === 'legendary').length,
         }))
         .sort((a, b) => b.total - a.total || b.mythic - a.mythic || b.legendary - a.legendary)
-        .slice(0, 10);
+        .slice(0, 30);
+      const humanIds = new Set(await filterNonBotIds(interaction.client, ranked.map(s => s.uid)));
+      const scores = ranked.filter(s => humanIds.has(s.uid)).slice(0, 10);
 
       if (scores.length === 0)
         return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x9E9E9E).setTitle('🃏 No Cards Yet').setDescription('No one has collected any cards yet!')], ephemeral: true });

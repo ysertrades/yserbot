@@ -328,7 +328,8 @@ function _drawStandardCard(png, x, y, w, h, standard, accent, riskUsd) {
   const lineY1 = y + 40 + bigScale * GLYPH_H + 18;
   if (viable) {
     _drawTextCentered(png, `${_fmtUsdPx(standard.riskPerContract)} EACH`, cx, lineY1, 2, WHITE);
-    _drawTextCentered(png, `${_fmtUsdPx(riskUsd - standard.totalRisk)} LEFT`, cx, lineY1 + 22, 2, GOOD);
+    _drawTextCentered(png, `${_fmtUsdPx(standard.totalRisk)} ACTUAL RISK`, cx, lineY1 + 22, 2, panelAccent);
+    _drawTextCentered(png, `${_fmtUsdPx(riskUsd - standard.totalRisk)} LEFT`, cx, lineY1 + 44, 2, GOOD);
   } else {
     _drawTextCentered(png, 'STOP TOO WIDE', cx, lineY1, 2, WARN);
     _drawTextCentered(png, `MIN ${_fmtUsdPx(standard.riskPerContract)}`, cx, lineY1 + 22, 2, WHITE);
@@ -370,7 +371,8 @@ function _drawMicroCard(png, x, y, w, h, micro, needsMicro, accent, riskUsd) {
   const lineY1 = y + 40 + bigScale * GLYPH_H + 18;
   if (viable) {
     _drawTextCentered(png, `${_fmtUsdPx(micro.riskPerContract)} EACH`, cx, lineY1, 2, WHITE);
-    _drawTextCentered(png, `${_fmtUsdPx(riskUsd - micro.totalRisk)} LEFT`, cx, lineY1 + 22, 2, recommended ? REC : GOOD);
+    _drawTextCentered(png, `${_fmtUsdPx(micro.totalRisk)} ACTUAL RISK`, cx, lineY1 + 22, 2, panelAccent);
+    _drawTextCentered(png, `${_fmtUsdPx(riskUsd - micro.totalRisk)} LEFT`, cx, lineY1 + 44, 2, recommended ? REC : GOOD);
   } else {
     _drawTextCentered(png, 'STOP TOO WIDE', cx, lineY1, 2, WARN);
     _drawTextCentered(png, `MIN ${_fmtUsdPx(micro.riskPerContract)}`, cx, lineY1 + 22, 2, WHITE);

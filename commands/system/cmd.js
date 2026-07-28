@@ -14,6 +14,7 @@ const ADMIN_COMMANDS = [
   'config', 'cmd', 'casino-settings', 'embed', 'autoreply',
   'button', 'ticket', 'schedule', 'warn-settings', 'levelsettings',
   'giveaway', 'give-coins', 'backup', 'restore', 'cardsettings', 'shopsettings',
+  'verify',
 ];
 
 const PUBLIC_COMMANDS = [

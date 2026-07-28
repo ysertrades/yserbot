@@ -214,6 +214,11 @@ module.exports = {
           return client.commands.get('giveaway')?.handleSetupButton(interaction);
         }
 
+        // Giveaway — list view: delete-ended-giveaway confirm/back
+        if (id.startsWith('gaw_list_delyes:') || id === 'gaw_list_delno') {
+          return client.commands.get('giveaway')?.handleListButton(interaction);
+        }
+
         // Giveaway — enter
         if (id === 'giveaway_enter') {
           if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
@@ -284,6 +289,21 @@ module.exports = {
         // Ticket buttons
         if (id === 'create_ticket' || id === 'close_ticket' || id === 'ticket_still_here') {
           return client.commands.get('ticket')?.handleButton(interaction, [], client);
+        }
+
+        // Verification — memory-sequence challenge
+        if (id === 'verify_start') {
+          return client.commands.get('verify')?.handleStart(interaction);
+        }
+        if (id.startsWith('verify_ready:')) {
+          return client.commands.get('verify')?.handleReady(interaction, id.slice('verify_ready:'.length));
+        }
+        if (id.startsWith('verify_pick:')) {
+          const [, sessionId, idxStr] = id.split(':');
+          return client.commands.get('verify')?.handlePick(interaction, sessionId, parseInt(idxStr, 10));
+        }
+        if (id.startsWith('verify_cancel:')) {
+          return client.commands.get('verify')?.handleCancel(interaction, id.slice('verify_cancel:'.length));
         }
 
         // Poll
@@ -473,6 +493,11 @@ module.exports = {
         if (id.startsWith('be_modal_')) {
           return client.commands.get('button')?.handleButtonEditModal(interaction);
         }
+
+        // Verification — rules text modal
+        if (id === 'verify_rules_modal') {
+          return client.commands.get('verify')?.handleRulesModal(interaction);
+        }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
@@ -492,6 +517,8 @@ module.exports = {
           return client.commands.get('button')?.handleButtonSelect(interaction);
         if (id === 'sch_delselect')
           return client.commands.get('schedule')?.handleScheduleSelect(interaction);
+        if (id === 'gaw_list_delsel')
+          return client.commands.get('giveaway')?.handleListSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
@@ -499,6 +526,33 @@ module.exports = {
         if (handler?.handleSelect) await handler.handleSelect(interaction, args, client);
       } catch (err) {
         console.error(`[SEL ERROR] ${id}:`, err);
+        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
+        if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
+        else await interaction.reply(rep).catch(() => {});
+      }
+    }
+
+    // ── Role / Channel Select Menus (native pickers — e.g. giveaway setup) ──────
+    if (interaction.isRoleSelectMenu()) {
+      const id = interaction.customId;
+      try {
+        if (id.startsWith('gaw_role_select:'))
+          return client.commands.get('giveaway')?.handleRoleSelect(interaction);
+      } catch (err) {
+        console.error(`[ROLE SELECT ERROR] ${id}:`, err);
+        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
+        if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
+        else await interaction.reply(rep).catch(() => {});
+      }
+    }
+
+    if (interaction.isChannelSelectMenu()) {
+      const id = interaction.customId;
+      try {
+        if (id.startsWith('gaw_channel_select:'))
+          return client.commands.get('giveaway')?.handleChannelSelect(interaction);
+      } catch (err) {
+        console.error(`[CHANNEL SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
