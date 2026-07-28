@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { readJson } = require('../../utils/jsonStorage');
+const { filterNonBotIds } = require('../../utils/discordHelpers');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -7,9 +8,11 @@ module.exports = {
     async execute(interaction) {
         const levels = readJson('levels.json', {});
         const guildData = levels[interaction.guild.id] || { users: {} };
-        const sorted = Object.entries(guildData.users)
+        const ranked = Object.entries(guildData.users)
             .sort((a, b) => b[1].level - a[1].level || b[1].totalXp - a[1].totalXp)
-            .slice(0, 10);
+            .slice(0, 30);
+        const humanIds = new Set(await filterNonBotIds(interaction.client, ranked.map(([id]) => id)));
+        const sorted = ranked.filter(([id]) => humanIds.has(id)).slice(0, 10);
 
         const embed = new EmbedBuilder()
             .setColor(0xF39C12)

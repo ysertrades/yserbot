@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getBalance, getLeaderboard } = require('../../utils/economyManager');
+const { filterNonBotIds } = require('../../utils/discordHelpers');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -33,7 +34,12 @@ module.exports = {
         .setTimestamp();
       await interaction.reply({ embeds: [embed] });
     } else if (subcommand === 'top') {
-      const leaderboard = getLeaderboard(10);
+      // Over-fetch then filter out bots (a bot account can end up with a
+      // balance e.g. via /give-coins) so the top-10 stays all real players.
+      const candidates = getLeaderboard(30);
+      const humanIds = new Set(await filterNonBotIds(interaction.client, candidates.map(e => e.userId)));
+      const leaderboard = candidates.filter(e => humanIds.has(e.userId)).slice(0, 10);
+
       let description = '';
       for (let i = 0; i < leaderboard.length; i++) {
         const entry = leaderboard[i];

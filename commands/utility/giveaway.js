@@ -1,9 +1,11 @@
 'use strict';
 
 const {
-  SlashCommandBuilder, PermissionFlagsBits,
+  SlashCommandBuilder, PermissionFlagsBits, ChannelType,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
+  RoleSelectMenuBuilder, ChannelSelectMenuBuilder,
+  StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
@@ -11,6 +13,7 @@ const { randomInt } = require('node:crypto');
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
 const MAX_WINNERS  = 10;
+const ENDED_LIST_MAX = 10;
 
 const giveawayTimers = new Map();
 const ID_CHARS       = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -74,7 +77,11 @@ async function restoreGiveaways(client) {
     const remaining = Math.max(data.endTime - now, 0);
     if (giveawayTimers.has(msgId)) clearTimeout(giveawayTimers.get(msgId));
     giveawayTimers.set(msgId, setTimeout(
-      () => endGiveaway(msg, data.prize, data.winnersCount, data.imageUrl, data.hostId, data.guildId, data.bonusRoleId),
+      () => endGiveaway(msg, {
+        prize: data.prize, winnersCount: data.winnersCount, imageUrl: data.imageUrl,
+        hostId: data.hostId, guildId: data.guildId, bonusRoleId: data.bonusRoleId,
+        createdAt: data.createdAt,
+      }),
       remaining,
     ));
   }
@@ -98,19 +105,6 @@ function parseDuration(str) {
 }
 
 function dateStr(ts) { return new Date(ts).toISOString().slice(0, 10); }
-
-// Accepts "<@&123>", a raw role ID, or "clear"/"none" to unset. Returns
-// { roleId } on success, { error } on failure, or {} to clear.
-function parseRoleInput(value, guild) {
-  if (!value) return {};
-  const trimmed = value.trim();
-  if (/^(clear|none|-)$/i.test(trimmed)) return {};
-  const match = trimmed.match(/^<@&(\d+)>$/) || trimmed.match(/^(\d+)$/);
-  if (!match) return { error: 'Couldn\'t parse that as a role. Use `@RoleName` (paste the mention), a role ID, or `clear`.' };
-  const role = guild.roles.cache.get(match[1]);
-  if (!role) return { error: 'That role wasn\'t found in this server.' };
-  return { roleId: role.id, roleName: role.name };
-}
 
 function requirementsLines(data) {
   const lines = [];
@@ -237,6 +231,47 @@ function buildSetupRows(sessionId, data) {
   ];
 }
 
+// A role/channel picker screen shown in place of the main setup panel — built
+// from Discord's own native select menus, so it lists every role/channel in
+// the server (searchable, scrollable) instead of asking the host to type one.
+function buildRolePickerView(sessionId, field, currentRoleId) {
+  const label = field === 'requiredrole' ? '🔐  Pick the Required Role' : '⭐  Pick the Bonus Role (2× entries)';
+  const desc = field === 'requiredrole'
+    ? 'Only members with this role will be able to enter the giveaway.'
+    : 'Members with this role get **double** entries in the draw.';
+  const embed = new EmbedBuilder().setColor(GOLD).setTitle(label).setDescription(desc);
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new RoleSelectMenuBuilder()
+        .setCustomId(`gaw_role_select:${field}:${sessionId}`)
+        .setPlaceholder('Select a role…')
+        .setMinValues(1).setMaxValues(1),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gaw_setup:${field}clear:${sessionId}`).setLabel('Clear').setEmoji('🧹').setStyle(ButtonStyle.Danger).setDisabled(!currentRoleId),
+      new ButtonBuilder().setCustomId(`gaw_setup:panel:${sessionId}`).setLabel('← Back').setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+  return { embeds: [embed], components: rows };
+}
+
+function buildChannelPickerView(sessionId) {
+  const embed = new EmbedBuilder().setColor(GOLD).setTitle('📢  Pick the Announcement Channel').setDescription('Choose which channel the giveaway will be posted in.');
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId(`gaw_channel_select:${sessionId}`)
+        .setPlaceholder('Select a channel…')
+        .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1).setMaxValues(1),
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gaw_setup:panel:${sessionId}`).setLabel('← Back').setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+  return { embeds: [embed], components: rows };
+}
+
 // ── Launch ────────────────────────────────────────────────────────────────────
 
 async function launchGiveaway(interaction, data, sessionId) {
@@ -268,8 +303,9 @@ async function launchGiveaway(interaction, data, sessionId) {
   const channel = interaction.guild.channels.cache.get(channelId);
   if (!channel) return interaction.reply({ content: '❌ Target channel not found.', ephemeral: true });
 
-  const endTime      = Date.now() + durationMs;
-  const endTimestamp = Math.floor(endTime / 1000);
+  const createdAt     = Date.now();
+  const endTime        = createdAt + durationMs;
+  const endTimestamp   = Math.floor(endTime / 1000);
   const reqLines      = requirementsLines(data);
 
   const embed = new EmbedBuilder()
@@ -312,12 +348,12 @@ async function launchGiveaway(interaction, data, sessionId) {
     prize, winnersCount: winners, imageUrl: imageUrl || null,
     hostId: interaction.user.id, endTime, guildId, channelId: msg.channelId, entrants: [],
     requiredRoleId: requiredRoleId || null, bonusRoleId: bonusRoleId || null,
-    minAccountAgeDays: minAccountAgeDays || 0,
+    minAccountAgeDays: minAccountAgeDays || 0, createdAt,
   });
 
   if (giveawayTimers.has(msg.id)) clearTimeout(giveawayTimers.get(msg.id));
   giveawayTimers.set(msg.id, setTimeout(
-    () => endGiveaway(msg, prize, winners, imageUrl, interaction.user.id, guildId, bonusRoleId),
+    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId: interaction.user.id, guildId, bonusRoleId, createdAt }),
     durationMs,
   ));
 
@@ -365,9 +401,23 @@ async function buildWeightedPool(entrantIds, guild, bonusRoleId) {
   return pool;
 }
 
+async function dmWinners(client, guild, winnerIds, prize, hostId, { rerolled = false } = {}) {
+  for (const id of winnerIds) {
+    try {
+      const user = await client.users.fetch(id);
+      await user.send({ embeds: [new EmbedBuilder()
+        .setColor(GOLD)
+        .setTitle(rerolled ? '🎉 You Won a Rerolled Giveaway!' : '🎉 You Won a Giveaway!')
+        .setDescription(`You won **${prize}** in **${guild.name}**!\nContact the host, <@${hostId}>, to claim your prize.`)
+        .setTimestamp()] });
+    } catch { /* DMs closed — not fatal */ }
+  }
+}
+
 // ── End giveaway ──────────────────────────────────────────────────────────────
 
-async function endGiveaway(message, prize, winnersCount, imageUrl, hostId, guildId, bonusRoleId) {
+async function endGiveaway(message, meta) {
+  const { prize, winnersCount, imageUrl, hostId, guildId, bonusRoleId, createdAt } = meta;
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   const entrants = global.giveawayEntrants.get(message.id);
 
@@ -409,6 +459,8 @@ async function endGiveaway(message, prize, winnersCount, imageUrl, hostId, guild
     entrants:  entrantIds,
     bonusRoleId: bonusRoleId || null,
     currentWinners: winnerIds,
+    createdAt: createdAt || null,
+    endedAt: Date.now(),
   };
   writeJson('giveaways_ended.json', allEnded);
 
@@ -431,16 +483,7 @@ async function endGiveaway(message, prize, winnersCount, imageUrl, hostId, guild
   global.giveawayMeta?.delete(message.id);
 
   // DM the winners — a small polish touch most giveaway bots skip.
-  for (const id of winnerIds) {
-    try {
-      const user = await message.client.users.fetch(id);
-      await user.send({ embeds: [new EmbedBuilder()
-        .setColor(GOLD)
-        .setTitle('🎉 You Won a Giveaway!')
-        .setDescription(`You won **${prize}** in **${message.guild.name}**!\nContact the host, <@${hostId}>, to claim your prize.`)
-        .setTimestamp()] });
-    } catch { /* DMs closed — not fatal */ }
-  }
+  await dmWinners(message.client, message.guild, winnerIds, prize, hostId);
 }
 
 async function earlyEndGiveaway(interaction, msgId) {
@@ -456,7 +499,11 @@ async function earlyEndGiveaway(interaction, msgId) {
     return interaction.reply({ content: '❌ Couldn\'t find the original giveaway message (it may have been deleted).', ephemeral: true });
   }
   await interaction.reply({ content: `✅ Ending **${record.prize}** now…`, ephemeral: true });
-  await endGiveaway(msg, record.prize, record.winnersCount, record.imageUrl, record.hostId, record.guildId, record.bonusRoleId);
+  await endGiveaway(msg, {
+    prize: record.prize, winnersCount: record.winnersCount, imageUrl: record.imageUrl,
+    hostId: record.hostId, guildId: record.guildId, bonusRoleId: record.bonusRoleId,
+    createdAt: record.createdAt,
+  });
 }
 
 // ── Reroll (shared by the slash subcommand and the g.reroll text command) ─────
@@ -493,7 +540,49 @@ async function performReroll(guild, shortId) {
     await origMsg.edit({ embeds: [updEmbed] }).catch(() => {});
   } catch { /* original message may be gone — the reroll itself still succeeded */ }
 
+  // DM the NEW winner(s) — every reroll notifies whoever actually won this time.
+  await dmWinners(guild.client, guild, newWinners, data.prize, data.hostId, { rerolled: true });
+
   return { data, newWinners };
+}
+
+// ── List view (active + recently ended, with delete-in-place for ended) ───────
+
+function buildListPayload(guildId, guild) {
+  const active = readJson(ACTIVE_FILE, {});
+  const activeList = Object.entries(active).filter(([, d]) => d.guildId === guildId);
+
+  const endedAll = readJson('giveaways_ended.json', {})[guildId] || {};
+  const endedList = Object.entries(endedAll)
+    .sort(([, a], [, b]) => (b.endedAt || 0) - (a.endedAt || 0))
+    .slice(0, ENDED_LIST_MAX);
+
+  const lines = ['**🟢 Active**'];
+  if (activeList.length === 0) lines.push('_None right now._');
+  else lines.push(...activeList.map(([, d]) =>
+    `🎟️ **${d.prize}** — <#${d.channelId}> · ${d.entrants?.length || 0} entries · ends <t:${Math.floor(d.endTime / 1000)}:R>` +
+    (d.createdAt ? ` · created <t:${Math.floor(d.createdAt / 1000)}:f>` : ''),
+  ));
+
+  lines.push('', `**🏁 Recently Ended** ${endedList.length ? `(latest ${endedList.length})` : ''}`);
+  if (endedList.length === 0) lines.push('_None yet._');
+  else lines.push(...endedList.map(([id, d]) =>
+    `🎟️ **${d.prize}** \`(${id})\` — ${d.winnersCount} winner${d.winnersCount !== 1 ? 's' : ''}` +
+    (d.createdAt ? ` · created <t:${Math.floor(d.createdAt / 1000)}:f>` : '') +
+    (d.endedAt ? ` · ended <t:${Math.floor(d.endedAt / 1000)}:f>` : ''),
+  ));
+
+  const embed = new EmbedBuilder().setColor(GOLD).setTitle('🎟️ Giveaways').setDescription(lines.join('\n')).setTimestamp();
+
+  const components = [];
+  if (endedList.length > 0) {
+    const options = endedList.map(([id, d]) =>
+      new StringSelectMenuOptionBuilder().setLabel(`${d.prize}`.slice(0, 100)).setDescription(`ID: ${id}`).setValue(id));
+    components.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('gaw_list_delsel').setPlaceholder('🗑️ Delete an ended giveaway…').addOptions(options),
+    ));
+  }
+  return { embeds: [embed], components };
 }
 
 // ── Module ────────────────────────────────────────────────────────────────────
@@ -507,7 +596,7 @@ module.exports = {
       .addStringOption(o => o.setName('giveaway').setDescription('Which giveaway to end').setRequired(true).setAutocomplete(true)))
     .addSubcommand(s => s.setName('reroll').setDescription('Pick new winner(s) for an ended giveaway')
       .addStringOption(o => o.setName('giveaway').setDescription('Which ended giveaway to reroll').setRequired(true).setAutocomplete(true)))
-    .addSubcommand(s => s.setName('list').setDescription('List all currently active giveaways in this server')),
+    .addSubcommand(s => s.setName('list').setDescription('List active & recently ended giveaways in this server')),
 
   async autocomplete(interaction) {
     const sub     = interaction.options.getSubcommand();
@@ -563,18 +652,8 @@ module.exports = {
     }
 
     if (sub === 'list') {
-      const active = readJson(ACTIVE_FILE, {});
-      const guildGiveaways = Object.entries(active).filter(([, d]) => d.guildId === interaction.guild.id);
-      if (guildGiveaways.length === 0) {
-        return interaction.reply({ content: '📭 No active giveaways right now. Start one with `/giveaway create`.', ephemeral: true });
-      }
-      const desc = guildGiveaways.map(([msgId, d]) =>
-        `🎟️ **${d.prize}** — <#${d.channelId}> · ${d.entrants?.length || 0} entries · ends <t:${Math.floor(d.endTime / 1000)}:R>`,
-      ).join('\n');
-      return interaction.reply({
-        embeds: [new EmbedBuilder().setColor(GOLD).setTitle('🎟️ Active Giveaways').setDescription(desc).setTimestamp()],
-        ephemeral: true,
-      });
+      const payload = buildListPayload(interaction.guild.id, interaction.guild);
+      return interaction.reply({ ...payload, ephemeral: true });
     }
   },
 
@@ -596,17 +675,35 @@ module.exports = {
 
     if (action === 'launch') return launchGiveaway(interaction, data, sessionId);
 
-    // Open a modal for the chosen field
+    // "Back" from a role/channel picker screen — just redraw the normal panel.
+    if (action === 'panel') {
+      return interaction.update({ embeds: [buildSetupEmbed(data, interaction.guild)], components: buildSetupRows(sessionId, data) });
+    }
+
+    if (action === 'requiredroleclear' || action === 'bonusroleclear') {
+      if (action === 'requiredroleclear') data.requiredRoleId = null;
+      else data.bonusRoleId = null;
+      return interaction.update({ embeds: [buildSetupEmbed(data, interaction.guild)], components: buildSetupRows(sessionId, data) });
+    }
+
+    // Required Role / Bonus Role / Channel now use Discord's own native
+    // select menus (every role/channel in the server, searchable) instead
+    // of asking the host to type an ID.
+    if (action === 'requiredrole' || action === 'bonusrole') {
+      return interaction.update(buildRolePickerView(sessionId, action, action === 'requiredrole' ? data.requiredRoleId : data.bonusRoleId));
+    }
+    if (action === 'channel') {
+      return interaction.update(buildChannelPickerView(sessionId));
+    }
+
+    // Everything else still opens a modal
     const defs = {
-      prize:        { title: '🏆  Set Prize',          label: 'Prize',                              ph: 'e.g. Nitro Classic, $10 Gift Card', max: 100, req: true  },
-      duration:     { title: '⏱️  Set Duration',       label: 'Duration',                           ph: '1h  |  30m  |  2d',                 max: 10,  req: true  },
-      winners:      { title: '👥  Set Winners',         label: `Number of winners (1–${MAX_WINNERS})`, ph: '1',                                max: 2,   req: true  },
-      image:        { title: '🖼️  Set Image URL',      label: 'Image URL',                          ph: 'https://example.com/image.png',     max: 500, req: false },
-      mention:      { title: '📣  Set Mention',         label: '@everyone, @here, or a role ID',     ph: '@everyone',                         max: 100, req: false },
-      channel:      { title: '📢  Set Channel',         label: 'Channel ID or <#id>',                ph: 'Paste the channel ID',              max: 50,  req: true  },
-      requiredrole: { title: '🔐  Required Role',       label: 'Role mention/ID, or "clear"',        ph: '@Members or 123456789012345678',    max: 100, req: false },
-      bonusrole:    { title: '⭐  Bonus Role (2× entries)', label: 'Role mention/ID, or "clear"',     ph: '@Booster or 123456789012345678',    max: 100, req: false },
-      minage:       { title: '🕰️  Min. Account Age',   label: 'Minimum account age in days (0 = off)', ph: '7',                                max: 5,   req: false },
+      prize:    { title: '🏆  Set Prize',    label: 'Prize',                            ph: 'e.g. Nitro Classic, $10 Gift Card', max: 100, req: true },
+      duration: { title: '⏱️  Set Duration', label: 'Duration',                         ph: '1h  |  30m  |  2d',                 max: 10,  req: true },
+      winners:  { title: '👥  Set Winners',   label: `Number of winners (1–${MAX_WINNERS})`, ph: '1',                            max: 2,   req: true },
+      image:    { title: '🖼️  Set Image URL', label: 'Image URL',                       ph: 'https://example.com/image.png',     max: 500, req: false },
+      mention:  { title: '📣  Set Mention',   label: '@everyone, @here, or a role ID',   ph: '@everyone',                         max: 100, req: false },
+      minage:   { title: '🕰️  Min. Account Age', label: 'Minimum account age in days (0 = off)', ph: '7',                        max: 5,   req: false },
     };
 
     const def = defs[action];
@@ -616,9 +713,6 @@ module.exports = {
       prize: data.prize, duration: data.duration,
       winners: String(data.winners),
       image: data.imageUrl, mention: data.mention,
-      channel: data.channelId,
-      requiredrole: data.requiredRoleId ? `<@&${data.requiredRoleId}>` : '',
-      bonusrole: data.bonusRoleId ? `<@&${data.bonusRoleId}>` : '',
       minage: data.minAccountAgeDays > 0 ? String(data.minAccountAgeDays) : '',
     }[action] || '';
 
@@ -681,31 +775,6 @@ module.exports = {
         data.mention = value || null;
         break;
 
-      case 'channel': {
-        const chMatch = value.match(/^<#(\d+)>$/) || value.match(/^(\d+)$/);
-        if (!chMatch)
-          return interaction.reply({ content: '❌ Couldn\'t resolve that channel. Use a channel ID or `<#id>`.', ephemeral: true });
-        const ch = interaction.guild.channels.cache.get(chMatch[1]);
-        if (!ch)
-          return interaction.reply({ content: '❌ Channel not found in this server.', ephemeral: true });
-        data.channelId = ch.id;
-        break;
-      }
-
-      case 'requiredrole': {
-        const parsed = parseRoleInput(value, interaction.guild);
-        if (parsed.error) return interaction.reply({ content: `❌ ${parsed.error}`, ephemeral: true });
-        data.requiredRoleId = parsed.roleId || null;
-        break;
-      }
-
-      case 'bonusrole': {
-        const parsed = parseRoleInput(value, interaction.guild);
-        if (parsed.error) return interaction.reply({ content: `❌ ${parsed.error}`, ephemeral: true });
-        data.bonusRoleId = parsed.roleId || null;
-        break;
-      }
-
       case 'minage': {
         if (!value) { data.minAccountAgeDays = 0; break; }
         const days = parseInt(value, 10);
@@ -721,6 +790,65 @@ module.exports = {
       components: buildSetupRows(sessionId, data),
     });
   },
+
+  // ── Native role/channel select handlers ───────────────────────────────────
+  async handleRoleSelect(interaction) {
+    ensureSessions();
+    const [, field, sessionId] = interaction.customId.split(':');
+    const data = global.giveawaySessions.get(sessionId);
+    if (!data) return interaction.update({ content: '⌛ Session expired. Run `/giveaway create` again.', embeds: [], components: [] });
+    if (data.userId !== interaction.user.id) return interaction.reply({ content: '❌ This setup panel belongs to someone else.', ephemeral: true });
+
+    const roleId = interaction.values[0];
+    if (field === 'requiredrole') data.requiredRoleId = roleId;
+    else if (field === 'bonusrole') data.bonusRoleId = roleId;
+
+    return interaction.update({ embeds: [buildSetupEmbed(data, interaction.guild)], components: buildSetupRows(sessionId, data) });
+  },
+
+  async handleChannelSelect(interaction) {
+    ensureSessions();
+    const [, sessionId] = interaction.customId.split(':');
+    const data = global.giveawaySessions.get(sessionId);
+    if (!data) return interaction.update({ content: '⌛ Session expired. Run `/giveaway create` again.', embeds: [], components: [] });
+    if (data.userId !== interaction.user.id) return interaction.reply({ content: '❌ This setup panel belongs to someone else.', ephemeral: true });
+
+    data.channelId = interaction.values[0];
+    return interaction.update({ embeds: [buildSetupEmbed(data, interaction.guild)], components: buildSetupRows(sessionId, data) });
+  },
+
+  // ── /giveaway list — delete-ended-giveaway select + confirm, in-place ────────
+  async handleListSelect(interaction) {
+    if (interaction.customId !== 'gaw_list_delsel') return;
+    const shortId = interaction.values[0];
+    const ended   = readJson('giveaways_ended.json', {})[interaction.guild.id]?.[shortId];
+    const label   = ended ? ended.prize : shortId;
+    const embed = new EmbedBuilder()
+      .setColor(0xe74c3c)
+      .setTitle('⚠️ Confirm Deletion')
+      .setDescription(`Delete the record for **${label}** \`(${shortId})\`?\nThis only removes the saved record — it does not un-announce past winners.\n**This cannot be undone.**`);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gaw_list_delyes:${shortId}`).setLabel('🗑️ Yes, Delete').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('gaw_list_delno').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+    );
+    return interaction.update({ embeds: [embed], components: [row] });
+  },
+
+  async handleListButton(interaction) {
+    const id = interaction.customId;
+    if (id.startsWith('gaw_list_delyes:')) {
+      const shortId = id.slice('gaw_list_delyes:'.length);
+      const allEnded = readJson('giveaways_ended.json', {});
+      if (allEnded[interaction.guild.id]?.[shortId]) {
+        delete allEnded[interaction.guild.id][shortId];
+        writeJson('giveaways_ended.json', allEnded);
+      }
+      return interaction.update(buildListPayload(interaction.guild.id, interaction.guild));
+    }
+    if (id === 'gaw_list_delno') {
+      return interaction.update(buildListPayload(interaction.guild.id, interaction.guild));
+    }
+  },
 };
 
 module.exports.getActiveGiveaway    = getActiveGiveaway;
@@ -728,7 +856,7 @@ module.exports.persistGiveawayEntry = persistGiveawayEntry;
 module.exports.restoreGiveaways     = restoreGiveaways;
 
 // Legacy text-command reroll (`g.reroll <id>`), kept working for anyone used
-// to it — shares the exact same draw logic as `/giveaway reroll`.
+// to it — shares the exact same draw logic (including winner DMs) as `/giveaway reroll`.
 module.exports.reroll = async function(message, shortId) {
   if (!shortId)
     return message.reply({ embeds: [{ color: 0xe74c3c, title: '❌ Usage', description: 'Use `g.reroll <id>` or `/giveaway reroll` — the ID is shown in the ended giveaway embed.' }] });
