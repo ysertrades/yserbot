@@ -166,6 +166,14 @@ async function buildNewsEmbed(item) {
   return embed;
 }
 
+function matchesFilter(item, settings) {
+  const words = settings.filterWords || [];
+  if (!settings.filterMode || settings.filterMode === 'off' || words.length === 0) return true;
+  const haystack = `${item.title} ${item.body || ''}`.toLowerCase();
+  const matchesAny = words.some(w => haystack.includes(w));
+  return settings.filterMode === 'block' ? !matchesAny : matchesAny;
+}
+
 async function runTick(client) {
   const items = await fetchFeedItems();
   if (!items || items.length === 0) return;
@@ -195,7 +203,7 @@ async function runTick(client) {
     if (toPost.length > MAX_POST_PER_TICK) toPost = toPost.slice(0, MAX_POST_PER_TICK);
 
     if (toPost.length > 0) {
-      const chronological = [...toPost].reverse();
+      const chronological = [...toPost].reverse().filter(item => matchesFilter(item, settings));
       for (const item of chronological) {
         const embed = await buildNewsEmbed(item);
         await channel.send({ embeds: [embed] }).catch(() => {});
