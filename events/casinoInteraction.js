@@ -758,7 +758,7 @@ async function showRacePick(interaction, s) {
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   ));
 
-  await interaction.editReply({ embeds: [embed], components: rows });
+  await interaction.editReply({ embeds: [embed], components: rows, attachments: [] });
 }
 
 async function runRaceGame(interaction, s) {
@@ -942,7 +942,7 @@ async function handleBJ(interaction, s, action) {
       .addFields({ name: '💰 Balance', value: `**${fmt(getBalance(s.userId))}** coins`, inline: true })
       .setFooter({ text: 'YSER Flow Casino' });
     unlock(s.userId);
-    return interaction.editReply({ embeds: [embed], components: [afterRow()] });
+    return interaction.editReply({ embeds: [embed], components: [afterRow()], attachments: [] });
   }
   if (action === 'split') {
     if (!engine.canSplit(state) || !hasEnough(s.userId, s.bet)) { unlock(s.userId); return interaction.followUp({ content: '❌ Cannot split.', flags: 64 }); }
@@ -1141,7 +1141,7 @@ async function showDiceModeSelect(interaction, s) {
     new ButtonBuilder().setCustomId('cs:dicemode:pvp').setLabel('👥 vs Player').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row], attachments: [] });
 }
 
 async function resolveDiceVsBot(interaction, s) {
@@ -1204,7 +1204,7 @@ async function showDicePvpChallenge(interaction, s) {
       .setStyle(ButtonStyle.Danger),
   );
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [row] });
+  await interaction.editReply({ embeds: [embed], components: [row], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1314,7 +1314,7 @@ async function resolveWheel(interaction, s) {
       .setTitle('🎰  Wheel of Fortune — Daily Limit Reached')
       .setDescription(`You've used all **${WHEEL_DAILY_LIMIT} spins** for today.\nCome back tomorrow for more!`)
       .addFields({ name: '♻️ Refunded', value: `**${fmt(s.bet)}** coins returned to your balance`, inline: true })
-      .setFooter({ text: 'Limit resets at midnight UTC' })], components: [] });
+      .setFooter({ text: 'Limit resets at midnight UTC' })], components: [], attachments: [] });
   }
 
   // Record the spin IMMEDIATELY (before any await) so a concurrent "Play Again"
@@ -1333,7 +1333,7 @@ async function resolveWheel(interaction, s) {
       { name: '🎡 Spins Left', value: `**${spinsLeft - 1}** remaining today`, inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino' });
-  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinFile] });
+  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinFile], attachments: [] });
   await wait(1500);
 
   const segment = engine.spinWheel();
@@ -1351,22 +1351,18 @@ async function resolveWheel(interaction, s) {
   const colorMap = { jackpot: 0xFFD700, bigwin: 0x27AE60, win: 0x2ECC71, push: 0x95A5A6, lose: 0xE74C3C };
   const resultImgName = `wheel-result-${s.userId}.png`;
   const resultFile = new AttachmentBuilder(engine.renderWheelPng(segment, false), { name: resultImgName });
-  const paytable = engine.WHEEL_SEGMENTS.map(seg => seg.id === segment.id ? `**[ ${seg.label} ]**` : seg.label).join('  ·  ');
   const embed = new EmbedBuilder()
     .setColor(colorMap[segment.color] || 0xE74C3C)
     .setTitle(`🎰  Wheel of Fortune — ${segment.label}${segment.mult >= 10 ? ' 🎊' : ''}`)
     .setImage(`attachment://${resultImgName}`)
     .addFields(
-      { name: '💸 Bet',        value: `**${fmt(s.bet)}** coins`,                                        inline: true },
-      { name: '💵 Payout',     value: payout > 0 ? `**${fmt(payout)}** coins (${segment.label})` : '—', inline: true },
-      { name: '💰 Balance',    value: `**${fmt(newBal)}** coins`,                                       inline: true },
-      { name: '🎡 Spins Left', value: spinsAfter > 0 ? `**${spinsAfter}** remaining today` : '**0** — come back tomorrow!', inline: true },
-      { name: '🎡 Wheel Segments', value: paytable, inline: false },
+      { name: '💸 Bet / Payout', value: payout > 0 ? `**${fmt(s.bet)}** → **${fmt(payout)}** coins` : `**${fmt(s.bet)}** coins lost`, inline: true },
+      { name: '💰 Balance / Spins', value: `**${fmt(newBal)}** coins  •  ${spinsAfter > 0 ? `**${spinsAfter}** spins left` : 'no spins left today'}`, inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino  •  Wheel of Fortune  •  10 spins/day' });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [resultFile] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [resultFile], attachments: [] });
 }
 
 async function resolveTrading(interaction, s, direction, rr) {
@@ -1383,6 +1379,7 @@ async function resolveTrading(interaction, s, direction, rr) {
         .setDescription('Trade state validation failed. Your bet was fully refunded.')
         .addFields({ name: '♻️ Refunded', value: `**${fmt(s.bet)}** coins`, inline: true })],
       components: [afterRow()],
+      attachments: [],
     });
   }
   let payout = res.won ? s.bet * res.multiplier : 0;

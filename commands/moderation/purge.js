@@ -3,7 +3,20 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 
-const DEL_DELAY = 2000; // 2 seconds for clear messages
+const DEL_DELAY  = 2000; // 2 seconds for clear messages
+const TWO_WEEKS  = 1209600000; // Discord's bulkDelete cutoff, in ms
+
+// Discord's bulk-delete endpoint refuses anything older than 14 days, so those
+// have to go through individual message.delete() calls instead. Those aren't
+// batched, so they're slower and subject to normal per-message rate limits —
+// callers should expect this to take longer for larger old-message counts.
+async function deleteOld(messages) {
+  let count = 0;
+  for (const msg of messages.values()) {
+    try { await msg.delete(); count++; } catch { /* already gone / no perms on this one — skip it */ }
+  }
+  return count;
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -24,13 +37,20 @@ module.exports = {
       const statusMsg = await interaction.reply({ embeds: [createServerEmbed('info', { title: '🧹 Clearing...', description: `Deleting **${amount}** messages.` }, interaction.guild)], fetchReply: true });
 
       try {
-        const fetched  = await channel.messages.fetch({ limit: amount + 1 });
-        const toDelete = fetched.filter(m => m.id !== statusMsg.id && Date.now() - m.createdTimestamp < 1209600000);
-        await channel.bulkDelete(toDelete, true);
-        await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${toDelete.size}** messages.` }, interaction.guild)] });
+        const fetched = await channel.messages.fetch({ limit: amount + 1 });
+        const target  = fetched.filter(m => m.id !== statusMsg.id);
+        const recent  = target.filter(m => Date.now() - m.createdTimestamp < TWO_WEEKS);
+        const old     = target.filter(m => Date.now() - m.createdTimestamp >= TWO_WEEKS);
+
+        let deletedCount = 0;
+        if (recent.size > 0) { await channel.bulkDelete(recent, true); deletedCount += recent.size; }
+        if (old.size > 0)    deletedCount += await deleteOld(old);
+
+        const note = old.size > 0 ? ` (${old.size} older than 14 days, deleted individually)` : '';
+        await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deletedCount}** messages.${note}` }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
       } catch {
-        await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed. Messages older than 14 days cannot be bulk deleted.' }, interaction.guild)] });
+        await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
       }
 
@@ -40,21 +60,26 @@ module.exports = {
       const statusMsg = await interaction.reply({ embeds: [createServerEmbed('info', { title: '🧹 Clearing...', description: `Deleting up to **${amount}** messages from **${user.tag}**.` }, interaction.guild)], fetchReply: true });
 
       try {
-        let deleted = 0, lastId = null;
-        const cutoff = Date.now() - 1209600000;
+        let deleted = 0, oldDeleted = 0, lastId = null;
         while (deleted < amount) {
-          const opts    = { limit: 100 };
+          const opts = { limit: 100 };
           if (lastId) opts.before = lastId;
           const fetched = await channel.messages.fetch(opts);
           if (fetched.size === 0) break;
-          const userMsgs = fetched.filter(m => m.author.id === user.id && m.id !== statusMsg.id && m.createdTimestamp > cutoff);
-          if (userMsgs.size === 0) { lastId = fetched.last().id; continue; }
-          const toDelete = userMsgs.first(Math.min(amount - deleted, userMsgs.size));
-          await channel.bulkDelete(toDelete, true);
-          deleted += toDelete.length;
-          lastId  = fetched.last().id;
+          lastId = fetched.last().id;
+
+          const userMsgs = fetched.filter(m => m.author.id === user.id && m.id !== statusMsg.id);
+          if (userMsgs.size === 0) continue;
+
+          const wanted = userMsgs.first(Math.min(amount - deleted, userMsgs.size));
+          const recent = wanted.filter(m => Date.now() - m.createdTimestamp < TWO_WEEKS);
+          const old    = wanted.filter(m => Date.now() - m.createdTimestamp >= TWO_WEEKS);
+
+          if (recent.length > 0) { await channel.bulkDelete(recent, true); deleted += recent.length; }
+          if (old.length > 0)    { const n = await deleteOld(old); deleted += n; oldDeleted += n; }
         }
-        await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages from **${user.tag}**.` }, interaction.guild)] });
+        const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
+        await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages from **${user.tag}**.${note}` }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
       } catch {
         await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
