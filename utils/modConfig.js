@@ -3,8 +3,9 @@
 const { PermissionFlagsBits } = require('discord.js');
 const { readJson, writeJson } = require('./jsonStorage');
 
-const AUTOMOD_DEFAULTS = { badWords: false, linkFilter: false, customWords: [], mentionSpamProtection: false, mentionSpamRuleId: null };
-const MODLOG_DEFAULTS  = { members: true, messages: true, roles: true, purges: true };
+const AUTOMOD_DEFAULTS  = { badWords: false, linkFilter: false, customWords: [], mentionSpamProtection: false, mentionSpamRuleId: null };
+const MODLOG_DEFAULTS   = { members: true, messages: true, roles: true, purges: true };
+const NEWSFEED_DEFAULTS = { enabled: false, channelId: null, lastGuid: null };
 
 function getGuildConfig(guildId) {
   const config = readJson('config.json', {});
@@ -36,6 +37,18 @@ function setModLogSettings(guildId, patch) {
   return config[guildId].modLogSettings;
 }
 
+function getNewsFeedSettings(guildId) {
+  const config = readJson('config.json', {});
+  return { ...NEWSFEED_DEFAULTS, ...(config[guildId]?.newsFeedSettings || {}) };
+}
+
+function setNewsFeedSettings(guildId, patch) {
+  const config = getGuildConfig(guildId);
+  config[guildId].newsFeedSettings = { ...NEWSFEED_DEFAULTS, ...(config[guildId].newsFeedSettings || {}), ...patch };
+  writeJson('config.json', config);
+  return config[guildId].newsFeedSettings;
+}
+
 function getModLogChannel(guild) {
   const config    = readJson('config.json', {});
   const channelId = config[guild.id]?.logsChannel;
@@ -54,8 +67,9 @@ function isAutoModExempt(member) {
 }
 
 module.exports = {
-  AUTOMOD_DEFAULTS, MODLOG_DEFAULTS,
+  AUTOMOD_DEFAULTS, MODLOG_DEFAULTS, NEWSFEED_DEFAULTS,
   getAutoModSettings, setAutoModSettings,
   getModLogSettings, setModLogSettings,
+  getNewsFeedSettings, setNewsFeedSettings,
   getModLogChannel, isAutoModExempt,
 };

@@ -20,6 +20,8 @@ const colors = {
     casino:    0xE11D48,   // crimson
     economy:   0xF59E0B,   // golden amber
     mod:       0xEF4444,   // alert red
+    news:      0x1D9BF0,   // market-blue
+    breaking:  0xFF3B30,   // urgent red
 };
 
 // Auto-prefixed icon per embed type, used to give plain confirmation titles

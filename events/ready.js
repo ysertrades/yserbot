@@ -1,5 +1,6 @@
 const { Events, REST, Routes } = require('discord.js');
 const { startScheduleRunner } = require('../utils/scheduleRunner');
+const { startNewsFeedRunner } = require('../utils/newsFeed');
 const { restoreGiveaways } = require('../commands/utility/giveaway');
 
 // Registers every command in client.commands with Discord on every boot, so
@@ -28,6 +29,7 @@ module.exports = {
         client.user.setActivity('YSER Flow | /help', { type: 3 });
         await syncSlashCommands(client);
         startScheduleRunner(client);
+        startNewsFeedRunner(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));
     },
 };
