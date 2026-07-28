@@ -413,6 +413,13 @@ module.exports = {
           return client.commands.get('automod')?.handleCooldownButton(interaction);
         }
 
+        // Auto-mod — requests list (manage/delete) — approve/deny reuse the
+        // automod_link_approve:/automod_link_deny: routes above
+        if (id === 'automod_req_back' || id.startsWith('automod_req_delete:') || id.startsWith('automod_req_delyes:')
+          || id.startsWith('automod_req_delno:')) {
+          return client.commands.get('automod')?.handleRequestsButton(interaction);
+        }
+
         // Casino — skip (handled by casinoInteraction.js)
         if (id.startsWith('cs:')) return;
 
@@ -561,6 +568,8 @@ module.exports = {
           return client.commands.get('giveaway')?.handleListSelect(interaction);
         if (id === 'automod_cd_select')
           return client.commands.get('automod')?.handleCooldownSelect(interaction);
+        if (id === 'automod_req_select')
+          return client.commands.get('automod')?.handleRequestsSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');

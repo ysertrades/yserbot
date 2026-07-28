@@ -46,4 +46,23 @@ function updateRequest(id, patch) {
   return all[id];
 }
 
-module.exports = { createRequest, getRequest, updateRequest, findActiveRequest, extractLink, LINK_REGEX };
+/** Fully removes a request record — used to manually clear a stuck/orphaned
+ *  request that would otherwise block that user forever via findActiveRequest. */
+function deleteRequest(id) {
+  const all = readJson(FILE, {});
+  delete all[id];
+  writeJson(FILE, all);
+}
+
+/** Every pending/pending_review request for a guild, for /automod requests. */
+function getAllActiveRequests(guildId) {
+  const all = readJson(FILE, {});
+  return Object.values(all)
+    .filter(r => r.guildId === guildId && (r.status === 'pending' || r.status === 'pending_review'))
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+module.exports = {
+  createRequest, getRequest, updateRequest, deleteRequest,
+  findActiveRequest, getAllActiveRequests, extractLink, LINK_REGEX,
+};
