@@ -43,6 +43,30 @@ function recordWheelSpin(userId) {
 const fmt  = n => Number(n).toLocaleString();
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
+const { recordOutcome } = require('../utils/winStreak');
+
+// Every game's resolve function funnels its outcome through here instead of
+// calling updateSession directly, so a single place tracks the cross-game
+// win streak and fires the milestone bonus — no per-game duplication needed.
+async function applyResult(interaction, userId, updates) {
+  updateSession(userId, updates);
+  const delta = updates.lastResult?.delta;
+  if (typeof delta !== 'number') return;
+
+  const bonus = recordOutcome(userId, delta);
+  if (!bonus) return;
+
+  await interaction.followUp({
+    embeds: [new EmbedBuilder()
+      .setColor(0xF1C40F)
+      .setTitle('🔥 Win Streak Bonus!')
+      .setDescription(`You're on a **${bonus.streak}-win streak** across the casino — here's a little something extra.`)
+      .addFields({ name: '🎁 Bonus Coins', value: `**+${fmt(bonus.amount)}** coins`, inline: true })
+      .setFooter({ text: 'YSER Flow Casino  •  Keep the streak alive!' })],
+    flags: 64,
+  }).catch(() => {});
+}
+
 // Applies the coin_boost shop effect: adds 50% of the profit on top of the payout.
 // payout > bet means a real win; push/loss are returned unchanged.
 function _applyBoost(payout, bet, userId, guildId) {
@@ -510,7 +534,7 @@ async function resolveCoinflip(interaction, s, choice) {
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
-  updateSession(s.userId, { lastResult: { label: result.won ? '🟢 WIN' : '🔴 LOSS', delta } });
+  await applyResult(interaction, s.userId, { lastResult: { label: result.won ? '🟢 WIN' : '🔴 LOSS', delta } });
   const chartName = `coinflip-result-${s.userId}.png`;
   const chart = new AttachmentBuilder(engine.renderCoinflipPng(choice, result.result), { name: chartName });
   const embed = new EmbedBuilder()
@@ -566,7 +590,7 @@ async function startSlots(interaction, s) {
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
-  updateSession(s.userId, { lastResult: { label: result.won ? `🟢 ×${result.mult}` : '🔴 LOSS', delta } });
+  await applyResult(interaction, s.userId, { lastResult: { label: result.won ? `🟢 ×${result.mult}` : '🔴 LOSS', delta } });
 
   const typeLabels = { jackpot: '🎊 JACKPOT!!!', triple: '🎉 Triple Match!', pair: '✨ Pair!', lose: 'No Match' };
   const typeColors = { jackpot: 0xf1c40f, triple: 0x2ecc71, pair: 0x3498db, lose: 0xe74c3c };
@@ -659,7 +683,7 @@ async function startCrash(interaction, s) {
       // Lose — no payout
       const newBal = getBalance(cs.userId);
       setCooldown(cs.userId, 'casino');
-      updateSession(cs.userId, { lastResult: { label: `💥 CRASH ${cs.crashPoint}x`, delta: -cs.bet } });
+      await applyResult(cs.interaction, cs.userId, { lastResult: { label: `💥 CRASH ${cs.crashPoint}x`, delta: -cs.bet } });
 
       try {
         const payload = buildPayload(cs.crashPoint, true);
@@ -706,7 +730,7 @@ async function handleCrashCashOut(interaction) {
   const delta  = payout - cs.bet;
   const newBal = getBalance(cs.userId);
   setCooldown(cs.userId, 'casino');
-  updateSession(cs.userId, { lastResult: { label: `✅ CASH OUT ×${cashOutMult}`, delta } });
+  await applyResult(interaction, cs.userId, { lastResult: { label: `✅ CASH OUT ×${cashOutMult}`, delta } });
 
   const imgName = `crash-cashout-${cs.userId}-${Date.now()}.png`;
   const file = new AttachmentBuilder(engine.renderCrashChart(cs.tick, false), { name: imgName });
@@ -789,7 +813,7 @@ async function runRaceGame(interaction, s) {
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
-  updateSession(s.userId, {
+  await applyResult(interaction, s.userId, {
     lastResult: { label: won ? `🟢 WIN ×${mult}` : '🔴 LOSS', delta },
   });
 
@@ -935,7 +959,7 @@ async function handleBJ(interaction, s, action) {
     const refund = Math.floor(s.bet / 2);
     addCoins(s.userId, refund);
     setCooldown(s.userId, 'casino');
-    updateSession(s.userId, { lastResult: { label: '🏳️ Surrender', delta: -refund }, bjState: null });
+    await applyResult(interaction, s.userId, { lastResult: { label: '🏳️ Surrender', delta: -refund }, bjState: null });
     const embed = new EmbedBuilder()
       .setColor(0x95a5a6).setTitle('🃏 Blackjack — Surrendered')
       .setDescription(`You surrendered and received **${fmt(refund)}** coins back (half your bet).`)
@@ -1031,7 +1055,7 @@ async function finishBJ(interaction, s, state) {
   const delta    = totalOut - totalIn;
   const newBal   = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
-  updateSession(s.userId, { lastResult: { label: RLABELS[main] || main, delta }, bjState: null, splitBet: null, insuranceBet: null });
+  await applyResult(interaction, s.userId, { lastResult: { label: RLABELS[main] || main, delta }, bjState: null, splitBet: null, insuranceBet: null });
 
   const imgName = `bj-final-${s.userId}-${Date.now()}.png`;
   const file = new AttachmentBuilder(engine.renderBlackjackTablePng({
@@ -1153,7 +1177,7 @@ async function resolveDiceVsBot(interaction, s) {
   if (payout > 0) addCoins(s.userId, payout);
   const delta  = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
-  updateSession(s.userId, {
+  await applyResult(interaction, s.userId, {
     lastResult: { label: result.push ? '⚪ Push' : result.won ? `🟢 ×${odds}` : '🔴 LOSS', delta },
     diceOdds: null,
   });
@@ -1271,7 +1295,7 @@ async function resolveRoulette(interaction, s) {
   await interaction.editReply({ embeds: [spinEmbed], components: [], attachments: [] });
   await wait(900);
 
-  updateSession(s.userId, {
+  await applyResult(interaction, s.userId, {
     lastResult: { label: result.won ? `🟢 WIN ×${result.mult}` : '🔴 LOSS', delta },
     rouletteState: null,
   });
@@ -1343,7 +1367,7 @@ async function resolveWheel(interaction, s) {
   const delta   = payout - s.bet;
   const newBal  = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
-  updateSession(s.userId, {
+  await applyResult(interaction, s.userId, {
     lastResult: { label: segment.mult > 1 ? `🟢 ×${segment.mult}` : segment.mult === 1 ? '⚪ Push' : '🔴 Bankrupt', delta },
   });
 
@@ -1370,7 +1394,7 @@ async function resolveTrading(interaction, s, direction, rr) {
   const res  = engine.resolveTradeWithChart(s.tradeState, direction, rr, s.bet);
   if (!res.validation?.ok || res.tradeId !== s.tradeState.tradeId) {
     addCoins(s.userId, s.bet);
-    updateSession(s.userId, { tradeState: null, lastResult: { label: '⚠️ Trade Invalid', delta: 0 } });
+    await applyResult(interaction, s.userId, { tradeState: null, lastResult: { label: '⚠️ Trade Invalid', delta: 0 } });
     unlock(s.userId);
     return interaction.editReply({
       embeds: [new EmbedBuilder()
@@ -1387,7 +1411,7 @@ async function resolveTrading(interaction, s, direction, rr) {
   if (payout > 0) addCoins(s.userId, payout);
   const delta = payout - s.bet, newBal = getBalance(s.userId);
   setCooldown(s.userId, 'casino');
-  updateSession(s.userId, { lastResult: { label: res.won ? `🟢 +${res.rrReward}R` : '🔴 LOSS', delta }, tradeState: null });
+  await applyResult(interaction, s.userId, { lastResult: { label: res.won ? `🟢 +${res.rrReward}R` : '🔴 LOSS', delta }, tradeState: null });
   const chartName = `trading-result-${s.userId}.png`;
   const chartAttachment = new AttachmentBuilder(res.chartPng, { name: chartName });
   const embed = new EmbedBuilder()

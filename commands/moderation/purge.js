@@ -23,8 +23,12 @@ async function deleteOld(messages) {
   return count;
 }
 
-async function logPurge(guild, moderator, channel, deleted, targetUser = null) {
+async function logPurge(guild, moderator, member, channel, deleted, targetUser = null) {
   if (!getModLogSettings(guild.id).purges) return;
+  // Administrators don't get logged for their own purges — only non-admin
+  // moderators do, so staff accountability logging stays focused on the
+  // tier that isn't already fully trusted.
+  if (member.permissions.has(PermissionFlagsBits.Administrator)) return;
   const embed = new EmbedBuilder()
     .setColor(0x95A5A6)
     .setTitle('🧹 Purge Run')
@@ -84,7 +88,7 @@ module.exports = {
         const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
         await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages.${note}` }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
-        await logPurge(interaction.guild, interaction.user, channel, deleted);
+        await logPurge(interaction.guild, interaction.user, interaction.member, channel, deleted);
       } catch {
         await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
@@ -117,7 +121,7 @@ module.exports = {
         const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
         await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages from **${user.tag}**.${note}` }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
-        await logPurge(interaction.guild, interaction.user, channel, deleted, user);
+        await logPurge(interaction.guild, interaction.user, interaction.member, channel, deleted, user);
       } catch {
         await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
