@@ -5,46 +5,77 @@ const { readJson, writeJson } = require('./jsonStorage');
 const FILE = 'link_permits.json';
 
 // A permit is granted by an admin approving a link request, with a cooldown
-// they choose. It doesn't mean "unlimited links from now on" — it means
-// "exactly one link every `cooldownMs`". Post one, the clock restarts; try
-// to post another before the cooldown is up, and the permit is revoked
-// entirely, putting the user back to square one (new request required).
+// they choose. It means "exactly one link every `cooldownMs`" — not
+// unlimited links from now on, and critically not "one link, then request
+// again whenever you feel like it": posting early doesn't just cost the
+// permit, it locks the user out of submitting a *new* request until the
+// original cooldown would have elapsed anyway. Without that lock, someone
+// could burn through the cooldown instantly by spamming "Request Approval"
+// and hoping a moderator re-approves — the lock is what actually makes the
+// cooldown mean something instead of just gating the automatic pass-through.
 function key(guildId, userId) { return `${guildId}:${userId}`; }
 
-function getPermit(guildId, userId) {
+function getRecord(guildId, userId) {
   const all = readJson(FILE, {});
   return all[key(guildId, userId)] || null;
 }
 
-function grantPermit(guildId, userId, cooldownMs) {
+function setRecord(guildId, userId, record) {
   const all = readJson(FILE, {});
-  all[key(guildId, userId)] = { cooldownMs, lastPostAt: Date.now() };
+  all[key(guildId, userId)] = record;
   writeJson(FILE, all);
 }
 
-function revokePermit(guildId, userId) {
+function clearRecord(guildId, userId) {
   const all = readJson(FILE, {});
   delete all[key(guildId, userId)];
   writeJson(FILE, all);
 }
 
-/** Restarts the cooldown clock — call when a permitted link is let through. */
-function consumePermit(guildId, userId) {
-  const all = readJson(FILE, {});
-  const k = key(guildId, userId);
-  if (!all[k]) return;
-  all[k].lastPostAt = Date.now();
-  writeJson(FILE, all);
+/** Called when an admin approves a request. Starts the cooldown clock —
+ *  the just-approved/reposted link IS their one link for this cycle, so
+ *  the next one isn't allowed until a full cooldown from now. */
+function grantPermit(guildId, userId, cooldownMs) {
+  setRecord(guildId, userId, { cooldownMs, nextAllowedAt: Date.now() + cooldownMs, lockedUntil: 0 });
 }
 
-/** { allowed, secondsLeft } — allowed=true means the cooldown has elapsed
- *  and this user's next link should be let through automatically. */
-function checkPermit(guildId, userId) {
-  const permit = getPermit(guildId, userId);
-  if (!permit) return { allowed: false, secondsLeft: 0 };
-  const elapsed = Date.now() - permit.lastPostAt;
-  if (elapsed >= permit.cooldownMs) return { allowed: true, secondsLeft: 0 };
-  return { allowed: false, secondsLeft: Math.ceil((permit.cooldownMs - elapsed) / 1000) };
+/**
+ * Evaluate a link attempt against this user's permit state:
+ *  - 'none'    — no permit at all, normal request-approval flow applies
+ *  - 'locked'  — they violated their cooldown before; blocked from even
+ *                submitting a new request until `secondsLeft` has passed
+ *  - 'waiting' — has a permit, cooldown hasn't elapsed yet — posting now
+ *                is a fresh violation (caller should lock them)
+ *  - 'allowed' — cooldown has elapsed, this link should go through
+ */
+function evaluate(guildId, userId) {
+  const rec = getRecord(guildId, userId);
+  if (!rec) return { state: 'none' };
+  const now = Date.now();
+  if (rec.lockedUntil && now < rec.lockedUntil) {
+    return { state: 'locked', secondsLeft: Math.ceil((rec.lockedUntil - now) / 1000) };
+  }
+  if (now < rec.nextAllowedAt) {
+    return { state: 'waiting', secondsLeft: Math.ceil((rec.nextAllowedAt - now) / 1000) };
+  }
+  return { state: 'allowed' };
 }
 
-module.exports = { getPermit, grantPermit, revokePermit, consumePermit, checkPermit };
+/** A link was let through automatically — restart the cycle. */
+function consumeAllowed(guildId, userId) {
+  const rec = getRecord(guildId, userId);
+  if (!rec) return;
+  rec.nextAllowedAt = Date.now() + rec.cooldownMs;
+  setRecord(guildId, userId, rec);
+}
+
+/** A violation occurred — lock new requests out until the original cooldown
+ *  would have elapsed, so repeated "Request Approval" clicks can't shortcut it. */
+function lockAfterViolation(guildId, userId) {
+  const rec = getRecord(guildId, userId);
+  if (!rec) return;
+  rec.lockedUntil = rec.nextAllowedAt;
+  setRecord(guildId, userId, rec);
+}
+
+module.exports = { getRecord, grantPermit, evaluate, consumeAllowed, lockAfterViolation, clearRecord };

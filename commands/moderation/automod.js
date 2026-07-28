@@ -9,8 +9,8 @@ const { getAutoModSettings, setAutoModSettings, isAutoModExempt, getModLogChanne
 const { findBadWord } = require('../../utils/badWords');
 const { issueWarning } = require('../../utils/warnUtil');
 const { postCustomLog, suppressDeleteLog } = require('../../utils/modLog');
-const { createRequest, getRequest, updateRequest, LINK_REGEX } = require('../../utils/linkRequests');
-const { checkPermit, consumePermit, grantPermit, revokePermit } = require('../../utils/linkPermits');
+const { createRequest, getRequest, updateRequest, findActiveRequest, LINK_REGEX } = require('../../utils/linkRequests');
+const { evaluate, consumeAllowed, lockAfterViolation, grantPermit } = require('../../utils/linkPermits');
 
 const FEATURES = [
   { key: 'badWords',   label: '🤬 Bad Word / Harassment Filter', desc: 'Deletes messages containing filtered words and warns the sender in-channel.' },
@@ -119,14 +119,24 @@ module.exports = {
 
     if (settings.linkFilter && LINK_REGEX.test(message.content)) {
       // A previously-approved user gets exactly one link per their admin-set
-      // cooldown, no re-request needed — but posting again before that
-      // cooldown is up burns the permit entirely, back to square one.
-      const permit = checkPermit(message.guild.id, message.author.id);
-      if (permit.allowed) {
-        consumePermit(message.guild.id, message.author.id);
+      // cooldown, no re-request needed. Posting again before that cooldown
+      // is up doesn't just cost the permit — it locks them out of
+      // submitting a *new* request too, until the original cooldown would
+      // have elapsed anyway, so spamming "Request Approval" can't shortcut it.
+      const status = evaluate(message.guild.id, message.author.id);
+      if (status.state === 'allowed') {
+        consumeAllowed(message.guild.id, message.author.id);
         return false; // let it through, restart their cooldown clock
       }
-      if (permit.secondsLeft > 0) revokePermit(message.guild.id, message.author.id);
+      if (status.state === 'locked') {
+        await handleLockedLinkAttempt(message, status.secondsLeft);
+        return true;
+      }
+      if (status.state === 'waiting') {
+        lockAfterViolation(message.guild.id, message.author.id);
+        await handleLockedLinkAttempt(message, status.secondsLeft);
+        return true;
+      }
       await handleLinkViolation(message, client);
       return true;
     }
@@ -187,15 +197,57 @@ async function handleBadWordViolation(message, client) {
   }
 }
 
-// ── Link filter action ──────────────────────────────────────────────────
+function readableDuration(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.ceil(seconds / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.ceil(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.ceil(hours / 24)}d`;
+}
+
+// Posts a short-lived, clearly-scoped-to-one-user notice in the channel —
 // Discord only allows a true "only you can see" (ephemeral) message as a
-// direct response to an interaction (a slash command, button, modal…) — a
+// direct response to an interaction (slash command, button, modal…); a
 // plain message being posted isn't one, so there's no API-level way to make
-// this notice private without a DM. Posting it in-channel (instead of a DM)
-// is what makes "request right away" actually work, at the cost of being
-// visible in-channel; it's kept short-lived and gets cleaned up the moment
-// the user acts on it (or after a timeout if they don't).
+// this genuinely private without a DM. This is the closest practical
+// stand-in: labeled so bystanders know it isn't for them, and auto-deleted
+// quickly to minimize how long it's visible to anyone else.
+async function sendPrivateNotice(channel, user, embed, components = [], ttlMs = 15_000) {
+  embed.setFooter({ text: `👁️ Only relevant to ${user.username}` });
+  const notice = await channel.send({ content: `${user}`, embeds: [embed], components }).catch(() => null);
+  if (notice && ttlMs > 0) setTimeout(() => notice.delete().catch(() => {}), ttlMs);
+  return notice;
+}
+
+async function handleLockedLinkAttempt(message, secondsLeft) {
+  try { await message.delete(); } catch { return; }
+  suppressDeleteLog(message.id);
+  await sendPrivateNotice(message.channel, message.author, new EmbedBuilder()
+    .setColor(0xE74C3C)
+    .setTitle('🔒 Still On Cooldown')
+    .setDescription(
+      `You posted a link before your approved cooldown finished, so that permission has been **revoked**.\n` +
+      `You can request approval again in **${readableDuration(secondsLeft)}**.`,
+    ));
+}
+
+// ── Link filter action ──────────────────────────────────────────────────
 async function handleLinkViolation(message, client) {
+  // Never let a user pile up more than one live request — otherwise
+  // spamming links and clicking "Request Approval" repeatedly stacks
+  // duplicate approval cards in the mod-log channel.
+  const existing = findActiveRequest(message.guild.id, message.author.id);
+  if (existing) {
+    try { await message.delete(); } catch { return; }
+    suppressDeleteLog(message.id);
+    await sendPrivateNotice(message.channel, message.author, new EmbedBuilder()
+      .setColor(0xF39C12)
+      .setTitle('⏳ Request Already Pending')
+      .setDescription('You already have a link request waiting on a moderator\'s decision. Please wait for that one to be handled before sending another link.'));
+    return;
+  }
+
   const originalContent = message.content;
   const channelId = message.channel.id;
 
@@ -214,17 +266,21 @@ async function handleLinkViolation(message, client) {
     .setDescription(
       `${message.author}, your message was removed — only moderators can post links here.\n\n` +
       'If you have a legitimate reason to share it, click below to request approval.',
-    )
-    .setFooter({ text: 'Your original message is saved with this request' });
+    );
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`automod_link_request:${request.id}`).setLabel('📨 Request Approval').setStyle(ButtonStyle.Primary),
   );
 
-  const notice = await message.channel.send({ content: `${message.author}`, embeds: [embed], components: [row] }).catch(() => null);
-  if (notice) {
-    updateRequest(request.id, { noticeMessageId: notice.id });
-    setTimeout(() => notice.delete().catch(() => {}), 60_000);
-  }
+  const notice = await sendPrivateNotice(message.channel, message.author, embed, [row], 60_000);
+  if (notice) updateRequest(request.id, { noticeMessageId: notice.id });
+
+  // If they never click through, the request would otherwise sit in
+  // 'pending' forever — findActiveRequest would then treat it as still
+  // live and permanently block them from ever requesting again.
+  setTimeout(() => {
+    const current = getRequest(request.id);
+    if (current && current.status === 'pending') updateRequest(request.id, { status: 'expired' });
+  }, 60_000);
 }
 
 async function handleLinkRequestButton(interaction, requestId) {
@@ -334,13 +390,16 @@ async function handleLinkApproveModalSubmit(interaction, requestId) {
 
   const targetChannel = interaction.guild.channels.cache.get(request.channelId);
   if (targetChannel) {
+    // The reposted link is the actual approved content — it stays public
+    // and persistent, unlike the status notice below.
     await targetChannel.send({ content: `🔗 **${request.userTag}** (link approved by ${interaction.user.tag}):\n${request.originalContent || request.link}` }).catch(() => {});
-    await targetChannel.send({
-      embeds: [createServerEmbed('success', {
-        title: '✅ Link Request Approved',
-        description: `<@${request.userId}>, your link is back up. You can post **one more link every ${raw}** — post another before the cooldown's up and this permission is revoked, and you'll need to request approval again.`,
-      }, interaction.guild)],
-    }).catch(() => {});
+    const user = await interaction.client.users.fetch(request.userId).catch(() => null);
+    if (user) {
+      await sendPrivateNotice(targetChannel, user, new EmbedBuilder()
+        .setColor(0x2ECC71)
+        .setTitle('✅ Link Request Approved')
+        .setDescription(`You can post **one more link every ${raw}**. Post another before the cooldown's up and this permission is revoked — you'd need to request approval again.`), [], 20_000);
+    }
   }
 
   const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: `✅ Approved by ${interaction.user.tag} • Cooldown: ${raw}` });
@@ -363,11 +422,12 @@ async function handleLinkDeny(interaction, requestId) {
 
   const targetChannel = interaction.guild.channels.cache.get(request.channelId);
   if (targetChannel) {
-    await targetChannel.send({
-      embeds: [createServerEmbed('error', {
-        title: '❌ Link Request Denied',
-        description: `<@${request.userId}>, your link request was denied by ${interaction.user.tag}.`,
-      }, interaction.guild)],
-    }).catch(() => {});
+    const user = await interaction.client.users.fetch(request.userId).catch(() => null);
+    if (user) {
+      await sendPrivateNotice(targetChannel, user, new EmbedBuilder()
+        .setColor(0xE74C3C)
+        .setTitle('❌ Link Request Denied')
+        .setDescription(`Your link request was denied by ${interaction.user.tag}.`), [], 20_000);
+    }
   }
 }
