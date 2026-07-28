@@ -69,6 +69,7 @@ const ADMIN_CATALOGUE = [
   ['verify',         'Set up member verification (memory challenge + role)'],
   ['automod',        'Toggle bad-word & link-approval auto-mod filters'],
   ['modlog',         'Toggle which events get logged to the mod-log channel'],
+  ['newsfeed',       'Post live Financial Juice market news headlines to a channel'],
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
