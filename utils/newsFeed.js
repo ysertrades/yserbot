@@ -8,7 +8,7 @@
 
 const { readJson, writeJson } = require('./jsonStorage');
 const { createEmbed, isValidUrl } = require('./embedBuilder');
-const { expandTopicKeywords } = require('./newsTopics');
+const { TOPICS, expandTopicKeywords } = require('./newsTopics');
 
 const FEED_URL          = 'https://www.financialjuice.com/feed.ashx';
 const POLL_INTERVAL_MS  = 20_000;
@@ -180,8 +180,13 @@ async function buildNewsEmbed(item) {
 // means everything posts; picking any means only headlines matching one of
 // them do.
 function matchesFilter(item, settings) {
-  const words = expandTopicKeywords(settings.filterTopics);
-  if (words.length === 0) return true;
+  const picked = settings.filterTopics || [];
+  // Picking nothing, or picking every topic there is, both mean "everything"
+  // — selecting all topics shouldn't behave as a narrower filter than
+  // selecting none, since keyword bundles can never cover every possible
+  // headline (e.g. a plain stock-price item with no topic keyword in it).
+  if (picked.length === 0 || picked.length >= TOPICS.length) return true;
+  const words = expandTopicKeywords(picked);
   const haystack = `${item.title} ${item.body || ''}`.toLowerCase();
   return words.some(w => haystack.includes(w));
 }
