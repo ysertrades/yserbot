@@ -230,7 +230,9 @@ const TRADING_GUARDRAILS = {
   HIST_POINTS: 34,
   FUTURE_POINTS: 26,
 };
-const CANDLE_GROUP = 2; // ticks per rendered candlestick
+// Ticks per rendered candlestick. Must be > 2 — with only 2 ticks, high/low
+// always equal max/min(open, close), so every candle renders with zero wick.
+const CANDLE_GROUP = 4;
 
 function _clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
@@ -1063,7 +1065,7 @@ function _renderTradeChartPng({
   const yMin = minP - pad, yMax = maxP + pad, yRange = yMax - yMin || 1;
 
   const slot = pw / totalCandles;
-  const bodyW = Math.max(3, Math.floor(slot * 0.56));
+  const bodyW = Math.max(3, Math.floor(slot * 0.46));
   const xOf = i => margin.left + Math.round(i * slot + slot / 2);
   const yOf = v => margin.top + Math.round((1 - (v - yMin) / yRange) * ph);
 
@@ -1089,7 +1091,10 @@ function _renderTradeChartPng({
       : (bull ? [86, 176, 245, 255] : [110, 130, 170, 255]);
     const yHigh = yOf(c.high), yLow = yOf(c.low);
     const yOpen = yOf(c.open), yClose = yOf(c.close);
-    _line(png, x, yHigh, x, yLow, color, 1);
+    // Wick drawn in a neutral tone (independent of body color) so it stays a
+    // crisp, clearly visible line the way a real candlestick wick reads —
+    // rather than blending into whichever body color happens to sit on it.
+    _lineBlend(png, x, yHigh, x, yLow, [210, 216, 226, 255], 0.9, 2);
     const bodyTop = Math.min(yOpen, yClose), bodyH = Math.max(2, Math.abs(yClose - yOpen));
     _fillRect(png, x - Math.floor(bodyW / 2), bodyTop, bodyW, bodyH, color);
   };
