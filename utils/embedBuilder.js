@@ -116,4 +116,26 @@ const author = options.author || (guild ? { name: 'YSER Flow', iconURL: guild.ic
 return createEmbed(type, { ...options, footer: footerText, author});
 }
 
-module.exports = { createEmbed, createServerEmbed, colors, parseColor, isValidHexColor, isValidUrl };
+const TEMP_REPLY_MS = 5000; // matches the "embed sent" confirmation delay this mirrors
+
+// Ephemeral confirmations (success/error acknowledgements) auto-delete after
+// a few seconds instead of piling up in the interaction history — same
+// behavior the embed editor's "embed sent" confirmation already had.
+// Only for a *fresh* ephemeral `interaction.reply(...)`: never use this for
+// a public reply (mod-action records like /warn, /ban must stay visible to
+// the rest of the server) or for a reply whose components the user still
+// needs to interact with.
+async function sendTempReply(interaction, payload, ms = TEMP_REPLY_MS) {
+    await interaction.reply({ ...payload, ephemeral: true });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), ms);
+}
+
+// Same idea for a confirmation sent via `interaction.followUp(...)` — e.g.
+// after `deferUpdate()`, where the original message is a panel being
+// restored separately and the followUp is just a transient "done" notice.
+async function sendTempFollowUp(interaction, payload, ms = TEMP_REPLY_MS) {
+    const msg = await interaction.followUp({ ...payload, ephemeral: true });
+    setTimeout(() => msg.delete().catch(() => {}), ms);
+}
+
+module.exports = { createEmbed, createServerEmbed, colors, parseColor, isValidHexColor, isValidUrl, sendTempReply, sendTempFollowUp };

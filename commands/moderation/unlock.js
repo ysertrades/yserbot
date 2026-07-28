@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 const LOCK_FILE = 'locked_channels.json';
@@ -20,7 +20,7 @@ module.exports = {
     const locks = readJson(LOCK_FILE, {});
     const record = locks[guildId]?.[channel.id];
     if (!record) {
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Locked', description: `${channel} is not currently locked.` }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Locked', description: `${channel} is not currently locked.` }, interaction.guild)] });
     }
 
     await interaction.deferReply();

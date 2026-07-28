@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 const LOCK_FILE = 'locked_channels.json';
@@ -40,12 +40,12 @@ module.exports = {
     const guildId = interaction.guild.id;
 
     if (!channel.isTextBased() || channel.isThread()) {
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Only text/announcement channels can be locked.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Only text/announcement channels can be locked.' }, interaction.guild)] });
     }
 
     const locks = readJson(LOCK_FILE, {});
     if (locks[guildId]?.[channel.id]) {
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Already Locked', description: `${channel} is already locked. Use \`/unlock\` first.` }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Already Locked', description: `${channel} is already locked. Use \`/unlock\` first.` }, interaction.guild)] });
     }
 
     await interaction.deferReply();

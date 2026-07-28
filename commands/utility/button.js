@@ -5,7 +5,7 @@ const {
   ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { createServerEmbed, isValidHexColor, isValidUrl } = require('../../utils/embedBuilder');
+const { createServerEmbed, isValidHexColor, isValidUrl, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 const STYLE_COLORS = {
@@ -186,36 +186,36 @@ module.exports = {
       const cooldown  = interaction.options.getInteger('cooldown') || 0;
 
       if (!label && !emoji)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'A button needs at least a **label** or an **emoji**.' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'A button needs at least a **label** or an **emoji**.' }, interaction.guild)] });
       if (buttons[guildId][id])
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'ID Taken', description: `Button **${id}** already exists.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'ID Taken', description: `Button **${id}** already exists.` }, interaction.guild)] });
       if (isReservedId(id))
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Reserved ID', description: `\`${id}\` collides with a built-in bot feature. Pick a different button ID (avoid colons and prefixes like \`be_\`, \`embed_\`, \`sch_\`, \`gaw_\`, \`rpt_\`, \`cs:\`).` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Reserved ID', description: `\`${id}\` collides with a built-in bot feature. Pick a different button ID (avoid colons and prefixes like \`be_\`, \`embed_\`, \`sch_\`, \`gaw_\`, \`rpt_\`, \`cs:\`).` }, interaction.guild)] });
       if (emoji && !isValidEmoji(emoji))
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Emoji', description: 'Use a real emoji (😀) or a custom emoji like `<:name:id>`.' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Emoji', description: 'Use a real emoji (😀) or a custom emoji like `<:name:id>`.' }, interaction.guild)] });
       if (colorHex && !isValidHexColor(colorHex))
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)] });
 
       if (type === 'link') {
         const url = interaction.options.getString('url');
-        if (!url)             return interaction.reply({ embeds: [createServerEmbed('error', { title: 'URL Required' }, interaction.guild)], flags: 64 });
-        if (!isValidUrl(url)) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
-        if (style !== 'Link') return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Use Link Style', description: 'Link buttons must use the **Link** style.' }, interaction.guild)], flags: 64 });
+        if (!url)             return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'URL Required' }, interaction.guild)] });
+        if (!isValidUrl(url)) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must start with `http://` or `https://`.' }, interaction.guild)] });
+        if (style !== 'Link') return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Use Link Style', description: 'Link buttons must use the **Link** style.' }, interaction.guild)] });
       }
 
       const role = interaction.options.getRole('role');
       if (type === 'role' && !role)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Role Required', description: 'Choose a role in the **role** option for a Role-type button.' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Role Required', description: 'Choose a role in the **role** option for a Role-type button.' }, interaction.guild)] });
 
       const responseEmbedName = interaction.options.getString('response-embed')?.toLowerCase() || null;
       if (type === 'embed' && !responseEmbedName)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Embed Required', description: 'Choose a saved embed template in the **response-embed** option.' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Embed Required', description: 'Choose a saved embed template in the **response-embed** option.' }, interaction.guild)] });
 
       const responses = interaction.options.getString('responses') || null;
       if (type === 'random') {
         const list = (responses || '').split('|').map(s => s.trim()).filter(Boolean);
         if (list.length === 0)
-          return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Responses Required', description: 'Provide at least one reply in **responses**, separated by `|` for multiple (e.g. `Heads!|Tails!|Try again`).' }, interaction.guild)], flags: 64 });
+          return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Responses Required', description: 'Provide at least one reply in **responses**, separated by `|` for multiple (e.g. `Heads!|Tails!|Try again`).' }, interaction.guild)] });
       }
 
       buttons[guildId][id] = {
@@ -241,7 +241,7 @@ module.exports = {
       const id  = interaction.options.getString('id');
       const btn = buttons[guildId][id];
       if (!btn)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Found', description: `Button **${id}** not found.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `Button **${id}** not found.` }, interaction.guild)] });
       const sessionId = `${interaction.user.id}-${Date.now()}`;
       activeEdits.set(sessionId, { guildId, id, userId: interaction.user.id });
       return interaction.reply({ content: `Editing button **${id}** — click a field, then **Save**.`, embeds: [editorEmbed(btn)], components: editorRows(sessionId), flags: 64 });
@@ -337,13 +337,13 @@ module.exports = {
 
     // Edit session flow
     if (!session)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Session Expired', description: 'Run `/button edit` again.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Session Expired', description: 'Run `/button edit` again.' }, interaction.guild)] });
     if (session.userId !== interaction.user.id)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Your Session' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Your Session' }, interaction.guild)] });
 
     const buttons = readJson('buttons.json', {});
     const btn     = buttons[session.guildId]?.[session.id];
-    if (!btn) { activeEdits.delete(sessKey); return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Button Gone' }, interaction.guild)], flags: 64 }); }
+    if (!btn) { activeEdits.delete(sessKey); return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Button Gone' }, interaction.guild)] }); }
 
     if (action === 'save') {
       activeEdits.delete(sessKey);
@@ -392,7 +392,7 @@ module.exports = {
     const action  = parts[0];
     const session = activeEdits.get(sessKey);
     if (!session)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Session Expired' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Session Expired' }, interaction.guild)] });
 
     const value   = interaction.fields.getTextInputValue('value');
     const buttons = readJson('buttons.json', {});
@@ -400,22 +400,22 @@ module.exports = {
     if (!btn) return;
 
     if (action === 'emoji' && value && !isValidEmoji(value))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Emoji', description: 'Use a real emoji (😀) or a custom emoji like `<:name:id>`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Emoji', description: 'Use a real emoji (😀) or a custom emoji like `<:name:id>`.' }, interaction.guild)] });
     if (action === 'color' && value && !isValidHexColor(value))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)] });
     if (action === 'url' && value && !isValidUrl(value))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must start with `http://` or `https://`.' }, interaction.guild)] });
     if (action === 'url' && !value && btn.type === 'link')
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'URL Required', description: 'This is a **Link**-style button — it can\'t be saved without a URL.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'URL Required', description: 'This is a **Link**-style button — it can\'t be saved without a URL.' }, interaction.guild)] });
     if (action === 'cooldown' && value && !/^\d+$/.test(value.trim()))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Cooldown', description: 'Cooldown must be a whole number of seconds (0–86400).' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Cooldown', description: 'Cooldown must be a whole number of seconds (0–86400).' }, interaction.guild)] });
 
     // Guard against ending up with neither a label nor an emoji — such a
     // button can't be sent to Discord at all.
     if (action === 'label' && !value && !btn.emoji)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'This button has no emoji set, so it needs a label. Set an emoji first if you want to clear the label.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'This button has no emoji set, so it needs a label. Set an emoji first if you want to clear the label.' }, interaction.guild)] });
     if (action === 'emoji' && !value && !btn.label)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'This button has no label set, so it needs an emoji. Set a label first if you want to clear the emoji.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Label or Emoji Required', description: 'This button has no label set, so it needs an emoji. Set a label first if you want to clear the emoji.' }, interaction.guild)] });
 
     if (action === 'cooldown') {
       btn.cooldown = value ? Math.min(86400, parseInt(value.trim(), 10)) : 0;

@@ -1,7 +1,10 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply: sendTempEphemeralReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
+// Public confirmation that still auto-deletes — same idea as the shared
+// ephemeral sendTempReply, kept separate/local since this one is
+// deliberately visible to the channel, not ephemeral.
 async function sendTempReply(interaction, embed) {
     const msg = await interaction.reply({ embeds: [embed], fetchReply: true });
     setTimeout(() => {
@@ -51,7 +54,7 @@ module.exports = {
 
         if (sub === 'add') {
             const name = interaction.options.getString('name').toLowerCase();
-            if (autoreplies[guildId][name]) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Auto-reply exists.' }, interaction.guild)], ephemeral: true });
+            if (autoreplies[guildId][name]) return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Auto-reply exists.' }, interaction.guild)] });
             autoreplies[guildId][name] = {
                 trigger: interaction.options.getString('trigger'),
                 embedName: interaction.options.getString('embed').toLowerCase(),
@@ -64,7 +67,7 @@ module.exports = {
             await sendTempReply(interaction, embed);
         } else if (sub === 'remove') {
             const name = interaction.options.getString('name').toLowerCase();
-            if (!autoreplies[guildId][name]) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Not found.' }, interaction.guild)], ephemeral: true });
+            if (!autoreplies[guildId][name]) return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Not found.' }, interaction.guild)] });
             delete autoreplies[guildId][name];
             writeJson('autoreplies.json', autoreplies);
             const embed = createServerEmbed('success', { title: 'Removed', description: `Auto-reply **${name}** removed.` }, interaction.guild);
@@ -75,7 +78,7 @@ module.exports = {
             await interaction.reply({ embeds: [embed] });
         } else if (sub === 'toggle') {
             const name = interaction.options.getString('name').toLowerCase();
-            if (!autoreplies[guildId][name]) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Not found.' }, interaction.guild)], ephemeral: true });
+            if (!autoreplies[guildId][name]) return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Not found.' }, interaction.guild)] });
             autoreplies[guildId][name].enabled = !autoreplies[guildId][name].enabled;
             writeJson('autoreplies.json', autoreplies);
             const embed = createServerEmbed('success', { title: 'Toggled', description: `Auto-reply **${name}** is now ${autoreplies[guildId][name].enabled ? 'enabled' : 'disabled'}.` }, interaction.guild);

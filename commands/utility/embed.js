@@ -5,7 +5,7 @@ const {
   ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
   EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { createServerEmbed, parseColor, isValidHexColor, isValidUrl } = require('../../utils/embedBuilder');
+const { createServerEmbed, parseColor, isValidHexColor, isValidUrl, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson }           = require('../../utils/jsonStorage');
 
 // In-memory edit sessions { sessionId → { guildId, name, userId, isNew, embedIndex } }
@@ -303,7 +303,7 @@ module.exports = {
 
     if (sub === 'create') {
       if (all[guildId][name])
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Already Exists', description: `Template **${name}** already exists. Use \`/embed edit\`.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Already Exists', description: `Template **${name}** already exists. Use \`/embed edit\`.` }, interaction.guild)] });
       const template = { embeds: [blankEmbed()] };
       all[guildId][name] = template;
       writeJson('embeds.json', all);
@@ -313,7 +313,7 @@ module.exports = {
     if (sub === 'edit') {
       const template = getTemplate(all, guildId, name);
       if (!template)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)] });
       all[guildId][name] = template;
       writeJson('embeds.json', all);
       return launchEditor(interaction, guildId, name, template, false);
@@ -331,7 +331,7 @@ module.exports = {
     if (sub === 'preview') {
       const payload = buildEmbedPayload(interaction.guild, name, { user: interaction.user, channel: interaction.channel });
       if (!payload)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)] });
       const rows = [...(payload.components || [])];
       if (rows.length < 5) {
         rows.push(new ActionRowBuilder().addComponents(
@@ -345,21 +345,21 @@ module.exports = {
       const newName = interaction.options.getString('newname')?.toLowerCase();
       const template = getTemplate(all, guildId, name);
       if (!template)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)] });
       if (!newName)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Name Required' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Name Required' }, interaction.guild)] });
       if (all[guildId][newName])
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Already Exists', description: `Template **${newName}** already exists.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Already Exists', description: `Template **${newName}** already exists.` }, interaction.guild)] });
       all[guildId][newName] = JSON.parse(JSON.stringify(template));
       writeJson('embeds.json', all);
-      return interaction.reply({ embeds: [createServerEmbed('success', { title: '📋 Duplicated', description: `Copied **${name}** → **${newName}**. Use \`/embed edit name:${newName}\` to customize it.` }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('success', { title: '📋 Duplicated', description: `Copied **${name}** → **${newName}**. Use \`/embed edit name:${newName}\` to customize it.` }, interaction.guild)] });
     }
 
     if (sub === 'send') {
       const channel = interaction.options.getChannel('channel') || interaction.channel;
       const payload = buildEmbedPayload(interaction.guild, name, { user: interaction.user, channel });
       if (!payload)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)] });
 
       let content;
       let mentionOpts;
@@ -452,7 +452,7 @@ module.exports.handleEmbedSelect = async function(interaction) {
     if (!session)
       return interaction.update({ content: null, embeds: [createServerEmbed('error', { title: 'Session Expired', description: 'Run `/embed edit` again.' }, interaction.guild)], components: [] });
     if (session.userId !== interaction.user.id)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Your Session' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Your Session' }, interaction.guild)] });
 
     const all = readJson('embeds.json', {});
     const raw = all[session.guildId]?.[session.name];
@@ -548,15 +548,15 @@ module.exports.handleEmbedButton = async function(interaction) {
   const session   = activeEdits.get(sessionId);
 
   if (!session)
-    return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Session Expired', description: 'Run `/embed edit` again.' }, interaction.guild)], flags: 64 });
+    return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Session Expired', description: 'Run `/embed edit` again.' }, interaction.guild)] });
   if (session.userId !== interaction.user.id)
-    return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Your Session' }, interaction.guild)], flags: 64 });
+    return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Your Session' }, interaction.guild)] });
 
   const all = readJson('embeds.json', {});
   const raw = all[session.guildId]?.[session.name];
   if (!raw) {
     activeEdits.delete(sessionId);
-    return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Template Gone' }, interaction.guild)], flags: 64 });
+    return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Template Gone' }, interaction.guild)] });
   }
   const template   = normalizeTemplate(raw);
   if (session.embedIndex >= template.embeds.length) session.embedIndex = template.embeds.length - 1;
@@ -566,7 +566,7 @@ module.exports.handleEmbedButton = async function(interaction) {
   if (action === 'save') {
     const total = templateCharCount(template);
     if (total > MAX_TOTAL_CHARS)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Too Much Text', description: `This template has **${total}** characters across all embeds — Discord's limit is **${MAX_TOTAL_CHARS}**. Trim some text and try again.` }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Too Much Text', description: `This template has **${total}** characters across all embeds — Discord's limit is **${MAX_TOTAL_CHARS}**. Trim some text and try again.` }, interaction.guild)] });
     activeEdits.delete(sessionId);
     return interaction.update({ content: null, embeds: [createServerEmbed('success', { title: `💾 ${session.isNew ? 'Created' : 'Saved'}`, description: `Embed **${session.name}** ${session.isNew ? 'created' : 'saved'} with ${template.embeds.length} embed${template.embeds.length !== 1 ? 's' : ''}.` }, interaction.guild)], components: [] });
   }
@@ -586,7 +586,7 @@ module.exports.handleEmbedButton = async function(interaction) {
     return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
   }
   if (action === 'add') {
-    if (template.embeds.length >= MAX_EMBEDS) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Limit Reached', description: `Max ${MAX_EMBEDS} embeds per template.` }, interaction.guild)], flags: 64 });
+    if (template.embeds.length >= MAX_EMBEDS) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Limit Reached', description: `Max ${MAX_EMBEDS} embeds per template.` }, interaction.guild)] });
     template.embeds.push(blankEmbed());
     session.embedIndex = template.embeds.length - 1;
     activeEdits.set(sessionId, session);
@@ -595,7 +595,7 @@ module.exports.handleEmbedButton = async function(interaction) {
     return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
   }
   if (action === 'rem') {
-    if (template.embeds.length <= 1) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Cannot Remove', description: 'A template must have at least one embed.' }, interaction.guild)], flags: 64 });
+    if (template.embeds.length <= 1) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Cannot Remove', description: 'A template must have at least one embed.' }, interaction.guild)] });
     template.embeds.splice(embedIndex, 1);
     session.embedIndex = Math.min(embedIndex, template.embeds.length - 1);
     activeEdits.set(sessionId, session);
@@ -612,7 +612,7 @@ module.exports.handleEmbedButton = async function(interaction) {
   if (action === 'fieldrem') {
     const curFields = template.embeds[embedIndex].fields || [];
     if (curFields.length === 0)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'No Fields', description: 'This embed has no fields to remove.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'No Fields', description: 'This embed has no fields to remove.' }, interaction.guild)] });
     const options = curFields.slice(0, 25).map((f, i) =>
       new StringSelectMenuOptionBuilder().setLabel(`${i + 1}. ${f.name}`.slice(0, 100)).setValue(String(i)),
     );
@@ -658,7 +658,7 @@ module.exports.handleEmbedButton = async function(interaction) {
   }
   if (action === 'field') {
     if ((curEmbed.fields || []).length >= MAX_FIELDS)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Field Limit Reached', description: `This embed already has ${MAX_FIELDS} fields — Discord's maximum.` }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Field Limit Reached', description: `This embed already has ${MAX_FIELDS} fields — Discord's maximum.` }, interaction.guild)] });
     const modal = new ModalBuilder().setCustomId(`embed_modal_field_${sessionId}`).setTitle(`Embed ${embedIndex + 1} — Add Field`).addComponents(
       new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('fname').setLabel('Field Name').setStyle(TextInputStyle.Short).setMaxLength(256).setRequired(true)),
       new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('fvalue').setLabel('Field Value').setStyle(TextInputStyle.Paragraph).setMaxLength(1024).setRequired(true)),
@@ -699,11 +699,11 @@ module.exports.handleEmbedModal = async function(interaction) {
   const action    = parts[0];
   const session   = activeEdits.get(sessionId);
   if (!session)
-    return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Session Expired', description: 'Run `/embed edit` again.' }, interaction.guild)], flags: 64 });
+    return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Session Expired', description: 'Run `/embed edit` again.' }, interaction.guild)] });
 
   const all        = readJson('embeds.json', {});
   const raw        = all[session.guildId][session.name];
-  if (!raw) { activeEdits.delete(sessionId); return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Template Gone' }, interaction.guild)], flags: 64 }); }
+  if (!raw) { activeEdits.delete(sessionId); return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Template Gone' }, interaction.guild)] }); }
   const template   = normalizeTemplate(raw);
   const embedIndex = Math.min(session.embedIndex ?? 0, template.embeds.length - 1);
   const curEmbed   = template.embeds[embedIndex];
@@ -712,14 +712,14 @@ module.exports.handleEmbedModal = async function(interaction) {
     const title    = interaction.fields.getTextInputValue('title') || null;
     const titleUrl = interaction.fields.getTextInputValue('titleurl') || null;
     if (titleUrl && !isValidUrl(titleUrl))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Title URL must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Title URL must start with `http://` or `https://`.' }, interaction.guild)] });
     curEmbed.title = title;
     curEmbed.titleUrl = titleUrl;
   } else if (action === 'footer') {
     const footer     = interaction.fields.getTextInputValue('footer') || null;
     const footerIcon = interaction.fields.getTextInputValue('footericon') || null;
     if (footerIcon && !isValidUrl(footerIcon))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Footer icon URL must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Footer icon URL must start with `http://` or `https://`.' }, interaction.guild)] });
     curEmbed.footer = footer;
     curEmbed.footerIcon = footerIcon;
   } else if (action === 'author') {
@@ -727,9 +727,9 @@ module.exports.handleEmbedModal = async function(interaction) {
     const authorIcon = interaction.fields.getTextInputValue('authoricon') || null;
     const authorUrl  = interaction.fields.getTextInputValue('authorurl') || null;
     if (authorIcon && !isValidUrl(authorIcon))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Author icon URL must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Author icon URL must start with `http://` or `https://`.' }, interaction.guild)] });
     if (authorUrl && !isValidUrl(authorUrl))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Author URL must start with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Author URL must start with `http://` or `https://`.' }, interaction.guild)] });
     curEmbed.authorName = authorName;
     curEmbed.authorIcon = authorIcon;
     curEmbed.authorUrl  = authorUrl;
@@ -738,10 +738,10 @@ module.exports.handleEmbedModal = async function(interaction) {
     const fvalue = interaction.fields.getTextInputValue('fvalue').trim();
     const finlineRaw = (interaction.fields.getTextInputValue('finline') || '').trim().toLowerCase();
     if (!fname || !fvalue)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Missing Fields', description: 'Field name and value are both required.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Missing Fields', description: 'Field name and value are both required.' }, interaction.guild)] });
     if (!curEmbed.fields) curEmbed.fields = [];
     if (curEmbed.fields.length >= MAX_FIELDS)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Field Limit Reached', description: `This embed already has ${MAX_FIELDS} fields — Discord's maximum.` }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Field Limit Reached', description: `This embed already has ${MAX_FIELDS} fields — Discord's maximum.` }, interaction.guild)] });
     const inline = ['yes', 'y', 'true', '1'].includes(finlineRaw);
     curEmbed.fields.push({ name: fname.slice(0, 256), value: fvalue.slice(0, 1024), inline });
   } else {
@@ -749,9 +749,9 @@ module.exports.handleEmbedModal = async function(interaction) {
     if (map[action] === undefined) return false;
     const value = interaction.fields.getTextInputValue('value');
     if (action === 'color' && value && !isValidHexColor(value))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Color', description: 'Use a 6-digit hex code like `#5865F2` or `5865F2`.' }, interaction.guild)] });
     if ((action === 'thumb' || action === 'image') && value && !isValidUrl(value))
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must be a direct link starting with `http://` or `https://`.' }, interaction.guild)], flags: 64 });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid URL', description: 'Must be a direct link starting with `http://` or `https://`.' }, interaction.guild)] });
     curEmbed[map[action]] = value || null;
   }
 

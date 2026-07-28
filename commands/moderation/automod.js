@@ -6,7 +6,7 @@ const {
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
   AutoModerationRuleTriggerType, AutoModerationActionType, AutoModerationRuleEventType,
 } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { getAutoModSettings, setAutoModSettings, isAutoModExempt, getModLogChannel } = require('../../utils/modConfig');
 const { readJson } = require('../../utils/jsonStorage');
 const { findBadWord } = require('../../utils/badWords');
@@ -74,24 +74,24 @@ module.exports = {
 
     if (sub === 'addword') {
       const word = interaction.options.getString('word').trim().toLowerCase();
-      if (!word) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Word cannot be empty.' }, interaction.guild)], ephemeral: true });
+      if (!word) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Word cannot be empty.' }, interaction.guild)] });
       const settings = getAutoModSettings(guildId);
       if (settings.customWords.includes(word)) {
-        return interaction.reply({ embeds: [createServerEmbed('info', { title: 'Already Added', description: `\`${word}\` is already in this server's filter.` }, interaction.guild)], ephemeral: true });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('info', { title: 'Already Added', description: `\`${word}\` is already in this server's filter.` }, interaction.guild)] });
       }
       settings.customWords.push(word);
       setAutoModSettings(guildId, { customWords: settings.customWords });
-      return interaction.reply({ embeds: [createServerEmbed('success', { title: '✅ Word Added', description: `\`${word}\` will now be filtered.` }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('success', { title: '✅ Word Added', description: `\`${word}\` will now be filtered.` }, interaction.guild)] });
     }
 
     if (sub === 'removeword') {
       const word     = interaction.options.getString('word').trim().toLowerCase();
       const settings = getAutoModSettings(guildId);
       if (!settings.customWords.includes(word)) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Not Found', description: `\`${word}\` isn't in this server's custom filter list.` }, interaction.guild)], ephemeral: true });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `\`${word}\` isn't in this server's custom filter list.` }, interaction.guild)] });
       }
       setAutoModSettings(guildId, { customWords: settings.customWords.filter(w => w !== word) });
-      return interaction.reply({ embeds: [createServerEmbed('success', { title: '✅ Word Removed', description: `\`${word}\` will no longer be filtered.` }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('success', { title: '✅ Word Removed', description: `\`${word}\` will no longer be filtered.` }, interaction.guild)] });
     }
 
     if (sub === 'wordlist') {
@@ -388,9 +388,8 @@ async function handleLinkModalSubmit(interaction, requestId) {
 
   await modLogChannel.send({ embeds: [buildRequestCardEmbed(updated)], components: [buildRequestCardRow(requestId)] }).catch(() => {});
 
-  return interaction.reply({
+  return sendTempReply(interaction, {
     embeds: [createServerEmbed('success', { title: '📨 Request Sent', description: 'Your link request has been sent to the moderators for review. You\'ll be notified when it\'s handled.' }, interaction.guild)],
-    ephemeral: true,
   });
 }
 

@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { getNewsFeedSettings, setNewsFeedSettings } = require('../../utils/modConfig');
 const { TOPICS } = require('../../utils/newsTopics');
 
@@ -47,24 +47,24 @@ module.exports = {
       const channel = interaction.options.getChannel('channel');
       const perms = channel.permissionsFor(interaction.guild.members.me);
       if (!perms?.has(PermissionFlagsBits.SendMessages) || !perms?.has(PermissionFlagsBits.EmbedLinks)) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Missing Permissions', description: `I need **Send Messages** and **Embed Links** in ${channel} to post news there.` }, interaction.guild)], ephemeral: true });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Missing Permissions', description: `I need **Send Messages** and **Embed Links** in ${channel} to post news there.` }, interaction.guild)] });
       }
       // Reset lastGuid so we establish a fresh baseline instead of replaying
       // whatever backlog built up while it was off / pointed elsewhere.
       setNewsFeedSettings(guildId, { enabled: true, channelId: channel.id, lastGuid: null });
-      return interaction.reply({ embeds: [createServerEmbed('success', {
+      return sendTempReply(interaction, { embeds: [createServerEmbed('success', {
         title: '📰 News Feed Enabled',
         description: `Live Financial Juice market headlines will now be posted to ${channel} as they're published (checked every ~20s). Use \`/newsfeed topics\` to pick specific topics.`,
-      }, interaction.guild)], ephemeral: true });
+      }, interaction.guild)] });
     }
 
     if (sub === 'disable') {
       const settings = getNewsFeedSettings(guildId);
       if (!settings.enabled) {
-        return interaction.reply({ embeds: [createServerEmbed('info', { title: 'Already Off', description: 'The news feed is not currently enabled.' }, interaction.guild)], ephemeral: true });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('info', { title: 'Already Off', description: 'The news feed is not currently enabled.' }, interaction.guild)] });
       }
       setNewsFeedSettings(guildId, { enabled: false });
-      return interaction.reply({ embeds: [createServerEmbed('success', { title: '📰 News Feed Disabled', description: 'Headline posting has been turned off.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('success', { title: '📰 News Feed Disabled', description: 'Headline posting has been turned off.' }, interaction.guild)] });
     }
 
     if (sub === 'topics') {

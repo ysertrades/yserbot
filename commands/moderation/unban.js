@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { sendModLog } = require('../../utils/modLog');
 
 module.exports = {
@@ -28,7 +28,7 @@ module.exports = {
         }, interaction.guild)],
       });
     } catch {
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Failed to unban. Make sure the ID is correct.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Failed to unban. Make sure the ID is correct.' }, interaction.guild)] });
     }
   },
 };
