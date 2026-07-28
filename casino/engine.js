@@ -482,6 +482,63 @@ function _glassPanel(png, px, py, w, h, opts = {}) {
   for (let x = radius; x < sheenEnd; x++) _setPxBlend(png, px + x, py + 2, [255, 255, 255], 0.20);
 }
 
+/* ─── Pixel font (5×7) — a small in-image label set (digits, key letters,
+ *     '.', 'X'). Kept local to this module rather than shared with
+ *     utils/riskVisual.js's own font, matching that file's original
+ *     decoupling — each renderer owns its glyph set. ──────────────────── */
+
+const _GLYPH_W = 5, _GLYPH_H = 7;
+const _WHEEL_FONT = {
+  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+  '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+  '3': ['.###.', '#...#', '....#', '..##.', '....#', '#...#', '.###.'],
+  '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+  'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+  'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+  'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+  '.': ['.....', '.....', '.....', '.....', '.....', '.##..', '.##..'],
+  ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+};
+
+function _wheelTextWidth(text, scale) {
+  return text.length * (_GLYPH_W + 1) * scale - scale;
+}
+
+function _drawWheelChar(png, ch, x, y, scale, color) {
+  const glyph = _WHEEL_FONT[ch.toUpperCase()] || _WHEEL_FONT[' '];
+  for (let row = 0; row < _GLYPH_H; row++) {
+    for (let col = 0; col < _GLYPH_W; col++) {
+      if (glyph[row][col] !== '#') continue;
+      _fillRect(png, x + col * scale, y + row * scale, scale, scale, color);
+    }
+  }
+}
+
+function _drawWheelText(png, text, x, y, scale, color) {
+  let cx = x;
+  for (const ch of text) {
+    _drawWheelChar(png, ch, cx, y, scale, color);
+    cx += (_GLYPH_W + 1) * scale;
+  }
+}
+
+/** Centered label with a black outline so it stays legible on any wedge color. */
+function _drawWheelLabel(png, text, cx, cy, scale, color = [255, 255, 255, 255]) {
+  const w = _wheelTextWidth(text, scale);
+  const h = _GLYPH_H * scale;
+  const x = Math.round(cx - w / 2), y = Math.round(cy - h / 2);
+  const outline = [20, 15, 10, 255];
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    _drawWheelText(png, text, x + dx, y + dy, scale, outline);
+  }
+  _drawWheelText(png, text, x, y, scale, color);
+}
+
 /* ─── Suit / card art (blackjack, coinflip) ─────────────────────────────── */
 
 function _drawSuit(png, suit, x, y, scale = 1) {
@@ -829,25 +886,22 @@ function renderRaceTrack(racers, progress, winnerIdx, picked) {
 
 /* ─── WHEEL OF FORTUNE (real spinning prize wheel) ──────────────────────── */
 
+// Every segment gets its own wedge color (not grouped by category) so all 8
+// slices stay visually distinct, plus a short in-wedge label drawn with the
+// pixel font above. `color` is kept as a category tag for the result embed's
+// side-color only — it no longer drives the wheel image itself.
 const WHEEL_SEGMENTS = [
-  { id: 'bankrupt', label: '💀 Bankrupt',  mult: 0,    weight: 3,   color: 'lose'    },
-  { id: 'push',     label: '🔄 Push',      mult: 1,    weight: 2,   color: 'push'    },
-  { id: 'x1_5',     label: '💵 1.5×',      mult: 1.5,  weight: 4,   color: 'win'     },
-  { id: 'x2',       label: '💰 2×',        mult: 2,    weight: 3,   color: 'win'     },
-  { id: 'x3',       label: '💎 3×',        mult: 3,    weight: 2,   color: 'win'     },
-  { id: 'x5',       label: '🌟 5×',        mult: 5,    weight: 1,   color: 'bigwin'  },
-  { id: 'x10',      label: '🚀 10×',       mult: 10,   weight: 0.3, color: 'jackpot' },
-  { id: 'x25',      label: '🎊 25×',       mult: 25,   weight: 0.07,color: 'jackpot' },
+  { id: 'bankrupt', label: '💀 Bankrupt',  short: 'BUST', mult: 0,    weight: 3,   color: 'lose',    rgb: [178, 48, 48,  255] },
+  { id: 'push',     label: '🔄 Push',      short: 'PUSH', mult: 1,    weight: 2,   color: 'push',    rgb: [120, 126, 138, 255] },
+  { id: 'x1_5',     label: '💵 1.5×',      short: '1.5X', mult: 1.5,  weight: 4,   color: 'win',     rgb: [46, 173, 116, 255] },
+  { id: 'x2',       label: '💰 2×',        short: '2X',   mult: 2,    weight: 3,   color: 'win',     rgb: [39, 149, 149, 255] },
+  { id: 'x3',       label: '💎 3×',        short: '3X',   mult: 3,    weight: 2,   color: 'win',     rgb: [42, 111, 184, 255] },
+  { id: 'x5',       label: '🌟 5×',        short: '5X',   mult: 5,    weight: 1,   color: 'bigwin',  rgb: [90, 74, 196,  255] },
+  { id: 'x10',      label: '🚀 10×',       short: '10X',  mult: 10,   weight: 0.3, color: 'jackpot', rgb: [176, 68, 189, 255] },
+  { id: 'x25',      label: '🎊 25×',       short: '25X',  mult: 25,   weight: 0.07,color: 'jackpot', rgb: [214, 162, 43, 255] },
 ];
 
 const WHEEL_TOTAL_W = WHEEL_SEGMENTS.reduce((s, x) => s + x.weight, 0);
-const WHEEL_SEG_COLOR = {
-  lose:    [148, 40, 40, 255],
-  push:    [90, 96, 110, 255],
-  win:     [30, 140, 90, 255],
-  bigwin:  [45, 90, 200, 255],
-  jackpot: [200, 150, 30, 255],
-};
 
 function spinWheel() {
   let r = _rand() * WHEEL_TOTAL_W;
@@ -879,11 +933,25 @@ function renderWheelPng(winner, spinning = false) {
       if (frac < 0.02 || frac > 0.98) { _setPx(png, pxl, py, [200, 165, 55, 255]); continue; }
 
       const seg = WHEEL_SEGMENTS[idx];
-      const base = WHEEL_SEG_COLOR[seg.color] || [80, 80, 80, 255];
+      const base = seg.rgb || [80, 80, 80, 255];
       const isWin = !spinning && idx === winIdx;
       const shade = isWin ? base.map((v, k) => k < 3 ? Math.min(255, v + 60) : v) : base;
       _setPx(png, pxl, py, shade);
       if (isWin) _setPxBlend(png, pxl, py, [255, 255, 255, 255], 0.10);
+    }
+  }
+
+  // Segment labels — one short label centered inside each wedge, radiating
+  // out from the hub, so the payout is readable straight off the wheel art
+  // instead of a separate text paytable.
+  if (!spinning) {
+    const labelR = R * 0.62;
+    for (let idx = 0; idx < n; idx++) {
+      const seg = WHEEL_SEGMENTS[idx];
+      const mid = (idx + 0.5) * (2 * Math.PI / n);
+      const lx = cx + labelR * Math.cos(mid - Math.PI / 2);
+      const ly = cy + labelR * Math.sin(mid - Math.PI / 2);
+      _drawWheelLabel(png, seg.short, lx, ly, 3);
     }
   }
 
