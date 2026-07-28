@@ -768,7 +768,26 @@ async function setMentionSpamRule(guild, enable) {
       await guild.autoModerationRules.fetch(settings.mentionSpamRuleId);
       setAutoModSettings(guild.id, { mentionSpamProtection: true });
       return { ok: true };
-    } catch { /* rule was deleted outside the bot (manually, etc.) — recreate below */ }
+    } catch { /* rule was deleted outside the bot (manually, etc.) — recreate/adopt below */ }
+  }
+
+  // Discord allows only one rule per trigger type per guild — if a
+  // MentionSpam rule already exists (set up independently, e.g. via
+  // Discord's own Safety Setup, or left over from before we tracked its
+  // ID), creating a new one fails outright. Adopt the existing one instead
+  // of erroring, and make sure it's actually enabled.
+  try {
+    const existingRules = await guild.autoModerationRules.fetch();
+    const existing = existingRules.find(r => r.triggerType === AutoModerationRuleTriggerType.MentionSpam);
+    if (existing) {
+      if (!existing.enabled) {
+        try { await existing.setEnabled(true, 'Enabled via /automod panel'); } catch { /* still adopt it even if we can't flip it on */ }
+      }
+      setAutoModSettings(guild.id, { mentionSpamProtection: true, mentionSpamRuleId: existing.id });
+      return { ok: true };
+    }
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 
   const config   = readJson('config.json', {});
