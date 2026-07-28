@@ -396,6 +396,11 @@ module.exports = {
           return client.commands.get('modlog')?.handleToggle(interaction, id.slice('modlog_toggle:'.length));
         }
 
+        // Economic calendar — panel buttons
+        if (id.startsWith('econcal_panel:')) {
+          return client.commands.get('econcal')?.handlePanelButton(interaction, id.slice('econcal_panel:'.length));
+        }
+
         // Auto-mod — link request flow
         if (id.startsWith('automod_link_request:')) {
           return client.commands.get('automod')?.handleLinkRequestButton(interaction, id.slice('automod_link_request:'.length));
@@ -545,6 +550,11 @@ module.exports = {
         if (id.startsWith('automod_cd_adjust_modal:')) {
           return client.commands.get('automod')?.handleCooldownAdjustModalSubmit(interaction, id.slice('automod_cd_adjust_modal:'.length));
         }
+
+        // Economic calendar — weekly post time/offset modal
+        if (id === 'econcal_weekly_time_modal') {
+          return client.commands.get('econcal')?.handleWeeklyTimeModalSubmit(interaction);
+        }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
@@ -576,6 +586,8 @@ module.exports = {
           return client.commands.get('econcal')?.handleImpactSelect(interaction);
         if (id === 'econcal_currency_select')
           return client.commands.get('econcal')?.handleCurrencySelect(interaction);
+        if (id === 'econcal_weekly_weekday_select')
+          return client.commands.get('econcal')?.handleWeekdaySelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
@@ -610,6 +622,8 @@ module.exports = {
       try {
         if (id.startsWith('gaw_channel_select:'))
           return client.commands.get('giveaway')?.handleChannelSelect(interaction);
+        if (id === 'econcal_channel_select')
+          return client.commands.get('econcal')?.handleChannelSelect(interaction);
       } catch (err) {
         console.error(`[CHANNEL SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
