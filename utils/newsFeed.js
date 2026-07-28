@@ -49,6 +49,34 @@ function extractImageFromHtml(html) {
   return m ? m[1] : null;
 }
 
+const MAX_BODY_LEN = 1500; // well under Discord's 4096 embed-description limit
+
+// Financial Juice's descriptions carry the actual detail (bullet lists of
+// figures, bolded labels, etc.) as HTML — that's the content missing from
+// the plain one-line headline. Converts it to Discord markdown instead of
+// dropping it.
+function htmlToDiscordText(html) {
+  if (!html) return '';
+  let text = html
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div)>/gi, '\n')
+    .replace(/<(strong|b)[^>]*>/gi, '**').replace(/<\/(strong|b)>/gi, '**')
+    .replace(/<(em|i)[^>]*>/gi, '*').replace(/<\/(em|i)>/gi, '*')
+    .replace(/<[^>]+>/g, '');
+
+  text = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+
+  if (text.length > MAX_BODY_LEN) text = `${text.slice(0, MAX_BODY_LEN - 1).trimEnd()}…`;
+  return text;
+}
+
 // Returns items newest-first, matching the feed's own order.
 function parseFeedItems(xml) {
   const blocks = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
@@ -63,7 +91,8 @@ function parseFeedItems(xml) {
     const pubDate = pubDateRaw ? new Date(pubDateRaw) : new Date();
     const description = extractTag(block, 'description');
     const imageUrl = extractEnclosureImage(block) || extractImageFromHtml(description);
-    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl });
+    const body = htmlToDiscordText(description);
+    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl, body });
   }
   return items;
 }
@@ -97,9 +126,12 @@ async function fetchFeedItems() {
 
 function buildNewsEmbed(item) {
   const isBreaking = BREAKING_PATTERN.test(item.title);
+  let description = item.link ? `[**${item.title}**](${item.link})` : `**${item.title}**`;
+  if (item.body && item.body !== item.title) description += `\n\n${item.body}`;
+
   const embed = createEmbed(isBreaking ? 'breaking' : 'news', {
     title: isBreaking ? '🔴 BREAKING — Financial Juice' : '📰 Financial Juice',
-    description: item.link ? `[${item.title}](${item.link})` : item.title,
+    description,
     footer: 'Financial Juice • Live Market News',
     image: isValidUrl(item.imageUrl) ? item.imageUrl : undefined,
   });
