@@ -124,16 +124,43 @@ async function fetchFeedItems() {
   return parseFeedItems(xml);
 }
 
-function buildNewsEmbed(item) {
+// Charts / infographics (FOMC crib sheets, indicator snapshots, etc.) aren't
+// linked from the RSS item at all — Financial Juice serves them at a
+// predictable per-article URL instead, which 404s for plain text-only items
+// and returns the real picture when one exists. Cheap to check (static,
+// heavily CDN-cached — not the same rate-limited endpoint as feed.ashx) and
+// memoized on the item so multiple guilds sharing one tick only check once.
+const ARTICLE_IMAGE_BASE     = 'https://www.financialjuice.com/images/';
+const IMAGE_CHECK_TIMEOUT_MS = 4000;
+
+async function resolveArticleImage(item) {
+  if (item.imageUrl) return item.imageUrl; // already found via RSS enclosure/description <img>
+  if (item._pictureChecked) return item._resolvedImage;
+  item._pictureChecked = true;
+  item._resolvedImage = null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), IMAGE_CHECK_TIMEOUT_MS);
+    const url = `${ARTICLE_IMAGE_BASE}${encodeURIComponent(item.guid)}.png`;
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal }).finally(() => clearTimeout(timeout));
+    if (res.ok) item._resolvedImage = url;
+  } catch { /* network hiccup or no picture for this article — just skip it */ }
+
+  return item._resolvedImage;
+}
+
+async function buildNewsEmbed(item) {
   const isBreaking = BREAKING_PATTERN.test(item.title);
   let description = item.link ? `[**${item.title}**](${item.link})` : `**${item.title}**`;
   if (item.body && item.body !== item.title) description += `\n\n${item.body}`;
 
+  const pictureUrl = await resolveArticleImage(item);
   const embed = createEmbed(isBreaking ? 'breaking' : 'news', {
     title: isBreaking ? '🔴 BREAKING — Financial Juice' : '📰 Financial Juice',
     description,
     footer: 'Financial Juice • Live Market News',
-    image: isValidUrl(item.imageUrl) ? item.imageUrl : undefined,
+    image: isValidUrl(pictureUrl) ? pictureUrl : undefined,
   });
   embed.setTimestamp(null); // headline age is already obvious from post order — no timestamp on these
   return embed;
@@ -170,7 +197,8 @@ async function runTick(client) {
     if (toPost.length > 0) {
       const chronological = [...toPost].reverse();
       for (const item of chronological) {
-        await channel.send({ embeds: [buildNewsEmbed(item)] }).catch(() => {});
+        const embed = await buildNewsEmbed(item);
+        await channel.send({ embeds: [embed] }).catch(() => {});
       }
     }
 
