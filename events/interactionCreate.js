@@ -522,6 +522,11 @@ module.exports = {
         if (id.startsWith('automod_link_modal:')) {
           return client.commands.get('automod')?.handleLinkModalSubmit(interaction, id.slice('automod_link_modal:'.length));
         }
+
+        // Auto-mod — approval cooldown modal
+        if (id.startsWith('automod_link_approve_modal:')) {
+          return client.commands.get('automod')?.handleLinkApproveModalSubmit(interaction, id.slice('automod_link_approve_modal:'.length));
+        }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
