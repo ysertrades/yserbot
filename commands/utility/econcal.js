@@ -9,7 +9,7 @@ const {
 } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { getEconCalSettings, setEconCalSettings } = require('../../utils/modConfig');
-const { IMPACT_LEVELS, CURRENCIES, getWeekEvents, filterEvents } = require('../../utils/economicCalendar');
+const { IMPACT_LEVELS, CURRENCIES, getWeekEvents, filterEvents, filterEventsByDay } = require('../../utils/economicCalendar');
 const { buildWeeklySummaryEmbeds } = require('../../utils/econCalRunner');
 const { parseUtcOffset } = require('../../utils/scheduler');
 
@@ -53,10 +53,14 @@ function buildMainPanel(guild, settings) {
   );
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('econcal_panel:weekly').setLabel('Weekly Post').setEmoji('🗓️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('econcal_panel:postnow').setLabel('Post This Week Now').setEmoji('📨').setStyle(ButtonStyle.Primary).setDisabled(!settings.channelId),
+  );
+  const row4 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('econcal_panel:postday').setLabel('Post Today Now').setEmoji('📨').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('econcal_panel:posttomorrow').setLabel('Post Tomorrow Now').setEmoji('📨').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('econcal_panel:postweek').setLabel('Post This Week Now').setEmoji('📨').setStyle(ButtonStyle.Primary),
   );
 
-  return { embeds: [embed], components: [row1, row2, row3] };
+  return { embeds: [embed], components: [row1, row2, row3, row4] };
 }
 
 // ── Channel sub-view ─────────────────────────────────────────────────────
@@ -128,6 +132,18 @@ function buildWeeklyView(guild, settings) {
     new ButtonBuilder().setCustomId('econcal_panel:weeklytoggle').setLabel(wp.enabled ? 'Turn Off' : 'Turn On').setStyle(wp.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
   );
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(weekdayMenu), buttonRow, BACK_ROW] };
+}
+
+// ── Post-now channel-select sub-view ─────────────────────────────────────
+const POST_SCOPE_LABEL = { today: "Today's", tomorrow: "Tomorrow's", week: "This Week's" };
+
+function buildPostChannelView(guild, scope) {
+  const embed = createServerEmbed('info', {
+    title: `📅 Post ${POST_SCOPE_LABEL[scope]} Calendar`,
+    description: `Pick a channel to post ${POST_SCOPE_LABEL[scope].toLowerCase()} calendar summary to right now (uses the current impact/currency filters). This is separate from the configured reminder channel — pick any channel.`,
+  }, guild);
+  const menu = new ChannelSelectMenuBuilder().setCustomId(`econcal_postchannel_select:${scope}`).setPlaceholder('Select a channel…').addChannelTypes(ChannelType.GuildText).setMinValues(1).setMaxValues(1);
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(menu), BACK_ROW] };
 }
 
 function buildWeeklyTimeModal(settings) {
@@ -204,28 +220,9 @@ module.exports = {
       return interaction.showModal(buildWeeklyTimeModal(getEconCalSettings(guildId)));
     }
 
-    if (action === 'postnow') {
-      const settings = getEconCalSettings(guildId);
-      if (!settings.channelId) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'No Channel Set', description: 'Set a channel first.' }, interaction.guild)], ephemeral: true });
-      }
-      const channel = interaction.guild.channels.cache.get(settings.channelId);
-      if (!channel) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Channel Not Found', description: 'The configured channel no longer exists — set a new one.' }, interaction.guild)], ephemeral: true });
-      }
-      await interaction.deferUpdate();
-      try {
-        const events = await getWeekEvents();
-        const filtered = filterEvents(events, { impactFilter: settings.impactFilter, currencyFilter: settings.currencyFilter });
-        const embeds = buildWeeklySummaryEmbeds(filtered, interaction.guild);
-        await channel.send({ embeds });
-        await interaction.followUp({ embeds: [createServerEmbed('success', { title: '📅 Posted', description: `This week's calendar summary was posted to ${channel}.` }, interaction.guild)], ephemeral: true });
-      } catch (err) {
-        console.error('[ECONCAL] post-week failed:', err);
-        await interaction.followUp({ embeds: [createServerEmbed('error', { title: 'Failed', description: 'Could not fetch or post the calendar right now — try again shortly.' }, interaction.guild)], ephemeral: true });
-      }
-      return interaction.editReply(buildMainPanel(interaction.guild, settings));
-    }
+    if (action === 'postday') return interaction.update(buildPostChannelView(interaction.guild, 'today'));
+    if (action === 'posttomorrow') return interaction.update(buildPostChannelView(interaction.guild, 'tomorrow'));
+    if (action === 'postweek') return interaction.update(buildPostChannelView(interaction.guild, 'week'));
   },
 
   // ── Select menus ─────────────────────────────────────────────────────────
@@ -256,6 +253,38 @@ module.exports = {
     }
     setEconCalSettings(interaction.guild.id, { channelId: channel.id });
     return interaction.update(buildMainPanel(interaction.guild, getEconCalSettings(interaction.guild.id)));
+  },
+
+  async handlePostChannelSelect(interaction) {
+    const scope   = interaction.customId.split(':')[1]; // 'today' | 'tomorrow' | 'week'
+    const channel = interaction.channels.first();
+    const perms   = channel.permissionsFor(interaction.guild.members.me);
+    if (!perms?.has(PermissionFlagsBits.SendMessages) || !perms?.has(PermissionFlagsBits.EmbedLinks)) {
+      return interaction.update({
+        embeds: [createServerEmbed('error', { title: 'Missing Permissions', description: `I need **Send Messages** and **Embed Links** in ${channel}.` }, interaction.guild)],
+        components: [BACK_ROW],
+      });
+    }
+
+    const settings = getEconCalSettings(interaction.guild.id);
+    await interaction.deferUpdate();
+    try {
+      const events = await getWeekEvents();
+      let scoped = events;
+      if (scope === 'today') scoped = filterEventsByDay(events, 0, settings.weeklyPost.offsetMinutes || 0);
+      else if (scope === 'tomorrow') scoped = filterEventsByDay(events, 1, settings.weeklyPost.offsetMinutes || 0);
+      const filtered = filterEvents(scoped, { impactFilter: settings.impactFilter, currencyFilter: settings.currencyFilter });
+
+      const title = { today: "📅 Today's Economic Calendar", tomorrow: "📅 Tomorrow's Economic Calendar", week: "📅 This Week's Economic Calendar" }[scope];
+      const emptyText = { today: 'No matching events today.', tomorrow: 'No matching events tomorrow.', week: 'No matching events this week.' }[scope];
+      const embeds = buildWeeklySummaryEmbeds(filtered, interaction.guild, title, emptyText);
+      await channel.send({ embeds });
+      await interaction.followUp({ embeds: [createServerEmbed('success', { title: '📅 Posted', description: `${POST_SCOPE_LABEL[scope]} calendar summary was posted to ${channel}.` }, interaction.guild)], ephemeral: true });
+    } catch (err) {
+      console.error('[ECONCAL] post-now failed:', err);
+      await interaction.followUp({ embeds: [createServerEmbed('error', { title: 'Failed', description: 'Could not fetch or post the calendar right now — try again shortly.' }, interaction.guild)], ephemeral: true });
+    }
+    return interaction.editReply(buildMainPanel(interaction.guild, settings));
   },
 
   async handleWeekdaySelect(interaction) {

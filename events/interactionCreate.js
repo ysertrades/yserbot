@@ -624,6 +624,8 @@ module.exports = {
           return client.commands.get('giveaway')?.handleChannelSelect(interaction);
         if (id === 'econcal_channel_select')
           return client.commands.get('econcal')?.handleChannelSelect(interaction);
+        if (id.startsWith('econcal_postchannel_select:'))
+          return client.commands.get('econcal')?.handlePostChannelSelect(interaction);
       } catch (err) {
         console.error(`[CHANNEL SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };

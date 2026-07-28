@@ -42,10 +42,11 @@ function buildReleaseEmbed(e, guild) {
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 // Splits into multiple embeds (grouped by day) so a full week of events never
-// overflows a single embed's 4096-char description limit.
-function buildWeeklySummaryEmbeds(events, guild) {
+// overflows a single embed's 4096-char description limit. `title`/`emptyText`
+// let callers reuse this for a single-day ("Today"/"Tomorrow") summary too.
+function buildWeeklySummaryEmbeds(events, guild, title = '📅 This Week\'s Economic Calendar', emptyText = 'No matching events this week.') {
   if (events.length === 0) {
-    return [createEmbed('info', { title: '📅 This Week\'s Economic Calendar', description: 'No matching events this week.', footer: `${guild.name} • Economic Calendar` })];
+    return [createEmbed('info', { title, description: emptyText, footer: `${guild.name} • Economic Calendar` })];
   }
 
   const byDay = new Map();
@@ -65,7 +66,7 @@ function buildWeeklySummaryEmbeds(events, guild) {
 
     if (!current || (current.data.description.length + block.length + 2) > 3800) {
       current = createEmbed('info', {
-        title: embeds.length === 0 ? '📅 This Week\'s Economic Calendar' : '📅 This Week\'s Economic Calendar (cont.)',
+        title: embeds.length === 0 ? title : `${title} (cont.)`,
         description: block,
         footer: `${guild.name} • Economic Calendar`,
       });
