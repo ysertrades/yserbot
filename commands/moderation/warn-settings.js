@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 module.exports = {
@@ -53,34 +53,31 @@ module.exports = {
     if (sub === 'threshold') {
       ws.threshold = interaction.options.getInteger('count');
       writeJson('config.json', config);
-      return interaction.reply({
+      return sendTempReply(interaction, {
         embeds: [createServerEmbed('success', {
           title: 'Threshold Updated',
           description: ws.threshold === 0 ? 'Auto-punish **disabled**.' : `Auto-punish after **${ws.threshold}** warnings.`,
         }, interaction.guild)],
-        ephemeral: true,
       });
     }
 
     if (sub === 'action') {
       ws.action = interaction.options.getString('type');
       writeJson('config.json', config);
-      return interaction.reply({
+      return sendTempReply(interaction, {
         embeds: [createServerEmbed('success', { title: 'Action Updated', description: `Auto-punish action set to **${ws.action.toUpperCase()}**.` }, interaction.guild)],
-        ephemeral: true,
       });
     }
 
     if (sub === 'mute-duration') {
       const str   = interaction.options.getString('duration');
       const match = str.match(/^(\d+)([smhd])$/i);
-      if (!match) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Use format like `30m`, `1h`, `1d`.' }, interaction.guild)], ephemeral: true });
+      if (!match) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Use format like `30m`, `1h`, `1d`.' }, interaction.guild)] });
       const ms = parseInt(match[1]) * { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2].toLowerCase()];
       ws.muteDuration = ms;
       writeJson('config.json', config);
-      return interaction.reply({
+      return sendTempReply(interaction, {
         embeds: [createServerEmbed('success', { title: 'Mute Duration Updated', description: `Auto-mute duration set to **${str}**.` }, interaction.guild)],
-        ephemeral: true,
       });
     }
   },

@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { sendModLog, dmUser } = require('../../utils/modLog');
 
@@ -25,11 +25,11 @@ module.exports = {
     const reason      = interaction.options.getString('reason') || 'No reason provided';
     const member      = interaction.guild.members.cache.get(user.id);
 
-    if (!member) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'User not found.' }, interaction.guild)], ephemeral: true });
+    if (!member) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'User not found.' }, interaction.guild)] });
 
     const ms = parseDuration(durationStr);
     if (!ms || ms > 28 * 24 * 60 * 60 * 1000)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Invalid duration. Max 28 days.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Invalid duration. Max 28 days.' }, interaction.guild)] });
 
     await member.timeout(ms, reason);
 

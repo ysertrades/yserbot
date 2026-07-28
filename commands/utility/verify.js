@@ -6,7 +6,7 @@ const {
   ModalBuilder, TextInputBuilder, TextInputStyle,
   EmbedBuilder,
 } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 // ── Memory-sequence verification game ──────────────────────────────────────
@@ -127,7 +127,7 @@ module.exports = {
       );
 
       await channel.send({ embeds: [embed], components: [row] });
-      return interaction.reply({ embeds: [createServerEmbed('success', { title: '✅ Verification Panel Posted', description: `Panel sent to ${channel}.` }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('success', { title: '✅ Verification Panel Posted', description: `Panel sent to ${channel}.` }, interaction.guild)] });
     }
 
     if (sub === 'role') {
@@ -137,7 +137,7 @@ module.exports = {
       if (!config[guildId].verifySettings) config[guildId].verifySettings = {};
       config[guildId].verifySettings.role = role.id;
       writeJson('config.json', config);
-      return interaction.reply({ embeds: [createServerEmbed('success', { title: '✅ Verification Role Set', description: `New verified members will receive ${role}.` }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('success', { title: '✅ Verification Role Set', description: `New verified members will receive ${role}.` }, interaction.guild)] });
     }
 
     if (sub === 'rules') {
@@ -180,12 +180,11 @@ module.exports = {
     if (!config[guildId].verifySettings) config[guildId].verifySettings = {};
     config[guildId].verifySettings.rulesText = rulesText;
     writeJson('config.json', config);
-    return interaction.reply({
+    return sendTempReply(interaction, {
       embeds: [createServerEmbed('success', {
         title: '📜 Rules Updated',
         description: 'Re-run `/verify setup` in the panel channel to refresh the posted panel with the new rules.',
       }, interaction.guild)],
-      ephemeral: true,
     });
   },
 

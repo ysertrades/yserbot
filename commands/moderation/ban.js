@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { sendModLog, dmUser } = require('../../utils/modLog');
 
@@ -20,7 +20,7 @@ module.exports = {
     const member = interaction.guild.members.cache.get(user.id);
 
     if (member && member.roles.highest.position >= interaction.member.roles.highest.position)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Cannot ban this user.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Cannot ban this user.' }, interaction.guild)] });
 
     // DM before ban (they get kicked so DM first)
     await dmUser(user, 'ban', interaction.guild, reason, {});

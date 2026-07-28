@@ -7,7 +7,7 @@ const {
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply, sendTempFollowUp } = require('../../utils/embedBuilder');
 const { getEconCalSettings, setEconCalSettings } = require('../../utils/modConfig');
 const { IMPACT_LEVELS, CURRENCIES, getWeekEvents, filterEvents, filterEventsByDay } = require('../../utils/economicCalendar');
 const { buildWeeklySummaryEmbeds } = require('../../utils/econCalRunner');
@@ -189,7 +189,7 @@ module.exports = {
     if (action === 'toggle') {
       const settings = getEconCalSettings(guildId);
       if (!settings.enabled && !settings.channelId) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'No Channel Set', description: 'Set a channel first before enabling.' }, interaction.guild)], ephemeral: true });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'No Channel Set', description: 'Set a channel first before enabling.' }, interaction.guild)] });
       }
       const updated = setEconCalSettings(guildId, { enabled: !settings.enabled });
       return interaction.update(buildMainPanel(interaction.guild, updated));
@@ -210,7 +210,7 @@ module.exports = {
     if (action === 'weeklytoggle') {
       const settings = getEconCalSettings(guildId);
       if (!settings.weeklyPost.enabled && !settings.channelId) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'No Channel Set', description: 'Set a channel first before enabling the weekly post.' }, interaction.guild)], ephemeral: true });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'No Channel Set', description: 'Set a channel first before enabling the weekly post.' }, interaction.guild)] });
       }
       const updated = setEconCalSettings(guildId, { weeklyPost: { enabled: !settings.weeklyPost.enabled } });
       return interaction.update(buildWeeklyView(interaction.guild, updated));
@@ -279,10 +279,10 @@ module.exports = {
       const emptyText = { today: 'No matching events today.', tomorrow: 'No matching events tomorrow.', week: 'No matching events this week.' }[scope];
       const embeds = buildWeeklySummaryEmbeds(filtered, interaction.guild, title, emptyText);
       await channel.send({ embeds });
-      await interaction.followUp({ embeds: [createServerEmbed('success', { title: '📅 Posted', description: `${POST_SCOPE_LABEL[scope]} calendar summary was posted to ${channel}.` }, interaction.guild)], ephemeral: true });
+      await sendTempFollowUp(interaction, { embeds: [createServerEmbed('success', { title: '📅 Posted', description: `${POST_SCOPE_LABEL[scope]} calendar summary was posted to ${channel}.` }, interaction.guild)] });
     } catch (err) {
       console.error('[ECONCAL] post-now failed:', err);
-      await interaction.followUp({ embeds: [createServerEmbed('error', { title: 'Failed', description: 'Could not fetch or post the calendar right now — try again shortly.' }, interaction.guild)], ephemeral: true });
+      await sendTempFollowUp(interaction, { embeds: [createServerEmbed('error', { title: 'Failed', description: 'Could not fetch or post the calendar right now — try again shortly.' }, interaction.guild)] });
     }
     return interaction.editReply(buildMainPanel(interaction.guild, settings));
   },
@@ -299,11 +299,11 @@ module.exports = {
 
     const m = timeRaw.match(/^(\d{1,2}):(\d{2})$/);
     if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) {
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Time', description: 'Use 24h `HH:MM`, e.g. `09:00`.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Time', description: 'Use 24h `HH:MM`, e.g. `09:00`.' }, interaction.guild)] });
     }
     const offsetMinutes = parseUtcOffset(offsetRaw);
     if (offsetMinutes === null) {
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid UTC Offset', description: 'Use something like `-4`, `+5:30`, or `0`.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid UTC Offset', description: 'Use something like `-4`, `+5:30`, or `0`.' }, interaction.guild)] });
     }
 
     setEconCalSettings(interaction.guild.id, { weeklyPost: { hour: Number(m[1]), minute: Number(m[2]), offsetMinutes } });

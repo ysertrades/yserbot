@@ -5,7 +5,7 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { generateScheduleId, parseScheduleTime, parseUtcOffset, nextWeekdayTimestamp } = require('../../utils/scheduler');
 
@@ -93,16 +93,16 @@ module.exports = {
 
       const embeds = readJson('embeds.json', {});
       if (!embeds[guildId]?.[embedName])
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Template Not Found', description: `No embed template **${embedName}** exists.` }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Template Not Found', description: `No embed template **${embedName}** exists.` }, interaction.guild)] });
 
       // Default to UTC-4 when no timezone is provided
       const offsetMinutes = timezoneInput ? parseUtcOffset(timezoneInput) : -240;
       if (offsetMinutes === null)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Timezone', description: 'Use a UTC offset like `-4`, `+5:30`, or `0`.' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Timezone', description: 'Use a UTC offset like `-4`, `+5:30`, or `0`.' }, interaction.guild)] });
 
       let time = parseScheduleTime(timeInput, offsetMinutes);
       if (!time)
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid Time', description: 'Use `HH:mm`, `YYYY-MM-DD HH:mm`, or relative like `30m`, `2h`, `1d`.' }, interaction.guild)], flags: 64 });
+        return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Time', description: 'Use `HH:mm`, `YYYY-MM-DD HH:mm`, or relative like `30m`, `2h`, `1d`.' }, interaction.guild)] });
 
       if (frequency === 'weekdays') time = nextWeekdayTimestamp(time, offsetMinutes);
 

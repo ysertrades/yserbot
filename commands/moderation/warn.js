@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { issueWarning } = require('../../utils/warnUtil');
 
 module.exports = {
@@ -16,9 +16,9 @@ module.exports = {
     const reason = interaction.options.getString('reason') || 'No reason provided';
     const member = interaction.guild.members.cache.get(user.id);
 
-    if (!member) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'User not found in this server.' }, interaction.guild)], ephemeral: true });
+    if (!member) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'User not found in this server.' }, interaction.guild)] });
     if (member.roles.highest.position >= interaction.member.roles.highest.position)
-      return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'You cannot warn this user.' }, interaction.guild)], ephemeral: true });
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'You cannot warn this user.' }, interaction.guild)] });
 
     const { caseId, warnCount, autoPunish } = await issueWarning(interaction.guild, interaction.user, user, member, reason);
 

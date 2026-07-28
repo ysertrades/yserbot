@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
+const { createServerEmbed, sendTempReply: sendTempEphemeralReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 // ── Inactivity timer store ────────────────────────────────────────────────
@@ -106,7 +106,7 @@ module.exports = {
     } else if (sub === 'close') {
       const channel = interaction.channel;
       if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)], ephemeral: true });
+        return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
       }
       clearInactivityTimer(channel.id);
       await interaction.reply({ embeds: [createServerEmbed('info', { title: 'Closing Ticket', description: 'This ticket will be closed in **5 seconds**.' }, interaction.guild)] });
@@ -120,13 +120,13 @@ module.exports = {
 
       if (setting === 'inactivityTime') {
         parsed = parseInt(rawValue);
-        if (isNaN(parsed) || parsed < 1) return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Minimum 1 minute.' }, interaction.guild)], ephemeral: true });
+        if (isNaN(parsed) || parsed < 1) return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Minimum 1 minute.' }, interaction.guild)] });
         display = `${parsed} minute${parsed !== 1 ? 's' : ''}`;
       } else if (setting === 'inactivityEnabled' || setting === 'transcriptEnabled') {
         const low = rawValue.toLowerCase();
         if (['true','yes','1','on'].includes(low))       { parsed = true;  display = 'Enabled'; }
         else if (['false','no','0','off'].includes(low)) { parsed = false; display = 'Disabled'; }
-        else return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Use `true` or `false`.' }, interaction.guild)], ephemeral: true });
+        else return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Use `true` or `false`.' }, interaction.guild)] });
       } else {
         parsed = rawValue; display = rawValue;
       }
@@ -183,7 +183,7 @@ module.exports = {
     if (interaction.customId === 'close_ticket') {
       const channel = interaction.channel;
       if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
-        return interaction.reply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)], ephemeral: true });
+        return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
       }
       clearInactivityTimer(channel.id);
       await interaction.reply({ embeds: [createServerEmbed('info', { title: 'Closing Ticket', description: 'This ticket will be closed in **5 seconds**.' }, interaction.guild)] });
@@ -207,9 +207,8 @@ module.exports = {
     );
 
     if (existing) {
-      return interaction.reply({
+      return sendTempEphemeralReply(interaction, {
         embeds: [createServerEmbed('error', { title: 'Ticket Already Open', description: `You already have a ticket: ${existing}` }, guild)],
-        ephemeral: true,
       });
     }
 
@@ -254,6 +253,7 @@ module.exports = {
     await interaction.editReply({
       embeds: [createServerEmbed('success', { title: 'Ticket Created', description: `Your ticket: ${channel}` }, guild)],
     });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
   },
 
   // Expose timer functions for messageCreate.js to call
