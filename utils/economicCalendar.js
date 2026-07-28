@@ -90,4 +90,15 @@ function filterEvents(events, { impactFilter = [], currencyFilter = [] } = {}) {
   });
 }
 
-module.exports = { IMPACT_LEVELS, CURRENCIES, getWeekEvents, filterEvents, parseEvents, eventId };
+// Narrows to a single calendar day — dayOffset 0 = today, 1 = tomorrow —
+// measured in the given UTC-offset timezone (same shift trick used for the
+// weekly-post scheduling slot), not the server's own local time.
+function filterEventsByDay(events, dayOffset, offsetMinutes = 0) {
+  const shiftedNow = Date.now() + offsetMinutes * 60000;
+  const d = new Date(shiftedNow);
+  const dayStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + dayOffset, 0, 0, 0, 0) - offsetMinutes * 60000;
+  const dayEnd = dayStart + 86400000;
+  return events.filter(e => e.timestamp >= dayStart && e.timestamp < dayEnd);
+}
+
+module.exports = { IMPACT_LEVELS, CURRENCIES, getWeekEvents, filterEvents, filterEventsByDay, parseEvents, eventId };
