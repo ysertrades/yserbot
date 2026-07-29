@@ -270,8 +270,38 @@ const GLYPH_GAP = 1; // columns of spacing between characters, in font-pixel uni
 // visibly split names apart (e.g. "Y_ssi" rendering as "Y SSI").
 const COMBINING_MARKS_RE = new RegExp('[\\u0300-\\u036f]', 'g'); // combining diacritical marks block
 
+// "Fancy font" name generators love swapping in visually-similar letters from
+// other scripts (Greek, Cyrillic) — unlike the math-alphanumeric/circled/
+// fullwidth styles above, these are genuinely different characters with no
+// Unicode decomposition back to Latin, so NFKD alone can't recover them.
+// Hand-mapped to their closest Latin lookalike so a name like "YΛSSIΓ"
+// reads as "YASSIR" instead of dropping both letters entirely.
+const SCRIPT_CONFUSABLES = {
+  // Greek uppercase
+  'Α': 'A', 'Β': 'B', 'Γ': 'R', 'Δ': 'A', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Θ': 'O',
+  'Ι': 'I', 'Κ': 'K', 'Λ': 'A', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'E', 'Ο': 'O', 'Ρ': 'P',
+  'Σ': 'E', 'Τ': 'T', 'Υ': 'Y', 'Φ': 'O', 'Χ': 'X', 'Ψ': 'Y', 'Ω': 'O',
+  // Greek lowercase
+  'α': 'a', 'β': 'b', 'γ': 'y', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'n', 'θ': 'o',
+  'ι': 'i', 'κ': 'k', 'λ': 'a', 'μ': 'u', 'ν': 'v', 'ξ': 'e', 'ο': 'o', 'ρ': 'p',
+  'σ': 'o', 'τ': 't', 'υ': 'u', 'φ': 'o', 'χ': 'x', 'ψ': 'y', 'ω': 'w',
+  // Cyrillic uppercase
+  'А': 'A', 'Б': 'B', 'В': 'B', 'Г': 'R', 'Д': 'D', 'Е': 'E', 'Ж': 'X', 'З': '3',
+  'И': 'N', 'Й': 'N', 'К': 'K', 'Л': 'A', 'М': 'M', 'Н': 'H', 'О': 'O', 'П': 'N',
+  'Р': 'P', 'С': 'C', 'Т': 'T', 'У': 'Y', 'Ф': 'O', 'Х': 'X', 'Ц': 'U', 'Ч': 'Y',
+  'Ш': 'W', 'Щ': 'W', 'Ъ': 'B', 'Ы': 'B', 'Ь': 'B', 'Э': 'E', 'Ю': 'U', 'Я': 'R',
+  // Cyrillic lowercase
+  'а': 'a', 'б': '6', 'в': 'b', 'г': 'r', 'д': 'd', 'е': 'e', 'ж': 'x', 'з': '3',
+  'и': 'n', 'й': 'n', 'к': 'k', 'л': 'a', 'м': 'm', 'н': 'h', 'о': 'o', 'п': 'n',
+  'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'ф': 'o', 'х': 'x', 'ц': 'u', 'ч': 'y',
+  'ш': 'w', 'щ': 'w', 'ъ': 'b', 'ы': 'b', 'ь': 'b', 'э': 'e', 'ю': 'u', 'я': 'r',
+};
+
 function normalizeForFont(text) {
-  return String(text).normalize('NFKD').replace(COMBINING_MARKS_RE, '');
+  const decomposed = String(text).normalize('NFKD').replace(COMBINING_MARKS_RE, '');
+  let out = '';
+  for (const ch of decomposed) out += SCRIPT_CONFUSABLES[ch] || ch;
+  return out;
 }
 
 function hasGlyph(ch) {
