@@ -3,9 +3,9 @@
 /**
  * gatherCommand.js
  *
- * Shared session/cooldown mechanics for /fish and /mine: 5 uses per
+ * Shared session/cooldown mechanics for /fish and /mine: 10 uses per
  * session (persisted across restarts so a "Close" doesn't forfeit unused
- * uses), a 5-hour cooldown that only starts once the session is fully
+ * uses), a 2-hour cooldown that only starts once the session is fully
  * used up, and a "play again" + "Close" button pair. fish.js/mine.js each
  * just supply their reward table, visual generator, and copy.
  */
@@ -15,8 +15,8 @@ const { addCoins, getBalance, checkCooldown, setCooldown } = require('./economyM
 const { getEffect } = require('./effectsManager');
 const { readJson, writeJson } = require('./jsonStorage');
 
-const SESSION_USES = 5;
-const COOLDOWN_MS  = 5 * 60 * 60 * 1000;
+const SESSION_USES = 10;
+const COOLDOWN_MS  = 2 * 60 * 60 * 1000;
 const SESSIONS_FILE = 'gatherSessions.json';
 const fmt = n => Number(n).toLocaleString();
 
@@ -65,7 +65,7 @@ function buildGatherCommand(cfg) {
         .setColor(0xe74c3c)
         .setTitle(cooldownTitle)
         .setDescription(`You've used all your ${sessionNoun} for this session.\nYou need to wait **${hours}h ${minutes}m** before ${cooldownVerb} again.`);
-      if (isButton) return interaction.update({ embeds: [cooldownEmbed], components: [] });
+      if (isButton) return interaction.update({ embeds: [cooldownEmbed], components: [], attachments: [] });
       return interaction.reply({ embeds: [cooldownEmbed], ephemeral: true });
     }
 
@@ -98,10 +98,13 @@ function buildGatherCommand(cfg) {
     } else {
       clearRemaining(userId, action);
       setCooldown(userId, action);
-      embed.setFooter({ text: 'Session complete — come back in 5 hours' });
+      embed.setFooter({ text: 'Session complete — come back in 2 hours' });
     }
 
-    const payload = { embeds: [embed], files: [attachment], components };
+    // attachments: [] clears whatever image was on the message before this
+    // edit (Discord keeps old attachments on a PATCH unless told otherwise),
+    // so the new catch/find image replaces it instead of stacking above it.
+    const payload = { embeds: [embed], files: [attachment], components, attachments: [] };
     if (isButton) return interaction.update(payload);
     return interaction.reply(payload);
   }

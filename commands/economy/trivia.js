@@ -7,7 +7,7 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { generateTriviaImage, CATEGORY_META } = require('../../utils/triviaVisual');
 const { QUESTIONS, CATEGORIES } = require('../../utils/triviaQuestions');
 
-const COOLDOWN_MS           = 5 * 60 * 60 * 1000;
+const COOLDOWN_MS           = 2 * 60 * 60 * 1000;
 const QUESTIONS_PER_SESSION = 6;
 const QUESTION_TIME_MS      = 15 * 1000;
 const REVEAL_DELAY_MS       = 2000;
@@ -88,7 +88,10 @@ async function postQuestion(session) {
     .setImage(`attachment://${imageName}`)
     .setFooter({ text: `Correct so far: ${session.correctCount} • Coins earned: ${fmt(session.totalCoins)}` });
 
-  await session.interaction.editReply({ embeds: [embed], files: [attachment], components: buildRows(session.userId) });
+  // attachments: [] clears the previous question's image (Discord keeps old
+  // attachments on a PATCH unless told otherwise), so it doesn't linger as a
+  // stray image stacked above this question's.
+  await session.interaction.editReply({ embeds: [embed], files: [attachment], components: buildRows(session.userId), attachments: [] });
   session.timer = setTimeout(() => {
     resolveAnswer(session, null).catch(err => {
       console.error('[TRIVIA TIMEOUT]', err);
@@ -134,11 +137,11 @@ async function resolveAnswer(session, choice) {
       name: 'Session Summary',
       value: `${session.correctCount}/${QUESTIONS_PER_SESSION} correct • **${fmt(session.totalCoins)}** coins earned\n💰 Balance: **${fmt(getBalance(session.userId))}** coins`,
     });
-    resultEmbed.setFooter({ text: 'Session complete — come back in 5 hours' });
-    return session.interaction.editReply({ embeds: [resultEmbed], components: [] });
+    resultEmbed.setFooter({ text: 'Session complete — come back in 2 hours' });
+    return session.interaction.editReply({ embeds: [resultEmbed], components: [], attachments: [] });
   }
 
-  await session.interaction.editReply({ embeds: [resultEmbed], components: buildRows(session.userId, choice, session.current.correct) });
+  await session.interaction.editReply({ embeds: [resultEmbed], components: buildRows(session.userId, choice, session.current.correct), attachments: [] });
 
   session.awaitTimer = setTimeout(() => {
     postQuestion(session).catch(err => {
@@ -151,7 +154,7 @@ async function resolveAnswer(session, choice) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('trivia')
-    .setDescription('Answer 6 trivia questions for coins (5 hour cooldown)'),
+    .setDescription('Answer 6 trivia questions for coins (2 hour cooldown)'),
 
   async execute(interaction) {
     const userId = interaction.user.id;
