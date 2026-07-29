@@ -415,6 +415,11 @@ module.exports = {
           return client.commands.get(action)?.handleButton(interaction);
         }
 
+        // Shop panel — buy/inventory/use/close buttons
+        if (id === 'shop_buy' || id === 'shop_inventory' || id === 'shop_use' || id.startsWith('shop_close:')) {
+          return client.commands.get('shop')?.handleButton(interaction);
+        }
+
         // Auto-mod — link request flow
         if (id.startsWith('automod_link_request:')) {
           return client.commands.get('automod')?.handleLinkRequestButton(interaction, id.slice('automod_link_request:'.length));
@@ -602,6 +607,8 @@ module.exports = {
           return client.commands.get('econcal')?.handleCurrencySelect(interaction);
         if (id === 'econcal_weekly_weekday_select')
           return client.commands.get('econcal')?.handleWeekdaySelect(interaction);
+        if (id === 'shop_buy_select' || id === 'shop_use_select')
+          return client.commands.get('shop')?.handleSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
