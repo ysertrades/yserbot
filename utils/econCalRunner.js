@@ -101,7 +101,8 @@ const MAX_EVENTS_RENDERED = 30; // hard safety cap so a huge, unfiltered week ca
 // — single-day views skip it since every card already shares the same day.
 // Returns an array of ready-to-send message payloads ({ embeds, files }).
 function buildWeeklySummaryEmbeds(events, guild, title = '📅 This Week\'s Economic Calendar', emptyText = 'No matching events this week.') {
-  const headerEmbed = createEmbed('info', { title, footer: `${guild.name} • Economic Calendar` });
+  const headerEmbed = createEmbed('info', { title });
+  headerEmbed.setTimestamp(null);
 
   if (events.length === 0) {
     headerEmbed.setDescription(emptyText);
