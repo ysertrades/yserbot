@@ -24,10 +24,10 @@ const EMBEDS_FILE = 'embeds.json';
 const HOUR = 60 * 60 * 1000;
 
 const STARTER_ITEMS = {
-  coin_boost_bronze:   { name: 'Bronze Coin Boost', price: 2000,  type: 'coin_boost',      emoji: '🥉', description: '1.5× earnings from work, jobs, fishing, mining, trivia & daily', multiplier: 1.5, durationMs: 4 * HOUR },
-  coin_boost_silver:   { name: 'Silver Coin Boost', price: 8000,  type: 'coin_boost',      emoji: '🥈', description: '1.75× earnings from work, jobs, fishing, mining, trivia & daily', multiplier: 1.75, durationMs: 4 * HOUR },
-  coin_boost_gold:     { name: 'Gold Coin Boost',   price: 20000, type: 'coin_boost',      emoji: '🥇', description: '2× earnings from work, jobs, fishing, mining, trivia & daily', multiplier: 2, durationMs: 4 * HOUR },
-  coin_boost_platinum: { name: 'Platinum Coin Boost', price: 50000, type: 'coin_boost',    emoji: '💠', description: '2.5× earnings from work, jobs, fishing, mining, trivia & daily', multiplier: 2.5, durationMs: 3 * HOUR },
+  coin_boost_bronze:   { name: 'Bronze Coin Boost', price: 2000,  type: 'coin_boost',      emoji: '🥉', description: '1.5× earnings from work, jobs, fishing, mining, trivia & daily (1 hour)', multiplier: 1.5, durationMs: 1 * HOUR },
+  coin_boost_silver:   { name: 'Silver Coin Boost', price: 8000,  type: 'coin_boost',      emoji: '🥈', description: '1.75× earnings from work, jobs, fishing, mining, trivia & daily (1 hour)', multiplier: 1.75, durationMs: 1 * HOUR },
+  coin_boost_gold:     { name: 'Gold Coin Boost',   price: 20000, type: 'coin_boost',      emoji: '🥇', description: '2× earnings from work, jobs, fishing, mining, trivia & daily (1 hour)', multiplier: 2, durationMs: 1 * HOUR },
+  coin_boost_platinum: { name: 'Platinum Coin Boost', price: 50000, type: 'coin_boost',    emoji: '💠', description: '2.5× earnings from work, jobs, fishing, mining, trivia & daily (1 hour)', multiplier: 2.5, durationMs: 1 * HOUR },
   vip_casino_pass:     { name: 'VIP Casino Pass',   price: 30000, type: 'vip_casino_pass', emoji: '👑', description: 'Doubles your personal casino max bet', multiplier: 2, durationMs: 6 * HOUR },
   badge_star:          { name: 'Rising Star',       price: 5000,  type: 'badge', emoji: '⭐', description: 'A shiny star badge for your /rank card', badgeIcon: 'star' },
   badge_shield:        { name: 'Trusted Trader',    price: 10000, type: 'badge', emoji: '🛡️', description: 'A shield badge for your /rank card', badgeIcon: 'shield' },
@@ -35,7 +35,21 @@ const STARTER_ITEMS = {
   badge_crown:         { name: 'VIP Status',        price: 25000, type: 'badge', emoji: '👑', description: 'A crown badge for your /rank card', badgeIcon: 'crown' },
   badge_diamond:       { name: 'Diamond Hands',     price: 40000, type: 'badge', emoji: '💎', description: 'A diamond badge for your /rank card', badgeIcon: 'diamond' },
   mystery_box:         { name: 'Mystery Box',       price: 15000, type: 'mystery_box', emoji: '🎁', description: 'Could be a dud, could be a 50,000 coin jackpot!' },
-  cooldown_skip:       { name: 'Cooldown Skip',     price: 25000, type: 'cooldown_skip', emoji: '⏩', description: 'For 15 minutes, bypasses cooldowns on fishing, mining, trivia, work, jobs, casino games & the wheel\'s daily spin cap', durationMs: 15 * 60 * 1000 },
+  cooldown_skip:       { name: 'Cooldown Skip',     price: 25000, type: 'cooldown_skip', emoji: '⏩', description: 'For 2 minutes, bypasses cooldowns on fishing, mining, trivia, work, jobs, casino games & the wheel\'s daily spin cap', durationMs: 2 * 60 * 1000 },
+};
+
+// A couple of these items' durations changed after they'd already been
+// seeded into live guilds (seedShopDefaults() only fills in items that
+// don't exist yet, so it never touches one already there) — this forces
+// exactly the durationMs/description fields on these known ids back in
+// sync with the policy above, without touching anything an admin actually
+// customized (price, name, multiplier, etc.) on those same items.
+const DURATION_MIGRATIONS = {
+  coin_boost_bronze:   { durationMs: STARTER_ITEMS.coin_boost_bronze.durationMs, description: STARTER_ITEMS.coin_boost_bronze.description },
+  coin_boost_silver:   { durationMs: STARTER_ITEMS.coin_boost_silver.durationMs, description: STARTER_ITEMS.coin_boost_silver.description },
+  coin_boost_gold:     { durationMs: STARTER_ITEMS.coin_boost_gold.durationMs, description: STARTER_ITEMS.coin_boost_gold.description },
+  coin_boost_platinum: { durationMs: STARTER_ITEMS.coin_boost_platinum.durationMs, description: STARTER_ITEMS.coin_boost_platinum.description },
+  cooldown_skip:       { durationMs: STARTER_ITEMS.cooldown_skip.durationMs, description: STARTER_ITEMS.cooldown_skip.description },
 };
 
 const ECONOMY_SHOWCASE_TEMPLATE = {
@@ -96,6 +110,27 @@ function seedShopDefaults() {
   return changed;
 }
 
+function migrateDurations() {
+  const data = readJson(SHOP_FILE, {});
+  let changed = false;
+
+  for (const guildId of Object.keys(data)) {
+    const items = data[guildId]?.items;
+    if (!items) continue;
+    for (const [id, patch] of Object.entries(DURATION_MIGRATIONS)) {
+      const item = items[id];
+      if (!item) continue;
+      if (item.durationMs !== patch.durationMs || item.description !== patch.description) {
+        Object.assign(item, patch);
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) writeJson(SHOP_FILE, data);
+  return changed;
+}
+
 function seedEmbedTemplates() {
   const all = readJson(EMBEDS_FILE, {});
   let changed = false;
@@ -132,10 +167,12 @@ function ensureGuildEntries(client) {
 
 function seedDefaultContent(client) {
   ensureGuildEntries(client);
-  const shopSeeded  = seedShopDefaults();
-  const embedSeeded = seedEmbedTemplates();
-  if (shopSeeded)  console.log('[CONTENT SEED] Added missing starter shop items.');
-  if (embedSeeded) console.log('[CONTENT SEED] Added missing embed templates.');
+  const shopSeeded       = seedShopDefaults();
+  const durationsFixed   = migrateDurations();
+  const embedSeeded      = seedEmbedTemplates();
+  if (shopSeeded)     console.log('[CONTENT SEED] Added missing starter shop items.');
+  if (durationsFixed) console.log('[CONTENT SEED] Updated coin_boost/cooldown_skip durations to the current defaults.');
+  if (embedSeeded)    console.log('[CONTENT SEED] Added missing embed templates.');
 }
 
 module.exports = { seedDefaultContent, STARTER_ITEMS, TEMPLATE_SEEDS };

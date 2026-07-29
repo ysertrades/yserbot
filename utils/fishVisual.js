@@ -156,6 +156,75 @@ function drawCrawfishIcon(png, cx, cy, size, color) {
   }
 }
 
+function drawBarnacleIcon(png, cx, cy, size, color) {
+  const clusters = [[-0.4, 0.2, 0.5], [0.3, 0.3, 0.4], [-0.1, -0.3, 0.45], [0.45, -0.15, 0.35]];
+  const dark = darken(color, 0.6);
+  for (const [fx, fy, fr] of clusters) {
+    dotBlend(png, cx + fx * size, cy + fy * size, size * fr, color, 1);
+    ringStroke(png, cx + fx * size, cy + fy * size, size * fr, dark, 2);
+  }
+}
+
+function drawHookIcon(png, cx, cy, size, color) {
+  line(png, cx - size * 0.1, cy - size, cx - size * 0.1, cy + size * 0.1, color, 5);
+  let px = cx - size * 0.1, py = cy + size * 0.1;
+  for (let a = 0; a <= 200; a += 20) {
+    const rad = (a * Math.PI) / 180;
+    const x = cx - size * 0.1 + Math.sin(rad) * size * 0.55;
+    const y = cy + size * 0.1 + (1 - Math.cos(rad)) * size * 0.55;
+    line(png, px, py, x, y, color, 5);
+    px = x; py = y;
+  }
+  line(png, px, py, px - size * 0.15, py - size * 0.15, color, 4);
+}
+
+function drawOctopusIcon(png, cx, cy, size, color) {
+  dotBlend(png, cx, cy - size * 0.25, size * 0.7, color, 1);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI + Math.PI * 0.1;
+    const bx = cx + Math.cos(a) * size * 0.5, by = cy + size * 0.25 + Math.sin(a) * size * 0.15;
+    const ex = cx + Math.cos(a) * size * 0.95, ey = cy + size * 0.75 + Math.sin(a) * size * 0.3;
+    line(png, bx, by, ex, ey, color, 4);
+  }
+  dot(png, cx - size * 0.22, cy - size * 0.3, Math.max(2, size * 0.08), [15, 20, 30, 255]);
+  dot(png, cx + size * 0.22, cy - size * 0.3, Math.max(2, size * 0.08), [15, 20, 30, 255]);
+}
+
+function drawMantaIcon(png, cx, cy, size, color) {
+  for (let dy = -size * 0.4; dy <= size * 0.4; dy++) {
+    const t = 1 - Math.abs(dy) / (size * 0.4);
+    const w = size * 1.4 * t;
+    for (let dx = -w; dx <= w; dx++) setPxBlend(png, cx + dx, cy + dy, color, 1);
+  }
+  line(png, cx, cy + size * 0.4, cx, cy + size, color, 5);
+  dot(png, cx, cy - size * 0.05, Math.max(2, size * 0.08), [15, 20, 30, 255]);
+}
+
+function drawSwordfishIcon(png, cx, cy, size, color) {
+  drawFishBody(png, cx, cy, size, color, { sleek: true });
+  line(png, cx + size * 0.9, cy, cx + size * 1.75, cy, color, 4);
+}
+
+function drawAnglerfishIcon(png, cx, cy, size, color) {
+  drawFishBody(png, cx, cy, size * 0.85, color);
+  line(png, cx + size * 0.25, cy - size * 0.45, cx + size * 0.5, cy - size * 0.95, color, 3);
+  dotBlend(png, cx + size * 0.5, cy - size, size * 0.15, [255, 240, 150, 255], 1);
+  ringStroke(png, cx + size * 0.5, cy - size, size * 0.22, [255, 240, 150, 255], 2);
+}
+
+function drawSeahorseIcon(png, cx, cy, size, color) {
+  const pts = [];
+  for (let t = 0; t <= 20; t++) {
+    const angle = (t / 20) * Math.PI * 1.6;
+    const x = cx - size * 0.1 + Math.sin(angle) * size * 0.35;
+    const y = cy - size * 0.9 + (t / 20) * size * 1.8;
+    pts.push([x, y]);
+  }
+  for (let i = 1; i < pts.length; i++) line(png, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], color, 6);
+  dot(png, cx - size * 0.05, cy - size * 0.85, Math.max(2, size * 0.09), [15, 20, 30, 255]);
+  line(png, cx - size * 0.15, cy - size * 0.9, cx - size * 0.45, cy - size * 0.75, color, 4);
+}
+
 function drawKrakenEyeIcon(png, cx, cy, size, color) {
   for (let a = 0; a < 360; a += 15) {
     const rad = (a * Math.PI) / 180;
@@ -250,6 +319,14 @@ const ICONS = {
   'Giant Squid':            drawSquidIcon,
   'Ancient Treasure Chest': drawChestFish,
   "Kraken's Eye":           drawKrakenEyeIcon,
+  'Barnacle Cluster':       drawBarnacleIcon,
+  'Fishing Hook':           drawHookIcon,
+  'Herring':                (p, x, y, s, c) => drawFishBody(p, x, y, s * 0.65, c),
+  'Octopus':                drawOctopusIcon,
+  'Manta Ray':              drawMantaIcon,
+  'Swordfish':              drawSwordfishIcon,
+  'Anglerfish':             drawAnglerfishIcon,
+  'Golden Seahorse':        drawSeahorseIcon,
 };
 
 function drawFishIcon(png, cx, cy, size, color) {

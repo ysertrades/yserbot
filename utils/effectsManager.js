@@ -8,13 +8,13 @@ const FILE = 'active_effects.json';
 // and/or `activeUntil` in extraData (see setEffect) so one type (e.g.
 // coin_boost) can back several priced tiers instead of a single fixed rate.
 const EFFECT_TYPES = {
-  coin_boost:      { label: '💰 Coin Boost',      desc: 'Boosted earnings from /work, /jobs, /fish, /mine, /trivia & /daily', duration: 4 * 60 * 60 * 1000 },
+  coin_boost:      { label: '💰 Coin Boost',      desc: 'Boosted earnings from /work, /jobs, /fish, /mine, /trivia & /daily', duration: 60 * 60 * 1000 },
   rob_shield:      { label: '🛡️ Rob Shield',     desc: 'Protection from /rob',                    duration: 8 * 60 * 60 * 1000 },
   xp_boost:        { label: '⚡ XP Boost',        desc: '2× XP from messages',                     duration: 60 * 60 * 1000 },
   daily_boost:     { label: '☀️ Daily Boost',     desc: '+50% bonus on next /daily',               duration: 48 * 60 * 60 * 1000 },
   card_magnet:     { label: '🧲 Card Magnet',     desc: '+15% bump toward rarer cards',            duration: 2 * 60 * 60 * 1000 },
   vip_casino_pass: { label: '👑 VIP Casino Pass', desc: 'Raises your personal casino max bet',     duration: 6 * 60 * 60 * 1000 },
-  cooldown_skip:   { label: '⏩ Cooldown Skip',   desc: 'Bypasses cooldowns on /work, /jobs, /fish, /mine, /trivia, /casino & the wheel\'s daily spin cap', duration: 15 * 60 * 1000 },
+  cooldown_skip:   { label: '⏩ Cooldown Skip',   desc: 'Bypasses cooldowns on /work, /jobs, /fish, /mine, /trivia, /casino & the wheel\'s daily spin cap', duration: 2 * 60 * 1000 },
 };
 
 function getEffects(userId, guildId) {
