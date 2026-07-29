@@ -159,15 +159,6 @@ const EMBED_TEMPLATE_MIGRATIONS = {
   'nyse-open': { footer: null },
 };
 
-// Same "already seeded before this field changed" problem as
-// DURATION_MIGRATIONS below — seedEmbedTemplates() only fills in templates
-// that don't exist yet, so a field tweak like removing the nyse-open
-// footer needs to be force-applied to copies already sitting in a guild's
-// embeds.json, scoped to exactly the known template/field pairs listed here.
-const EMBED_TEMPLATE_MIGRATIONS = {
-  'nyse-open': { footer: null },
-};
-
 function seedShopDefaults() {
   const data = readJson(SHOP_FILE, {});
   let changed = false;
