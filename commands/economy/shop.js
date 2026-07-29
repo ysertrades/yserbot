@@ -6,7 +6,7 @@ const {
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown, clearCooldownsMatching } = require('../../utils/economyManager');
-const { EFFECT_TYPES, setEffect, getActiveEffectsList } = require('../../utils/effectsManager');
+const { EFFECT_TYPES, setEffect, getEffect, getActiveEffectsList } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { MAX_EQUIPPED, getEquipped, toggleEquip } = require('../../utils/badgeManager');
 const { generateMysteryBoxImage } = require('../../utils/mysteryBoxVisual');
@@ -247,7 +247,9 @@ function useItem(userId, guildId, itemId) {
     if (!opened) return { embeds: [errorEmbed('Failed', 'Could not remove from inventory.')] };
 
     const tierDef = rollMysteryBox();
-    const reward  = Math.floor(Math.random() * (tierDef.max - tierDef.min + 1)) + tierDef.min;
+    let reward    = Math.floor(Math.random() * (tierDef.max - tierDef.min + 1)) + tierDef.min;
+    const boost   = getEffect(userId, guildId, 'coin_boost');
+    if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
     addCoins(userId, reward);
 
     const imageName  = `mbox_${Date.now()}.png`;
@@ -256,7 +258,7 @@ function useItem(userId, guildId, itemId) {
     return { embeds: [new EmbedBuilder()
       .setColor(rarityColor('mystery_box'))
       .setTitle(`${item.emoji || '🎁'}  ${item.name} Opened!`)
-      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins`)
+      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 Coin Boost active — ${boost.multiplier || 1.5}× earnings!` : ''}`)
       .setImage(`attachment://${imageName}`)], files: [attachment] };
   }
 

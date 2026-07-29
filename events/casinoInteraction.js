@@ -53,7 +53,7 @@ async function applyResult(interaction, userId, updates) {
   const delta = updates.lastResult?.delta;
   if (typeof delta !== 'number') return;
 
-  const bonus = recordOutcome(userId, delta);
+  const bonus = recordOutcome(userId, delta, interaction.guild?.id);
   if (!bonus) return;
 
   await interaction.followUp({
@@ -342,8 +342,8 @@ async function handleButton(interaction) {
     const pRoll = engine.rollDie(), aRoll = engine.rollDie();
     const tie   = pRoll === aRoll, cWon = pRoll > aRoll;
     if (tie) { addCoins(challengerId, bet); addCoins(accepterId, bet); }
-    else if (cWon) addCoins(challengerId, bet * 2);
-    else           addCoins(accepterId, bet * 2);
+    else if (cWon) addCoins(challengerId, _applyBoost(bet * 2, bet, challengerId, interaction.guild?.id));
+    else           addCoins(accepterId, _applyBoost(bet * 2, bet, accepterId, interaction.guild?.id));
     const cBal = getBalance(challengerId), aBal = getBalance(accepterId);
     const pvpEmbed = new EmbedBuilder()
       .setColor(tie ? 0x95a5a6 : cWon ? 0x2ecc71 : 0xe74c3c)
@@ -1053,6 +1053,7 @@ async function finishBJ(interaction, s, state) {
     if (engine.handVal(final.dealer) === 21 && final.dealer.length === 2)
       insurancePayout = insuranceBet * 3;
   }
+  insurancePayout = _applyBoost(insurancePayout, insuranceBet, s.userId, interaction.guild?.id);
 
   if (payout > 0)          addCoins(s.userId, payout);
   if (splitPayout > 0)     addCoins(s.userId, splitPayout);

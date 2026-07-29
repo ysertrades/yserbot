@@ -3,6 +3,7 @@
 const { randomInt } = require('node:crypto');
 const { readJson, writeJson } = require('./jsonStorage');
 const { addCoins } = require('./economyManager');
+const { getEffect } = require('./effectsManager');
 
 // Tracks a single win streak per user across every casino game (coinflip,
 // slots, crash, blackjack, dice, roulette, wheel, trading, race — anything
@@ -19,7 +20,7 @@ const FILE       = 'win_streaks.json';
  * just hit a 5-win milestone (and the coins have already been credited), or
  * null otherwise.
  */
-function recordOutcome(userId, delta) {
+function recordOutcome(userId, delta, guildId) {
   const data  = readJson(FILE, {});
   const entry = data[userId] || { streak: 0, best: 0 };
 
@@ -29,7 +30,9 @@ function recordOutcome(userId, delta) {
     if (entry.streak > entry.best) entry.best = entry.streak;
     if (entry.streak % MILESTONE === 0) {
       const tier   = Math.min(MAX_TIER, entry.streak / MILESTONE);
-      const amount = randomInt(Math.round(250 * tier), Math.round(750 * tier) + 1);
+      let amount   = randomInt(Math.round(250 * tier), Math.round(750 * tier) + 1);
+      const boost  = getEffect(userId, guildId, 'coin_boost');
+      if (boost) amount = Math.floor(amount * (boost.multiplier || 1.5));
       addCoins(userId, amount);
       bonus = { streak: entry.streak, amount };
     }
