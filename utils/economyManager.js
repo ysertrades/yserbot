@@ -56,6 +56,30 @@ function setCooldown(userId, action) {
   writeJson(COOLDOWNS_FILE, cooldowns);
 }
 
+function clearCooldown(userId, action) {
+  const cooldowns = readJson(COOLDOWNS_FILE, {});
+  delete cooldowns[userId + '_' + action];
+  writeJson(COOLDOWNS_FILE, cooldowns);
+}
+
+// Clears every cooldown key belonging to userId whose action name passes
+// matchAction(action) — e.g. skipping every gather/casino/job cooldown at
+// once for a "cooldown skip" shop item, without hardcoding every job id.
+function clearCooldownsMatching(userId, matchAction) {
+  const cooldowns = readJson(COOLDOWNS_FILE, {});
+  const prefix = userId + '_';
+  let changed = false;
+  for (const key of Object.keys(cooldowns)) {
+    if (!key.startsWith(prefix)) continue;
+    if (matchAction(key.slice(prefix.length))) {
+      delete cooldowns[key];
+      changed = true;
+    }
+  }
+  if (changed) writeJson(COOLDOWNS_FILE, cooldowns);
+  return changed;
+}
+
 module.exports = {
   getBalance,
   setBalance,
@@ -65,4 +89,6 @@ module.exports = {
   getLeaderboard,
   checkCooldown,
   setCooldown,
+  clearCooldown,
+  clearCooldownsMatching,
 };

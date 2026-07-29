@@ -9,8 +9,9 @@ const fmt = n => Number(n).toLocaleString();
 
 const ITEM_TYPES = [
   ...Object.entries(EFFECT_TYPES).map(([id, e]) => ({ value: id, name: `${e.label}` })),
-  { value: 'badge',       name: '🎖️ Profile Badge (cosmetic, shown on /rank)' },
-  { value: 'mystery_box', name: '🎁 Mystery Box (random reward)' },
+  { value: 'badge',         name: '🎖️ Profile Badge (cosmetic, shown on /rank)' },
+  { value: 'mystery_box',   name: '🎁 Mystery Box (random reward)' },
+  { value: 'cooldown_skip', name: '⏩ Cooldown Skip (resets game cooldowns)' },
 ];
 
 const BADGE_ICONS = [
