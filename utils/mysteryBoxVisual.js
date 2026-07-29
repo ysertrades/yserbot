@@ -94,4 +94,4 @@ function generateMysteryBoxImage(data) {
   return PNG.sync.write(png);
 }
 
-module.exports = { generateMysteryBoxImage, TIER_COLOR };
+module.exports = { generateMysteryBoxImage, TIER_COLOR, drawChestIcon };
