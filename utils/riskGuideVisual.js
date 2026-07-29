@@ -56,7 +56,7 @@ const STEPS = [
 ];
 
 function generateRiskGuideImage() {
-  const W = 1000, H = 820;
+  const W = 1000, H = 870;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   flatBg(png, [12, 15, 20, 255]);
   glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: ACCENT, tintAlpha: 0.05, border: ACCENT, borderAlpha: 0.35 });
