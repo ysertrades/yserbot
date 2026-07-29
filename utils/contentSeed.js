@@ -56,6 +56,29 @@ const ECONOMY_SHOWCASE_TEMPLATE = {
   }],
 };
 
+const REPORT_GUIDE_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: 'Run `/report` any time you need to flag a member to the mod team — pick the user, a reason, and (optionally) a link, then submit.',
+    color: '#E74C3C',
+    footer: 'YSER Flow Moderation',
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:reportGuide',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
+const TEMPLATE_SEEDS = {
+  'economy-showcase': ECONOMY_SHOWCASE_TEMPLATE,
+  'report-guide':      REPORT_GUIDE_TEMPLATE,
+};
+
 function seedShopDefaults() {
   const data = readJson(SHOP_FILE, {});
   let changed = false;
@@ -73,14 +96,16 @@ function seedShopDefaults() {
   return changed;
 }
 
-function seedEconomyShowcaseTemplate() {
+function seedEmbedTemplates() {
   const all = readJson(EMBEDS_FILE, {});
   let changed = false;
 
   for (const guildId of Object.keys(all)) {
-    if (all[guildId]['economy-showcase']) continue;
-    all[guildId]['economy-showcase'] = JSON.parse(JSON.stringify(ECONOMY_SHOWCASE_TEMPLATE));
-    changed = true;
+    for (const [name, template] of Object.entries(TEMPLATE_SEEDS)) {
+      if (all[guildId][name]) continue;
+      all[guildId][name] = JSON.parse(JSON.stringify(template));
+      changed = true;
+    }
   }
 
   if (changed) writeJson(EMBEDS_FILE, all);
@@ -108,9 +133,9 @@ function ensureGuildEntries(client) {
 function seedDefaultContent(client) {
   ensureGuildEntries(client);
   const shopSeeded  = seedShopDefaults();
-  const embedSeeded = seedEconomyShowcaseTemplate();
+  const embedSeeded = seedEmbedTemplates();
   if (shopSeeded)  console.log('[CONTENT SEED] Added missing starter shop items.');
-  if (embedSeeded) console.log('[CONTENT SEED] Added missing economy-showcase embed template.');
+  if (embedSeeded) console.log('[CONTENT SEED] Added missing embed templates.');
 }
 
-module.exports = { seedDefaultContent, STARTER_ITEMS, ECONOMY_SHOWCASE_TEMPLATE };
+module.exports = { seedDefaultContent, STARTER_ITEMS, TEMPLATE_SEEDS };
