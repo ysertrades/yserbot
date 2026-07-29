@@ -245,6 +245,7 @@ const FONT = {
   "'": ['.##..', '.##..', '..#..', '.....', '.....', '.....', '.....'],
   '(': ['...#.', '..#..', '.#...', '.#...', '.#...', '..#..', '...#.'],
   ')': ['.#...', '..#..', '...#.', '...#.', '...#.', '..#..', '.#...'],
+  '_': ['.....', '.....', '.....', '.....', '.....', '.....', '#####'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
 
@@ -260,13 +261,33 @@ function drawChar(png, ch, x, y, scale, color) {
 
 const GLYPH_GAP = 1; // columns of spacing between characters, in font-pixel units
 
+// Discord names can contain anything — accented Latin, emoji, CJK, Cyrillic,
+// symbols we've never drawn a glyph for. Decompose accents down to their
+// plain base letter (é -> e, ñ -> n, ...) so those degrade gracefully
+// instead of vanishing, and drop anything that still has no glyph entirely
+// rather than falling back to a blank space-width gap — a silently-skipped
+// blank character used to be indistinguishable from a real space, which
+// visibly split names apart (e.g. "Y_ssi" rendering as "Y SSI").
+const COMBINING_MARKS_RE = new RegExp('[\\u0300-\\u036f]', 'g'); // combining diacritical marks block
+
+function normalizeForFont(text) {
+  return String(text).normalize('NFKD').replace(COMBINING_MARKS_RE, '');
+}
+
+function hasGlyph(ch) {
+  return Object.prototype.hasOwnProperty.call(FONT, ch.toUpperCase());
+}
+
 function textWidth(text, scale) {
-  return text.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
+  const chars = [...normalizeForFont(text)].filter(hasGlyph);
+  if (chars.length === 0) return 0;
+  return chars.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
 }
 
 function drawText(png, text, x, y, scale, color) {
   let cx = x;
-  for (const ch of text) {
+  for (const ch of normalizeForFont(text)) {
+    if (!hasGlyph(ch)) continue;
     drawChar(png, ch, cx, y, scale, color);
     cx += (GLYPH_W + GLYPH_GAP) * scale;
   }
