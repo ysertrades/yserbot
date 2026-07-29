@@ -323,10 +323,8 @@ module.exports = {
     if (id.startsWith('shop_close:')) {
       const ownerId = id.split(':')[1];
       if (userId !== ownerId) return interaction.reply({ content: "❌ Only the person who opened this shop panel can close it.", ephemeral: true });
-      return interaction.update({
-        embeds: [EmbedBuilder.from(interaction.message.embeds[0]).setFooter({ text: 'Shop closed — run /shop to reopen' })],
-        components: [],
-      });
+      try { await interaction.message.delete(); } catch {}
+      return;
     }
   },
 
