@@ -105,6 +105,25 @@
           "fields": []
         }
       ]
+    },
+    "economy-showcase": {
+      "embeds": [
+        {
+          "title": null,
+          "description": "Every way to earn, play, and spend coins on **YSER Flow** — fishing, mining, trivia, daily rewards, jobs, the bank, the shop, casino games, and the daily lottery. Use `/help` for the full command list.",
+          "color": "#5AC8AA",
+          "footer": "YSER Flow Economy",
+          "footerIcon": null,
+          "thumbnail": null,
+          "image": "dynamic:economyShowcase",
+          "fields": [],
+          "titleUrl": null,
+          "authorName": null,
+          "authorIcon": null,
+          "authorUrl": null,
+          "timestamp": false
+        }
+      ]
     }
   }
 }

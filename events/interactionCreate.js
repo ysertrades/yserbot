@@ -502,7 +502,7 @@ module.exports = {
             const { buildEmbedPayload } = require('../commands/utility/embed');
             const payload = buildEmbedPayload(interaction.guild, btnConfig.responseEmbedName || btnConfig.embedName, { user: interaction.user, channel: interaction.channel });
             if (!payload) { await interaction.reply({ content: '❌ Embed template not found.', flags: EPHEMERAL_FLAG }); }
-            else { await interaction.reply({ embeds: payload.embeds, components: payload.components.length ? payload.components : undefined, flags: EPHEMERAL_FLAG }); success = true; }
+            else { await interaction.reply({ embeds: payload.embeds, files: payload.files, components: payload.components.length ? payload.components : undefined, flags: EPHEMERAL_FLAG }); success = true; }
           } else if (btnConfig.type === 'random') {
             const list = (btnConfig.responses || '').split('|').map(s => s.trim()).filter(Boolean);
             if (list.length === 0) { await interaction.reply({ content: '❌ This button has no responses configured.', flags: EPHEMERAL_FLAG }); }
