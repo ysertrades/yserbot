@@ -100,7 +100,7 @@ module.exports = {
                     bonusText: eligibleForBonus ? `+${WELCOME_BONUS.toLocaleString()} Coins` : null,
                     isReturning,
                 });
-                const embed = createEmbed('welcome', { image: 'attachment://welcome.png' });
+                const embed = createEmbed('welcome', { image: 'attachment://welcome.png' }).setTimestamp(null);
                 const file = new AttachmentBuilder(image, { name: 'welcome.png' });
                 try { await channel.send({ content: `<@${member.id}>`, embeds: [embed], files: [file], allowedMentions: { users: [member.id] } }); } catch {}
             }
