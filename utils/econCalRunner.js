@@ -15,6 +15,22 @@ const FIRED_KEY_TTL_MS   = 9 * 24 * 60 * 60 * 1000; // prune fired-keys older th
 const IMPACT_COLOR = { High: 0xEF4444, Medium: 0xF59E0B, Low: 0x95A5A6, Holiday: 0x8B5CF6 };
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES   = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function dayKeyOf(e) {
+  return e.date.toISOString().slice(0, 10);
+}
+
+// A light section divider between days in a multi-day (week) view — the
+// per-event card already shows its own day/time chip, so this exists purely
+// to make a full week scroll like an organized calendar instead of a flat
+// stream of cards.
+function buildDayHeaderEmbed(e) {
+  const label = `${WEEKDAY_NAMES[e.date.getUTCDay()]}, ${MONTH_NAMES[e.date.getUTCMonth()]} ${e.date.getUTCDate()}`;
+  const embed = createEmbed('info', { description: `**🗓️ ${label}**` });
+  embed.setTimestamp(null);
+  return embed;
+}
 
 function fmtEventTime(e) {
   const day = WEEKDAY_NAMES[e.date.getUTCDay()].slice(0, 3).toUpperCase();
@@ -61,15 +77,17 @@ function buildReleaseEmbed(e, guild) {
   return { embed, files: [attachment] };
 }
 
-const CARD_BATCH_SIZE     = 5;  // per-message event-card cap — comfortably under Discord's 10-embed/10-file limits
+const MAX_EMBEDS_PER_MSG  = 9;  // Discord's real cap is 10 — leave headroom for a day-divider embed
 const MAX_EVENTS_RENDERED = 30; // hard safety cap so a huge, unfiltered week can't spam dozens of messages
 
 // One visual card per event (no click-to-open needed), batched into
 // Discord-message-sized groups — `title`/`emptyText` let callers reuse this
-// for a single-day ("Today"/"Tomorrow") summary too. Returns an array of
-// ready-to-send message payloads ({ embeds, files }); a full week's worth
-// of events becomes a short run of messages instead of one dense wall of
-// per-day text.
+// for a single-day ("Today"/"Tomorrow") summary too. When the event list
+// spans more than one calendar day (the "This Week" / scheduled weekly
+// post), a day-divider embed is inserted at each day boundary so the whole
+// week reads like an organized calendar instead of a flat stream of cards
+// — single-day views skip it since every card already shares the same day.
+// Returns an array of ready-to-send message payloads ({ embeds, files }).
 function buildWeeklySummaryEmbeds(events, guild, title = '📅 This Week\'s Economic Calendar', emptyText = 'No matching events this week.') {
   const headerEmbed = createEmbed('info', { title, footer: `${guild.name} • Economic Calendar` });
 
@@ -79,24 +97,45 @@ function buildWeeklySummaryEmbeds(events, guild, title = '📅 This Week\'s Econ
   }
 
   const capped  = events.slice(0, MAX_EVENTS_RENDERED);
+  const multiDay = new Set(capped.map(dayKeyOf)).size > 1;
+
   const batches = [];
-  for (let i = 0; i < capped.length; i += CARD_BATCH_SIZE) {
-    const slice = capped.slice(i, i + CARD_BATCH_SIZE);
-    const files = slice.map(e => buildEventCard(e, fmtEventTime(e)));
-    const embeds = slice.map((e, idx) => {
-      const embed = createEmbed('info', { image: `attachment://${files[idx].name}` });
-      embed.setTimestamp(null);
-      return embed;
-    });
-    if (i === 0) embeds.unshift(headerEmbed);
-    batches.push({ embeds, files });
+  let curEmbeds = [headerEmbed];
+  let curFiles  = [];
+  let lastDayKey = null;
+
+  function flush() {
+    if (curEmbeds.length > 0) batches.push({ embeds: curEmbeds, files: curFiles });
+    curEmbeds = [];
+    curFiles  = [];
   }
+
+  for (const e of capped) {
+    const dayKey     = dayKeyOf(e);
+    const dayChanged = multiDay && dayKey !== lastDayKey;
+    const needed     = (dayChanged ? 1 : 0) + 1; // day header (maybe) + the event card itself
+
+    if (curEmbeds.length + needed > MAX_EMBEDS_PER_MSG) flush();
+
+    if (dayChanged) {
+      curEmbeds.push(buildDayHeaderEmbed(e));
+      lastDayKey = dayKey;
+    }
+
+    const attachment = buildEventCard(e, fmtEventTime(e));
+    curFiles.push(attachment);
+    const embed = createEmbed('info', { image: `attachment://${attachment.name}` });
+    embed.setTimestamp(null);
+    curEmbeds.push(embed);
+  }
+  flush();
 
   if (events.length > MAX_EVENTS_RENDERED) {
     const noteEmbed = createEmbed('info', {
       description: `➕ **${events.length - MAX_EVENTS_RENDERED}** more matching events not shown — narrow the impact/currency filters to see them all.`,
     });
-    batches[batches.length - 1].embeds.push(noteEmbed);
+    if (batches.length === 0) batches.push({ embeds: [noteEmbed], files: [] });
+    else batches[batches.length - 1].embeds.push(noteEmbed);
   }
 
   return batches;
