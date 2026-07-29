@@ -1,13 +1,14 @@
 'use strict';
 
 const {
-  SlashCommandBuilder, EmbedBuilder,
+  SlashCommandBuilder, EmbedBuilder, AttachmentBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
 } = require('discord.js');
-const { getBalance, removeCoins } = require('../../utils/economyManager');
+const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
 const { EFFECT_TYPES, setEffect, getActiveEffectsList } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { MAX_EQUIPPED, getEquipped, toggleEquip } = require('../../utils/badgeManager');
+const { generateMysteryBoxImage } = require('../../utils/mysteryBoxVisual');
 
 const SHOP_FILE = 'shop.json';
 const INV_FILE  = 'inventory.json';
@@ -47,6 +48,26 @@ function rarityColor(type) {
     card_magnet: 0xE91E63, vip_casino_pass: 0xF1C40F, badge: 0x1ABC9C, mystery_box: 0x8E44AD,
   };
   return map[type] || 0x2ECC71;
+}
+
+// Weighted so a mystery box is usually a modest coin-back and a jackpot is
+// a real, rare swing — same shape as the fish/mine rarity tables.
+const MYSTERY_BOX_TABLE = [
+  { tier: 'dud',     weight: 40, min: 100,   max: 500 },
+  { tier: 'small',   weight: 30, min: 1000,  max: 3000 },
+  { tier: 'good',    weight: 20, min: 5000,  max: 10000 },
+  { tier: 'rare',    weight: 8,  min: 15000, max: 25000 },
+  { tier: 'jackpot', weight: 2,  min: 50000, max: 50000 },
+];
+
+function rollMysteryBox() {
+  const total = MYSTERY_BOX_TABLE.reduce((s, t) => s + t.weight, 0);
+  let r = Math.random() * total;
+  for (const t of MYSTERY_BOX_TABLE) {
+    r -= t.weight;
+    if (r <= 0) return t;
+  }
+  return MYSTERY_BOX_TABLE[MYSTERY_BOX_TABLE.length - 1];
 }
 
 module.exports = {
@@ -224,6 +245,25 @@ module.exports = {
             : `Removed from your \`/rank\` card. You still own it — use it again to re-equip.`)
           .setFooter({ text: `${result.equipped.length}/${MAX_EQUIPPED} badge slots used` })
           .setTimestamp()] });
+      }
+
+      if (item.type === 'mystery_box') {
+        const opened = removeFromInv(userId, guildId, itemId);
+        if (!opened)
+          return interaction.reply({ content: '❌ Failed to remove from inventory.', ephemeral: true });
+
+        const tierDef = rollMysteryBox();
+        const reward  = Math.floor(Math.random() * (tierDef.max - tierDef.min + 1)) + tierDef.min;
+        addCoins(userId, reward);
+
+        const imageName  = `mbox_${Date.now()}.png`;
+        const attachment = new AttachmentBuilder(generateMysteryBoxImage({ tier: tierDef.tier, reward }), { name: imageName });
+
+        return interaction.reply({ embeds: [new EmbedBuilder()
+          .setColor(rarityColor('mystery_box'))
+          .setTitle(`${item.emoji || '🎁'}  ${item.name} Opened!`)
+          .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins`)
+          .setImage(`attachment://${imageName}`)], files: [attachment] });
       }
 
       const def = EFFECT_TYPES[item.type];
