@@ -2,6 +2,7 @@ const { Events, REST, Routes } = require('discord.js');
 const { startScheduleRunner } = require('../utils/scheduleRunner');
 const { startNewsFeedRunner } = require('../utils/newsFeed');
 const { startEconCalRunner } = require('../utils/econCalRunner');
+const { startLotteryRunner } = require('../utils/lotteryRunner');
 const { restoreGiveaways } = require('../commands/utility/giveaway');
 
 // Registers every command in client.commands with Discord on every boot, so
@@ -32,6 +33,7 @@ module.exports = {
         startScheduleRunner(client);
         startNewsFeedRunner(client);
         startEconCalRunner(client);
+        startLotteryRunner(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));
     },
 };

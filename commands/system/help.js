@@ -48,6 +48,7 @@ const ECONOMY_CMDS = [
   ['daily',      'Claim your daily coins'],
   ['fish',       'Cast a line and see what you reel in'],
   ['jobs',       'Work multiple jobs with separate cooldowns'],
+  ['lottery',    'Buy tickets for the daily lottery draw'],
   ['mine',       'Swing your pickaxe and see what you dig up'],
   ['rob',        'Attempt to steal coins from another user'],
   ['shop',       'Browse and buy items from the server shop'],

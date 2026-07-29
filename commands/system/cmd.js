@@ -18,7 +18,7 @@ const ADMIN_COMMANDS = [
 
 const PUBLIC_COMMANDS = [
   'balance', 'bank', 'cards', 'casino', 'daily', 'fish',
-  'help', 'inventory', 'jobs', 'leaderboard', 'mine', 'ping',
+  'help', 'inventory', 'jobs', 'leaderboard', 'lottery', 'mine', 'ping',
   'poll', 'rank', 'report', 'risk', 'rob', 'shop',
   'transfer', 'trivia', 'userinfo', 'work',
 ];
