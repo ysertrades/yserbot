@@ -4,6 +4,7 @@ const {
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder,
   ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  MessageFlags,
 } = require('discord.js');
 const { createServerEmbed, isValidHexColor, isValidUrl, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
@@ -58,7 +59,7 @@ function buildDeleteSelector(guildId, interaction) {
   if (ids.length === 0) {
     return interaction.reply({
       embeds: [createServerEmbed('info', { title: '🔘 No Buttons', description: 'No buttons configured yet.' }, interaction.guild)],
-      flags: 64,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -244,7 +245,7 @@ module.exports = {
         return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `Button **${id}** not found.` }, interaction.guild)] });
       const sessionId = `${interaction.user.id}-${Date.now()}`;
       activeEdits.set(sessionId, { guildId, id, userId: interaction.user.id });
-      return interaction.reply({ content: `Editing button **${id}** — click a field, then **Save**.`, embeds: [editorEmbed(btn)], components: editorRows(sessionId), flags: 64 });
+      return interaction.reply({ content: `Editing button **${id}** — click a field, then **Save**.`, embeds: [editorEmbed(btn)], components: editorRows(sessionId), flags: MessageFlags.Ephemeral });
     }
 
     else if (sub === 'remove') {

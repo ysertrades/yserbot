@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { getSettings, setSettings, DEFAULTS } = require('../../casino/settings');
 
 function fmt(n) { return Number(n).toLocaleString(); }
@@ -36,35 +36,35 @@ module.exports = {
             { name: '⏱️ Cooldown', value: s.cooldownMs > 0 ? `**${s.cooldownMs / 1000}s**` : '**Disabled**', inline: true },
           )
           .setFooter({ text: 'YSER Flow Casino' })],
-        flags: 64,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     if (sub === 'min-bet') {
       const amount = interaction.options.getInteger('amount');
       const s = getSettings(guildId);
-      if (amount >= s.maxBet) return interaction.reply({ content: '❌ Min bet must be less than max bet.', flags: 64 });
+      if (amount >= s.maxBet) return interaction.reply({ content: '❌ Min bet must be less than max bet.', flags: MessageFlags.Ephemeral });
       setSettings(guildId, { minBet: amount });
-      return interaction.reply({ content: `✅ Minimum bet set to **${fmt(amount)}** coins.`, flags: 64 });
+      return interaction.reply({ content: `✅ Minimum bet set to **${fmt(amount)}** coins.`, flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'max-bet') {
       const amount = interaction.options.getInteger('amount');
       const s = getSettings(guildId);
-      if (amount <= s.minBet) return interaction.reply({ content: '❌ Max bet must be greater than min bet.', flags: 64 });
+      if (amount <= s.minBet) return interaction.reply({ content: '❌ Max bet must be greater than min bet.', flags: MessageFlags.Ephemeral });
       setSettings(guildId, { maxBet: amount });
-      return interaction.reply({ content: `✅ Maximum bet set to **${fmt(amount)}** coins.`, flags: 64 });
+      return interaction.reply({ content: `✅ Maximum bet set to **${fmt(amount)}** coins.`, flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'cooldown') {
       const sec = interaction.options.getInteger('seconds');
       setSettings(guildId, { cooldownMs: sec * 1000 });
-      return interaction.reply({ content: sec > 0 ? `✅ Cooldown set to **${sec}s**.` : '✅ Cooldown disabled.', flags: 64 });
+      return interaction.reply({ content: sec > 0 ? `✅ Cooldown set to **${sec}s**.` : '✅ Cooldown disabled.', flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'reset') {
       setSettings(guildId, { ...DEFAULTS });
-      return interaction.reply({ content: '✅ Casino settings reset to defaults.', flags: 64 });
+      return interaction.reply({ content: '✅ Casino settings reset to defaults.', flags: MessageFlags.Ephemeral });
     }
   },
 };

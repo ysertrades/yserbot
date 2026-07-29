@@ -4,6 +4,7 @@ const {
   SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle,
   EmbedBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  MessageFlags,
 } = require('discord.js');
 const { createServerEmbed, parseColor, isValidHexColor, isValidUrl, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson }           = require('../../utils/jsonStorage');
@@ -196,7 +197,7 @@ async function launchEditor(interaction, guildId, name, template, isNew) {
     embeds:     buildPreviewEmbeds(template, ctx),
     files:      collectDynamicAttachments(template),
     components: editorRows(sessionId, embedIndex, template.embeds.length, template.embeds[embedIndex]),
-    flags: 64,
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -209,7 +210,7 @@ function buildDeleteSelector(guildId, interaction) {
   if (entries.length === 0) {
     return interaction.reply({
       embeds: [createServerEmbed('info', { title: '📋 No Templates', description: 'No embed templates exist yet.' }, interaction.guild)],
-      flags: 64,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -345,7 +346,7 @@ module.exports = {
           new ButtonBuilder().setCustomId(`embed_previewsend:${name}`).setLabel('📤 Send Here').setStyle(ButtonStyle.Success),
         ));
       }
-      return interaction.reply({ content: `👁️ Preview of **${name}** — only you can see this.`, embeds: payload.embeds, files: payload.files, components: rows, flags: 64 });
+      return interaction.reply({ content: `👁️ Preview of **${name}** — only you can see this.`, embeds: payload.embeds, files: payload.files, components: rows, flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'duplicate') {

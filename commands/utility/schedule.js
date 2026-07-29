@@ -4,6 +4,7 @@ const {
   SlashCommandBuilder, PermissionFlagsBits, ChannelType,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  MessageFlags,
 } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
@@ -24,7 +25,7 @@ function buildCancelSelector(guildId, interaction) {
   if (list.length === 0) {
     return interaction.reply({
       embeds: [createServerEmbed('schedule', { title: '📅 No Schedules', description: 'No schedules are active.' }, interaction.guild)],
-      flags: 64,
+      flags: MessageFlags.Ephemeral,
     });
   }
 

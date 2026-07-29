@@ -7,6 +7,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
+  MessageFlags,
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
 const { getEffect, getEffectiveMaxBet } = require('../utils/effectsManager');
@@ -67,7 +68,7 @@ async function applyResult(interaction, userId, updates) {
       .setDescription(`You're on a **${bonus.streak}-win streak** across the casino — here's a little something extra.`)
       .addFields({ name: '🎁 Bonus Coins', value: `**+${fmt(bonus.amount)}** coins`, inline: true })
       .setFooter({ text: 'YSER Flow Casino  •  Keep the streak alive!' })],
-    flags: 64,
+    flags: MessageFlags.Ephemeral,
   }).catch(() => {});
 }
 
@@ -101,7 +102,7 @@ module.exports = {
 // ─── Error fallback ───────────────────────────────────────────────────────────
 async function handleError(interaction, err) {
   console.error('[CASINO ERROR]', err);
-  const m = { content: '❌ Something went wrong. Use `/casino` to start fresh.', flags: 64 };
+  const m = { content: '❌ Something went wrong. Use `/casino` to start fresh.', flags: MessageFlags.Ephemeral };
   try { interaction.replied || interaction.deferred ? await interaction.followUp(m) : await interaction.reply(m); } catch {}
 }
 
@@ -113,7 +114,7 @@ function guardSession(interaction) {
 }
 
 async function expired(interaction) {
-  return interaction.reply({ content: '⚠️ Session expired. Use `/casino` to start a new game.', flags: 64 });
+  return interaction.reply({ content: '⚠️ Session expired. Use `/casino` to start a new game.', flags: MessageFlags.Ephemeral });
 }
 
 const afterRow = () => new ActionRowBuilder().addComponents(
@@ -170,7 +171,7 @@ async function handleButton(interaction) {
 
     // All other games resolve immediately — deduct the bet now.
     if (!hasEnough(s.userId, s.bet))
-      return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
+      return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: MessageFlags.Ephemeral });
     removeCoins(s.userId, s.bet);
     updateSession(s.userId, { bjState: null, tradeState: null, raceState: null });
     await interaction.deferUpdate();
@@ -218,7 +219,7 @@ async function handleButton(interaction) {
   if (type === 'cf') {
     const s = guardSession(interaction);
     if (!s || s.game !== 'coinflip') return expired(interaction);
-    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: 64 });
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
     await interaction.deferUpdate();
     return resolveCoinflip(interaction, s, parts[2]);
   }
@@ -227,7 +228,7 @@ async function handleButton(interaction) {
   if (type === 'bj') {
     const s = guardSession(interaction);
     if (!s || s.game !== 'blackjack') return expired(interaction);
-    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: 64 });
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
     await interaction.deferUpdate();
     return handleBJ(interaction, s, parts[2]);
   }
@@ -236,7 +237,7 @@ async function handleButton(interaction) {
   if (type === 'tr') {
     const s = guardSession(interaction);
     if (!s || s.game !== 'trading') return expired(interaction);
-    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: 64 });
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
     if (parts[2] === 'rr') {
       await interaction.deferUpdate();
       return resolveTrading(interaction, s, s.tradeState.direction, `${parts[3]}:${parts[4]}`);
@@ -290,12 +291,12 @@ async function handleButton(interaction) {
     const bal      = getBalance(s.userId);
     const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
     const bet      = amtRaw === 'all' ? Math.min(bal, maxBet) : parseInt(amtRaw, 10);
-    if (isNaN(bet) || bet < 1)     return interaction.reply({ content: '❌ Invalid amount.', flags: 64 });
-    if (bet < settings.minBet)     return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
-    if (bet > maxBet)              return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
-    if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(bal)}**.`, flags: 64 });
+    if (isNaN(bet) || bet < 1)     return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+    if (bet < settings.minBet)     return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (bet > maxBet)              return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(bal)}**.`, flags: MessageFlags.Ephemeral });
     const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
-    if (cd > 0)                    return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
+    if (cd > 0)                    return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: MessageFlags.Ephemeral });
     removeCoins(s.userId, bet);
     updateSession(s.userId, { bet, game, bjState: null, tradeState: null, raceState: null });
     const upd = getSession(s.userId);
@@ -321,7 +322,7 @@ async function handleButton(interaction) {
   if (type === 'dicemode') {
     const s = guardSession(interaction);
     if (!s || s.game !== 'dice') return expired(interaction);
-    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: 64 });
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
     await interaction.deferUpdate();
     if (parts[2] === 'bot') return resolveDiceVsBot(interaction, s);
     if (parts[2] === 'pvp') return showDicePvpChallenge(interaction, s);
@@ -335,12 +336,12 @@ async function handleButton(interaction) {
     const bet          = parseInt(parts[3], 10);
     const accepterId   = interaction.user.id;
     if (accepterId === challengerId)
-      return interaction.reply({ content: '❌ You cannot accept your own challenge!', flags: 64 });
+      return interaction.reply({ content: '❌ You cannot accept your own challenge!', flags: MessageFlags.Ephemeral });
     const challenge = global.diceChallenges.get(challengerId);
     if (!challenge)
-      return interaction.reply({ content: '⚠️ This challenge has already been taken or expired.', flags: 64 });
+      return interaction.reply({ content: '⚠️ This challenge has already been taken or expired.', flags: MessageFlags.Ephemeral });
     if (!hasEnough(accepterId, bet))
-      return interaction.reply({ content: `❌ You need **${fmt(bet)}** coins to accept.`, flags: 64 });
+      return interaction.reply({ content: `❌ You need **${fmt(bet)}** coins to accept.`, flags: MessageFlags.Ephemeral });
     global.diceChallenges.delete(challengerId);
     removeCoins(accepterId, bet);
     const pRoll = engine.rollDie(), aRoll = engine.rollDie();
@@ -454,15 +455,15 @@ async function handleModal(interaction) {
     const amtRaw = interaction.fields.getTextInputValue('amount');
     const num    = parseInt(numRaw, 10);
     const bet    = parseInt(amtRaw, 10);
-    if (isNaN(num) || num < 0 || num > 36) return interaction.reply({ content: '❌ Invalid number. Must be **0–36**.', flags: 64 });
-    if (isNaN(bet) || bet < 1)             return interaction.reply({ content: '❌ Invalid bet amount.', flags: 64 });
+    if (isNaN(num) || num < 0 || num > 36) return interaction.reply({ content: '❌ Invalid number. Must be **0–36**.', flags: MessageFlags.Ephemeral });
+    if (isNaN(bet) || bet < 1)             return interaction.reply({ content: '❌ Invalid bet amount.', flags: MessageFlags.Ephemeral });
     const settings = getSettings(s.guildId);
     const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
-    if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
-    if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
-    if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
+    if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: MessageFlags.Ephemeral });
     const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
-    if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
+    if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: MessageFlags.Ephemeral });
     removeCoins(s.userId, bet);
     updateSession(s.userId, { bet, game: 'roulette', rouletteState: { betType: 'straight', betValue: num } });
     await interaction.deferUpdate();
@@ -475,16 +476,16 @@ async function handleModal(interaction) {
 
   const raw = interaction.fields.getTextInputValue('amount');
   const bet = parseInt(raw);
-  if (isNaN(bet) || bet < 1) return interaction.reply({ content: '❌ Invalid bet amount.', flags: 64 });
+  if (isNaN(bet) || bet < 1) return interaction.reply({ content: '❌ Invalid bet amount.', flags: MessageFlags.Ephemeral });
 
   const settings = getSettings(s.guildId);
   const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
-  if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
-  if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
-  if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
+  if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: MessageFlags.Ephemeral });
+  if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: MessageFlags.Ephemeral });
+  if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: MessageFlags.Ephemeral });
 
   const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
-  if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
+  if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: MessageFlags.Ephemeral });
 
   removeCoins(s.userId, bet);
   const game = parts[2];
@@ -570,7 +571,7 @@ async function resolveCoinflip(interaction, s, choice) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function startSlots(interaction, s) {
-  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
   const result = engine.spinSlots();
   const slotsImg = (spinning) => {
     const name = `slots-${s.userId}-${Date.now()}.png`;
@@ -726,10 +727,10 @@ async function startCrash(interaction, s) {
 async function handleCrashCashOut(interaction) {
   const cs = global.crashSessions.get(interaction.user.id);
   if (!cs) {
-    return interaction.reply({ content: '⚠️ No active crash session.', flags: 64 });
+    return interaction.reply({ content: '⚠️ No active crash session.', flags: MessageFlags.Ephemeral });
   }
   if (cs.cashedOut || cs.crashed) {
-    return interaction.reply({ content: '⚠️ Game already ended.', flags: 64 });
+    return interaction.reply({ content: '⚠️ Game already ended.', flags: MessageFlags.Ephemeral });
   }
 
   cs.cashedOut = true;
@@ -798,7 +799,7 @@ async function showRacePick(interaction, s) {
 }
 
 async function runRaceGame(interaction, s) {
-  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
   const isHorse = s.game === 'horse';
   const racers  = isHorse ? engine.HORSES : engine.TURTLES;
   const picked  = (s.racePick ?? 1) - 1; // 0-indexed
@@ -954,7 +955,7 @@ async function handleBJ(interaction, s, action) {
 
   if (action === 'insurance_yes') {
     const ib = Math.floor(s.bet / 2);
-    if (!hasEnough(s.userId, ib)) { unlock(s.userId); return interaction.followUp({ content: '❌ Not enough coins for insurance.', flags: 64 }); }
+    if (!hasEnough(s.userId, ib)) { unlock(s.userId); return interaction.followUp({ content: '❌ Not enough coins for insurance.', flags: MessageFlags.Ephemeral }); }
     removeCoins(s.userId, ib);
     state = engine.bjInsure(state);
     updateSession(s.userId, { bjState: state, insuranceBet: ib });
@@ -981,7 +982,7 @@ async function handleBJ(interaction, s, action) {
     return interaction.editReply({ embeds: [embed], components: [afterRow()], attachments: [] });
   }
   if (action === 'split') {
-    if (!engine.canSplit(state) || !hasEnough(s.userId, s.bet)) { unlock(s.userId); return interaction.followUp({ content: '❌ Cannot split.', flags: 64 }); }
+    if (!engine.canSplit(state) || !hasEnough(s.userId, s.bet)) { unlock(s.userId); return interaction.followUp({ content: '❌ Cannot split.', flags: MessageFlags.Ephemeral }); }
     removeCoins(s.userId, s.bet);
     state = engine.bjSplit(state);
     updateSession(s.userId, { bjState: state, splitBet: s.bet });
@@ -989,7 +990,7 @@ async function handleBJ(interaction, s, action) {
     return renderBJ(interaction, s, state, true);
   }
   if (action === 'double') {
-    if (!hasEnough(s.userId, s.bet)) { unlock(s.userId); return interaction.followUp({ content: '❌ Not enough coins to double.', flags: 64 }); }
+    if (!hasEnough(s.userId, s.bet)) { unlock(s.userId); return interaction.followUp({ content: '❌ Not enough coins to double.', flags: MessageFlags.Ephemeral }); }
     removeCoins(s.userId, s.bet);
     updateSession(s.userId, { bet: s.bet * 2 });
     s = getSession(s.userId);
@@ -1281,7 +1282,7 @@ async function showRoulettePick(interaction, s) {
 }
 
 async function resolveRoulette(interaction, s) {
-  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
   if (!s.rouletteState?.betType) { unlock(s.userId); return expired(interaction); }
   const { betType, betValue } = s.rouletteState;
   const spin    = engine.spinRoulette();
@@ -1338,7 +1339,7 @@ async function resolveRoulette(interaction, s) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function resolveWheel(interaction, s) {
-  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
 
   // ── Daily spin limit ───────────────────────────────────────────────────────
   const { spinsLeft, used, unlimited } = checkWheelLimit(s.userId, interaction.guild?.id);

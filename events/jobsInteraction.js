@@ -8,7 +8,7 @@
 //   job:close           — delete the message
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../utils/economyManager');
 const { getEffect } = require('../utils/effectsManager');
 
@@ -43,7 +43,7 @@ module.exports = {
       const { JOBS, buildJobsEmbed, buildJobsRows } = require('../commands/economy/jobs');
       const jobId  = parts[2];
       const job    = JOBS.find(j => j.id === jobId);
-      if (!job) return interaction.reply({ content: '❌ Unknown job.', flags: 64 });
+      if (!job) return interaction.reply({ content: '❌ Unknown job.', flags: MessageFlags.Ephemeral });
 
       const userId  = interaction.user.id;
       const guildId = interaction.guild?.id;
