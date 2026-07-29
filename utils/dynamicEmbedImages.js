@@ -16,10 +16,12 @@
 const { AttachmentBuilder } = require('discord.js');
 const { generateEconomyShowcaseImage } = require('./economyShowcaseVisual');
 const { generateReportGuideImage } = require('./reportGuideVisual');
+const { generateNyseOpenImage } = require('./marketSessionVisual');
 
 const DYNAMIC_IMAGES = {
   economyShowcase: { filename: 'economy_showcase.png', generate: generateEconomyShowcaseImage },
   reportGuide:      { filename: 'report_guide.png',     generate: generateReportGuideImage },
+  nyseOpen:         { filename: 'nyse_open.png',        generate: generateNyseOpenImage },
 };
 
 const DYNAMIC_PREFIX = 'dynamic:';
