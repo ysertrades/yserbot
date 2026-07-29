@@ -7,7 +7,7 @@ const { getWeekEvents, filterEvents } = require('./economicCalendar');
 const { generateEconEventCard } = require('./econEventVisual');
 
 const TICK_INTERVAL_MS   = 5_000;   // tight enough to hit the release post within a few seconds of the exact minute
-const REMINDER_OFFSETS   = [15, 10, 5]; // minutes before release
+const REMINDER_OFFSETS   = [15]; // minutes before release
 const STALE_MS           = 5 * 60 * 1000;      // reminders/releases more than this late are skipped, not fired stale
 const WEEKLY_STALE_MS    = 6 * 60 * 60 * 1000; // weekly summary can catch up up to 6h late (a restart shouldn't eat it)
 const FIRED_KEY_TTL_MS   = 9 * 24 * 60 * 60 * 1000; // prune fired-keys older than ~9 days (past any event they could reference)
