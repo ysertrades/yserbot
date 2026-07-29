@@ -20,7 +20,7 @@ const FINDS = [
 module.exports = buildGatherCommand({
   action: 'mine',
   commandName: 'mine',
-  description: 'Swing your pickaxe and see what you dig up (5 digs per session, 5 hour cooldown)',
+  description: 'Swing your pickaxe and see what you dig up (10 digs per session, 2 hour cooldown)',
   table: FINDS,
   generateImage: generateMineImage,
   imagePrefix: 'mine',
