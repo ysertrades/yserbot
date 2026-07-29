@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, REST, Routes } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, REST, Routes, MessageFlags } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
@@ -107,7 +107,7 @@ module.exports = {
             { name: '🌐 Public Commands',      value: `Always available to everyone.\n\`${PUBLIC_COMMANDS.join('`, `')}\``, inline: false },
           ],
         }, interaction.guild)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -116,7 +116,7 @@ module.exports = {
       setup.adminRoles = [];
       writeJson('config.json', config);
 
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const [modOk, adminOk] = await Promise.all([
         syncGuildCommandPerms(interaction, false, []),
         syncGuildCommandPerms(interaction, true,  []),
@@ -146,7 +146,7 @@ module.exports = {
 
     writeJson('config.json', config);
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const synced = await syncGuildCommandPerms(interaction, isAdmin, list);
 
     const syncNote = synced

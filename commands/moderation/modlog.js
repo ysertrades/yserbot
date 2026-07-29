@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 const { getModLogSettings, setModLogSettings, getModLogChannel } = require('../../utils/modConfig');
 
 const CATEGORIES = [
@@ -41,13 +41,13 @@ module.exports = {
 
   async execute(interaction) {
     const settings = getModLogSettings(interaction.guild.id);
-    return interaction.reply({ embeds: [buildPanelEmbed(interaction.guild, settings)], components: [buildPanelRow(settings)], ephemeral: true });
+    return interaction.reply({ embeds: [buildPanelEmbed(interaction.guild, settings)], components: [buildPanelRow(settings)], flags: MessageFlags.Ephemeral });
   },
 
   // ── Panel toggle button ─────────────────────────────────────────────────
   async handleToggle(interaction, category) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ Only Administrators can change mod-log settings.', ephemeral: true });
+      return interaction.reply({ content: '❌ Only Administrators can change mod-log settings.', flags: MessageFlags.Ephemeral });
     }
     const current  = getModLogSettings(interaction.guild.id);
     const settings = setModLogSettings(interaction.guild.id, { [category]: !current[category] });

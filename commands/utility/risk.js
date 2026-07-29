@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const { calculateRisk, FUTURES_SPECS } = require('../../utils/riskCalculator.js');
 const { generateRiskImage } = require('../../utils/riskVisual.js');
 
@@ -49,7 +49,7 @@ module.exports = {
             .setDescription(result.error)
             .setTimestamp(),
         ],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 

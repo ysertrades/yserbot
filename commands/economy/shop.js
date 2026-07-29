@@ -4,6 +4,7 @@ const {
   SlashCommandBuilder, EmbedBuilder, AttachmentBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  MessageFlags,
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
 const { EFFECT_TYPES, setEffect, getEffect, getActiveEffectsList } = require('../../utils/effectsManager');
@@ -285,23 +286,23 @@ module.exports = {
 
     if (id === 'shop_buy') {
       const select = buildBuySelect(guildId);
-      if (!select) return interaction.reply({ embeds: [errorEmbed('Shop Empty', 'No items available yet.')], ephemeral: true });
-      return interaction.reply({ content: 'Pick an item to buy:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+      if (!select) return interaction.reply({ embeds: [errorEmbed('Shop Empty', 'No items available yet.')], flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Pick an item to buy:', components: [new ActionRowBuilder().addComponents(select)], flags: MessageFlags.Ephemeral });
     }
 
     if (id === 'shop_inventory') {
-      return interaction.reply({ embeds: [buildInventoryEmbed(userId, guildId)], ephemeral: true });
+      return interaction.reply({ embeds: [buildInventoryEmbed(userId, guildId)], flags: MessageFlags.Ephemeral });
     }
 
     if (id === 'shop_use') {
       const select = buildUseSelect(userId, guildId);
-      if (!select) return interaction.reply({ embeds: [errorEmbed('Nothing to Use', "You don't own any items yet — buy one first!")], ephemeral: true });
-      return interaction.reply({ content: 'Pick an item to use:', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+      if (!select) return interaction.reply({ embeds: [errorEmbed('Nothing to Use', "You don't own any items yet — buy one first!")], flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Pick an item to use:', components: [new ActionRowBuilder().addComponents(select)], flags: MessageFlags.Ephemeral });
     }
 
     if (id.startsWith('shop_close:')) {
       const ownerId = id.split(':')[1];
-      if (userId !== ownerId) return interaction.reply({ content: "❌ Only the person who opened this shop panel can close it.", ephemeral: true });
+      if (userId !== ownerId) return interaction.reply({ content: "❌ Only the person who opened this shop panel can close it.", flags: MessageFlags.Ephemeral });
       try { await interaction.message.delete(); } catch {}
       return;
     }

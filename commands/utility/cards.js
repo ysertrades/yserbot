@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { addCoins, getBalance }  = require('../../utils/economyManager');
 const { CARDS, RARITY, SELL_PRICE } = require('../../utils/cardsManager');
@@ -65,7 +65,7 @@ module.exports = {
           .setDescription(target.id === interaction.user.id
             ? 'You haven\'t grabbed any cards yet!\nKeep chatting — cards drop across all channels.'
             : `<@${target.id}> hasn't collected any cards yet.`)
-          .setThumbnail(target.displayAvatarURL({ dynamic: true }))], ephemeral: true });
+          .setThumbnail(target.displayAvatarURL({ dynamic: true }))], flags: MessageFlags.Ephemeral });
 
       const ownedCounts = {};
       for (const card of owned) ownedCounts[card.id] = (ownedCounts[card.id] || 0) + 1;
@@ -101,7 +101,7 @@ module.exports = {
 
       const idx = owned.findIndex(c => c.id === cardId);
       if (idx === -1) {
-        return interaction.reply({ content: `❌ You don't own a card with that ID. Use \`/cards collection\` to see what you have.`, ephemeral: true });
+        return interaction.reply({ content: `❌ You don't own a card with that ID. Use \`/cards collection\` to see what you have.`, flags: MessageFlags.Ephemeral });
       }
 
       const card  = owned[idx];
@@ -126,7 +126,7 @@ module.exports = {
           { name: '💰 New Balance',      value: `**${fmt(getBalance(userId))}** coins`, inline: true },
         )
         .setFooter({ text: 'Keep chatting to collect more cards!' })
-        .setTimestamp()], ephemeral: true });
+        .setTimestamp()], flags: MessageFlags.Ephemeral });
     }
 
     // ── Leaderboard ──────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ module.exports = {
       const scores = ranked.filter(s => humanIds.has(s.uid)).slice(0, 10);
 
       if (scores.length === 0)
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x9E9E9E).setTitle('🃏 No Cards Yet').setDescription('No one has collected any cards yet!')], ephemeral: true });
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x9E9E9E).setTitle('🃏 No Cards Yet').setDescription('No one has collected any cards yet!')], flags: MessageFlags.Ephemeral });
 
       const medals = ['🥇', '🥈', '🥉'];
       const desc = scores.map((s, i) =>

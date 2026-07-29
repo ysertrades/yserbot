@@ -5,6 +5,7 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle,
   EmbedBuilder,
+  MessageFlags,
 } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
@@ -167,7 +168,7 @@ module.exports = {
             { name: 'Rules Set', value: vs.rulesText ? '✅ Yes' : '❌ Not set (using default)', inline: true },
           ],
         }, interaction.guild)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },
@@ -193,26 +194,26 @@ module.exports = {
   async handleStart(interaction) {
     const settings = getVerifySettings(interaction.guild.id);
     if (!settings.role) {
-      return interaction.reply({ content: '⚠️ This server hasn\'t configured a verification role yet. Ask an admin to run `/verify role`.', ephemeral: true });
+      return interaction.reply({ content: '⚠️ This server hasn\'t configured a verification role yet. Ask an admin to run `/verify role`.', flags: MessageFlags.Ephemeral });
     }
     if (interaction.member.roles.cache.has(settings.role)) {
-      return interaction.reply({ content: '✅ You\'re already verified!', ephemeral: true });
+      return interaction.reply({ content: '✅ You\'re already verified!', flags: MessageFlags.Ephemeral });
     }
     const { sessionId, session } = newChallengeSession(interaction.user.id, interaction.guild.id);
-    return interaction.reply({ ...memorizeView(sessionId, session), ephemeral: true });
+    return interaction.reply({ ...memorizeView(sessionId, session), flags: MessageFlags.Ephemeral });
   },
 
   async handleReady(interaction, sessionId) {
     const session = global.verifySessions.get(sessionId);
     if (!session) return interaction.update({ content: '⌛ This attempt expired. Click **Start Verification** on the panel to try again.', embeds: [], components: [] });
-    if (session.userId !== interaction.user.id) return interaction.reply({ content: '❌ This isn\'t your verification attempt.', ephemeral: true });
+    if (session.userId !== interaction.user.id) return interaction.reply({ content: '❌ This isn\'t your verification attempt.', flags: MessageFlags.Ephemeral });
     return interaction.update(answerView(sessionId, session));
   },
 
   async handlePick(interaction, sessionId, idx) {
     const session = global.verifySessions.get(sessionId);
     if (!session) return interaction.update({ content: '⌛ This attempt expired. Click **Start Verification** on the panel to try again.', embeds: [], components: [] });
-    if (session.userId !== interaction.user.id) return interaction.reply({ content: '❌ This isn\'t your verification attempt.', ephemeral: true });
+    if (session.userId !== interaction.user.id) return interaction.reply({ content: '❌ This isn\'t your verification attempt.', flags: MessageFlags.Ephemeral });
 
     const picked   = session.grid[idx];
     const expected = session.sequence[session.progress];

@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, MessageFlags } = require('discord.js');
 const { readJson } = require('../../utils/jsonStorage');
 
 module.exports = {
@@ -27,6 +27,6 @@ module.exports = {
       .setFooter({ text: `${warns.length} warning${warns.length !== 1 ? 's' : ''} total` })
       .setTimestamp();
 
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   },
 };

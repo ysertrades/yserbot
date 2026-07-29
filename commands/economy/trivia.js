@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { getEffect } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
@@ -168,12 +168,12 @@ module.exports = {
           .setColor(0xe74c3c)
           .setTitle('🧠 Still Cooling Down')
           .setDescription(`You need to wait **${hours}h ${minutes}m** before another trivia session.`)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     if (activeSessions.has(userId)) {
-      return interaction.reply({ content: '⚠️ You already have a trivia session in progress! Finish it or hit Close first.', ephemeral: true });
+      return interaction.reply({ content: '⚠️ You already have a trivia session in progress! Finish it or hit Close first.', flags: MessageFlags.Ephemeral });
     }
 
     const session = {
@@ -190,12 +190,12 @@ module.exports = {
     const [, userId, choiceStr] = interaction.customId.split(':');
 
     if (interaction.user.id !== userId) {
-      return interaction.reply({ content: "❌ This isn't your trivia session.", ephemeral: true });
+      return interaction.reply({ content: "❌ This isn't your trivia session.", flags: MessageFlags.Ephemeral });
     }
 
     const session = activeSessions.get(userId);
     if (!session || !session.timer) {
-      return interaction.reply({ content: '⌛ This trivia session has expired.', ephemeral: true });
+      return interaction.reply({ content: '⌛ This trivia session has expired.', flags: MessageFlags.Ephemeral });
     }
 
     await interaction.deferUpdate();
@@ -206,12 +206,12 @@ module.exports = {
     const [, userId] = interaction.customId.split(':');
 
     if (interaction.user.id !== userId) {
-      return interaction.reply({ content: "❌ This isn't your trivia session.", ephemeral: true });
+      return interaction.reply({ content: "❌ This isn't your trivia session.", flags: MessageFlags.Ephemeral });
     }
 
     const session = activeSessions.get(userId);
     if (!session) {
-      return interaction.reply({ content: '⌛ This trivia session has already ended.', ephemeral: true });
+      return interaction.reply({ content: '⌛ This trivia session has already ended.', flags: MessageFlags.Ephemeral });
     }
 
     clearTimeout(session.timer);

@@ -4,6 +4,7 @@ const {
   SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder, UserSelectMenuBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
+  MessageFlags,
 } = require('discord.js');
 const { readJson } = require('../../utils/jsonStorage');
 
@@ -62,17 +63,17 @@ module.exports = {
     sessions.delete(userId);
     const session = getSession(userId);
     setTimeout(() => sessions.delete(userId), SESSION_TTL_MS);
-    await interaction.reply({ embeds: [buildPanelEmbed(session)], components: buildPanelRows(userId), ephemeral: true });
+    await interaction.reply({ embeds: [buildPanelEmbed(session)], components: buildPanelRows(userId), flags: MessageFlags.Ephemeral });
   },
 
   async handleUserSelect(interaction) {
     const ownerId = interaction.customId.split(':')[1];
-    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", ephemeral: true });
+    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", flags: MessageFlags.Ephemeral });
 
     const targetId   = interaction.values[0];
     const targetUser = interaction.users?.first?.() || null;
-    if (targetId === interaction.user.id) return interaction.reply({ content: '❌ You cannot report yourself.', ephemeral: true });
-    if (targetUser?.bot) return interaction.reply({ content: '❌ You cannot report bots.', ephemeral: true });
+    if (targetId === interaction.user.id) return interaction.reply({ content: '❌ You cannot report yourself.', flags: MessageFlags.Ephemeral });
+    if (targetUser?.bot) return interaction.reply({ content: '❌ You cannot report bots.', flags: MessageFlags.Ephemeral });
 
     const session = getSession(ownerId);
     session.targetUserId = targetId;
@@ -81,7 +82,7 @@ module.exports = {
 
   async handleReasonSelect(interaction) {
     const ownerId = interaction.customId.split(':')[1];
-    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", ephemeral: true });
+    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", flags: MessageFlags.Ephemeral });
 
     const session = getSession(ownerId);
     session.reason = interaction.values[0];
@@ -90,7 +91,7 @@ module.exports = {
 
   async handleButton(interaction) {
     const [action, ownerId] = interaction.customId.split(':');
-    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", ephemeral: true });
+    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", flags: MessageFlags.Ephemeral });
     const session = getSession(ownerId);
 
     if (action === 'report_link') {
@@ -108,17 +109,17 @@ module.exports = {
     }
 
     if (action === 'report_submit') {
-      if (!session.targetUserId) return interaction.reply({ content: '❌ Select a user first.', ephemeral: true });
-      if (!session.reason) return interaction.reply({ content: '❌ Select a reason first.', ephemeral: true });
+      if (!session.targetUserId) return interaction.reply({ content: '❌ Select a user first.', flags: MessageFlags.Ephemeral });
+      if (!session.reason) return interaction.reply({ content: '❌ Select a reason first.', flags: MessageFlags.Ephemeral });
 
       const config     = readJson('config.json', {});
       const gCfg       = config[interaction.guild.id] || {};
       const reportChId = gCfg.reportChannel;
       const reportRole = gCfg.reportRole;
 
-      if (!reportChId) return interaction.reply({ content: '❌ No report channel configured. Ask an admin to run `/config report-channel`.', ephemeral: true });
+      if (!reportChId) return interaction.reply({ content: '❌ No report channel configured. Ask an admin to run `/config report-channel`.', flags: MessageFlags.Ephemeral });
       const reportCh = interaction.guild.channels.cache.get(reportChId);
-      if (!reportCh) return interaction.reply({ content: '❌ Configured report channel not found.', ephemeral: true });
+      if (!reportCh) return interaction.reply({ content: '❌ Configured report channel not found.', flags: MessageFlags.Ephemeral });
 
       const targetUser = await interaction.client.users.fetch(session.targetUserId).catch(() => null);
 
@@ -157,7 +158,7 @@ module.exports = {
 
   async handleModal(interaction) {
     const [, ownerId] = interaction.customId.split(':');
-    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", ephemeral: true });
+    if (interaction.user.id !== ownerId) return interaction.reply({ content: "❌ This isn't your report panel.", flags: MessageFlags.Ephemeral });
 
     const session = getSession(ownerId);
     const link = interaction.fields.getTextInputValue('link').trim();

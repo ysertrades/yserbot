@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
@@ -24,7 +24,7 @@ module.exports = {
         title: '🗑️ Warnings Cleared',
         description: `Cleared **${before}** warning${before !== 1 ? 's' : ''} from <@${user.id}>.`,
       }, interaction.guild)],
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   },
 };

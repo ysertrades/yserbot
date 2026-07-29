@@ -5,6 +5,7 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
+  MessageFlags,
 } = require('discord.js');
 const { EFFECT_TYPES } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
@@ -159,19 +160,19 @@ module.exports = {
     if (id === 'shopset_add') {
       const options = Object.entries(TYPE_LABELS).map(([value, label]) => new StringSelectMenuOptionBuilder().setLabel(label.slice(0, 100)).setValue(value));
       const select  = new StringSelectMenuBuilder().setCustomId('shopset_add_type_select').setPlaceholder('Choose item type…').addOptions(options);
-      return interaction.reply({ content: 'What type of item do you want to add?', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+      return interaction.reply({ content: 'What type of item do you want to add?', components: [new ActionRowBuilder().addComponents(select)], flags: MessageFlags.Ephemeral });
     }
 
     if (id === 'shopset_edit') {
       const select = buildItemSelect(guildId, 'shopset_edit_select', 'Choose an item to edit…');
-      if (!select) return interaction.reply({ content: '❌ No items to edit yet.', ephemeral: true });
-      return interaction.reply({ content: 'Which item do you want to edit?', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+      if (!select) return interaction.reply({ content: '❌ No items to edit yet.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Which item do you want to edit?', components: [new ActionRowBuilder().addComponents(select)], flags: MessageFlags.Ephemeral });
     }
 
     if (id === 'shopset_remove') {
       const select = buildItemSelect(guildId, 'shopset_remove_select', 'Choose an item to remove…');
-      if (!select) return interaction.reply({ content: '❌ No items to remove yet.', ephemeral: true });
-      return interaction.reply({ content: 'Which item do you want to remove?', components: [new ActionRowBuilder().addComponents(select)], ephemeral: true });
+      if (!select) return interaction.reply({ content: '❌ No items to remove yet.', flags: MessageFlags.Ephemeral });
+      return interaction.reply({ content: 'Which item do you want to remove?', components: [new ActionRowBuilder().addComponents(select)], flags: MessageFlags.Ephemeral });
     }
 
     if (id.startsWith('shopset_remove_confirm:')) {
@@ -243,7 +244,7 @@ module.exports = {
     if (id.startsWith('shopset_add_modal:')) {
       const sessionId = id.slice('shopset_add_modal:'.length);
       const session = addSessions.get(sessionId);
-      if (!session) return interaction.reply({ content: '❌ This session expired — please start over with Add Item.', ephemeral: true });
+      if (!session) return interaction.reply({ content: '❌ This session expired — please start over with Add Item.', flags: MessageFlags.Ephemeral });
 
       const itemId = interaction.fields.getTextInputValue('id').toLowerCase().trim().replace(/\s+/g, '_');
       const name   = interaction.fields.getTextInputValue('name').trim();
@@ -253,11 +254,11 @@ module.exports = {
 
       if (!itemId || !name || isNaN(price) || price < 1) {
         addSessions.delete(sessionId);
-        return interaction.reply({ content: '❌ Invalid input — ID and Name are required, and Price must be a positive number.', ephemeral: true });
+        return interaction.reply({ content: '❌ Invalid input — ID and Name are required, and Price must be a positive number.', flags: MessageFlags.Ephemeral });
       }
       if (getShop(session.guildId)[itemId]) {
         addSessions.delete(sessionId);
-        return interaction.reply({ content: `❌ An item with ID \`${itemId}\` already exists — use **Edit Item** instead.`, ephemeral: true });
+        return interaction.reply({ content: `❌ An item with ID \`${itemId}\` already exists — use **Edit Item** instead.`, flags: MessageFlags.Ephemeral });
       }
 
       session.common = { itemId, name, price, emoji, description };
@@ -268,18 +269,18 @@ module.exports = {
       }
       if (NEEDS_BADGE_ICON.has(session.type)) {
         addSessions.set(sessionId, session);
-        return interaction.reply({ content: 'Pick an icon for this badge:', components: [new ActionRowBuilder().addComponents(buildBadgeIconSelect(sessionId))], ephemeral: true });
+        return interaction.reply({ content: 'Pick an icon for this badge:', components: [new ActionRowBuilder().addComponents(buildBadgeIconSelect(sessionId))], flags: MessageFlags.Ephemeral });
       }
 
       const item = finalizeAddItem(session);
       addSessions.delete(sessionId);
-      return interaction.reply({ embeds: [addedConfirmEmbed(itemId, item)], ephemeral: true });
+      return interaction.reply({ embeds: [addedConfirmEmbed(itemId, item)], flags: MessageFlags.Ephemeral });
     }
 
     if (id.startsWith('shopset_add_multiplier_modal:')) {
       const sessionId = id.slice('shopset_add_multiplier_modal:'.length);
       const session = addSessions.get(sessionId);
-      if (!session) return interaction.reply({ content: '❌ This session expired — please start over with Add Item.', ephemeral: true });
+      if (!session) return interaction.reply({ content: '❌ This session expired — please start over with Add Item.', flags: MessageFlags.Ephemeral });
 
       const multRaw = interaction.fields.getTextInputValue('multiplier').trim();
       const durRaw  = interaction.fields.getTextInputValue('duration_hours').trim();
@@ -291,14 +292,14 @@ module.exports = {
 
       const item = finalizeAddItem(session);
       addSessions.delete(sessionId);
-      return interaction.reply({ embeds: [addedConfirmEmbed(session.common.itemId, item)], ephemeral: true });
+      return interaction.reply({ embeds: [addedConfirmEmbed(session.common.itemId, item)], flags: MessageFlags.Ephemeral });
     }
 
     if (id.startsWith('shopset_edit_modal:')) {
       const itemId = id.slice('shopset_edit_modal:'.length);
       const items  = getShop(guildId);
       const item   = items[itemId];
-      if (!item) return interaction.reply({ content: '❌ That item no longer exists.', ephemeral: true });
+      if (!item) return interaction.reply({ content: '❌ That item no longer exists.', flags: MessageFlags.Ephemeral });
 
       const name  = interaction.fields.getTextInputValue('name').trim();
       const price = parseInt(interaction.fields.getTextInputValue('price'), 10);
@@ -306,7 +307,7 @@ module.exports = {
       const description = interaction.fields.getTextInputValue('description').trim();
 
       if (!name || isNaN(price) || price < 1)
-        return interaction.reply({ content: '❌ Invalid input — Name is required and Price must be a positive number.', ephemeral: true });
+        return interaction.reply({ content: '❌ Invalid input — Name is required and Price must be a positive number.', flags: MessageFlags.Ephemeral });
 
       item.name = name;
       item.price = price;
@@ -323,7 +324,7 @@ module.exports = {
           { name: '📦 Name',  value: name,                       inline: true },
           { name: '💸 Price', value: `${fmt(price)} coins`,      inline: true },
         )
-        .setTimestamp()], ephemeral: true });
+        .setTimestamp()], flags: MessageFlags.Ephemeral });
     }
   },
 };

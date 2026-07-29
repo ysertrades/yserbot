@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ChannelType, MessageFlags } = require('discord.js');
 const { getBalance, removeCoins } = require('../../utils/economyManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { todaysSlotUTC, REWARD } = require('../../utils/lotteryRunner');
@@ -44,7 +44,7 @@ module.exports = {
 
     if (sub === 'channel') {
       if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild))
-        return interaction.reply({ content: '❌ You need the **Manage Server** permission to set the lottery channel.', ephemeral: true });
+        return interaction.reply({ content: '❌ You need the **Manage Server** permission to set the lottery channel.', flags: MessageFlags.Ephemeral });
 
       const channel = interaction.options.getChannel('channel');
       const config  = readJson('config.json', {});
@@ -55,7 +55,7 @@ module.exports = {
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0x2ECC71)
         .setTitle('✅ Lottery Channel Set')
-        .setDescription(`Draw results will be announced in ${channel}.`)], ephemeral: true });
+        .setDescription(`Draw results will be announced in ${channel}.`)], flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'buy') {
@@ -63,12 +63,12 @@ module.exports = {
       const state = getState(guildId);
       const owned = state.pool[userId] || 0;
       if (owned + qty > MAX_TICKETS_PER_DAY)
-        return interaction.reply({ content: `❌ You can only hold **${MAX_TICKETS_PER_DAY}** tickets per day — you already have **${owned}**.`, ephemeral: true });
+        return interaction.reply({ content: `❌ You can only hold **${MAX_TICKETS_PER_DAY}** tickets per day — you already have **${owned}**.`, flags: MessageFlags.Ephemeral });
 
       const cost    = qty * TICKET_PRICE;
       const balance = getBalance(userId);
       if (balance < cost)
-        return interaction.reply({ content: `❌ You need **${fmt(cost)}** coins but only have **${fmt(balance)}**.`, ephemeral: true });
+        return interaction.reply({ content: `❌ You need **${fmt(cost)}** coins but only have **${fmt(balance)}**.`, flags: MessageFlags.Ephemeral });
 
       removeCoins(userId, cost);
       state.pool[userId] = owned + qty;

@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 
 // Discord embeds only support a single solid sidebar colour — no true gradients.
 // These colours are chosen as rich, distinct stops across the visible spectrum
@@ -126,7 +126,7 @@ const TEMP_REPLY_MS = 5000; // matches the "embed sent" confirmation delay this 
 // the rest of the server) or for a reply whose components the user still
 // needs to interact with.
 async function sendTempReply(interaction, payload, ms = TEMP_REPLY_MS) {
-    await interaction.reply({ ...payload, ephemeral: true });
+    await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
     setTimeout(() => interaction.deleteReply().catch(() => {}), ms);
 }
 
@@ -134,7 +134,7 @@ async function sendTempReply(interaction, payload, ms = TEMP_REPLY_MS) {
 // after `deferUpdate()`, where the original message is a panel being
 // restored separately and the followUp is just a transient "done" notice.
 async function sendTempFollowUp(interaction, payload, ms = TEMP_REPLY_MS) {
-    const msg = await interaction.followUp({ ...payload, ephemeral: true });
+    const msg = await interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
     setTimeout(() => msg.delete().catch(() => {}), ms);
 }
 
