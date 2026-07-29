@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { createServerEmbed, sendTempReply: sendTempEphemeralReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
@@ -153,7 +153,7 @@ module.exports = {
             { name: 'Inactivity Message', value: s.inactivityMessage || DEFAULT.inactivityMessage, inline: false },
           ],
         }, interaction.guild)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   },
@@ -177,7 +177,7 @@ module.exports = {
         : `A support member is needed — ${interaction.user} is still here!`;
       await interaction.channel.send({ content: pingContent }).catch(() => {});
 
-      return interaction.reply({ content: '✅ Done! Support has been notified and the inactivity timer has been reset.', ephemeral: true });
+      return interaction.reply({ content: '✅ Done! Support has been notified and the inactivity timer has been reset.', flags: MessageFlags.Ephemeral });
     }
 
     if (interaction.customId === 'close_ticket') {
@@ -212,7 +212,7 @@ module.exports = {
       });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const overwrites = [
       { id: guild.roles.everyone.id,  deny:  [PermissionFlagsBits.ViewChannel] },

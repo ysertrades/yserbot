@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson }           = require('../../utils/jsonStorage');
 const { MOD_COMMANDS, ADMIN_COMMANDS } = require('./cmd');
@@ -148,6 +148,6 @@ module.exports = {
       footer: `Viewing as: ${tier}`,
     }, interaction.guild);
 
-    await interaction.reply({ embeds: [embed], flags: 64 }); // ephemeral — personal view
+    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral }); // ephemeral — personal view
   },
 };

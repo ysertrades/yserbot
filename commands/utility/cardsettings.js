@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 module.exports = {
@@ -29,16 +29,16 @@ module.exports = {
         .setTitle('🃏  Card Drop Config')
         .setDescription('Cards drop in whichever channel reaches the message count — no single restricted channel.')
         .addFields({ name: '🔢 Drop Interval', value: `Every **${cfg.interval}** messages (per channel)`, inline: false })
-        .setFooter({ text: 'Use /cardsettings setting:Set messages between drops to change the number' })], ephemeral: true });
+        .setFooter({ text: 'Use /cardsettings setting:Set messages between drops to change the number' })], flags: MessageFlags.Ephemeral });
     }
 
     if (setting === 'interval') {
       const interval = interaction.options.getInteger('interval');
-      if (!interval) return interaction.reply({ content: '❌ Provide an interval value (10–500).', ephemeral: true });
+      if (!interval) return interaction.reply({ content: '❌ Provide an interval value (10–500).', flags: MessageFlags.Ephemeral });
       cfg.interval = interval;
       config[guildId] = cfg;
       writeJson('cards_config.json', config);
-      return interaction.reply({ content: `✅ Card drops set to every **${interval} messages** per channel.`, ephemeral: true });
+      return interaction.reply({ content: `✅ Card drops set to every **${interval} messages** per channel.`, flags: MessageFlags.Ephemeral });
     }
   },
 };

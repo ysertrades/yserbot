@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { getEffect } = require('../../utils/effectsManager');
 
@@ -44,7 +44,7 @@ module.exports = {
           .setTitle('⏰ Already Claimed')
           .setDescription(`You need to wait **${hours}h ${minutes}m** before claiming again.`)
           .setFooter({ text: 'Daily rewards reset 24h after you claim them' })],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 

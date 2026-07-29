@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { getEffect } = require('../../utils/effectsManager');
 
@@ -36,7 +36,7 @@ module.exports = {
         .setColor(0xe74c3c)
         .setTitle('⏰ Still on Cooldown')
         .setDescription(`You need to wait **${hours}h ${minutes}m** before you can work again.`)
-        .setFooter({ text: 'Work again later!' })], ephemeral: true });
+        .setFooter({ text: 'Work again later!' })], flags: MessageFlags.Ephemeral });
     }
 
     let earnings = Math.floor(Math.random() * (MAX_EARNINGS - MIN_EARNINGS + 1)) + MIN_EARNINGS;

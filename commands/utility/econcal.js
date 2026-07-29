@@ -6,6 +6,7 @@ const {
   RoleSelectMenuBuilder, ChannelSelectMenuBuilder,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
   ModalBuilder, TextInputBuilder, TextInputStyle,
+  MessageFlags,
 } = require('discord.js');
 const { createServerEmbed, sendTempReply, sendTempFollowUp } = require('../../utils/embedBuilder');
 const { getEconCalSettings, setEconCalSettings } = require('../../utils/modConfig');
@@ -164,7 +165,7 @@ module.exports = {
 
   async execute(interaction) {
     const settings = getEconCalSettings(interaction.guild.id);
-    return interaction.reply({ ...buildMainPanel(interaction.guild, settings), ephemeral: true });
+    return interaction.reply({ ...buildMainPanel(interaction.guild, settings), flags: MessageFlags.Ephemeral });
   },
 
   // ── Panel buttons ────────────────────────────────────────────────────────

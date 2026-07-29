@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, MessageFlags } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { getNewsFeedSettings, setNewsFeedSettings } = require('../../utils/modConfig');
 const { TOPICS } = require('../../utils/newsTopics');
@@ -69,7 +69,7 @@ module.exports = {
 
     if (sub === 'topics') {
       const settings = getNewsFeedSettings(guildId);
-      return interaction.reply({ ...buildTopicsPanel(interaction.guild, settings), ephemeral: true });
+      return interaction.reply({ ...buildTopicsPanel(interaction.guild, settings), flags: MessageFlags.Ephemeral });
     }
 
     // status
@@ -83,7 +83,7 @@ module.exports = {
         `**Channel:** ${channel ? `${channel}` : '— Not set —'}\n` +
         `**Topics:** ${topicLabels.length ? topicLabels.join(', ') : 'All (none picked) — narrow it down with `/newsfeed topics`'}\n` +
         `**Source:** Financial Juice (live, ~20s polling)`,
-    }, interaction.guild)], ephemeral: true });
+    }, interaction.guild)], flags: MessageFlags.Ephemeral });
   },
 
   // ── Topics select menu ──────────────────────────────────────────────────

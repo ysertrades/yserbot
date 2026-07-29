@@ -6,6 +6,7 @@ const {
   EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
   RoleSelectMenuBuilder, ChannelSelectMenuBuilder,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
+  MessageFlags,
 } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
@@ -301,7 +302,7 @@ async function launchGiveaway(interaction, data, sessionId) {
   }
 
   const channel = interaction.guild.channels.cache.get(channelId);
-  if (!channel) return interaction.reply({ content: '❌ Target channel not found.', ephemeral: true });
+  if (!channel) return interaction.reply({ content: '❌ Target channel not found.', flags: MessageFlags.Ephemeral });
 
   const createdAt     = Date.now();
   const endTime        = createdAt + durationMs;
@@ -489,16 +490,16 @@ async function endGiveaway(message, meta) {
 async function earlyEndGiveaway(interaction, msgId) {
   const record = getActiveGiveaway(msgId);
   if (!record || record.guildId !== interaction.guild.id) {
-    return interaction.reply({ content: '❌ No active giveaway found with that selection.', ephemeral: true });
+    return interaction.reply({ content: '❌ No active giveaway found with that selection.', flags: MessageFlags.Ephemeral });
   }
   let msg;
   try {
     const ch = await interaction.guild.channels.fetch(record.channelId);
     msg = await ch.messages.fetch(msgId);
   } catch {
-    return interaction.reply({ content: '❌ Couldn\'t find the original giveaway message (it may have been deleted).', ephemeral: true });
+    return interaction.reply({ content: '❌ Couldn\'t find the original giveaway message (it may have been deleted).', flags: MessageFlags.Ephemeral });
   }
-  await interaction.reply({ content: `✅ Ending **${record.prize}** now…`, ephemeral: true });
+  await interaction.reply({ content: `✅ Ending **${record.prize}** now…`, flags: MessageFlags.Ephemeral });
   await endGiveaway(msg, {
     prize: record.prize, winnersCount: record.winnersCount, imageUrl: record.imageUrl,
     hostId: record.hostId, guildId: record.guildId, bonusRoleId: record.bonusRoleId,
@@ -629,7 +630,7 @@ module.exports = {
       return interaction.reply({
         embeds: [buildSetupEmbed(data, interaction.guild)],
         components: buildSetupRows(sessionId, data),
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
@@ -641,7 +642,7 @@ module.exports = {
     if (sub === 'reroll') {
       const shortId = interaction.options.getString('giveaway');
       const result = await performReroll(interaction.guild, shortId);
-      if (result.error) return interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
+      if (result.error) return interaction.reply({ content: `❌ ${result.error}`, flags: MessageFlags.Ephemeral });
       return interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(GOLD)
@@ -653,7 +654,7 @@ module.exports = {
 
     if (sub === 'list') {
       const payload = buildListPayload(interaction.guild.id, interaction.guild);
-      return interaction.reply({ ...payload, ephemeral: true });
+      return interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
     }
   },
 
@@ -664,9 +665,9 @@ module.exports = {
     const data = global.giveawaySessions.get(sessionId);
 
     if (!data)
-      return interaction.reply({ content: '⌛ This setup session has expired. Run `/giveaway create` again.', ephemeral: true });
+      return interaction.reply({ content: '⌛ This setup session has expired. Run `/giveaway create` again.', flags: MessageFlags.Ephemeral });
     if (data.userId !== interaction.user.id)
-      return interaction.reply({ content: '❌ This setup panel belongs to someone else.', ephemeral: true });
+      return interaction.reply({ content: '❌ This setup panel belongs to someone else.', flags: MessageFlags.Ephemeral });
 
     if (action === 'cancel') {
       global.giveawaySessions.delete(sessionId);
@@ -742,7 +743,7 @@ module.exports = {
     const data = global.giveawaySessions.get(sessionId);
 
     if (!data)
-      return interaction.reply({ content: '⌛ Session expired. Run `/giveaway create` again.', ephemeral: true });
+      return interaction.reply({ content: '⌛ Session expired. Run `/giveaway create` again.', flags: MessageFlags.Ephemeral });
 
     const value = interaction.fields.getTextInputValue('value').trim();
 
@@ -753,7 +754,7 @@ module.exports = {
 
       case 'duration': {
         const ms = parseDuration(value);
-        if (!ms) return interaction.reply({ content: '❌ Invalid duration. Use formats like `1h`, `30m`, `2d`.', ephemeral: true });
+        if (!ms) return interaction.reply({ content: '❌ Invalid duration. Use formats like `1h`, `30m`, `2d`.', flags: MessageFlags.Ephemeral });
         data.duration = value;
         data.durationMs = ms;
         break;
@@ -762,7 +763,7 @@ module.exports = {
       case 'winners': {
         const n = parseInt(value, 10);
         if (isNaN(n) || n < 1 || n > MAX_WINNERS)
-          return interaction.reply({ content: `❌ Winners must be a number between **1** and **${MAX_WINNERS}**.`, ephemeral: true });
+          return interaction.reply({ content: `❌ Winners must be a number between **1** and **${MAX_WINNERS}**.`, flags: MessageFlags.Ephemeral });
         data.winners = n;
         break;
       }
@@ -779,7 +780,7 @@ module.exports = {
         if (!value) { data.minAccountAgeDays = 0; break; }
         const days = parseInt(value, 10);
         if (isNaN(days) || days < 0 || days > 3650)
-          return interaction.reply({ content: '❌ Enter a whole number of days (0–3650), or leave blank for none.', ephemeral: true });
+          return interaction.reply({ content: '❌ Enter a whole number of days (0–3650), or leave blank for none.', flags: MessageFlags.Ephemeral });
         data.minAccountAgeDays = days;
         break;
       }
@@ -797,7 +798,7 @@ module.exports = {
     const [, field, sessionId] = interaction.customId.split(':');
     const data = global.giveawaySessions.get(sessionId);
     if (!data) return interaction.update({ content: '⌛ Session expired. Run `/giveaway create` again.', embeds: [], components: [] });
-    if (data.userId !== interaction.user.id) return interaction.reply({ content: '❌ This setup panel belongs to someone else.', ephemeral: true });
+    if (data.userId !== interaction.user.id) return interaction.reply({ content: '❌ This setup panel belongs to someone else.', flags: MessageFlags.Ephemeral });
 
     const roleId = interaction.values[0];
     if (field === 'requiredrole') data.requiredRoleId = roleId;
@@ -811,7 +812,7 @@ module.exports = {
     const [, sessionId] = interaction.customId.split(':');
     const data = global.giveawaySessions.get(sessionId);
     if (!data) return interaction.update({ content: '⌛ Session expired. Run `/giveaway create` again.', embeds: [], components: [] });
-    if (data.userId !== interaction.user.id) return interaction.reply({ content: '❌ This setup panel belongs to someone else.', ephemeral: true });
+    if (data.userId !== interaction.user.id) return interaction.reply({ content: '❌ This setup panel belongs to someone else.', flags: MessageFlags.Ephemeral });
 
     data.channelId = interaction.values[0];
     return interaction.update({ embeds: [buildSetupEmbed(data, interaction.guild)], components: buildSetupRows(sessionId, data) });

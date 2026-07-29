@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { randomInt } = require('node:crypto');
 const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { hasEffect, setEffect } = require('../../utils/effectsManager');
@@ -48,9 +48,9 @@ module.exports = {
     const target = interaction.options.getUser('target');
 
     if (target.id === userId)
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Nice Try').setDescription('You can\'t rob yourself.')], ephemeral: true });
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Nice Try').setDescription('You can\'t rob yourself.')], flags: MessageFlags.Ephemeral });
     if (target.bot)
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ No Can Do').setDescription('Bots don\'t carry coins.')], ephemeral: true });
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ No Can Do').setDescription('Bots don\'t carry coins.')], flags: MessageFlags.Ephemeral });
 
     const cd = checkCooldown(userId, 'rob', ROB_COOLDOWN);
     if (cd > 0) {
@@ -58,7 +58,7 @@ module.exports = {
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0xFF4757)
         .setTitle('⏳  Laying Low')
-        .setDescription(`You're still on the run from your last job.\nTry again <t:${ts}:R>.`)], ephemeral: true });
+        .setDescription(`You're still on the run from your last job.\nTry again <t:${ts}:R>.`)], flags: MessageFlags.Ephemeral });
     }
 
     // Check if target has an active rob shield
@@ -76,7 +76,7 @@ module.exports = {
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0xFF4757)
         .setTitle('🪙  Not Worth the Risk')
-        .setDescription(`<@${target.id}> only has **${fmt(targetBal)}** coins — not worth getting caught for.`)], ephemeral: true });
+        .setDescription(`<@${target.id}> only has **${fmt(targetBal)}** coins — not worth getting caught for.`)], flags: MessageFlags.Ephemeral });
 
     setCooldown(userId, 'rob');
     const won = _rand() < SUCCESS_RATE;

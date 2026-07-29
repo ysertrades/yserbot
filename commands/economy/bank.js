@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
@@ -78,7 +78,7 @@ module.exports = {
       const amount = interaction.options.getInteger('amount');
       const wallet = getBalance(userId);
       if (wallet < amount)
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Insufficient Wallet').setDescription(`You only have **${fmt(wallet)}** coins in your wallet.`)], ephemeral: true });
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Insufficient Wallet').setDescription(`You only have **${fmt(wallet)}** coins in your wallet.`)], flags: MessageFlags.Ephemeral });
 
       removeCoins(userId, amount);
       const bankData = getBank(userId);
@@ -101,7 +101,7 @@ module.exports = {
       const amount   = interaction.options.getInteger('amount');
       const bankData = getBank(userId);
       if (bankData.balance < amount)
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Insufficient Bank Balance').setDescription(`Your bank holds **${fmt(bankData.balance)}** coins.`)], ephemeral: true });
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Insufficient Bank Balance').setDescription(`Your bank holds **${fmt(bankData.balance)}** coins.`)], flags: MessageFlags.Ephemeral });
 
       bankData.balance -= amount;
       saveBank(userId, bankData);
@@ -123,7 +123,7 @@ module.exports = {
       const { interest, periods } = calcInterest(bankData);
       if (interest <= 0) {
         const nextTs = Math.floor((bankData.lastInterest + PERIOD_MS) / 1000);
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('⏳ No Interest Yet').setDescription(`Next interest period: <t:${nextTs}:R>`)], ephemeral: true });
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('⏳ No Interest Yet').setDescription(`Next interest period: <t:${nextTs}:R>`)], flags: MessageFlags.Ephemeral });
       }
       bankData.lastInterest += periods * PERIOD_MS;
       bankData.balance      += interest;

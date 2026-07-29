@@ -5,6 +5,7 @@ const {
   ModalBuilder, TextInputBuilder, TextInputStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
   AutoModerationRuleTriggerType, AutoModerationActionType, AutoModerationRuleEventType,
+  MessageFlags,
 } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { getAutoModSettings, setAutoModSettings, isAutoModExempt, getModLogChannel } = require('../../utils/modConfig');
@@ -69,7 +70,7 @@ module.exports = {
 
     if (sub === 'panel') {
       const settings = getAutoModSettings(guildId);
-      return interaction.reply({ embeds: [buildPanelEmbed(interaction.guild, settings)], components: [buildPanelRow(settings)], ephemeral: true });
+      return interaction.reply({ embeds: [buildPanelEmbed(interaction.guild, settings)], components: [buildPanelRow(settings)], flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'addword') {
@@ -102,23 +103,23 @@ module.exports = {
           description: settings.customWords.length ? settings.customWords.map(w => `\`${w}\``).join(', ') : 'No custom words added yet. Use `/automod addword`.',
           footer: 'This is in addition to the built-in filter list',
         }, interaction.guild)],
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     if (sub === 'cooldowns') {
-      return interaction.reply({ ...buildCooldownListPayload(interaction.guild), ephemeral: true });
+      return interaction.reply({ ...buildCooldownListPayload(interaction.guild), flags: MessageFlags.Ephemeral });
     }
 
     if (sub === 'requests') {
-      return interaction.reply({ ...buildRequestsListPayload(interaction.guild), ephemeral: true });
+      return interaction.reply({ ...buildRequestsListPayload(interaction.guild), flags: MessageFlags.Ephemeral });
     }
   },
 
   // ── Panel toggle button ─────────────────────────────────────────────────
   async handleToggle(interaction, feature) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({ content: '❌ Only Administrators can change auto-mod settings.', ephemeral: true });
+      return interaction.reply({ content: '❌ Only Administrators can change auto-mod settings.', flags: MessageFlags.Ephemeral });
     }
     const current = getAutoModSettings(interaction.guild.id);
 
@@ -129,7 +130,7 @@ module.exports = {
     if (feature === 'mentionSpamProtection') {
       const result = await setMentionSpamRule(interaction.guild, !current.mentionSpamProtection);
       if (!result.ok) {
-        return interaction.reply({ content: `❌ Couldn't update mass-mention protection: ${result.error}\nMake sure the bot has **Manage Server** permission.`, ephemeral: true });
+        return interaction.reply({ content: `❌ Couldn't update mass-mention protection: ${result.error}\nMake sure the bot has **Manage Server** permission.`, flags: MessageFlags.Ephemeral });
       }
       const settings = getAutoModSettings(interaction.guild.id);
       return interaction.update({ embeds: [buildPanelEmbed(interaction.guild, settings)], components: [buildPanelRow(settings)] });
@@ -325,9 +326,9 @@ async function handleLinkViolation(message, client) {
 
 async function handleLinkRequestButton(interaction, requestId) {
   const request = getRequest(requestId);
-  if (!request) return interaction.reply({ content: '⌛ This request has expired.', ephemeral: true });
-  if (request.userId !== interaction.user.id) return interaction.reply({ content: '❌ This isn\'t your request.', ephemeral: true });
-  if (request.status !== 'pending') return interaction.reply({ content: `This request has already been **${request.status}**.`, ephemeral: true });
+  if (!request) return interaction.reply({ content: '⌛ This request has expired.', flags: MessageFlags.Ephemeral });
+  if (request.userId !== interaction.user.id) return interaction.reply({ content: '❌ This isn\'t your request.', flags: MessageFlags.Ephemeral });
+  if (request.status !== 'pending') return interaction.reply({ content: `This request has already been **${request.status}**.`, flags: MessageFlags.Ephemeral });
 
   const modal = new ModalBuilder().setCustomId(`automod_link_modal:${requestId}`).setTitle('Request to Post a Link').addComponents(
     new ActionRowBuilder().addComponents(
@@ -374,7 +375,7 @@ function buildRequestCardRow(requestId) {
 
 async function handleLinkModalSubmit(interaction, requestId) {
   const request = getRequest(requestId);
-  if (!request) return interaction.reply({ content: '⌛ This request has expired.', ephemeral: true });
+  if (!request) return interaction.reply({ content: '⌛ This request has expired.', flags: MessageFlags.Ephemeral });
 
   const link   = interaction.fields.getTextInputValue('link').trim();
   const reason = interaction.fields.getTextInputValue('reason').trim();
@@ -383,7 +384,7 @@ async function handleLinkModalSubmit(interaction, requestId) {
   const guild          = interaction.client.guilds.cache.get(request.guildId);
   const modLogChannel  = guild ? getModLogChannel(guild) : null;
   if (!guild || !modLogChannel) {
-    return interaction.reply({ content: '⚠️ This server hasn\'t set up a mod-log channel yet, so your request can\'t be reviewed. Contact an admin about `/config logs`.', ephemeral: true });
+    return interaction.reply({ content: '⚠️ This server hasn\'t set up a mod-log channel yet, so your request can\'t be reviewed. Contact an admin about `/config logs`.', flags: MessageFlags.Ephemeral });
   }
 
   await modLogChannel.send({ embeds: [buildRequestCardEmbed(updated)], components: [buildRequestCardRow(requestId)] }).catch(() => {});
@@ -398,12 +399,12 @@ async function handleLinkModalSubmit(interaction, requestId) {
 // permit can actually be granted rather than a one-time-only exception.
 async function handleLinkApprove(interaction, requestId) {
   if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
-    return interaction.reply({ content: '❌ Only Administrators can approve link requests.', ephemeral: true });
+    return interaction.reply({ content: '❌ Only Administrators can approve link requests.', flags: MessageFlags.Ephemeral });
   }
   const request = getRequest(requestId);
-  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', ephemeral: true });
+  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', flags: MessageFlags.Ephemeral });
   if (request.status === 'approved' || request.status === 'denied') {
-    return interaction.reply({ content: `This request was already **${request.status}**.`, ephemeral: true });
+    return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
   }
 
   const modal = new ModalBuilder().setCustomId(`automod_link_approve_modal:${requestId}`).setTitle('Approve Link Request').addComponents(
@@ -417,18 +418,18 @@ async function handleLinkApprove(interaction, requestId) {
 
 async function handleLinkApproveModalSubmit(interaction, requestId) {
   if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
-    return interaction.reply({ content: '❌ Only Administrators can approve link requests.', ephemeral: true });
+    return interaction.reply({ content: '❌ Only Administrators can approve link requests.', flags: MessageFlags.Ephemeral });
   }
   const request = getRequest(requestId);
-  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', ephemeral: true });
+  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', flags: MessageFlags.Ephemeral });
   if (request.status === 'approved' || request.status === 'denied') {
-    return interaction.reply({ content: `This request was already **${request.status}**.`, ephemeral: true });
+    return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
   }
 
   const raw   = interaction.fields.getTextInputValue('cooldown').trim();
   const match = raw.match(/^(\d+)([smhd])$/i);
   if (!match) {
-    return interaction.reply({ content: '❌ Invalid cooldown format. Use something like `30m`, `1h`, `24h`, or `7d`.', ephemeral: true });
+    return interaction.reply({ content: '❌ Invalid cooldown format. Use something like `30m`, `1h`, `24h`, or `7d`.', flags: MessageFlags.Ephemeral });
   }
   const cooldownMs = parseInt(match[1], 10) * { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2].toLowerCase()];
 
@@ -455,12 +456,12 @@ async function handleLinkApproveModalSubmit(interaction, requestId) {
 
 async function handleLinkDeny(interaction, requestId) {
   if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
-    return interaction.reply({ content: '❌ Only Administrators can deny link requests.', ephemeral: true });
+    return interaction.reply({ content: '❌ Only Administrators can deny link requests.', flags: MessageFlags.Ephemeral });
   }
   const request = getRequest(requestId);
-  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', ephemeral: true });
+  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', flags: MessageFlags.Ephemeral });
   if (request.status === 'approved' || request.status === 'denied') {
-    return interaction.reply({ content: `This request was already **${request.status}**.`, ephemeral: true });
+    return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
   }
   updateRequest(requestId, { status: 'denied' });
 
@@ -607,13 +608,13 @@ async function handleCooldownButton(interaction) {
 async function handleCooldownAdjustModalSubmit(interaction, userId) {
   const rec = getRecord(interaction.guild.id, userId);
   if (!rec) {
-    return interaction.reply({ content: '⌛ That cooldown no longer exists — it may have already been deleted or expired.', ephemeral: true });
+    return interaction.reply({ content: '⌛ That cooldown no longer exists — it may have already been deleted or expired.', flags: MessageFlags.Ephemeral });
   }
 
   const raw   = interaction.fields.getTextInputValue('cooldown').trim();
   const match = raw.match(/^(\d+)([smhd])$/i);
   if (!match) {
-    return interaction.reply({ content: '❌ Invalid cooldown format. Use something like `30m`, `1h`, `24h`, or `7d`.', ephemeral: true });
+    return interaction.reply({ content: '❌ Invalid cooldown format. Use something like `30m`, `1h`, `24h`, or `7d`.', flags: MessageFlags.Ephemeral });
   }
   const cooldownMs = parseInt(match[1], 10) * { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2].toLowerCase()];
 

@@ -10,7 +10,7 @@
  * just supply their reward table, visual generator, and copy.
  */
 
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('./economyManager');
 const { getEffect } = require('./effectsManager');
 const { readJson, writeJson } = require('./jsonStorage');
@@ -66,7 +66,7 @@ function buildGatherCommand(cfg) {
         .setTitle(cooldownTitle)
         .setDescription(`You've used all your ${sessionNoun} for this session.\nYou need to wait **${hours}h ${minutes}m** before ${cooldownVerb} again.`);
       if (isButton) return interaction.update({ embeds: [cooldownEmbed], components: [], attachments: [] });
-      return interaction.reply({ embeds: [cooldownEmbed], ephemeral: true });
+      return interaction.reply({ embeds: [cooldownEmbed], flags: MessageFlags.Ephemeral });
     }
 
     let remaining = getRemaining(userId, action);
@@ -135,7 +135,7 @@ function buildGatherCommand(cfg) {
       const [prefix, act, userId] = interaction.customId.split(':');
 
       if (interaction.user.id !== userId) {
-        return interaction.reply({ content: "❌ This isn't your session.", ephemeral: true });
+        return interaction.reply({ content: "❌ This isn't your session.", flags: MessageFlags.Ephemeral });
       }
 
       if (prefix === 'gather_close') {
