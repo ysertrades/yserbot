@@ -92,15 +92,16 @@ function generateEconEventCard({ title, currency, impact, forecast, previous, ti
   fillRoundedRectBlend(png, chipX, chipY, chipW, chipH, 10, accent, 0.2);
   drawTextCentered(png, currency || '—', chipX + chipW / 2, chipY + 10, 2, WHITE);
 
-  // ── Time / status chip, top-right ─────────────────────────────────────────
+  // ── Time / status chip, top-right — same bold weight as the title/currency
+  //    chip (scale 2) instead of the old scale-1 fine print that got lost ──
   const timeText = (timeLabel || '').toUpperCase();
-  const timeChipW = Math.min(280, 32 + textWidth(timeText, 1));
+  const timeChipW = Math.min(340, 40 + textWidth(timeText, 2));
   const timeChipX = W - 24 - timeChipW;
-  fillRoundedRectBlend(png, timeChipX, 26, timeChipW, 30, 8, WHITE, 0.09);
-  drawTextCentered(png, timeText, timeChipX + timeChipW / 2, 35, 1, WHITE);
+  fillRoundedRectBlend(png, timeChipX, 28, timeChipW, 34, 10, WHITE, 0.14);
+  drawTextCentered(png, timeText, timeChipX + timeChipW / 2, 38, 2, WHITE);
 
   // ── Title, word-wrapped to 2 lines max ────────────────────────────────────
-  const titleMaxW = W - 260;
+  const titleMaxW = timeChipX - 138 - 20;
   const wrapped = wrapText(String(title || '').toUpperCase(), 2, titleMaxW);
   const shown = wrapped.slice(0, 2);
   if (wrapped.length > 2) {
