@@ -401,6 +401,11 @@ module.exports = {
           return client.commands.get('econcal')?.handlePanelButton(interaction, id.slice('econcal_panel:'.length));
         }
 
+        // Trivia — answer buttons
+        if (id.startsWith('trivia_answer:')) {
+          return client.commands.get('trivia')?.handleAnswer(interaction);
+        }
+
         // Auto-mod — link request flow
         if (id.startsWith('automod_link_request:')) {
           return client.commands.get('automod')?.handleLinkRequestButton(interaction, id.slice('automod_link_request:'.length));

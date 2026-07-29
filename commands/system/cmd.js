@@ -21,7 +21,7 @@ const PUBLIC_COMMANDS = [
   'help', 'ping', 'userinfo', 'rank', 'leaderboard',
   'shop', 'inventory', 'balance', 'daily', 'casino',
   'report', 'work', 'transfer', 'risk', 'poll',
-  'bank', 'rob', 'jobs', 'cards',
+  'bank', 'rob', 'jobs', 'cards', 'fish', 'mine', 'trivia',
 ];
 
 function getCmdSetup(guildId) {
