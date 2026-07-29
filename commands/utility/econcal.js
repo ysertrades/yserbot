@@ -277,8 +277,10 @@ module.exports = {
 
       const title = { today: "📅 Today's Economic Calendar", tomorrow: "📅 Tomorrow's Economic Calendar", week: "📅 This Week's Economic Calendar" }[scope];
       const emptyText = { today: 'No matching events today.', tomorrow: 'No matching events tomorrow.', week: 'No matching events this week.' }[scope];
-      const embeds = buildWeeklySummaryEmbeds(filtered, interaction.guild, title, emptyText);
-      await channel.send({ embeds });
+      const batches = buildWeeklySummaryEmbeds(filtered, interaction.guild, title, emptyText);
+      for (const batch of batches) {
+        await channel.send(batch);
+      }
       await sendTempFollowUp(interaction, { embeds: [createServerEmbed('success', { title: '📅 Posted', description: `${POST_SCOPE_LABEL[scope]} calendar summary was posted to ${channel}.` }, interaction.guild)] });
     } catch (err) {
       console.error('[ECONCAL] post-now failed:', err);
