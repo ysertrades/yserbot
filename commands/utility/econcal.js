@@ -38,8 +38,7 @@ function buildMainPanel(guild, settings) {
       `**Impact levels:** ${settings.impactFilter.length ? settings.impactFilter.join(', ') : 'All'}\n` +
       `**Currencies:** ${settings.currencyFilter.length ? settings.currencyFilter.join(', ') : 'All'}\n` +
       `**Weekly auto-post:** ${fmtWeeklyPost(settings.weeklyPost)}\n\n` +
-      `Reminders fire 15, 10 & 5 minutes before each release (role pinged); the release itself posts at the exact time with no ping. Data from ForexFactory (free mirror, refreshed every ~3h).\n\n` +
-      `Click a button below to configure that part.`,
+      `⏰ 15-min reminder (pinged) → 🔔 live release (no ping) · ForexFactory, ~3h refresh`,
   }, guild);
 
   const row1 = new ActionRowBuilder().addComponents(
@@ -48,19 +47,17 @@ function buildMainPanel(guild, settings) {
     new ButtonBuilder().setCustomId('econcal_panel:toggle').setLabel(settings.enabled ? 'Disable' : 'Enable').setEmoji(settings.enabled ? '🔴' : '🟢').setStyle(settings.enabled ? ButtonStyle.Danger : ButtonStyle.Success),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('econcal_panel:impact').setLabel('Impact Levels').setEmoji('📊').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('econcal_panel:impact').setLabel('Impact').setEmoji('📊').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('econcal_panel:currency').setLabel('Currencies').setEmoji('💱').setStyle(ButtonStyle.Secondary),
-  );
-  const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('econcal_panel:weekly').setLabel('Weekly Post').setEmoji('🗓️').setStyle(ButtonStyle.Secondary),
   );
-  const row4 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('econcal_panel:postday').setLabel('Post Today Now').setEmoji('📨').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('econcal_panel:posttomorrow').setLabel('Post Tomorrow Now').setEmoji('📨').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('econcal_panel:postweek').setLabel('Post This Week Now').setEmoji('📨').setStyle(ButtonStyle.Primary),
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('econcal_panel:postday').setLabel('Today').setEmoji('📨').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('econcal_panel:posttomorrow').setLabel('Tomorrow').setEmoji('📨').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('econcal_panel:postweek').setLabel('This Week').setEmoji('📨').setStyle(ButtonStyle.Primary),
   );
 
-  return { embeds: [embed], components: [row1, row2, row3, row4] };
+  return { embeds: [embed], components: [row1, row2, row3] };
 }
 
 // ── Channel sub-view ─────────────────────────────────────────────────────
