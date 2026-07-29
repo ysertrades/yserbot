@@ -5,23 +5,22 @@ const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 const MOD_COMMANDS = [
-  'warn', 'ban', 'kick', 'mute', 'unmute', 'unban',
-  'purge', 'report', 'warnings', 'clearwarnings', 'warn-settings',
-  'lock', 'unlock',
+  'ban', 'clearwarnings', 'kick', 'lock', 'mute', 'purge',
+  'report', 'unban', 'unlock', 'unmute', 'warn', 'warn-settings', 'warnings',
 ];
 
 const ADMIN_COMMANDS = [
-  'config', 'cmd', 'casino-settings', 'embed', 'autoreply',
-  'button', 'ticket', 'schedule', 'warn-settings', 'levelsettings',
-  'giveaway', 'give-coins', 'backup', 'restore', 'cardsettings', 'shopsettings',
-  'verify', 'automod', 'modlog', 'newsfeed', 'econcal',
+  'automod', 'autoreply', 'backup', 'button', 'cardsettings', 'casino-settings',
+  'cmd', 'config', 'econcal', 'embed', 'give-coins', 'giveaway',
+  'levelsettings', 'modlog', 'newsfeed', 'restore', 'schedule', 'shopsettings',
+  'ticket', 'verify', 'warn-settings',
 ];
 
 const PUBLIC_COMMANDS = [
-  'help', 'ping', 'userinfo', 'rank', 'leaderboard',
-  'shop', 'inventory', 'balance', 'daily', 'casino',
-  'report', 'work', 'transfer', 'risk', 'poll',
-  'bank', 'rob', 'jobs', 'cards', 'fish', 'mine', 'trivia',
+  'balance', 'bank', 'cards', 'casino', 'daily', 'fish',
+  'help', 'inventory', 'jobs', 'leaderboard', 'mine', 'ping',
+  'poll', 'rank', 'report', 'risk', 'rob', 'shop',
+  'transfer', 'trivia', 'userinfo', 'work',
 ];
 
 function getCmdSetup(guildId) {
