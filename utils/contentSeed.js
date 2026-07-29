@@ -88,9 +88,28 @@ const REPORT_GUIDE_TEMPLATE = {
   }],
 };
 
+const NYSE_OPEN_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#2ECC71',
+    footer: 'YSER Flow • New York Session',
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:nyseOpen',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
 const TEMPLATE_SEEDS = {
   'economy-showcase': ECONOMY_SHOWCASE_TEMPLATE,
   'report-guide':      REPORT_GUIDE_TEMPLATE,
+  'nyse-open':         NYSE_OPEN_TEMPLATE,
 };
 
 function seedShopDefaults() {
