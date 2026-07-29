@@ -15,8 +15,7 @@ module.exports = {
     .setDescription('Configure server settings')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand(s => s.setName('welcome').setDescription('Set welcome channel')
-      .addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true).addChannelTypes(ChannelType.GuildText))
-      .addStringOption(o => o.setName('message').setDescription('Message ({user}, {server})').setRequired(false)))
+      .addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true).addChannelTypes(ChannelType.GuildText)))
     .addSubcommand(s => s.setName('leave').setDescription('Set leave channel')
       .addChannelOption(o => o.setName('channel').setDescription('Channel').setRequired(true).addChannelTypes(ChannelType.GuildText))
       .addStringOption(o => o.setName('message').setDescription('Message').setRequired(false)))
@@ -38,8 +37,6 @@ module.exports = {
 
     if (sub === 'welcome') {
       config[guildId].welcomeChannel = interaction.options.getChannel('channel').id;
-      const msg = interaction.options.getString('message');
-      if (msg) config[guildId].welcomeMessage = msg;
       writeJson('config.json', config);
       await sendTempReply(interaction, createServerEmbed('success', { title: 'Welcome Configured', description: 'Welcome channel set.' }, interaction.guild));
 

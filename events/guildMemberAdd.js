@@ -1,9 +1,11 @@
-const { Events, EmbedBuilder } = require('discord.js');
+const { Events, EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const { PNG } = require('pngjs');
 const { readJson, writeJson } = require('../utils/jsonStorage');
-const { createServerEmbed } = require('../utils/embedBuilder');
+const { createEmbed } = require('../utils/embedBuilder');
 const { addCoins } = require('../utils/economyManager');
 const { getModLogSettings } = require('../utils/modConfig');
 const { postCustomLog } = require('../utils/modLog');
+const { generateWelcomeCardImage } = require('../utils/welcomeVisual');
 
 const WELCOME_BONUS = 500;
 const MEMBER_HISTORY_FILE = 'member_history.json';
@@ -33,6 +35,20 @@ function ordinal(n) {
         case 2: return `${n}nd`;
         case 3: return `${n}rd`;
         default: return `${n}th`;
+    }
+}
+
+// A network hiccup or a decode failure here should never break the join
+// flow — welcomeVisual.js already draws a graceful initial-letter fallback
+// when handed null, so any failure just falls back to that.
+async function fetchAvatarPng(member) {
+    try {
+        const url = member.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return PNG.sync.read(Buffer.from(await res.arrayBuffer()));
+    } catch {
+        return null;
     }
 }
 
@@ -75,25 +91,18 @@ module.exports = {
         if (guildConfig.welcomeChannel) {
             const channel = member.guild.channels.cache.get(guildConfig.welcomeChannel);
             if (channel) {
-                const description = guildConfig.welcomeMessage
-                    ? guildConfig.welcomeMessage.replace('{user}', `<@${member.id}>`).replace('{server}', member.guild.name)
-                    : isReturning
-                        ? `**<@${member.id}>** is back in **${member.guild.name}** — welcome home! 👋`
-                        : `**<@${member.id}>** just landed in **${member.guild.name}** — grab a seat, the fun's already started! 🎈`;
-
-                const fields = [{ name: '🎫 Member No.', value: ordinal(member.guild.memberCount), inline: true }];
-                fields.push(eligibleForBonus
-                    ? { name: '🪙 Welcome Bonus', value: `**${WELCOME_BONUS.toLocaleString()}** coins`, inline: true }
-                    : { name: '👋 Welcome Back', value: 'Bonus already claimed on a previous join', inline: true });
-
-                const embed = createServerEmbed('welcome', {
-                    title: isReturning ? '🌿 A Familiar Face Returns!' : '🌱 A New Member Has Sprouted!',
-                    description,
-                    thumbnail: member.user.displayAvatarURL({ size: 256, dynamic: true }),
-                    fields,
-                    footer: `Welcome to ${member.guild.name} 🌿`,
-                }, member.guild);
-                try { await channel.send({ embeds: [embed] }); } catch {}
+                const avatarPng = await fetchAvatarPng(member);
+                const image = generateWelcomeCardImage({
+                    avatarPng,
+                    username: member.displayName,
+                    serverName: member.guild.name,
+                    memberLabel: `${ordinal(member.guild.memberCount)} Member`,
+                    bonusText: eligibleForBonus ? `+${WELCOME_BONUS.toLocaleString()} Coins` : null,
+                    isReturning,
+                });
+                const embed = createEmbed('welcome', { image: 'attachment://welcome.png' });
+                const file = new AttachmentBuilder(image, { name: 'welcome.png' });
+                try { await channel.send({ content: `<@${member.id}>`, embeds: [embed], files: [file], allowedMentions: { users: [member.id] } }); } catch {}
             }
         }
     },
