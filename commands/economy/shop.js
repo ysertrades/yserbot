@@ -5,7 +5,7 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
+const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown, clearCooldownsMatching } = require('../../utils/economyManager');
 const { EFFECT_TYPES, setEffect, getActiveEffectsList } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { MAX_EQUIPPED, getEquipped, toggleEquip } = require('../../utils/badgeManager');
@@ -49,6 +49,7 @@ function rarityColor(type) {
   const map = {
     coin_boost: 0xFFD700, rob_shield: 0x3498DB, xp_boost: 0x9B59B6, daily_boost: 0xF39C12,
     card_magnet: 0xE91E63, vip_casino_pass: 0xF1C40F, badge: 0x1ABC9C, mystery_box: 0x8E44AD,
+    cooldown_skip: 0x2ECC71,
   };
   return map[type] || 0x2ECC71;
 }
@@ -215,6 +216,29 @@ function useItem(userId, guildId, itemId) {
         ? 'Now showing on your `/rank` card.'
         : 'Removed from your `/rank` card. You still own it — use it again to re-equip.')
       .setFooter({ text: `${result.equipped.length}/${MAX_EQUIPPED} badge slots used` })
+      .setTimestamp()] };
+  }
+
+  if (item.type === 'cooldown_skip') {
+    // Rate-limit the item itself — otherwise it'd just let you re-stack
+    // cooldown skips back to back and defeat the point of cooldowns entirely.
+    const itemCd = checkCooldown(userId, 'cooldown_skip_item', 2 * 60 * 1000);
+    if (itemCd > 0) {
+      return { embeds: [errorEmbed('Still Recharging', `You can use another **${item.name}** in **${Math.ceil(itemCd / 1000)}s**.`)] };
+    }
+
+    const removed = removeFromInv(userId, guildId, itemId);
+    if (!removed) return { embeds: [errorEmbed('Failed', 'Could not remove from inventory.')] };
+
+    const GAME_ACTIONS = new Set(['fish', 'mine', 'trivia', 'work', 'casino']);
+    clearCooldownsMatching(userId, action => GAME_ACTIONS.has(action) || action.startsWith('job_'));
+    setCooldown(userId, 'cooldown_skip_item');
+
+    return { embeds: [new EmbedBuilder()
+      .setColor(rarityColor('cooldown_skip'))
+      .setTitle(`${item.emoji || '⏩'}  ${item.name} Used!`)
+      .setDescription('Your **fishing**, **mining**, **trivia**, **work**, **jobs**, and **casino** cooldowns are all clear — go again right now!')
+      .setFooter({ text: 'This item is on a 2-minute cooldown of its own' })
       .setTimestamp()] };
   }
 

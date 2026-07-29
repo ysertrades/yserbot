@@ -3,6 +3,7 @@ const { startScheduleRunner } = require('../utils/scheduleRunner');
 const { startNewsFeedRunner } = require('../utils/newsFeed');
 const { startEconCalRunner } = require('../utils/econCalRunner');
 const { startLotteryRunner } = require('../utils/lotteryRunner');
+const { seedDefaultContent } = require('../utils/contentSeed');
 const { restoreGiveaways } = require('../commands/utility/giveaway');
 
 // Registers every command in client.commands with Discord on every boot, so
@@ -34,6 +35,7 @@ module.exports = {
         startNewsFeedRunner(client);
         startEconCalRunner(client);
         startLotteryRunner(client);
+        seedDefaultContent(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));
     },
 };
