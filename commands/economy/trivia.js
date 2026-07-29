@@ -110,7 +110,7 @@ async function resolveAnswer(session, choice) {
   if (correct) {
     reward = computeReward(session.correctCount);
     const boost = getEffect(session.userId, session.guildId, 'coin_boost');
-    if (boost) reward = Math.floor(reward * 1.5);
+    if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
     addCoins(session.userId, reward);
     session.correctCount++;
   }

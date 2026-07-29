@@ -101,7 +101,7 @@ const JOBS = [
 
 function buildJobsEmbed(userId, guildId) {
   const boost    = getEffect(userId, guildId, 'coin_boost');
-  const boostLine = boost ? '\n💰 **Coin Boost active** — all earnings are **1.5×** this session!\n' : '';
+  const boostLine = boost ? `\n💰 **Coin Boost active** — all earnings are **${boost.multiplier || 1.5}×** this session!\n` : '';
 
   const lines = JOBS.map(j => {
     const cd    = checkCooldown(userId, `job_${j.id}`, j.cooldownMs);
@@ -123,7 +123,7 @@ function buildJobsEmbed(userId, guildId) {
     )
     .addFields(
       { name: '✅ Jobs Ready', value: `**${readyCount}** / ${JOBS.length}`, inline: true },
-      { name: '💰 Boost',      value: boost ? '**Active 1.5×**' : 'None', inline: true },
+      { name: '💰 Boost',      value: boost ? `**Active ${boost.multiplier || 1.5}×**` : 'None', inline: true },
     )
     .setFooter({ text: 'YSER Jobs  •  Click a job button to clock in  •  ⚡ = high-variance pay' })
     .setTimestamp();

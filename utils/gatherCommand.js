@@ -73,7 +73,7 @@ function buildGatherCommand(cfg) {
     const item = rollFromTable(table);
     let reward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
     const boost = getEffect(userId, guildId, 'coin_boost');
-    if (boost) reward = Math.floor(reward * 1.5);
+    if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
     addCoins(userId, reward);
 
     remaining -= 1;
@@ -84,7 +84,7 @@ function buildGatherCommand(cfg) {
     const embed = new EmbedBuilder()
       .setColor(embedColor)
       .setTitle(embedTitle)
-      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? '\n💰 *Coin Boost active — 1.5× earnings!*' : ''}`)
+      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}`)
       .setImage(`attachment://${imageName}`);
 
     let components = [];
