@@ -17,7 +17,7 @@ const TYPE_LABELS = {
   ...Object.fromEntries(Object.entries(EFFECT_TYPES).map(([id, e]) => [id, e.label])),
   badge:         '🎖️ Profile Badge (cosmetic, shown on /rank)',
   mystery_box:   '🎁 Mystery Box (random reward)',
-  cooldown_skip: '⏩ Cooldown Skip (resets game cooldowns)',
+  cooldown_skip: '⏩ Cooldown Skip (temporary — bypasses cooldowns while active)',
 };
 const NEEDS_MULTIPLIER = new Set(['coin_boost', 'vip_casino_pass']);
 const NEEDS_BADGE_ICON = new Set(['badge']);

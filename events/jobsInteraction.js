@@ -34,7 +34,7 @@ module.exports = {
       const { buildJobsEmbed, buildJobsRows } = require('../commands/economy/jobs');
       return interaction.update({
         embeds:     [buildJobsEmbed(interaction.user.id, interaction.guild?.id)],
-        components: buildJobsRows(interaction.user.id),
+        components: buildJobsRows(interaction.user.id, interaction.guild?.id),
       });
     }
 
@@ -49,7 +49,7 @@ module.exports = {
       const guildId = interaction.guild?.id;
 
       // ── On cooldown → show "still on shift" embed (styled like wheel daily limit) ──
-      const cd = checkCooldown(userId, `job_${job.id}`, job.cooldownMs);
+      const cd = checkCooldown(userId, `job_${job.id}`, job.cooldownMs, guildId);
       if (cd > 0) {
         const ts = Math.floor((Date.now() + cd) / 1000);
         const cooldownEmbed = new EmbedBuilder()

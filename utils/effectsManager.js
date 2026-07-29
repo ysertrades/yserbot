@@ -14,6 +14,7 @@ const EFFECT_TYPES = {
   daily_boost:     { label: '☀️ Daily Boost',     desc: '+50% bonus on next /daily',               duration: 48 * 60 * 60 * 1000 },
   card_magnet:     { label: '🧲 Card Magnet',     desc: '+15% bump toward rarer cards',            duration: 2 * 60 * 60 * 1000 },
   vip_casino_pass: { label: '👑 VIP Casino Pass', desc: 'Raises your personal casino max bet',     duration: 6 * 60 * 60 * 1000 },
+  cooldown_skip:   { label: '⏩ Cooldown Skip',   desc: 'Bypasses cooldowns on /work, /jobs, /fish, /mine, /trivia, /casino & the wheel\'s daily spin cap', duration: 15 * 60 * 1000 },
 };
 
 function getEffects(userId, guildId) {

@@ -56,7 +56,7 @@ function buildGatherCommand(cfg) {
 
   async function runGather(interaction, userId, isButton) {
     const guildId = interaction.guild?.id;
-    const cd = checkCooldown(userId, action, COOLDOWN_MS);
+    const cd = checkCooldown(userId, action, COOLDOWN_MS, guildId);
 
     if (cd > 0) {
       const hours   = Math.floor(cd / 3600000);

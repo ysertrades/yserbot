@@ -5,7 +5,7 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown, clearCooldownsMatching } = require('../../utils/economyManager');
+const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
 const { EFFECT_TYPES, setEffect, getEffect, getActiveEffectsList } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { MAX_EQUIPPED, getEquipped, toggleEquip } = require('../../utils/badgeManager');
@@ -216,29 +216,6 @@ function useItem(userId, guildId, itemId) {
         ? 'Now showing on your `/rank` card.'
         : 'Removed from your `/rank` card. You still own it — use it again to re-equip.')
       .setFooter({ text: `${result.equipped.length}/${MAX_EQUIPPED} badge slots used` })
-      .setTimestamp()] };
-  }
-
-  if (item.type === 'cooldown_skip') {
-    // Rate-limit the item itself — otherwise it'd just let you re-stack
-    // cooldown skips back to back and defeat the point of cooldowns entirely.
-    const itemCd = checkCooldown(userId, 'cooldown_skip_item', 2 * 60 * 1000);
-    if (itemCd > 0) {
-      return { embeds: [errorEmbed('Still Recharging', `You can use another **${item.name}** in **${Math.ceil(itemCd / 1000)}s**.`)] };
-    }
-
-    const removed = removeFromInv(userId, guildId, itemId);
-    if (!removed) return { embeds: [errorEmbed('Failed', 'Could not remove from inventory.')] };
-
-    const GAME_ACTIONS = new Set(['fish', 'mine', 'trivia', 'work', 'casino']);
-    clearCooldownsMatching(userId, action => GAME_ACTIONS.has(action) || action.startsWith('job_'));
-    setCooldown(userId, 'cooldown_skip_item');
-
-    return { embeds: [new EmbedBuilder()
-      .setColor(rarityColor('cooldown_skip'))
-      .setTitle(`${item.emoji || '⏩'}  ${item.name} Used!`)
-      .setDescription('Your **fishing**, **mining**, **trivia**, **work**, **jobs**, and **casino** cooldowns are all clear — go again right now!')
-      .setFooter({ text: 'This item is on a 2-minute cooldown of its own' })
       .setTimestamp()] };
   }
 

@@ -35,7 +35,7 @@ const STARTER_ITEMS = {
   badge_crown:         { name: 'VIP Status',        price: 25000, type: 'badge', emoji: '👑', description: 'A crown badge for your /rank card', badgeIcon: 'crown' },
   badge_diamond:       { name: 'Diamond Hands',     price: 40000, type: 'badge', emoji: '💎', description: 'A diamond badge for your /rank card', badgeIcon: 'diamond' },
   mystery_box:         { name: 'Mystery Box',       price: 15000, type: 'mystery_box', emoji: '🎁', description: 'Could be a dud, could be a 50,000 coin jackpot!' },
-  cooldown_skip:       { name: 'Cooldown Skip',     price: 25000, type: 'cooldown_skip', emoji: '⏩', description: 'Instantly resets your fish, mine, trivia, work, jobs & casino cooldowns (2 min cooldown on this item itself)' },
+  cooldown_skip:       { name: 'Cooldown Skip',     price: 25000, type: 'cooldown_skip', emoji: '⏩', description: 'For 15 minutes, bypasses cooldowns on fishing, mining, trivia, work, jobs, casino games & the wheel\'s daily spin cap', durationMs: 15 * 60 * 1000 },
 };
 
 const ECONOMY_SHOWCASE_TEMPLATE = {

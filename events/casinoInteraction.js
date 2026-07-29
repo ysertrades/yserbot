@@ -22,7 +22,8 @@ function getTodayStr() {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
-function checkWheelLimit(userId) {
+function checkWheelLimit(userId, guildId) {
+  if (guildId && getEffect(userId, guildId, 'cooldown_skip')) return { spinsLeft: Infinity, used: 0, unlimited: true };
   const data  = readJson('wheel_limits.json', {});
   const entry = data[userId] || { date: '', count: 0 };
   const today = getTodayStr();
@@ -30,7 +31,10 @@ function checkWheelLimit(userId) {
   return { spinsLeft: WHEEL_DAILY_LIMIT - entry.count, used: entry.count };
 }
 
-function recordWheelSpin(userId) {
+// While a Cooldown Skip is active, spins aren't counted at all — so the
+// real daily allowance isn't silently eaten during the unlimited window.
+function recordWheelSpin(userId, guildId) {
+  if (guildId && getEffect(userId, guildId, 'cooldown_skip')) return null;
   const data  = readJson('wheel_limits.json', {});
   const today = getTodayStr();
   const entry = (data[userId]?.date === today) ? data[userId] : { date: today, count: 0 };
@@ -290,7 +294,7 @@ async function handleButton(interaction) {
     if (bet < settings.minBet)     return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
     if (bet > maxBet)              return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
     if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(bal)}**.`, flags: 64 });
-    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
+    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
     if (cd > 0)                    return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
     removeCoins(s.userId, bet);
     updateSession(s.userId, { bet, game, bjState: null, tradeState: null, raceState: null });
@@ -457,7 +461,7 @@ async function handleModal(interaction) {
     if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
     if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
     if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
-    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
+    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
     if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
     removeCoins(s.userId, bet);
     updateSession(s.userId, { bet, game: 'roulette', rouletteState: { betType: 'straight', betValue: num } });
@@ -479,7 +483,7 @@ async function handleModal(interaction) {
   if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
   if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
 
-  const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
+  const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
   if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
 
   removeCoins(s.userId, bet);
@@ -1337,7 +1341,7 @@ async function resolveWheel(interaction, s) {
   if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: 64 });
 
   // ── Daily spin limit ───────────────────────────────────────────────────────
-  const { spinsLeft, used } = checkWheelLimit(s.userId);
+  const { spinsLeft, used, unlimited } = checkWheelLimit(s.userId, interaction.guild?.id);
   if (spinsLeft <= 0) {
     // Refund the bet since we're blocking after coins were already removed
     addCoins(s.userId, s.bet);
@@ -1352,7 +1356,7 @@ async function resolveWheel(interaction, s) {
 
   // Record the spin IMMEDIATELY (before any await) so a concurrent "Play Again"
   // click can never pass the limit check before this spin is counted.
-  recordWheelSpin(s.userId);
+  recordWheelSpin(s.userId, interaction.guild?.id);
 
   // Spin animation
   const spinImgName = `wheel-spin-${s.userId}.png`;
@@ -1363,7 +1367,7 @@ async function resolveWheel(interaction, s) {
     .setImage(`attachment://${spinImgName}`)
     .addFields(
       { name: '💸 Bet',        value: `**${fmt(s.bet)}** coins`,                          inline: true },
-      { name: '🎡 Spins Left', value: `**${spinsLeft - 1}** remaining today`, inline: true },
+      { name: '🎡 Spins Left', value: unlimited ? '**⏩ Unlimited** (Cooldown Skip active)' : `**${spinsLeft - 1}** remaining today`, inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino' });
   await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinFile], attachments: [] });
@@ -1390,9 +1394,9 @@ async function resolveWheel(interaction, s) {
     .setImage(`attachment://${resultImgName}`)
     .addFields(
       { name: '💸 Bet / Payout', value: payout > 0 ? `**${fmt(s.bet)}** → **${fmt(payout)}** coins` : `**${fmt(s.bet)}** coins lost`, inline: true },
-      { name: '💰 Balance / Spins', value: `**${fmt(newBal)}** coins  •  ${spinsAfter > 0 ? `**${spinsAfter}** spins left` : 'no spins left today'}`, inline: true },
+      { name: '💰 Balance / Spins', value: `**${fmt(newBal)}** coins  •  ${unlimited ? '⏩ **Unlimited** spins' : spinsAfter > 0 ? `**${spinsAfter}** spins left` : 'no spins left today'}`, inline: true },
     )
-    .setFooter({ text: 'YSER Flow Casino  •  Wheel of Fortune  •  10 spins/day' });
+    .setFooter({ text: unlimited ? 'YSER Flow Casino  •  Wheel of Fortune  •  ⏩ Cooldown Skip active — unlimited spins' : 'YSER Flow Casino  •  Wheel of Fortune  •  10 spins/day' });
 
   unlock(s.userId);
   await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [resultFile], attachments: [] });

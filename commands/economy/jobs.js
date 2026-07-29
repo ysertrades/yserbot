@@ -104,14 +104,14 @@ function buildJobsEmbed(userId, guildId) {
   const boostLine = boost ? `\n💰 **Coin Boost active** — all earnings are **${boost.multiplier || 1.5}×** this session!\n` : '';
 
   const lines = JOBS.map(j => {
-    const cd    = checkCooldown(userId, `job_${j.id}`, j.cooldownMs);
+    const cd    = checkCooldown(userId, `job_${j.id}`, j.cooldownMs, guildId);
     const ready = cd <= 0;
     const ts    = Math.floor((Date.now() + cd) / 1000);
     const status = ready ? '✅' : `⏳ <t:${ts}:R>`;
     return `${j.emoji} **${j.name}**${j.variance ? ' ⚡' : ''} · \`${fmt(j.min)}–${fmt(j.max)}\` · \`${j.cooldownLabel}\` · ${status}`;
   });
 
-  const readyCount = JOBS.filter(j => checkCooldown(userId, `job_${j.id}`, j.cooldownMs) <= 0).length;
+  const readyCount = JOBS.filter(j => checkCooldown(userId, `job_${j.id}`, j.cooldownMs, guildId) <= 0).length;
 
   return new EmbedBuilder()
     .setColor(boost ? 0xFFD700 : 0xF59E0B)
@@ -129,12 +129,12 @@ function buildJobsEmbed(userId, guildId) {
     .setTimestamp();
 }
 
-function buildJobsRows(userId) {
+function buildJobsRows(userId, guildId) {
   const row1Ids = JOBS.slice(0, 5);
   const row2Ids = JOBS.slice(5, 8);
 
   function makeBtn(j) {
-    const ready = checkCooldown(userId, `job_${j.id}`, j.cooldownMs) <= 0;
+    const ready = checkCooldown(userId, `job_${j.id}`, j.cooldownMs, guildId) <= 0;
     return new ButtonBuilder()
       .setCustomId(`job:work:${j.id}`)
       .setLabel(`${j.emoji} ${j.name}`)
@@ -167,7 +167,7 @@ module.exports = {
 
     await interaction.reply({
       embeds:     [buildJobsEmbed(userId, guildId)],
-      components: buildJobsRows(userId),
+      components: buildJobsRows(userId, guildId),
     });
   },
 };
