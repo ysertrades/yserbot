@@ -99,11 +99,13 @@ function generateMarketSessionImage(opts) {
   fillRoundedRectBlend(png, chipX, chipY, chipW, 56, 12, WHITE, 0.12);
   drawTextCentered(png, timeText, contentCx, chipY + 16, 3, WHITE);
 
-  // ── Tagline banner ──────────────────────────────────────────────────────────
-  for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 288, accent, 0.3);
-  const lines = wrapText(tagline.toUpperCase(), 2, W - 120);
+  // ── Tagline banner — confined to the right content column so it never
+  //    runs into the skyline badge on the left ────────────────────────────────
+  const contentLeft = 356, contentRight = W - 44, contentWidth = contentRight - contentLeft;
+  for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 288, accent, 0.3);
+  const lines = wrapText(tagline.toUpperCase(), 2, contentWidth);
   let ty = 310;
-  for (const l of lines.slice(0, 2)) { drawTextCentered(png, l, W / 2, ty, 2, [220, 226, 220, 255]); ty += GLYPH_H * 2 + 10; }
+  for (const l of lines.slice(0, 2)) { drawTextCentered(png, l, contentCx, ty, 2, [220, 226, 220, 255]); ty += GLYPH_H * 2 + 10; }
 
   return PNG.sync.write(png);
 }
