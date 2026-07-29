@@ -1,1 +1,98 @@
-{}
+{
+  "1514666709985001666": {
+    "items": {
+      "coin_boost_bronze": {
+        "name": "Bronze Coin Boost",
+        "price": 2000,
+        "type": "coin_boost",
+        "emoji": "🥉",
+        "description": "1.5× earnings from work, jobs, fishing, mining, trivia & daily",
+        "multiplier": 1.5,
+        "durationMs": 14400000
+      },
+      "coin_boost_silver": {
+        "name": "Silver Coin Boost",
+        "price": 8000,
+        "type": "coin_boost",
+        "emoji": "🥈",
+        "description": "1.75× earnings from work, jobs, fishing, mining, trivia & daily",
+        "multiplier": 1.75,
+        "durationMs": 14400000
+      },
+      "coin_boost_gold": {
+        "name": "Gold Coin Boost",
+        "price": 20000,
+        "type": "coin_boost",
+        "emoji": "🥇",
+        "description": "2× earnings from work, jobs, fishing, mining, trivia & daily",
+        "multiplier": 2,
+        "durationMs": 14400000
+      },
+      "coin_boost_platinum": {
+        "name": "Platinum Coin Boost",
+        "price": 50000,
+        "type": "coin_boost",
+        "emoji": "💠",
+        "description": "2.5× earnings from work, jobs, fishing, mining, trivia & daily",
+        "multiplier": 2.5,
+        "durationMs": 10800000
+      },
+      "vip_casino_pass": {
+        "name": "VIP Casino Pass",
+        "price": 30000,
+        "type": "vip_casino_pass",
+        "emoji": "👑",
+        "description": "Doubles your personal casino max bet",
+        "multiplier": 2,
+        "durationMs": 21600000
+      },
+      "badge_star": {
+        "name": "Rising Star",
+        "price": 5000,
+        "type": "badge",
+        "emoji": "⭐",
+        "description": "A shiny star badge for your /rank card",
+        "badgeIcon": "star"
+      },
+      "badge_shield": {
+        "name": "Trusted Trader",
+        "price": 10000,
+        "type": "badge",
+        "emoji": "🛡️",
+        "description": "A shield badge for your /rank card",
+        "badgeIcon": "shield"
+      },
+      "badge_flame": {
+        "name": "On Fire",
+        "price": 15000,
+        "type": "badge",
+        "emoji": "🔥",
+        "description": "A flame badge for your /rank card",
+        "badgeIcon": "flame"
+      },
+      "badge_crown": {
+        "name": "VIP Status",
+        "price": 25000,
+        "type": "badge",
+        "emoji": "👑",
+        "description": "A crown badge for your /rank card",
+        "badgeIcon": "crown"
+      },
+      "badge_diamond": {
+        "name": "Diamond Hands",
+        "price": 40000,
+        "type": "badge",
+        "emoji": "💎",
+        "description": "A diamond badge for your /rank card",
+        "badgeIcon": "diamond"
+      },
+      "mystery_box": {
+        "name": "Mystery Box",
+        "price": 15000,
+        "type": "mystery_box",
+        "emoji": "🎁",
+        "description": "Could be a dud, could be a 50,000 coin jackpot!"
+      }
+    }
+  }
+}

@@ -174,7 +174,7 @@ async function handleAutoReply(message) {
     const payload = buildEmbedPayload(message.guild, data.embedName);
     if (!payload) continue;
 
-    try { await message.reply({ embeds: payload.embeds, components: payload.components }); } catch {}
+    try { await message.reply({ embeds: payload.embeds, files: payload.files, components: payload.components }); } catch {}
     break;
   }
 }

@@ -81,7 +81,7 @@ async function fireSchedule(guild, schedule) {
         }
     }
 
-    await channel.send({ content, embeds: payload.embeds, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions: mentionOpts });
+    await channel.send({ content, embeds: payload.embeds, files: payload.files, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions: mentionOpts });
     return { ok: true };
 }
 

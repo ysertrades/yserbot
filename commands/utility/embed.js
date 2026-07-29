@@ -7,6 +7,7 @@ const {
 } = require('discord.js');
 const { createServerEmbed, parseColor, isValidHexColor, isValidUrl, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson }           = require('../../utils/jsonStorage');
+const { isDynamicImage, dynamicAttachmentRef, collectDynamicAttachments } = require('../../utils/dynamicEmbedImages');
 
 // In-memory edit sessions { sessionId → { guildId, name, userId, isNew, embedIndex } }
 const activeEdits = new Map();
@@ -127,7 +128,12 @@ function buildEmbedFromData(data, { placeholderOk = false, ctx = null } = {}) {
   if (data.footer)            e.setFooter({ text: rp(data.footer), iconURL: data.footerIcon || undefined });
   if (data.authorName)        e.setAuthor({ name: rp(data.authorName), iconURL: data.authorIcon || undefined, url: data.authorUrl || undefined });
   if (data.thumbnail)         e.setThumbnail(data.thumbnail);
-  if (data.image)             e.setImage(data.image);
+  if (isDynamicImage(data.image)) {
+    const ref = dynamicAttachmentRef(data.image);
+    if (ref) e.setImage(ref);
+  } else if (data.image) {
+    e.setImage(data.image);
+  }
   if (data.fields?.length)    e.addFields(data.fields.map(f => ({ name: rp(f.name).slice(0, 256), value: rp(f.value).slice(0, 1024), inline: !!f.inline })));
   if (data.timestamp)         e.setTimestamp();
   // Discord requires at least one visible field — show placeholder in editor previews
@@ -188,6 +194,7 @@ async function launchEditor(interaction, guildId, name, template, isNew) {
   await interaction.reply({
     content:    editorContent({ name, isNew, embedIndex }, template.embeds.length),
     embeds:     buildPreviewEmbeds(template, ctx),
+    files:      collectDynamicAttachments(template),
     components: editorRows(sessionId, embedIndex, template.embeds.length, template.embeds[embedIndex]),
     flags: 64,
   });
@@ -338,7 +345,7 @@ module.exports = {
           new ButtonBuilder().setCustomId(`embed_previewsend:${name}`).setLabel('📤 Send Here').setStyle(ButtonStyle.Success),
         ));
       }
-      return interaction.reply({ content: `👁️ Preview of **${name}** — only you can see this.`, embeds: payload.embeds, components: rows, flags: 64 });
+      return interaction.reply({ content: `👁️ Preview of **${name}** — only you can see this.`, embeds: payload.embeds, files: payload.files, components: rows, flags: 64 });
     }
 
     if (sub === 'duplicate') {
@@ -391,7 +398,7 @@ module.exports = {
         }
       }
 
-      await channel.send({ content, embeds: payload.embeds, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions: mentionOpts });
+      await channel.send({ content, embeds: payload.embeds, files: payload.files, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions: mentionOpts });
       await interaction.reply({ embeds: [createServerEmbed('success', { title: '📤 Sent', description: `Embed **${name}** sent to ${channel}.` }, interaction.guild)] });
       tempDelete(interaction);
     }
@@ -438,7 +445,7 @@ function buildEmbedPayload(guild, name, ctx = {}) {
     }
   }
   if (cur.components.length > 0) rows.push(cur);
-  return { embeds: builtEmbeds, components: rows };
+  return { embeds: builtEmbeds, components: rows, files: collectDynamicAttachments(template) };
 }
 
 module.exports.buildEmbedPayload = buildEmbedPayload;
@@ -474,6 +481,7 @@ module.exports.handleEmbedSelect = async function(interaction) {
     return interaction.update({
       content:    editorContent(session, template.embeds.length),
       embeds:     buildPreviewEmbeds(template, ctx),
+      files:      collectDynamicAttachments(template),
       components: editorRows(sessionId, embedIndex, template.embeds.length, curEmbed),
     });
   }
@@ -535,7 +543,7 @@ module.exports.handleEmbedButton = async function(interaction) {
     const name    = id.slice('embed_previewsend:'.length);
     const payload = buildEmbedPayload(interaction.guild, name, { user: interaction.user, channel: interaction.channel });
     if (!payload) return interaction.update({ content: '❌ Template no longer exists.', embeds: [], components: [] });
-    await interaction.channel.send({ embeds: payload.embeds, components: payload.components.length ? payload.components : undefined });
+    await interaction.channel.send({ embeds: payload.embeds, files: payload.files, components: payload.components.length ? payload.components : undefined });
     return interaction.update({ content: `✅ Sent **${name}** to this channel.`, embeds: [], components: [] });
   }
 
@@ -578,12 +586,12 @@ module.exports.handleEmbedButton = async function(interaction) {
   if (action === 'prev') {
     session.embedIndex = Math.max(0, embedIndex - 1);
     activeEdits.set(sessionId, session);
-    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
+    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), files: collectDynamicAttachments(template), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
   }
   if (action === 'next') {
     session.embedIndex = Math.min(template.embeds.length - 1, embedIndex + 1);
     activeEdits.set(sessionId, session);
-    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
+    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), files: collectDynamicAttachments(template), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
   }
   if (action === 'add') {
     if (template.embeds.length >= MAX_EMBEDS) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Limit Reached', description: `Max ${MAX_EMBEDS} embeds per template.` }, interaction.guild)] });
@@ -592,7 +600,7 @@ module.exports.handleEmbedButton = async function(interaction) {
     activeEdits.set(sessionId, session);
     all[session.guildId][session.name] = template;
     writeJson('embeds.json', all);
-    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
+    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), files: collectDynamicAttachments(template), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
   }
   if (action === 'rem') {
     if (template.embeds.length <= 1) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Cannot Remove', description: 'A template must have at least one embed.' }, interaction.guild)] });
@@ -601,13 +609,13 @@ module.exports.handleEmbedButton = async function(interaction) {
     activeEdits.set(sessionId, session);
     all[session.guildId][session.name] = template;
     writeJson('embeds.json', all);
-    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
+    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), files: collectDynamicAttachments(template), components: editorRows(sessionId, session.embedIndex, template.embeds.length, template.embeds[session.embedIndex]) });
   }
   if (action === 'timestamp') {
     template.embeds[embedIndex].timestamp = !template.embeds[embedIndex].timestamp;
     all[session.guildId][session.name] = template;
     writeJson('embeds.json', all);
-    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, embedIndex, template.embeds.length, template.embeds[embedIndex]) });
+    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), files: collectDynamicAttachments(template), components: editorRows(sessionId, embedIndex, template.embeds.length, template.embeds[embedIndex]) });
   }
   if (action === 'fieldrem') {
     const curFields = template.embeds[embedIndex].fields || [];
@@ -622,10 +630,10 @@ module.exports.handleEmbedButton = async function(interaction) {
     const backRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`embed_edit_fieldback_${sessionId}`).setLabel('← Back').setStyle(ButtonStyle.Secondary),
     );
-    return interaction.update({ content: `Removing a field from embed ${embedIndex + 1} — pick one below.`, embeds: buildPreviewEmbeds(template, ctx), components: [selectRow, backRow] });
+    return interaction.update({ content: `Removing a field from embed ${embedIndex + 1} — pick one below.`, embeds: buildPreviewEmbeds(template, ctx), files: collectDynamicAttachments(template), components: [selectRow, backRow] });
   }
   if (action === 'fieldback') {
-    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), components: editorRows(sessionId, embedIndex, template.embeds.length, template.embeds[embedIndex]) });
+    return interaction.update({ content: editorContent(session, template.embeds.length), embeds: buildPreviewEmbeds(template, ctx), files: collectDynamicAttachments(template), components: editorRows(sessionId, embedIndex, template.embeds.length, template.embeds[embedIndex]) });
   }
 
   const curEmbed = template.embeds[embedIndex];
@@ -762,6 +770,7 @@ module.exports.handleEmbedModal = async function(interaction) {
   await interaction.update({
     content:    editorContent(session, template.embeds.length),
     embeds:     buildPreviewEmbeds(template, ctx),
+    files:      collectDynamicAttachments(template),
     components: editorRows(sessionId, embedIndex, template.embeds.length, curEmbed),
   });
   return true;
