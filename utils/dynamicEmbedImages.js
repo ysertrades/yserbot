@@ -15,9 +15,11 @@
 
 const { AttachmentBuilder } = require('discord.js');
 const { generateEconomyShowcaseImage } = require('./economyShowcaseVisual');
+const { generateReportGuideImage } = require('./reportGuideVisual');
 
 const DYNAMIC_IMAGES = {
   economyShowcase: { filename: 'economy_showcase.png', generate: generateEconomyShowcaseImage },
+  reportGuide:      { filename: 'report_guide.png',     generate: generateReportGuideImage },
 };
 
 const DYNAMIC_PREFIX = 'dynamic:';

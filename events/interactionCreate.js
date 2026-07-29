@@ -326,6 +326,16 @@ module.exports = {
           return client.commands.get('schedule')?.handleScheduleButton(interaction);
         }
 
+        // Shop settings panel — add/edit/remove/close buttons
+        if (id.startsWith('shopset_')) {
+          return client.commands.get('shopsettings')?.handleButton(interaction);
+        }
+
+        // Report — submission panel buttons (link/submit/cancel)
+        if (id.startsWith('report_link:') || id.startsWith('report_submit:') || id.startsWith('report_cancel:')) {
+          return client.commands.get('report')?.handleButton(interaction);
+        }
+
         // Report — take action
         if (id.startsWith('rpt_action:')) {
           const [, targetUserId, reportChannelId] = id.split(':');
@@ -550,6 +560,16 @@ module.exports = {
           return client.commands.get('button')?.handleButtonEditModal(interaction);
         }
 
+        // Shop settings — add/edit item modals
+        if (id.startsWith('shopset_')) {
+          return client.commands.get('shopsettings')?.handleModal(interaction);
+        }
+
+        // Report — link modal
+        if (id.startsWith('report_link_modal:')) {
+          return client.commands.get('report')?.handleModal(interaction);
+        }
+
         // Verification — rules text modal
         if (id === 'verify_rules_modal') {
           return client.commands.get('verify')?.handleRulesModal(interaction);
@@ -609,6 +629,10 @@ module.exports = {
           return client.commands.get('econcal')?.handleWeekdaySelect(interaction);
         if (id === 'shop_buy_select' || id === 'shop_use_select')
           return client.commands.get('shop')?.handleSelect(interaction);
+        if (id.startsWith('report_reason_select:'))
+          return client.commands.get('report')?.handleReasonSelect(interaction);
+        if (id.startsWith('shopset_'))
+          return client.commands.get('shopsettings')?.handleSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
@@ -616,6 +640,20 @@ module.exports = {
         if (handler?.handleSelect) await handler.handleSelect(interaction, args, client);
       } catch (err) {
         console.error(`[SEL ERROR] ${id}:`, err);
+        const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
+        if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
+        else await interaction.reply(rep).catch(() => {});
+      }
+    }
+
+    // ── User Select Menus (native picker — e.g. report panel) ──────────────────
+    if (interaction.isUserSelectMenu()) {
+      const id = interaction.customId;
+      try {
+        if (id.startsWith('report_user_select:'))
+          return client.commands.get('report')?.handleUserSelect(interaction);
+      } catch (err) {
+        console.error(`[USER SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
