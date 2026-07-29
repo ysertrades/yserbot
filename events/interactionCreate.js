@@ -401,9 +401,18 @@ module.exports = {
           return client.commands.get('econcal')?.handlePanelButton(interaction, id.slice('econcal_panel:'.length));
         }
 
-        // Trivia — answer buttons
+        // Trivia — answer buttons / close session
         if (id.startsWith('trivia_answer:')) {
           return client.commands.get('trivia')?.handleAnswer(interaction);
+        }
+        if (id.startsWith('trivia_close:')) {
+          return client.commands.get('trivia')?.handleClose(interaction);
+        }
+
+        // Fishing / mining — continue-session or close-session buttons
+        if (id.startsWith('gather_again:') || id.startsWith('gather_close:')) {
+          const action = id.split(':')[1];
+          return client.commands.get(action)?.handleButton(interaction);
         }
 
         // Auto-mod — link request flow

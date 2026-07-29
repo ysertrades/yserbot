@@ -7,17 +7,25 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { generateTriviaImage, CATEGORY_META } = require('../../utils/triviaVisual');
 const { QUESTIONS, CATEGORIES } = require('../../utils/triviaQuestions');
 
-const COOLDOWN_MS   = 2 * 60 * 60 * 1000;
-const REWARD_MIN    = 75;
-const REWARD_MAX    = 200;
-const HISTORY_LIMIT = 20; // how many recently-asked questions per user we avoid repeating
-const SESSION_TTL_MS = 5 * 60 * 1000;
+const COOLDOWN_MS           = 5 * 60 * 60 * 1000;
+const QUESTIONS_PER_SESSION = 6;
+const QUESTION_TIME_MS      = 15 * 1000;
+const REVEAL_DELAY_MS       = 2000;
+const REWARD_MIN            = 50;
+const REWARD_MAX            = 120;
+const REWARD_SCALE_STEP     = 0.2; // each correct answer so far bumps the next reward range up 20%
+const HISTORY_LIMIT         = 20; // how many recently-asked questions per user we avoid repeating
 const LETTERS = ['A', 'B', 'C', 'D'];
 const fmt = n => Number(n).toLocaleString();
 
-// In-memory answer sessions — short-lived (one question, one answer), so no
-// need to persist these like the longer-running setup flows elsewhere.
-const sessions = new Map();
+// One active multi-question session per user — the initial slash-command
+// interaction is kept around and reused for every editReply() in the
+// session (question reveals, next question, timeouts), while each button
+// click just needs to ack via deferUpdate(). Session state is in-memory —
+// if the bot restarts mid-session, that session is lost, an accepted
+// trade-off matching other short-lived flows in this bot (no cooldown
+// will have been charged yet, since it's only set once a session finishes).
+const activeSessions = new Map();
 
 function questionKey(cat, idx) {
   return `${cat}:${idx}`;
@@ -41,24 +49,109 @@ function pickQuestionForUser(userId) {
   return picked;
 }
 
-function buildAnswerRow(sessionId, disabledIndex = null, correctIndex = null) {
-  const row = new ActionRowBuilder();
+function computeReward(correctSoFar) {
+  const mult = 1 + correctSoFar * REWARD_SCALE_STEP;
+  const min = Math.round(REWARD_MIN * mult);
+  const max = Math.round(REWARD_MAX * mult);
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function buildRows(userId, disabledIndex = null, correctIndex = null) {
+  const answerRow = new ActionRowBuilder();
   for (let i = 0; i < 4; i++) {
-    const btn = new ButtonBuilder().setCustomId(`trivia_answer:${sessionId}:${i}`).setLabel(LETTERS[i]).setStyle(ButtonStyle.Secondary);
+    const btn = new ButtonBuilder().setCustomId(`trivia_answer:${userId}:${i}`).setLabel(LETTERS[i]).setStyle(ButtonStyle.Secondary);
     if (correctIndex !== null) {
       btn.setDisabled(true);
       if (i === correctIndex) btn.setStyle(ButtonStyle.Success);
       else if (i === disabledIndex) btn.setStyle(ButtonStyle.Danger);
     }
-    row.addComponents(btn);
+    answerRow.addComponents(btn);
   }
-  return row;
+  const closeRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`trivia_close:${userId}`).setLabel('Close').setStyle(ButtonStyle.Secondary).setDisabled(correctIndex !== null),
+  );
+  return [answerRow, closeRow];
+}
+
+async function postQuestion(session) {
+  const picked = pickQuestionForUser(session.userId);
+  session.current = picked;
+
+  const imageName = `trivia_${Date.now()}.png`;
+  const attachment = new AttachmentBuilder(generateTriviaImage({ category: picked.cat, question: picked.q, choices: picked.choices }), { name: imageName });
+
+  const meta = CATEGORY_META[picked.cat];
+  const embed = new EmbedBuilder()
+    .setColor(meta.color)
+    .setTitle(`🧠 Trivia — Question ${session.index + 1}/${QUESTIONS_PER_SESSION}`)
+    .setDescription('Pick the correct answer below — you have 15 seconds.')
+    .setImage(`attachment://${imageName}`)
+    .setFooter({ text: `Correct so far: ${session.correctCount} • Coins earned: ${fmt(session.totalCoins)}` });
+
+  await session.interaction.editReply({ embeds: [embed], files: [attachment], components: buildRows(session.userId) });
+  session.timer = setTimeout(() => {
+    resolveAnswer(session, null).catch(err => {
+      console.error('[TRIVIA TIMEOUT]', err);
+      activeSessions.delete(session.userId);
+    });
+  }, QUESTION_TIME_MS);
+}
+
+async function resolveAnswer(session, choice) {
+  clearTimeout(session.timer);
+  session.timer = null;
+
+  const correct = choice === session.current.correct;
+  let reward = 0;
+
+  if (correct) {
+    reward = computeReward(session.correctCount);
+    const boost = getEffect(session.userId, session.guildId, 'coin_boost');
+    if (boost) reward = Math.floor(reward * 1.5);
+    addCoins(session.userId, reward);
+    session.correctCount++;
+  }
+  session.totalCoins += reward;
+
+  const resultEmbed = new EmbedBuilder()
+    .setColor(correct ? 0x2ecc71 : 0xe74c3c)
+    .setTitle(`🧠 Trivia — Question ${session.index + 1}/${QUESTIONS_PER_SESSION}`)
+    .setDescription(
+      correct
+        ? `✅ **Correct!** +**${fmt(reward)}** coins`
+        : choice === null
+          ? `⌛ **Time's up!** The correct answer was **${LETTERS[session.current.correct]}**.`
+          : `❌ **Wrong** — the correct answer was **${LETTERS[session.current.correct]}**.`,
+    );
+
+  session.index++;
+  const isLast = session.index >= QUESTIONS_PER_SESSION;
+
+  if (isLast) {
+    setCooldown(session.userId, 'trivia');
+    activeSessions.delete(session.userId);
+    resultEmbed.addFields({
+      name: 'Session Summary',
+      value: `${session.correctCount}/${QUESTIONS_PER_SESSION} correct • **${fmt(session.totalCoins)}** coins earned\n💰 Balance: **${fmt(getBalance(session.userId))}** coins`,
+    });
+    resultEmbed.setFooter({ text: 'Session complete — come back in 5 hours' });
+    return session.interaction.editReply({ embeds: [resultEmbed], components: [] });
+  }
+
+  await session.interaction.editReply({ embeds: [resultEmbed], components: buildRows(session.userId, choice, session.current.correct) });
+
+  session.awaitTimer = setTimeout(() => {
+    postQuestion(session).catch(err => {
+      console.error('[TRIVIA NEXT]', err);
+      activeSessions.delete(session.userId);
+    });
+  }, REVEAL_DELAY_MS);
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('trivia')
-    .setDescription('Answer a random trivia question for coins (2 hour cooldown)'),
+    .setDescription('Answer 6 trivia questions for coins (5 hour cooldown)'),
 
   async execute(interaction) {
     const userId = interaction.user.id;
@@ -71,62 +164,62 @@ module.exports = {
         embeds: [new EmbedBuilder()
           .setColor(0xe74c3c)
           .setTitle('🧠 Still Cooling Down')
-          .setDescription(`You need to wait **${hours}h ${minutes}m** before another trivia question.`)],
+          .setDescription(`You need to wait **${hours}h ${minutes}m** before another trivia session.`)],
         ephemeral: true,
       });
     }
 
-    setCooldown(userId, 'trivia');
+    if (activeSessions.has(userId)) {
+      return interaction.reply({ content: '⚠️ You already have a trivia session in progress! Finish it or hit Close first.', ephemeral: true });
+    }
 
-    const picked = pickQuestionForUser(userId);
-    const sessionId = `${userId}-${Date.now()}`;
-    sessions.set(sessionId, { userId, cat: picked.cat, correct: picked.correct, resolved: false });
-    setTimeout(() => sessions.delete(sessionId), SESSION_TTL_MS);
+    const session = {
+      userId, guildId: interaction.guild?.id, interaction,
+      index: 0, correctCount: 0, totalCoins: 0, current: null, timer: null, awaitTimer: null,
+    };
+    activeSessions.set(userId, session);
 
-    const imageName = `trivia_${Date.now()}.png`;
-    const attachment = new AttachmentBuilder(generateTriviaImage({ category: picked.cat, question: picked.q, choices: picked.choices }), { name: imageName });
-
-    const meta = CATEGORY_META[picked.cat];
-    const embed = new EmbedBuilder()
-      .setColor(meta.color)
-      .setTitle('🧠 Trivia')
-      .setDescription('Pick the correct answer below — you have 5 minutes.')
-      .setImage(`attachment://${imageName}`);
-
-    await interaction.reply({ embeds: [embed], files: [attachment], components: [buildAnswerRow(sessionId)] });
+    await interaction.deferReply();
+    return postQuestion(session);
   },
 
   async handleAnswer(interaction) {
-    const [, sessionId, choiceStr] = interaction.customId.split(':');
-    const choice = parseInt(choiceStr, 10);
-    const session = sessions.get(sessionId);
+    const [, userId, choiceStr] = interaction.customId.split(':');
 
-    if (!session || session.resolved) {
-      return interaction.reply({ content: '⌛ This trivia question has expired.', ephemeral: true });
-    }
-    if (session.userId !== interaction.user.id) {
-      return interaction.reply({ content: "❌ This isn't your trivia question.", ephemeral: true });
+    if (interaction.user.id !== userId) {
+      return interaction.reply({ content: "❌ This isn't your trivia session.", ephemeral: true });
     }
 
-    session.resolved = true;
-    const correct = choice === session.correct;
-    let reward = 0;
-
-    if (correct) {
-      reward = Math.floor(Math.random() * (REWARD_MAX - REWARD_MIN + 1)) + REWARD_MIN;
-      const boost = getEffect(interaction.user.id, interaction.guild?.id, 'coin_boost');
-      if (boost) reward = Math.floor(reward * 1.5);
-      addCoins(interaction.user.id, reward);
+    const session = activeSessions.get(userId);
+    if (!session || !session.timer) {
+      return interaction.reply({ content: '⌛ This trivia session has expired.', ephemeral: true });
     }
 
-    const resultEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-      .setColor(correct ? 0x2ecc71 : 0xe74c3c)
-      .setDescription(
-        correct
-          ? `✅ **Correct!** You earned **${fmt(reward)}** coins.\n💰 Balance: **${fmt(getBalance(interaction.user.id))}** coins`
-          : `❌ **Wrong** — the correct answer was **${LETTERS[session.correct]}**.\n💰 Balance: **${fmt(getBalance(interaction.user.id))}** coins`,
-      );
+    await interaction.deferUpdate();
+    return resolveAnswer(session, parseInt(choiceStr, 10));
+  },
 
-    return interaction.update({ embeds: [resultEmbed], components: [buildAnswerRow(sessionId, choice, session.correct)] });
+  async handleClose(interaction) {
+    const [, userId] = interaction.customId.split(':');
+
+    if (interaction.user.id !== userId) {
+      return interaction.reply({ content: "❌ This isn't your trivia session.", ephemeral: true });
+    }
+
+    const session = activeSessions.get(userId);
+    if (!session) {
+      return interaction.reply({ content: '⌛ This trivia session has already ended.', ephemeral: true });
+    }
+
+    clearTimeout(session.timer);
+    clearTimeout(session.awaitTimer);
+    activeSessions.delete(userId);
+
+    return interaction.update({
+      embeds: [EmbedBuilder.from(interaction.message.embeds[0])
+        .setColor(0x95a5a6)
+        .setFooter({ text: `Session closed — ${session.correctCount}/${QUESTIONS_PER_SESSION} correct, ${fmt(session.totalCoins)} coins earned. No cooldown started.` })],
+      components: [],
+    });
   },
 };
