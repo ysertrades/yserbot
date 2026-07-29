@@ -30,6 +30,11 @@ const NAME_COLOR = {
   'Sapphire':      [52, 120, 219, 255],
   'Ruby':          [231, 60, 90, 255],
   'Amethyst':      [155, 89, 182, 255],
+  'Obsidian Shard': [80, 68, 100, 255],
+  'Opal':          [225, 220, 232, 255],
+  'Topaz':         [255, 170, 60, 255],
+  'Platinum Bar':  [225, 228, 232, 255],
+  'Fossilized Bone': [232, 222, 196, 255],
 };
 
 /* ─── Per-item icons — every find gets its own silhouette, not just a
@@ -156,7 +161,6 @@ function drawRelicIcon(png, cx, cy, size, color) {
 }
 
 function drawMeteoriteIcon(png, cx, cy, size, color) {
-  const pts = [[-1.0, -0.2], [-0.5, -0.9], [0.35, -0.75], [0.95, 0.1], [0.5, 0.9], [-0.4, 0.8], [-0.9, 0.3]];
   for (let dy = -size; dy <= size; dy++) {
     for (let dx = -size; dx <= size; dx++) {
       if (Math.hypot(dx, dy) <= size * 0.85) setPxBlend(png, cx + dx, cy + dy, [40, 34, 30, 255], 1);
@@ -170,6 +174,53 @@ function drawMeteoriteIcon(png, cx, cy, size, color) {
     const rad = (a * Math.PI) / 180;
     setPxBlend(png, cx + Math.cos(rad) * size * 0.95, cy + Math.sin(rad) * size * 0.95, color, 0.4);
   }
+}
+
+function drawChainIcon(png, cx, cy, size, color) {
+  const links = [[-0.5, -0.3], [0, 0], [0.5, 0.3]];
+  for (const [fx, fy] of links) ringStroke(png, cx + fx * size, cy + fy * size, size * 0.35, color, 5);
+}
+
+function drawVialIcon(png, cx, cy, size, color) {
+  const dark = darken(color, 0.6);
+  fillRoundedRectBlend(png, cx - size * 0.25, cy - size * 0.95, size * 0.5, size * 0.3, 3, dark, 1);
+  fillRoundedRectBlend(png, cx - size * 0.35, cy - size * 0.65, size * 0.7, size * 1.5, 10, color, 0.75);
+  line(png, cx - size * 0.2, cy - size * 0.1, cx + size * 0.05, cy + size * 0.2, [15, 20, 30, 220], 2);
+  line(png, cx + size * 0.05, cy + size * 0.2, cx - size * 0.1, cy + size * 0.5, [15, 20, 30, 220], 2);
+}
+
+function drawGraniteIcon(png, cx, cy, size, color) {
+  drawRockIcon(png, cx, cy, size, color);
+  const dark = darken(color, 0.55);
+  for (let i = -1; i <= 1; i++) line(png, cx - size * 0.55, cy + i * size * 0.28, cx + size * 0.55, cy + i * size * 0.28 + 6, dark, 2);
+}
+
+function drawObsidianIcon(png, cx, cy, size, color) {
+  const rx = size * 0.5, ry = size * 1.25;
+  for (let dy = -ry; dy <= ry; dy++) {
+    for (let dx = -rx; dx <= rx; dx++) {
+      if (Math.abs(dx) / rx + Math.abs(dy) / ry <= 1) setPxBlend(png, cx + dx, cy + dy, color, 1);
+    }
+  }
+  line(png, cx - size * 0.15, cy - size * 0.85, cx - size * 0.15, cy + size * 0.5, [255, 255, 255, 255], 2);
+}
+
+function drawOpalIcon(png, cx, cy, size, color) {
+  drawGemIcon(png, cx, cy, size, color);
+  const hues = [[255, 130, 190, 255], [130, 210, 255, 255], [190, 255, 160, 255]];
+  hues.forEach(([r, g, b], i) => dot(png, cx + (i - 1) * size * 0.28, cy - size * 0.15 + (i % 2) * size * 0.3, size * 0.09, [r, g, b, 255]));
+}
+
+function drawIngotIcon(png, cx, cy, size, color) {
+  fillRoundedRectBlend(png, cx - size * 0.9, cy - size * 0.35, size * 1.8, size * 0.7, 6, color, 1);
+  const dark = darken(color, 0.6);
+  line(png, cx - size * 0.9, cy - size * 0.1, cx + size * 0.9, cy - size * 0.1, dark, 2);
+  for (let x = -size * 0.85; x < size * 0.85; x++) setPxBlend(png, cx + x, cy - size * 0.3, [255, 255, 255, 255], 0.4);
+}
+
+function drawBoneIcon(png, cx, cy, size, color) {
+  line(png, cx - size * 0.6, cy, cx + size * 0.6, cy, color, 8);
+  for (const [fx, fy] of [[-0.65, -0.2], [-0.65, 0.2], [0.65, -0.2], [0.65, 0.2]]) dot(png, cx + fx * size, cy + fy * size, size * 0.22, color);
 }
 
 const ICONS = {
@@ -192,6 +243,14 @@ const ICONS = {
   'Ancient Relic':           drawRelicIcon,
   "Buried Skeleton Key":     drawKeyIcon,
   'Meteorite Fragment':      drawMeteoriteIcon,
+  'Rusty Chain':             drawChainIcon,
+  'Cracked Vial':            drawVialIcon,
+  'Granite Chunk':           drawGraniteIcon,
+  'Obsidian Shard':          drawObsidianIcon,
+  'Opal':                    drawOpalIcon,
+  'Topaz':                   (p, x, y, s, c) => drawGemIcon(p, x, y, s, c, { squareCut: true }),
+  'Platinum Bar':            drawIngotIcon,
+  'Fossilized Bone':         drawBoneIcon,
 };
 
 function drawDefaultGemIcon(png, cx, cy, size, color) {
