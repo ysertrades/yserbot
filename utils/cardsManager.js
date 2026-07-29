@@ -1,7 +1,8 @@
 'use strict';
 
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { randomInt } = require('node:crypto');
+const { generateCardImage } = require('./cardVisual');
 
 // Secure randomness — card rarity odds are a "chance to win" mechanic just
 // like the casino games, so they shouldn't be derivable from a predictable PRNG.
@@ -75,52 +76,76 @@ function pickRandomCard(bonusChancePct = 0) {
   return pool[randomInt(pool.length)];
 }
 
+function starsFilled(cfg) {
+  return (cfg.stars.match(/★/g) || []).length;
+}
+
+function cardAttachment(imageBuf, tag) {
+  return new AttachmentBuilder(imageBuf, { name: `card_${tag}_${Date.now()}.png` });
+}
+
 function buildDropEmbed(card, expired = false) {
   const cfg = RARITY[card.rarity];
+  const attachment = cardAttachment(
+    generateCardImage({ rarity: card.rarity, starsFilled: starsFilled(cfg), mystery: !expired, expired }),
+    expired ? 'expired' : 'mystery',
+  );
+
   if (expired) {
-    return new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setColor(0x424242)
       .setTitle('💨  Card Disappeared...')
       .setDescription('> No one was fast enough.\n> The card vanished into thin air.')
       .addFields({ name: 'What it was', value: `${cfg.emoji} **${cfg.label}** card`, inline: true })
-      .setFooter({ text: 'Better luck next drop!' });
+      .setFooter({ text: 'Better luck next drop!' })
+      .setImage(`attachment://${attachment.name}`);
+    return { embed, files: [attachment] };
   }
-  return new EmbedBuilder()
+
+  const embed = new EmbedBuilder()
     .setColor(cfg.color)
     .setTitle(`${cfg.emoji}  A Card Has Appeared!`)
     .setDescription(
       `> **${cfg.stars}  ${cfg.label.toUpperCase()}**\n` +
-      `> ✨ *A rare opportunity has surfaced in the server...*\n\u200b`,
+      `> ✨ *A rare opportunity has surfaced in the server...*\n​`,
     )
     .addFields(
       { name: '🃏 Mystery Card', value: '**???** — Can you grab it in time?', inline: true },
       { name: '⏱️ Time Left',    value: '**8 seconds**',                        inline: true },
     )
-    .setFooter({ text: 'First to click wins the card!' });
+    .setFooter({ text: 'First to click wins the card!' })
+    .setImage(`attachment://${attachment.name}`);
+  return { embed, files: [attachment] };
 }
 
 function buildClaimedEmbed(card, user) {
   const cfg = RARITY[card.rarity];
-  return new EmbedBuilder()
+  const attachment = cardAttachment(
+    generateCardImage({ rarity: card.rarity, starsFilled: starsFilled(cfg), name: card.name, desc: card.desc, flavor: card.flavor }),
+    card.id,
+  );
+  const embed = new EmbedBuilder()
     .setColor(cfg.color)
     .setTitle(`${card.emoji}  ${card.name}`)
-    .setDescription(
-      `> ${cfg.emoji} **${cfg.stars}  ${cfg.label.toUpperCase()}**\n` +
-      `> *${card.desc}*\n\n` +
-      `> *${card.flavor}*\n\u200b`,
-    )
     .addFields({ name: '🎉 Claimed By', value: `<@${user.id}>`, inline: true })
     .setFooter({ text: `Card ID: ${card.id}  •  ${cfg.label} • YSER Flow Cards` })
+    .setImage(`attachment://${attachment.name}`)
     .setTimestamp();
+  return { embed, files: [attachment] };
 }
 
 function buildCardDisplay(card) {
   const cfg = RARITY[card.rarity];
-  return new EmbedBuilder()
+  const attachment = cardAttachment(
+    generateCardImage({ rarity: card.rarity, starsFilled: starsFilled(cfg), name: card.name, desc: card.desc, flavor: card.flavor }),
+    card.id,
+  );
+  const embed = new EmbedBuilder()
     .setColor(cfg.color)
     .setTitle(`${card.emoji}  ${card.name}`)
-    .setDescription(`${cfg.emoji} **${cfg.stars}  ${cfg.label.toUpperCase()}**\n\n*${card.desc}*\n\n*${card.flavor}*`)
-    .setFooter({ text: `Card ID: ${card.id}` });
+    .setFooter({ text: `Card ID: ${card.id}` })
+    .setImage(`attachment://${attachment.name}`);
+  return { embed, files: [attachment] };
 }
 
 // ── Sell prices by rarity ─────────────────────────────────────────────────────

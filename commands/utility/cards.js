@@ -1,12 +1,13 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { addCoins, getBalance }  = require('../../utils/economyManager');
 const { CARDS, RARITY, SELL_PRICE } = require('../../utils/cardsManager');
+const { generateCollectionBoard } = require('../../utils/cardCollectionVisual');
 const { filterNonBotIds } = require('../../utils/discordHelpers');
 
-const PAGE_SIZE = 6;
+const CARD_CATALOG = CARDS.map(c => ({ id: c.id, name: c.name, rarity: c.rarity }));
 const fmt = n => Number(n).toLocaleString();
 
 module.exports = {
@@ -14,8 +15,7 @@ module.exports = {
     .setName('cards')
     .setDescription('Collectible trading cards that drop in chat')
     .addSubcommand(sub => sub.setName('collection').setDescription('View your (or someone\'s) card collection')
-      .addUserOption(o => o.setName('user').setDescription('Whose collection to view').setRequired(false))
-      .addIntegerOption(o => o.setName('page').setDescription('Page number').setMinValue(1).setRequired(false)))
+      .addUserOption(o => o.setName('user').setDescription('Whose collection to view').setRequired(false)))
     .addSubcommand(sub => sub.setName('sell').setDescription('Sell a card from your collection for coins')
       .addStringOption(o => o.setName('card').setDescription('Card to sell — start typing to search').setRequired(true).setAutocomplete(true)))
     .addSubcommand(sub => sub.setName('leaderboard').setDescription('Top card collectors in this server')),
@@ -55,7 +55,6 @@ module.exports = {
     // ── Collection ───────────────────────────────────────────────────────────
     if (sub === 'collection') {
       const target  = interaction.options.getUser('user') || interaction.user;
-      const page    = (interaction.options.getInteger('page') || 1) - 1;
       const all     = readJson('cards.json', {});
       const owned   = all[target.id] || [];
 
@@ -68,42 +67,29 @@ module.exports = {
             : `<@${target.id}> hasn't collected any cards yet.`)
           .setThumbnail(target.displayAvatarURL({ dynamic: true }))], ephemeral: true });
 
-      // Group by rarity
+      const ownedCounts = {};
+      for (const card of owned) ownedCounts[card.id] = (ownedCounts[card.id] || 0) + 1;
+
       const grouped = {};
       for (const card of owned) {
         if (!grouped[card.rarity]) grouped[card.rarity] = [];
         grouped[card.rarity].push(card);
       }
-
       const summary = Object.entries(RARITY).map(([r, cfg]) => {
         const count = grouped[r]?.length || 0;
         return count > 0 ? `${cfg.emoji} **${cfg.label}:** ${count}` : null;
       }).filter(Boolean).join('  ·  ');
 
-      const flat       = Object.entries(RARITY).flatMap(([r]) => grouped[r] || []);
-      const totalPages = Math.max(1, Math.ceil(flat.length / PAGE_SIZE));
-      const safePage   = Math.max(0, Math.min(page, totalPages - 1));
-      const slice      = flat.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
-
-      const fields = slice.map(card => {
-        const cfg   = RARITY[card.rarity];
-        const price = SELL_PRICE[card.rarity];
-        const ts    = Math.floor(card.collectedAt / 1000);
-        return {
-          name:   `${card.emoji} ${card.name}`,
-          value:  `${cfg.emoji} **${cfg.label}** ${cfg.stars}\n*${card.desc}*\n📅 <t:${ts}:d>  💰 sells for **${fmt(price)}**`,
-          inline: true,
-        };
-      });
+      const imageName  = `card_board_${Date.now()}.png`;
+      const boardBuf   = generateCollectionBoard({ catalog: CARD_CATALOG, ownedCounts, title: `${target.username}'s Collection` });
+      const attachment = new AttachmentBuilder(boardBuf, { name: imageName });
 
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0xE91E63)
-        .setTitle(`🃏  ${target.username}'s Collection`)
-        .setThumbnail(target.displayAvatarURL({ dynamic: true }))
-        .setDescription(`**${owned.length} cards** collected\n${summary}\n\u200b`)
-        .addFields(fields)
-        .setFooter({ text: `Page ${safePage + 1}/${totalPages}  •  Use /cards sell to trade cards for coins` })
-        .setTimestamp()] });
+        .setDescription(`**${owned.length} cards** collected  ·  **${Object.keys(ownedCounts).length}/${CARD_CATALOG.length}** unique\n${summary}`)
+        .setImage(`attachment://${imageName}`)
+        .setFooter({ text: 'Use /cards sell to trade duplicates for coins' })
+        .setTimestamp()], files: [attachment] });
     }
 
     // ── Sell ─────────────────────────────────────────────────────────────────

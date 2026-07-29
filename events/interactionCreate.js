@@ -369,7 +369,7 @@ module.exports = {
           if (!allCards[interaction.user.id]) allCards[interaction.user.id] = [];
           allCards[interaction.user.id].push({ ...drop.card, collectedAt: Date.now() });
           writeJson('cards.json', allCards);
-          const claimedEmbed = buildClaimedEmbed(drop.card, interaction.user);
+          const { embed: claimedEmbed, files: claimedFiles } = buildClaimedEmbed(drop.card, interaction.user);
           const disabled = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
               .setCustomId('card_claimed')
@@ -377,7 +377,7 @@ module.exports = {
               .setStyle(ButtonStyle.Success)
               .setDisabled(true),
           );
-          return interaction.update({ embeds: [claimedEmbed], components: [disabled] });
+          return interaction.update({ embeds: [claimedEmbed], files: claimedFiles, components: [disabled], attachments: [] });
         }
 
         // Restore — confirm
