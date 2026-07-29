@@ -1,8 +1,10 @@
 'use strict';
 
+const { AttachmentBuilder } = require('discord.js');
 const { readJson, writeJson } = require('./jsonStorage');
 const { createEmbed } = require('./embedBuilder');
 const { getWeekEvents, filterEvents } = require('./economicCalendar');
+const { generateEconEventCard } = require('./econEventVisual');
 
 const TICK_INTERVAL_MS   = 5_000;   // tight enough to hit the release post within a few seconds of the exact minute
 const REMINDER_OFFSETS   = [15, 10, 5]; // minutes before release
@@ -11,71 +13,132 @@ const WEEKLY_STALE_MS    = 6 * 60 * 60 * 1000; // weekly summary can catch up up
 const FIRED_KEY_TTL_MS   = 9 * 24 * 60 * 60 * 1000; // prune fired-keys older than ~9 days (past any event they could reference)
 
 const IMPACT_COLOR = { High: 0xEF4444, Medium: 0xF59E0B, Low: 0x95A5A6, Holiday: 0x8B5CF6 };
-const IMPACT_ICON  = { High: '🔴', Medium: '🟠', Low: '⚪', Holiday: '🎌' };
 
-function fmtEvent(e) {
-  const ts = Math.floor(e.timestamp / 1000);
-  const parts = [`${IMPACT_ICON[e.impact] || '⚪'} **${e.currency}** — ${e.title}`, `<t:${ts}:t> (<t:${ts}:R>)`];
-  if (e.forecast) parts.push(`Forecast: \`${e.forecast}\``);
-  if (e.previous) parts.push(`Previous: \`${e.previous}\``);
-  return parts.join('\n');
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES   = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function dayKeyOf(e) {
+  return e.date.toISOString().slice(0, 10);
+}
+
+// A light section divider between days in a multi-day (week) view — the
+// per-event card already shows its own day/time chip, so this exists purely
+// to make a full week scroll like an organized calendar instead of a flat
+// stream of cards.
+function buildDayHeaderEmbed(e) {
+  const label = `${WEEKDAY_NAMES[e.date.getUTCDay()]}, ${MONTH_NAMES[e.date.getUTCMonth()]} ${e.date.getUTCDate()}`;
+  const embed = createEmbed('info', { description: `**🗓️ ${label}**` });
+  embed.setTimestamp(null);
+  return embed;
+}
+
+function fmtEventTime(e) {
+  const day = WEEKDAY_NAMES[e.date.getUTCDay()].slice(0, 3).toUpperCase();
+  const hh  = String(e.date.getUTCHours()).padStart(2, '0');
+  const mm  = String(e.date.getUTCMinutes()).padStart(2, '0');
+  return `${day} ${hh}:${mm} UTC`;
+}
+
+// One generated visual card per event — same house style as /risk — so a
+// release reads at a glance without anyone having to open the image.
+function buildEventCard(e, timeLabel) {
+  const safeId    = (e.id || 'evt').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
+  const imageName = `econ_${safeId}_${Date.now()}_${Math.floor(Math.random() * 1e4)}.png`;
+  const buf = generateEconEventCard({
+    title: e.title, currency: e.currency, impact: e.impact,
+    forecast: e.forecast, previous: e.previous, timeLabel,
+  });
+  return new AttachmentBuilder(buf, { name: imageName });
 }
 
 function buildReminderEmbed(e, offset, guild) {
-  return createEmbed('warning', {
+  const attachment = buildEventCard(e, `IN ${offset} MIN`);
+  const ts = Math.floor(e.timestamp / 1000);
+  const embed = createEmbed('warning', {
     color: IMPACT_COLOR[e.impact] || 0x95A5A6,
     title: `⏰ Releasing in ${offset} Minutes`,
-    description: fmtEvent(e),
+    description: `<t:${ts}:t> (<t:${ts}:R>)`,
     footer: `${guild.name} • Economic Calendar`,
+    image: `attachment://${attachment.name}`,
   }).setTimestamp(null);
+  return { embed, files: [attachment] };
 }
 
 function buildReleaseEmbed(e, guild) {
-  return createEmbed('info', {
+  const attachment = buildEventCard(e, 'RELEASING NOW');
+  const ts = Math.floor(e.timestamp / 1000);
+  const embed = createEmbed('info', {
     color: IMPACT_COLOR[e.impact] || 0x95A5A6,
     title: '📊 Releasing Now',
-    description: fmtEvent(e),
+    description: `<t:${ts}:t>`,
     footer: `${guild.name} • Economic Calendar`,
+    image: `attachment://${attachment.name}`,
   }).setTimestamp(null);
+  return { embed, files: [attachment] };
 }
 
-const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MAX_EMBEDS_PER_MSG  = 9;  // Discord's real cap is 10 — leave headroom for a day-divider embed
+const MAX_EVENTS_RENDERED = 30; // hard safety cap so a huge, unfiltered week can't spam dozens of messages
 
-// Splits into multiple embeds (grouped by day) so a full week of events never
-// overflows a single embed's 4096-char description limit. `title`/`emptyText`
-// let callers reuse this for a single-day ("Today"/"Tomorrow") summary too.
+// One visual card per event (no click-to-open needed), batched into
+// Discord-message-sized groups — `title`/`emptyText` let callers reuse this
+// for a single-day ("Today"/"Tomorrow") summary too. When the event list
+// spans more than one calendar day (the "This Week" / scheduled weekly
+// post), a day-divider embed is inserted at each day boundary so the whole
+// week reads like an organized calendar instead of a flat stream of cards
+// — single-day views skip it since every card already shares the same day.
+// Returns an array of ready-to-send message payloads ({ embeds, files }).
 function buildWeeklySummaryEmbeds(events, guild, title = '📅 This Week\'s Economic Calendar', emptyText = 'No matching events this week.') {
+  const headerEmbed = createEmbed('info', { title, footer: `${guild.name} • Economic Calendar` });
+
   if (events.length === 0) {
-    return [createEmbed('info', { title, description: emptyText, footer: `${guild.name} • Economic Calendar` })];
+    headerEmbed.setDescription(emptyText);
+    return [{ embeds: [headerEmbed], files: [] }];
   }
 
-  const byDay = new Map();
-  for (const e of events) {
-    const key = e.date.toISOString().slice(0, 10);
-    if (!byDay.has(key)) byDay.set(key, []);
-    byDay.get(key).push(e);
+  const capped  = events.slice(0, MAX_EVENTS_RENDERED);
+  const multiDay = new Set(capped.map(dayKeyOf)).size > 1;
+
+  const batches = [];
+  let curEmbeds = [headerEmbed];
+  let curFiles  = [];
+  let lastDayKey = null;
+
+  function flush() {
+    if (curEmbeds.length > 0) batches.push({ embeds: curEmbeds, files: curFiles });
+    curEmbeds = [];
+    curFiles  = [];
   }
 
-  const embeds = [];
-  let current = null;
-  for (const [dayKey, dayEvents] of byDay) {
-    const dayName = WEEKDAY_NAMES[new Date(dayEvents[0].timestamp).getUTCDay()];
-    const header = `**${dayName}, ${dayKey}**`;
-    const lines = dayEvents.map(fmtEvent);
-    const block = `${header}\n${lines.join('\n\n')}`;
+  for (const e of capped) {
+    const dayKey     = dayKeyOf(e);
+    const dayChanged = multiDay && dayKey !== lastDayKey;
+    const needed     = (dayChanged ? 1 : 0) + 1; // day header (maybe) + the event card itself
 
-    if (!current || (current.data.description.length + block.length + 2) > 3800) {
-      current = createEmbed('info', {
-        title: embeds.length === 0 ? title : `${title} (cont.)`,
-        description: block,
-        footer: `${guild.name} • Economic Calendar`,
-      });
-      embeds.push(current);
-    } else {
-      current.setDescription(`${current.data.description}\n\n${block}`);
+    if (curEmbeds.length + needed > MAX_EMBEDS_PER_MSG) flush();
+
+    if (dayChanged) {
+      curEmbeds.push(buildDayHeaderEmbed(e));
+      lastDayKey = dayKey;
     }
+
+    const attachment = buildEventCard(e, fmtEventTime(e));
+    curFiles.push(attachment);
+    const embed = createEmbed('info', { image: `attachment://${attachment.name}` });
+    embed.setTimestamp(null);
+    curEmbeds.push(embed);
   }
-  return embeds.slice(0, 10); // Discord's per-message embed cap
+  flush();
+
+  if (events.length > MAX_EVENTS_RENDERED) {
+    const noteEmbed = createEmbed('info', {
+      description: `➕ **${events.length - MAX_EVENTS_RENDERED}** more matching events not shown — narrow the impact/currency filters to see them all.`,
+    });
+    if (batches.length === 0) batches.push({ embeds: [noteEmbed], files: [] });
+    else batches[batches.length - 1].embeds.push(noteEmbed);
+  }
+
+  return batches;
 }
 
 function currentWeekSlot(weekday, hour, minute, offsetMinutes, now) {
@@ -123,9 +186,9 @@ async function runTick(client) {
         guildChanged = true;
         if (now - target > STALE_MS) continue; // too late to be useful — mark fired, don't send
 
-        const embed = buildReminderEmbed(e, offset, guild);
+        const { embed, files } = buildReminderEmbed(e, offset, guild);
         const content = settings.roleId ? `<@&${settings.roleId}>` : undefined;
-        await channel.send({ content, embeds: [embed], allowedMentions: settings.roleId ? { roles: [settings.roleId] } : { parse: [] } }).catch(() => {});
+        await channel.send({ content, embeds: [embed], files, allowedMentions: settings.roleId ? { roles: [settings.roleId] } : { parse: [] } }).catch(() => {});
       }
 
       const releaseKey = `${e.id}#release`;
@@ -133,8 +196,8 @@ async function runTick(client) {
         firedSet.add(releaseKey);
         guildChanged = true;
         if (now - e.timestamp <= STALE_MS) {
-          const embed = buildReleaseEmbed(e, guild);
-          await channel.send({ embeds: [embed], allowedMentions: { parse: [] } }).catch(() => {});
+          const { embed, files } = buildReleaseEmbed(e, guild);
+          await channel.send({ embeds: [embed], files, allowedMentions: { parse: [] } }).catch(() => {});
         }
       }
     }
@@ -144,8 +207,10 @@ async function runTick(client) {
     if (wp?.enabled) {
       const slot = currentWeekSlot(wp.weekday, wp.hour, wp.minute, wp.offsetMinutes || 0, now);
       if (now >= slot && (!settings.lastWeeklyPostAt || settings.lastWeeklyPostAt < slot) && (now - slot) <= WEEKLY_STALE_MS) {
-        const embeds = buildWeeklySummaryEmbeds(filtered, guild);
-        await channel.send({ embeds }).catch(() => {});
+        const batches = buildWeeklySummaryEmbeds(filtered, guild);
+        for (const batch of batches) {
+          await channel.send(batch).catch(() => {});
+        }
         settings.lastWeeklyPostAt = slot;
         guildChanged = true;
       }

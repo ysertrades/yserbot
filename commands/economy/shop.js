@@ -5,8 +5,8 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
 } = require('discord.js');
-const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown, clearCooldownsMatching } = require('../../utils/economyManager');
-const { EFFECT_TYPES, setEffect, getActiveEffectsList } = require('../../utils/effectsManager');
+const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
+const { EFFECT_TYPES, setEffect, getEffect, getActiveEffectsList } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { MAX_EQUIPPED, getEquipped, toggleEquip } = require('../../utils/badgeManager');
 const { generateMysteryBoxImage } = require('../../utils/mysteryBoxVisual');
@@ -219,35 +219,14 @@ function useItem(userId, guildId, itemId) {
       .setTimestamp()] };
   }
 
-  if (item.type === 'cooldown_skip') {
-    // Rate-limit the item itself — otherwise it'd just let you re-stack
-    // cooldown skips back to back and defeat the point of cooldowns entirely.
-    const itemCd = checkCooldown(userId, 'cooldown_skip_item', 2 * 60 * 1000);
-    if (itemCd > 0) {
-      return { embeds: [errorEmbed('Still Recharging', `You can use another **${item.name}** in **${Math.ceil(itemCd / 1000)}s**.`)] };
-    }
-
-    const removed = removeFromInv(userId, guildId, itemId);
-    if (!removed) return { embeds: [errorEmbed('Failed', 'Could not remove from inventory.')] };
-
-    const GAME_ACTIONS = new Set(['fish', 'mine', 'trivia', 'work', 'casino']);
-    clearCooldownsMatching(userId, action => GAME_ACTIONS.has(action) || action.startsWith('job_'));
-    setCooldown(userId, 'cooldown_skip_item');
-
-    return { embeds: [new EmbedBuilder()
-      .setColor(rarityColor('cooldown_skip'))
-      .setTitle(`${item.emoji || '⏩'}  ${item.name} Used!`)
-      .setDescription('Your **fishing**, **mining**, **trivia**, **work**, **jobs**, and **casino** cooldowns are all clear — go again right now!')
-      .setFooter({ text: 'This item is on a 2-minute cooldown of its own' })
-      .setTimestamp()] };
-  }
-
   if (item.type === 'mystery_box') {
     const opened = removeFromInv(userId, guildId, itemId);
     if (!opened) return { embeds: [errorEmbed('Failed', 'Could not remove from inventory.')] };
 
     const tierDef = rollMysteryBox();
-    const reward  = Math.floor(Math.random() * (tierDef.max - tierDef.min + 1)) + tierDef.min;
+    let reward    = Math.floor(Math.random() * (tierDef.max - tierDef.min + 1)) + tierDef.min;
+    const boost   = getEffect(userId, guildId, 'coin_boost');
+    if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
     addCoins(userId, reward);
 
     const imageName  = `mbox_${Date.now()}.png`;
@@ -256,7 +235,7 @@ function useItem(userId, guildId, itemId) {
     return { embeds: [new EmbedBuilder()
       .setColor(rarityColor('mystery_box'))
       .setTitle(`${item.emoji || '🎁'}  ${item.name} Opened!`)
-      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins`)
+      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 Coin Boost active — ${boost.multiplier || 1.5}× earnings!` : ''}`)
       .setImage(`attachment://${imageName}`)], files: [attachment] };
   }
 

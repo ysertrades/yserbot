@@ -12,6 +12,7 @@
 
 const { readJson, writeJson } = require('./jsonStorage');
 const { addCoins } = require('./economyManager');
+const { getEffect } = require('./effectsManager');
 const { createEmbed } = require('./embedBuilder');
 
 const TICK_INTERVAL_MS = 30_000;
@@ -65,10 +66,12 @@ async function runTick(client) {
     const participants    = Object.keys(state.pool).length;
 
     if (winnerId) {
-      addCoins(winnerId, REWARD);
+      const boost = getEffect(winnerId, guildId, 'coin_boost');
+      const payout = boost ? Math.floor(REWARD * (boost.multiplier || 1.5)) : REWARD;
+      addCoins(winnerId, payout);
       const embed = createEmbed('success', {
         title: '🎟️ Daily Lottery Draw',
-        description: `🎉 <@${winnerId}> won **${REWARD.toLocaleString()}** coins!\n\n🎫 ${ticketsInPool} ticket${ticketsInPool !== 1 ? 's' : ''} from ${participants} participant${participants !== 1 ? 's' : ''}.`,
+        description: `🎉 <@${winnerId}> won **${payout.toLocaleString()}** coins!${boost ? ` (💰 ${boost.multiplier || 1.5}× coin boost applied!)` : ''}\n\n🎫 ${ticketsInPool} ticket${ticketsInPool !== 1 ? 's' : ''} from ${participants} participant${participants !== 1 ? 's' : ''}.`,
         footer: `${guild.name} • Next draw in 24 hours`,
       });
       await channel.send({ embeds: [embed] }).catch(() => {});

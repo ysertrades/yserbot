@@ -1,4 +1,5 @@
 const { readJson, writeJson } = require('./jsonStorage');
+const { getEffect } = require('./effectsManager');
 
 const ECONOMY_FILE = 'economy.json';
 const COOLDOWNS_FILE = 'cooldowns.json';
@@ -37,7 +38,12 @@ function getLeaderboard(limit = 10) {
     .slice(0, limit);
 }
 
-function checkCooldown(userId, action, duration) {
+// `guildId` is optional — when passed and the user has an active Cooldown
+// Skip effect in that guild, every cooldown check reports "ready" without
+// even touching the stored timestamp, so the bypass just lasts as long as
+// the purchased effect does.
+function checkCooldown(userId, action, duration, guildId) {
+  if (guildId && getEffect(userId, guildId, 'cooldown_skip')) return 0;
   const cooldowns = readJson(COOLDOWNS_FILE, {});
   const key = userId + '_' + action;
   const now = Date.now();

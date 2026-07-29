@@ -27,7 +27,7 @@ module.exports = {
 
   async execute(interaction) {
     const userId = interaction.user.id;
-    const cd     = checkCooldown(userId, 'work', WORK_COOLDOWN);
+    const cd     = checkCooldown(userId, 'work', WORK_COOLDOWN, interaction.guild?.id);
 
     if (cd > 0) {
       const hours   = Math.floor(cd / 3600000);
