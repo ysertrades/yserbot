@@ -14,7 +14,7 @@ const REVEAL_DELAY_MS       = 2000;
 const REWARD_MIN            = 50;
 const REWARD_MAX            = 120;
 const REWARD_SCALE_STEP     = 0.2; // each correct answer so far bumps the next reward range up 20%
-const HISTORY_LIMIT         = 20; // how many recently-asked questions per user we avoid repeating
+const HISTORY_LIMIT         = 40; // how many recently-asked questions per user we avoid repeating — scaled up alongside the larger question bank
 const LETTERS = ['A', 'B', 'C', 'D'];
 const fmt = n => Number(n).toLocaleString();
 
@@ -218,11 +218,9 @@ module.exports = {
     clearTimeout(session.awaitTimer);
     activeSessions.delete(userId);
 
-    return interaction.update({
-      embeds: [EmbedBuilder.from(interaction.message.embeds[0])
-        .setColor(0x95a5a6)
-        .setFooter({ text: `Session closed — ${session.correctCount}/${QUESTIONS_PER_SESSION} correct, ${fmt(session.totalCoins)} coins earned. No cooldown started.` })],
-      components: [],
-    });
+    // Matches every other Close button in the bot (casino, shop, jobs,
+    // fish/mine) — fully dismiss the message instead of leaving an edited
+    // husk of it behind.
+    try { await interaction.message.delete(); } catch {}
   },
 };

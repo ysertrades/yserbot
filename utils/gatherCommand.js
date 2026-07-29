@@ -87,18 +87,33 @@ function buildGatherCommand(cfg) {
       .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}`)
       .setImage(`attachment://${imageName}`);
 
+    const continueRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gather_again:${action}:${userId}`).setLabel(buttonLabel).setEmoji(buttonEmoji).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`gather_close:${action}:${userId}`).setLabel('Close').setStyle(ButtonStyle.Secondary),
+    );
+
     let components = [];
     if (remaining > 0) {
       setRemaining(userId, action, remaining);
       embed.setFooter({ text: `${remaining}/${SESSION_USES} ${sessionNoun} left this session` });
-      components = [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`gather_again:${action}:${userId}`).setLabel(buttonLabel).setEmoji(buttonEmoji).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`gather_close:${action}:${userId}`).setLabel('Close').setStyle(ButtonStyle.Secondary),
-      )];
+      components = [continueRow];
     } else {
-      clearRemaining(userId, action);
-      setCooldown(userId, action);
-      embed.setFooter({ text: 'Session complete — come back in 2 hours' });
+      const skip = getEffect(userId, guildId, 'cooldown_skip');
+      if (skip) {
+        // Cooldown Skip's whole point is unlimited play while it's active —
+        // refill instead of ending the session so Continue keeps working
+        // without forcing a manual /fish or /mine relaunch. setCooldown is
+        // deliberately NOT called here: if a real cooldown was already
+        // ticking before the skip started, it stays untouched in storage
+        // and silently re-applies the instant the skip effect expires.
+        setRemaining(userId, action, SESSION_USES);
+        embed.setFooter({ text: `⏩ Cooldown Skip active — unlimited ${sessionNoun}!` });
+        components = [continueRow];
+      } else {
+        clearRemaining(userId, action);
+        setCooldown(userId, action);
+        embed.setFooter({ text: 'Session complete — come back in 2 hours' });
+      }
     }
 
     // attachments: [] clears whatever image was on the message before this
@@ -124,12 +139,12 @@ function buildGatherCommand(cfg) {
       }
 
       if (prefix === 'gather_close') {
-        const remaining = getRemaining(userId, act);
-        return interaction.update({
-          embeds: [EmbedBuilder.from(interaction.message.embeds[0])
-            .setFooter({ text: `Session paused — ${remaining}/${SESSION_USES} ${sessionNoun} saved. Come back anytime before your cooldown starts!` })],
-          components: [],
-        });
+        // Progress is stored server-side (gatherSessions.json), so deleting
+        // the message doesn't lose it — matches every other Close button in
+        // the bot (casino, shop, jobs), which all fully dismiss instead of
+        // leaving an edited husk of the message behind.
+        try { await interaction.message.delete(); } catch {}
+        return;
       }
 
       if (prefix === 'gather_again') {
