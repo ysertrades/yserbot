@@ -4,16 +4,16 @@
  * riskGuideVisual.js
  *
  * A large "how to use /risk" walkthrough poster in the same flat-
- * glassmorphism house style as /risk itself — five numbered steps plus a
- * worked example strip showing a real command turning into a real contract
- * count, so the whole flow is legible at a glance without reading a wall
- * of text. Purely decorative — meant to be embedded once as a saved
- * /embed template.
+ * glassmorphism house style as /risk itself — five numbered steps, listed
+ * vertically so each title/description reads clearly at a glance (no
+ * zooming into the image needed), plus a worked example strip showing a
+ * real command turning into a real contract count. Purely decorative —
+ * meant to be embedded once as a saved /embed template.
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
-  fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
+  PNG, setPxBlend, glassPanel, flatBg, dotBlend, ringStroke, line,
+  fillRoundedRectBlend, drawText, drawTextCentered, textWidth, GLYPH_H,
 } = require('./pixelArt');
 
 const ACCENT = [52, 152, 219, 255];
@@ -49,14 +49,14 @@ function drawCheckIcon(png, cx, cy, size, color) {
 
 const STEPS = [
   { icon: drawSlashIcon, title: 'RUN /RISK', desc: 'Pick a futures symbol — ES, NQ, GC & more' },
-  { icon: drawDollarIcon, title: 'SET YOUR RISK', desc: 'How much you\'re willing to lose, in USD' },
+  { icon: drawDollarIcon, title: 'SET YOUR RISK', desc: "How much you're willing to lose, in USD" },
   { icon: drawRulerIcon, title: 'SET YOUR STOP', desc: 'Your stop distance, in points' },
   { icon: drawStackIcon, title: 'GET YOUR SIZE', desc: 'Standard & micro contract counts, instantly' },
   { icon: drawCheckIcon, title: 'TRADE WITH A PLAN', desc: 'Never guess your position size again' },
 ];
 
 function generateRiskGuideImage() {
-  const W = 1000, H = 640;
+  const W = 1000, H = 820;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   flatBg(png, [12, 15, 20, 255]);
   glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: ACCENT, tintAlpha: 0.05, border: ACCENT, borderAlpha: 0.35 });
@@ -65,33 +65,35 @@ function generateRiskGuideImage() {
   drawTextCentered(png, 'FIVE STEPS FROM SYMBOL TO POSITION SIZE', W / 2, 44 + 4 * GLYPH_H + 14, 2, [150, 190, 220, 255]);
   for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 130, ACCENT, 0.3);
 
-  const colW = (W - 80) / STEPS.length;
-  const iconY = 240;
+  // ── Vertical step list — big icon badges on the left, bold left-aligned
+  //    title/description text on the right with plenty of room, so nothing
+  //    needs to be zoomed into to read ──────────────────────────────────────
+  const iconCx = 116;
+  const rowTop = 162, rowH = 92;
+  const textLeft = 200;
 
   STEPS.forEach((step, i) => {
-    const cx = 40 + colW * i + colW / 2;
+    const cy = rowTop + i * rowH + rowH / 2;
 
-    ringStroke(png, cx, iconY, 50, ACCENT, 3);
-    dotBlend(png, cx, iconY, 45, ACCENT, 0.12);
-    step.icon(png, cx, iconY, 26, ACCENT);
+    ringStroke(png, iconCx, cy, 40, ACCENT, 3);
+    dotBlend(png, iconCx, cy, 35, ACCENT, 0.12);
+    step.icon(png, iconCx, cy, 21, ACCENT);
 
-    drawTextCentered(png, `${i + 1}`, cx, iconY - 88, 2, WHITE);
-    dotBlend(png, cx, iconY - 80, 16, ACCENT, 0.25);
-    drawTextCentered(png, `${i + 1}`, cx, iconY - 88, 2, ACCENT);
+    const nCx = iconCx + 36, nCy = cy - 36;
+    dotBlend(png, nCx, nCy, 17, ACCENT, 0.9);
+    drawTextCentered(png, `${i + 1}`, nCx, nCy - GLYPH_H, 2, WHITE);
 
-    drawTextCentered(png, step.title, cx, iconY + 74, 1, WHITE);
-    const lines = wrapText(step.desc, 1, colW - 20);
-    let ly = iconY + 96;
-    for (const l of lines) { drawTextCentered(png, l, cx, ly, 1, [160, 168, 182, 255]); ly += GLYPH_H + 6; }
+    drawText(png, step.title, textLeft, cy - 26, 2, WHITE);
+    drawText(png, step.desc, textLeft, cy - 26 + 2 * GLYPH_H + 10, 2, [172, 182, 198, 255]);
 
     if (i < STEPS.length - 1) {
-      const nextCx = 40 + colW * (i + 1) + colW / 2;
-      for (let x = cx + 58; x < nextCx - 58; x += 10) setPxBlend(png, x, iconY, ACCENT, 0.35);
+      const nextCy = rowTop + (i + 1) * rowH + rowH / 2;
+      for (let y = cy + 46; y < nextCy - 46; y += 10) setPxBlend(png, iconCx, y, ACCENT, 0.35);
     }
   });
 
   // ── Worked example strip ──────────────────────────────────────────────────
-  const exY = 440;
+  const exY = rowTop + STEPS.length * rowH + 36;
   for (let x = 60; x < W - 60; x++) setPxBlend(png, x, exY, ACCENT, 0.3);
   drawTextCentered(png, 'A REAL EXAMPLE', W / 2, exY + 20, 2, [150, 190, 220, 255]);
 

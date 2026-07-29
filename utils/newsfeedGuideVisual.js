@@ -12,7 +12,7 @@
 
 const {
   PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
-  fillRoundedRectBlend, drawText, drawTextCentered, textWidth, GLYPH_H,
+  fillRoundedRectBlend, drawTextCentered, GLYPH_H,
 } = require('./pixelArt');
 
 const BRAND = [29, 155, 240, 255]; // matches embedBuilder.js's 'news' color
@@ -89,7 +89,7 @@ const TOPICS_DISPLAY = [
 ];
 
 function generateNewsfeedGuideImage() {
-  const W = 1000, H = 700;
+  const W = 1000, H = 520;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   flatBg(png, [10, 14, 20, 255]);
   glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: BRAND, tintAlpha: 0.06, border: BRAND, borderAlpha: 0.4 });
@@ -114,34 +114,6 @@ function generateNewsfeedGuideImage() {
     drawTextCentered(png, topic.label, cx, cy + 26, 1, WHITE);
     drawTextCentered(png, topic.sub, cx, cy + 26 + GLYPH_H + 8, 1, [140, 148, 164, 255]);
   });
-
-  // ── Call-to-action strip ──────────────────────────────────────────────────
-  const ctaY = 500;
-  for (let x = 60; x < W - 60; x++) setPxBlend(png, x, ctaY, BRAND, 0.3);
-  drawTextCentered(png, 'GET STARTED', W / 2, ctaY + 20, 2, [140, 200, 240, 255]);
-
-  const cmd1 = '/NEWSFEED ENABLE';
-  const cmd2 = '/NEWSFEED TOPICS';
-  const w1 = 40 + textWidth(cmd1, 2);
-  const w2 = 40 + textWidth(cmd2, 2);
-  const gap = 90;
-  const totalW = w1 + gap + w2;
-  const startX = (W - totalW) / 2;
-  const chipY = ctaY + 60;
-
-  fillRoundedRectBlend(png, startX, chipY, w1, 50, 10, BRAND, 0.2);
-  drawTextCentered(png, cmd1, startX + w1 / 2, chipY + 16, 2, BRAND);
-
-  const arrowCx = startX + w1 + gap / 2;
-  line(png, arrowCx - 22, chipY + 25, arrowCx + 14, chipY + 25, WHITE, 4);
-  line(png, arrowCx + 14, chipY + 25, arrowCx + 2, chipY + 13, WHITE, 4);
-  line(png, arrowCx + 14, chipY + 25, arrowCx + 2, chipY + 37, WHITE, 4);
-
-  fillRoundedRectBlend(png, startX + w1 + gap, chipY, w2, 50, 10, WHITE, 0.1);
-  drawTextCentered(png, cmd2, startX + w1 + gap + w2 / 2, chipY + 16, 2, WHITE);
-
-  drawTextCentered(png, 'PICK ANY TOPICS ABOVE — OR NONE FOR EVERYTHING', W / 2, chipY + 82, 1, [140, 146, 158, 255]);
-  drawTextCentered(png, 'FREE · NO API KEY · CHECKED EVERY ~20 SECONDS', W / 2, chipY + 82 + GLYPH_H + 10, 1, [110, 116, 128, 255]);
 
   return PNG.sync.write(png);
 }
