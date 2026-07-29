@@ -17,8 +17,18 @@ const IMPACT_COLOR = { High: 0xEF4444, Medium: 0xF59E0B, Low: 0x95A5A6, Holiday:
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES   = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// The event card's time chip and day dividers display in this offset by
+// default (no label shown — it's presented as the assumed house timezone,
+// not literal UTC) rather than raw UTC, since UTC read confusingly early
+// for the audience this is built for.
+const DISPLAY_OFFSET_MIN = -4 * 60; // UTC-4
+
+function toDisplayDate(timestampMs) {
+  return new Date(timestampMs + DISPLAY_OFFSET_MIN * 60000);
+}
+
 function dayKeyOf(e) {
-  return e.date.toISOString().slice(0, 10);
+  return toDisplayDate(e.timestamp).toISOString().slice(0, 10);
 }
 
 // A light section divider between days in a multi-day (week) view — the
@@ -26,17 +36,19 @@ function dayKeyOf(e) {
 // to make a full week scroll like an organized calendar instead of a flat
 // stream of cards.
 function buildDayHeaderEmbed(e) {
-  const label = `${WEEKDAY_NAMES[e.date.getUTCDay()]}, ${MONTH_NAMES[e.date.getUTCMonth()]} ${e.date.getUTCDate()}`;
+  const d = toDisplayDate(e.timestamp);
+  const label = `${WEEKDAY_NAMES[d.getUTCDay()]}, ${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`;
   const embed = createEmbed('info', { description: `**🗓️ ${label}**` });
   embed.setTimestamp(null);
   return embed;
 }
 
 function fmtEventTime(e) {
-  const day = WEEKDAY_NAMES[e.date.getUTCDay()].slice(0, 3).toUpperCase();
-  const hh  = String(e.date.getUTCHours()).padStart(2, '0');
-  const mm  = String(e.date.getUTCMinutes()).padStart(2, '0');
-  return `${day} ${hh}:${mm} UTC`;
+  const d   = toDisplayDate(e.timestamp);
+  const day = WEEKDAY_NAMES[d.getUTCDay()].slice(0, 3).toUpperCase();
+  const hh  = String(d.getUTCHours()).padStart(2, '0');
+  const mm  = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${day} ${hh}:${mm}`;
 }
 
 // One generated visual card per event — same house style as /risk — so a
