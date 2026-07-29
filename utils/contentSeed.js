@@ -106,10 +106,48 @@ const NYSE_OPEN_TEMPLATE = {
   }],
 };
 
+const RISK_GUIDE_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#3498DB',
+    footer: 'YSER Flow Trading Tools',
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:riskGuide',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
+const NEWSFEED_GUIDE_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#1D9BF0',
+    footer: 'YSER Flow News',
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:newsfeedGuide',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
 const TEMPLATE_SEEDS = {
   'economy-showcase': ECONOMY_SHOWCASE_TEMPLATE,
   'report-guide':      REPORT_GUIDE_TEMPLATE,
   'nyse-open':         NYSE_OPEN_TEMPLATE,
+  'risk-guide':        RISK_GUIDE_TEMPLATE,
+  'newsfeed-guide':    NEWSFEED_GUIDE_TEMPLATE,
 };
 
 // Same "already seeded before this field changed" problem as
