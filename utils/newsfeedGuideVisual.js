@@ -12,7 +12,7 @@
 
 const {
   PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
-  fillRoundedRectBlend, drawTextCentered, GLYPH_H,
+  fillRoundedRectBlend, drawTextCentered, wrapText, GLYPH_H,
 } = require('./pixelArt');
 
 const BRAND = [29, 155, 240, 255]; // matches embedBuilder.js's 'news' color
@@ -89,7 +89,15 @@ const TOPICS_DISPLAY = [
 ];
 
 function generateNewsfeedGuideImage() {
-  const W = 1000, H = 520;
+  // Same 4x2 grid, same topic order — just a wider/taller canvas so the
+  // bumped-up label/sub text fits without crowding neighboring tiles (the
+  // longer subtitles wrap to a second line inside their own tile instead).
+  const cols = 4, rows = 2;
+  const W = 1200;
+  const gridTop = 160, cellH = 190;
+  const gridBottom = gridTop + rows * cellH;
+  const H = gridBottom + 60;
+
   const png = new PNG({ width: W, height: H, colorType: 6 });
   flatBg(png, [10, 14, 20, 255]);
   glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: BRAND, tintAlpha: 0.06, border: BRAND, borderAlpha: 0.4 });
@@ -98,9 +106,7 @@ function generateNewsfeedGuideImage() {
   drawTextCentered(png, 'LIVE MARKET-MOVING HEADLINES, DELIVERED TO YOUR CHANNEL', W / 2, 44 + 4 * GLYPH_H + 14, 2, [140, 200, 240, 255]);
   for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 130, BRAND, 0.3);
 
-  const cols = 4, rows = 2;
-  const gridTop = 160, gridBottom = 460;
-  const cellW = (W - 120) / cols, cellH = (gridBottom - gridTop) / rows;
+  const cellW = (W - 120) / cols;
 
   TOPICS_DISPLAY.forEach((topic, i) => {
     const col = i % cols, row = Math.floor(i / cols);
@@ -111,8 +117,13 @@ function generateNewsfeedGuideImage() {
     dotBlend(png, cx, cy - 30, 37, BRAND, 0.12);
     topic.icon(png, cx, cy - 30, 20, BRAND);
 
-    drawTextCentered(png, topic.label, cx, cy + 26, 1, WHITE);
-    drawTextCentered(png, topic.sub, cx, cy + 26 + GLYPH_H + 8, 1, [140, 148, 164, 255]);
+    drawTextCentered(png, topic.label, cx, cy + 26, 2, WHITE);
+    const subLines = wrapText(topic.sub.toUpperCase(), 2, cellW - 24);
+    let sy = cy + 26 + 2 * GLYPH_H + 10;
+    for (const l of subLines) {
+      drawTextCentered(png, l, cx, sy, 2, [160, 168, 184, 255]);
+      sy += 2 * GLYPH_H + 6;
+    }
   });
 
   return PNG.sync.write(png);
