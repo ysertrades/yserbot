@@ -7,6 +7,7 @@ const {
 const { getBalance, removeCoins } = require('../../utils/economyManager');
 const { EFFECT_TYPES, setEffect, getActiveEffectsList } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const { MAX_EQUIPPED, getEquipped, toggleEquip } = require('../../utils/badgeManager');
 
 const SHOP_FILE = 'shop.json';
 const INV_FILE  = 'inventory.json';
@@ -41,7 +42,10 @@ function removeFromInv(userId, guildId, itemId, qty = 1) {
 }
 
 function rarityColor(type) {
-  const map = { coin_boost: 0xFFD700, rob_shield: 0x3498DB, xp_boost: 0x9B59B6, daily_boost: 0xF39C12, card_magnet: 0xE91E63 };
+  const map = {
+    coin_boost: 0xFFD700, rob_shield: 0x3498DB, xp_boost: 0x9B59B6, daily_boost: 0xF39C12,
+    card_magnet: 0xE91E63, vip_casino_pass: 0xF1C40F, badge: 0x1ABC9C, mystery_box: 0x8E44AD,
+  };
   return map[type] || 0x2ECC71;
 }
 
@@ -165,7 +169,15 @@ module.exports = {
       if (active.length > 0) {
         fields.push({
           name:  '✨ Active Effects',
-          value: active.map(e => `${e.label} — expires <t:${Math.floor(e.activeUntil / 1000)}:R>`).join('\n'),
+          value: active.map(e => `${e.label}${e.multiplier ? ` (${e.multiplier}×)` : ''} — expires <t:${Math.floor(e.activeUntil / 1000)}:R>`).join('\n'),
+          inline: false,
+        });
+      }
+      const equipped = getEquipped(userId, guildId);
+      if (equipped.length > 0) {
+        fields.push({
+          name:  `🎖️ Equipped Badges (${equipped.length}/${MAX_EQUIPPED})`,
+          value: equipped.map(id => `${items[id]?.emoji || '🎖️'} **${items[id]?.name || id}**`).join('\n'),
           inline: false,
         });
       }
@@ -191,6 +203,28 @@ module.exports = {
       const inv = getInv(userId, guildId);
       if (!inv[itemId] || inv[itemId] <= 0)
         return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Not Owned').setDescription(`You don't own **${item.name}**.\nBuy it first with \`/shop buy ${itemId}\`.`)], ephemeral: true });
+
+      // Badges are a permanent cosmetic unlock, not a consumable effect —
+      // "using" one toggles whether it's equipped (shown on /rank) instead
+      // of spending it from inventory.
+      if (item.type === 'badge') {
+        const result = toggleEquip(userId, guildId, itemId);
+        if (!result.ok) {
+          const equippedNames = getEquipped(userId, guildId).map(id => items[id]?.name || id).join(', ');
+          return interaction.reply({ embeds: [new EmbedBuilder()
+            .setColor(0xFF4757)
+            .setTitle('❌ Badge Slots Full')
+            .setDescription(`You can only equip **${MAX_EQUIPPED}** badges at once.\nCurrently equipped: ${equippedNames}\nUse \`/shop use\` on one of those to unequip it first.`)], ephemeral: true });
+        }
+        return interaction.reply({ embeds: [new EmbedBuilder()
+          .setColor(result.action === 'equipped' ? 0x2ECC71 : 0x9E9E9E)
+          .setTitle(`${item.emoji || '🎖️'}  ${item.name} ${result.action === 'equipped' ? 'Equipped' : 'Unequipped'}`)
+          .setDescription(result.action === 'equipped'
+            ? `Now showing on your \`/rank\` card.`
+            : `Removed from your \`/rank\` card. You still own it — use it again to re-equip.`)
+          .setFooter({ text: `${result.equipped.length}/${MAX_EQUIPPED} badge slots used` })
+          .setTimestamp()] });
+      }
 
       const def = EFFECT_TYPES[item.type];
       if (!def)
