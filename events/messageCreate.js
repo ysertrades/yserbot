@@ -121,13 +121,13 @@ async function handleCardDrop(message) {
     // Hit the threshold — reset and drop a card
     global.cardMessageCounts.set(key, 0);
 
-    const card  = pickRandomCard();
-    const embed = buildDropEmbed(card);
+    const card = pickRandomCard();
+    const { embed, files } = buildDropEmbed(card);
     const row   = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('card_grab').setLabel('🃏 Grab Card!').setStyle(ButtonStyle.Secondary),
     );
 
-    const msg = await message.channel.send({ embeds: [embed], components: [row] });
+    const msg = await message.channel.send({ embeds: [embed], files, components: [row] });
     global.cardDrops.set(msg.id, { card, grabbed: false, guildId: message.guild.id });
 
     // Expire after 8 seconds
@@ -135,11 +135,11 @@ async function handleCardDrop(message) {
       const drop = global.cardDrops.get(msg.id);
       if (!drop || drop.grabbed) return;
       global.cardDrops.delete(msg.id);
-      const expiredEmbed = buildDropEmbed(card, true);
+      const { embed: expiredEmbed, files: expiredFiles } = buildDropEmbed(card, true);
       const disabled = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('card_gone').setLabel('💨 Nobody grabbed it...').setStyle(ButtonStyle.Secondary).setDisabled(true),
       );
-      await msg.edit({ embeds: [expiredEmbed], components: [disabled] }).catch(() => {});
+      await msg.edit({ embeds: [expiredEmbed], files: expiredFiles, components: [disabled], attachments: [] }).catch(() => {});
     }, 8000);
   } catch (err) {
     console.error('[CARD DROP]', err);
