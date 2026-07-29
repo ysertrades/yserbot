@@ -106,10 +106,57 @@ const NYSE_OPEN_TEMPLATE = {
   }],
 };
 
+const RISK_GUIDE_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#3498DB',
+    footer: 'YSER Flow Trading Tools',
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:riskGuide',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
+const NEWSFEED_GUIDE_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#1D9BF0',
+    footer: 'YSER Flow News',
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:newsfeedGuide',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
 const TEMPLATE_SEEDS = {
   'economy-showcase': ECONOMY_SHOWCASE_TEMPLATE,
   'report-guide':      REPORT_GUIDE_TEMPLATE,
   'nyse-open':         NYSE_OPEN_TEMPLATE,
+  'risk-guide':        RISK_GUIDE_TEMPLATE,
+  'newsfeed-guide':    NEWSFEED_GUIDE_TEMPLATE,
+};
+
+// Same "already seeded before this field changed" problem as
+// DURATION_MIGRATIONS below — seedEmbedTemplates() only fills in templates
+// that don't exist yet, so a field tweak like removing the nyse-open
+// footer needs to be force-applied to copies already sitting in a guild's
+// embeds.json, scoped to exactly the known template/field pairs listed here.
+const EMBED_TEMPLATE_MIGRATIONS = {
+  'nyse-open': { footer: null },
 };
 
 // Same "already seeded before this field changed" problem as
