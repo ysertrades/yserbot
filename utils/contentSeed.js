@@ -93,7 +93,7 @@ const NYSE_OPEN_TEMPLATE = {
     title: null,
     description: null,
     color: '#2ECC71',
-    footer: 'YSER Flow • New York Session',
+    footer: null,
     footerIcon: null,
     thumbnail: null,
     image: 'dynamic:nyseOpen',
@@ -110,6 +110,15 @@ const TEMPLATE_SEEDS = {
   'economy-showcase': ECONOMY_SHOWCASE_TEMPLATE,
   'report-guide':      REPORT_GUIDE_TEMPLATE,
   'nyse-open':         NYSE_OPEN_TEMPLATE,
+};
+
+// Same "already seeded before this field changed" problem as
+// DURATION_MIGRATIONS below — seedEmbedTemplates() only fills in templates
+// that don't exist yet, so a field tweak like removing the nyse-open
+// footer needs to be force-applied to copies already sitting in a guild's
+// embeds.json, scoped to exactly the known template/field pairs listed here.
+const EMBED_TEMPLATE_MIGRATIONS = {
+  'nyse-open': { footer: null },
 };
 
 function seedShopDefaults() {
@@ -166,6 +175,24 @@ function seedEmbedTemplates() {
   return changed;
 }
 
+function migrateEmbedTemplates() {
+  const all = readJson(EMBEDS_FILE, {});
+  let changed = false;
+
+  for (const guildId of Object.keys(all)) {
+    for (const [name, patch] of Object.entries(EMBED_TEMPLATE_MIGRATIONS)) {
+      const embed = all[guildId]?.[name]?.embeds?.[0];
+      if (!embed) continue;
+      for (const [field, value] of Object.entries(patch)) {
+        if (embed[field] !== value) { embed[field] = value; changed = true; }
+      }
+    }
+  }
+
+  if (changed) writeJson(EMBEDS_FILE, all);
+  return changed;
+}
+
 // Guilds that have never had *any* config/shop/embed activity won't have a
 // key in shop.json/embeds.json yet, so seeding from those files' existing
 // keys alone would skip a genuinely brand-new guild — bootstrap one from
@@ -189,9 +216,11 @@ function seedDefaultContent(client) {
   const shopSeeded       = seedShopDefaults();
   const durationsFixed   = migrateDurations();
   const embedSeeded      = seedEmbedTemplates();
+  const embedsFixed      = migrateEmbedTemplates();
   if (shopSeeded)     console.log('[CONTENT SEED] Added missing starter shop items.');
   if (durationsFixed) console.log('[CONTENT SEED] Updated coin_boost/cooldown_skip durations to the current defaults.');
   if (embedSeeded)    console.log('[CONTENT SEED] Added missing embed templates.');
+  if (embedsFixed)    console.log('[CONTENT SEED] Updated existing embed templates to the current defaults.');
 }
 
 module.exports = { seedDefaultContent, STARTER_ITEMS, TEMPLATE_SEEDS };
