@@ -1,12 +1,7 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
-const { getEffect } = require('../../utils/effectsManager');
+const { buildGatherCommand } = require('../../utils/gatherCommand');
 const { generateFishImage } = require('../../utils/fishVisual');
-
-const COOLDOWN_MS = 2 * 60 * 60 * 1000;
-const fmt = n => Number(n).toLocaleString();
 
 // Weighted so junk/common dominate and legendary is a real rarity — the
 // coin range on each entry is the "creative" part users are chasing.
@@ -24,56 +19,19 @@ const CATCHES = [
   { name: 'Great White Shark',      rarity: 'rare',      weight: 2,  min: 350, max: 550 },
   { name: 'Ancient Treasure Chest', rarity: 'legendary', weight: 1,  min: 700, max: 1200 },
 ];
-const TOTAL_WEIGHT = CATCHES.reduce((s, c) => s + c.weight, 0);
 
-function rollCatch() {
-  let r = Math.random() * TOTAL_WEIGHT;
-  for (const c of CATCHES) {
-    r -= c.weight;
-    if (r <= 0) return c;
-  }
-  return CATCHES[CATCHES.length - 1];
-}
-
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName('fish')
-    .setDescription('Cast a line and see what you reel in (2 hour cooldown)'),
-
-  async execute(interaction) {
-    const userId  = interaction.user.id;
-    const guildId = interaction.guild?.id;
-    const cd = checkCooldown(userId, 'fish', COOLDOWN_MS);
-
-    if (cd > 0) {
-      const hours   = Math.floor(cd / 3600000);
-      const minutes = Math.floor((cd % 3600000) / 60000);
-      return interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(0xe74c3c)
-          .setTitle('🎣 Line\'s Still Out')
-          .setDescription(`You need to wait **${hours}h ${minutes}m** before fishing again.`)],
-        ephemeral: true,
-      });
-    }
-
-    const catchItem = rollCatch();
-    let reward = Math.floor(Math.random() * (catchItem.max - catchItem.min + 1)) + catchItem.min;
-    const boost = getEffect(userId, guildId, 'coin_boost');
-    if (boost) reward = Math.floor(reward * 1.5);
-
-    addCoins(userId, reward);
-    setCooldown(userId, 'fish');
-
-    const imageName = `fish_${Date.now()}.png`;
-    const attachment = new AttachmentBuilder(generateFishImage({ name: catchItem.name, rarity: catchItem.rarity, reward }), { name: imageName });
-
-    const embed = new EmbedBuilder()
-      .setColor(0x1D9BF0)
-      .setTitle('🎣 Fishing')
-      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? '\n💰 *Coin Boost active — 1.5× earnings!*' : ''}`)
-      .setImage(`attachment://${imageName}`);
-
-    return interaction.reply({ embeds: [embed], files: [attachment] });
-  },
-};
+module.exports = buildGatherCommand({
+  action: 'fish',
+  commandName: 'fish',
+  description: 'Cast a line and see what you reel in (5 casts per session, 5 hour cooldown)',
+  table: CATCHES,
+  generateImage: generateFishImage,
+  imagePrefix: 'fish',
+  embedTitle: '🎣 Fishing',
+  embedColor: 0x1D9BF0,
+  cooldownTitle: "🎣 Line's Still Out",
+  cooldownVerb: 'fishing',
+  buttonLabel: 'Fish',
+  buttonEmoji: '🎣',
+  sessionNoun: 'casts',
+});
