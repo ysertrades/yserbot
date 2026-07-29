@@ -86,7 +86,7 @@ module.exports = {
       }
 
       const boost = getEffect(userId, guildId, 'coin_boost');
-      if (boost) earnings = Math.floor(earnings * 1.5);
+      if (boost) earnings = Math.floor(earnings * (boost.multiplier || 1.5));
 
       addCoins(userId, earnings);
       setCooldown(userId, `job_${job.id}`);
@@ -106,14 +106,14 @@ module.exports = {
           { name: '⏱️ Next Shift',  value: `<t:${nextTs}:R>`,                                  inline: true },
         )
         .setFooter({
-          text: `${job.emoji} ${job.name}  •  YSER Jobs${boost ? '  •  💰 Coin Boost active (1.5×)' : ''}`,
+          text: `${job.emoji} ${job.name}  •  YSER Jobs${boost ? `  •  💰 Coin Boost active (${boost.multiplier || 1.5}×)` : ''}`,
         })
         .setTimestamp();
 
       if (boost) {
         resultEmbed.addFields({
           name: '💰 Coin Boost',
-          value: 'Active this session — your earnings were **1.5×**!',
+          value: `Active this session — your earnings were **${boost.multiplier || 1.5}×**!`,
           inline: false,
         });
       }

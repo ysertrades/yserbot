@@ -192,18 +192,32 @@ module.exports = {
       if (!inv[itemId] || inv[itemId] <= 0)
         return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Not Owned').setDescription(`You don't own **${item.name}**.\nBuy it first with \`/shop buy ${itemId}\`.`)], ephemeral: true });
 
+      const def = EFFECT_TYPES[item.type];
+      if (!def)
+        return interaction.reply({ content: `❌ \`${item.type}\` items aren't usable through this command yet.`, ephemeral: true });
+
       const removed = removeFromInv(userId, guildId, itemId);
       if (!removed)
         return interaction.reply({ content: '❌ Failed to remove from inventory.', ephemeral: true });
 
-      setEffect(userId, guildId, item.type);
-      const def     = EFFECT_TYPES[item.type];
-      const expiresTs = Math.floor((Date.now() + def.duration) / 1000);
+      // A shop item's own multiplier/durationMs (set via /shopsettings) override
+      // the effect type's defaults, so one type (e.g. coin_boost) can back
+      // several differently-priced tiers.
+      const extraData = {};
+      if (item.multiplier != null) {
+        if (item.type === 'vip_casino_pass') extraData.betMultiplier = item.multiplier;
+        else extraData.multiplier = item.multiplier;
+      }
+      const durationMs = item.durationMs || def.duration;
+      if (item.durationMs) extraData.activeUntil = Date.now() + item.durationMs;
+      setEffect(userId, guildId, item.type, extraData);
+
+      const expiresTs = Math.floor((Date.now() + durationMs) / 1000);
 
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(rarityColor(item.type))
         .setTitle(`${item.emoji || '✨'}  ${item.name} Activated!`)
-        .setDescription(`> ${def.desc}`)
+        .setDescription(`> ${item.description || def.desc}`)
         .addFields({ name: '⏳ Expires', value: `<t:${expiresTs}:R>`, inline: true })
         .setFooter({ text: 'Check /shop inventory to see all active effects' })
         .setTimestamp()] });

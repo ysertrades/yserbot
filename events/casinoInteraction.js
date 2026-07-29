@@ -9,7 +9,7 @@ const {
   ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
-const { getEffect } = require('../utils/effectsManager');
+const { getEffect, getEffectiveMaxBet } = require('../utils/effectsManager');
 const { getSession, updateSession, tryLock, unlock } = require('../casino/sessions');
 const { getSettings } = require('../casino/settings');
 const { readJson, writeJson } = require('../utils/jsonStorage');
@@ -67,12 +67,15 @@ async function applyResult(interaction, userId, updates) {
   }).catch(() => {});
 }
 
-// Applies the coin_boost shop effect: adds 50% of the profit on top of the payout.
-// payout > bet means a real win; push/loss are returned unchanged.
+// Applies the coin_boost shop effect: adds a fraction of the profit on top
+// of the payout, scaled by the purchased tier's multiplier (1.5× tier adds
+// 50% of profit, 2× tier adds 100%, etc.). payout > bet means a real win;
+// push/loss are returned unchanged.
 function _applyBoost(payout, bet, userId, guildId) {
   if (payout <= bet) return payout;
-  if (!getEffect(userId, guildId, 'coin_boost')) return payout;
-  return payout + Math.floor((payout - bet) * 0.5);
+  const boost = getEffect(userId, guildId, 'coin_boost');
+  if (!boost) return payout;
+  return payout + Math.floor((payout - bet) * ((boost.multiplier || 1.5) - 1));
 }
 
 // Global map for live crash sessions (userId → { interval, message, state })
@@ -281,10 +284,11 @@ async function handleButton(interaction) {
     const amtRaw   = parts[3];
     const settings = getSettings(s.guildId);
     const bal      = getBalance(s.userId);
-    const bet      = amtRaw === 'all' ? Math.min(bal, settings.maxBet) : parseInt(amtRaw, 10);
+    const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
+    const bet      = amtRaw === 'all' ? Math.min(bal, maxBet) : parseInt(amtRaw, 10);
     if (isNaN(bet) || bet < 1)     return interaction.reply({ content: '❌ Invalid amount.', flags: 64 });
     if (bet < settings.minBet)     return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
-    if (bet > settings.maxBet)     return interaction.reply({ content: `❌ Max bet is **${fmt(settings.maxBet)}** coins.`, flags: 64 });
+    if (bet > maxBet)              return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
     if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(bal)}**.`, flags: 64 });
     const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
     if (cd > 0)                    return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
@@ -391,6 +395,8 @@ async function showBetSelection(interaction, game) {
   if (!s) return expired(interaction);
   const settings = getSettings(s.guildId);
   const bal      = getBalance(s.userId);
+  const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
+  const isVip    = maxBet > settings.maxBet;
 
   const gameLabels = {
     coinflip: '🎲 Coinflip', blackjack: '🃏 Blackjack', trading: '📈 Trading',
@@ -402,13 +408,13 @@ async function showBetSelection(interaction, game) {
     .setColor(0x1a1a2e)
     .setTitle(gameLabels[game] || game)
     .setDescription(`**Balance: ${fmt(bal)}** coins\nPick your bet, then play.`)
-    .setFooter({ text: `YSER Flow Casino  •  Min: ${fmt(settings.minBet)}  ·  Max: ${fmt(settings.maxBet)}` });
+    .setFooter({ text: `YSER Flow Casino  •  Min: ${fmt(settings.minBet)}  ·  Max: ${fmt(maxBet)}${isVip ? ' 👑' : ''}` });
 
   const PRESETS = [25, 100, 250, 500];
-  const allIn   = Math.min(bal, settings.maxBet);
+  const allIn   = Math.min(bal, maxBet);
 
   const presetBtns = PRESETS.map(amt => {
-    const disabled = amt < settings.minBet || amt > settings.maxBet || amt > bal;
+    const disabled = amt < settings.minBet || amt > maxBet || amt > bal;
     return new ButtonBuilder()
       .setCustomId(`cs:betamt:${game}:${amt}`)
       .setLabel(String(amt))
@@ -447,8 +453,9 @@ async function handleModal(interaction) {
     if (isNaN(num) || num < 0 || num > 36) return interaction.reply({ content: '❌ Invalid number. Must be **0–36**.', flags: 64 });
     if (isNaN(bet) || bet < 1)             return interaction.reply({ content: '❌ Invalid bet amount.', flags: 64 });
     const settings = getSettings(s.guildId);
+    const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
     if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
-    if (bet > settings.maxBet) return interaction.reply({ content: `❌ Max bet is **${fmt(settings.maxBet)}** coins.`, flags: 64 });
+    if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
     if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
     const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);
     if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: 64 });
@@ -467,8 +474,9 @@ async function handleModal(interaction) {
   if (isNaN(bet) || bet < 1) return interaction.reply({ content: '❌ Invalid bet amount.', flags: 64 });
 
   const settings = getSettings(s.guildId);
+  const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
   if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: 64 });
-  if (bet > settings.maxBet) return interaction.reply({ content: `❌ Max bet is **${fmt(settings.maxBet)}** coins.`, flags: 64 });
+  if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: 64 });
   if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: 64 });
 
   const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs);

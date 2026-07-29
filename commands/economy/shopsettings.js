@@ -7,7 +7,19 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const SHOP_FILE = 'shop.json';
 const fmt = n => Number(n).toLocaleString();
 
-const ITEM_TYPES = Object.entries(EFFECT_TYPES).map(([id, e]) => ({ value: id, name: `${e.label}` }));
+const ITEM_TYPES = [
+  ...Object.entries(EFFECT_TYPES).map(([id, e]) => ({ value: id, name: `${e.label}` })),
+  { value: 'badge',       name: '🎖️ Profile Badge (cosmetic, shown on /rank)' },
+  { value: 'mystery_box', name: '🎁 Mystery Box (random reward)' },
+];
+
+const BADGE_ICONS = [
+  { value: 'star',    name: '⭐ Star' },
+  { value: 'crown',   name: '👑 Crown' },
+  { value: 'shield',  name: '🛡️ Shield' },
+  { value: 'flame',   name: '🔥 Flame' },
+  { value: 'diamond', name: '💎 Diamond' },
+];
 
 function getShop(guildId) {
   const data = readJson(SHOP_FILE, {});
@@ -27,7 +39,11 @@ module.exports = {
     .addStringOption(o => o.setName('type').setDescription('Item effect type').setRequired(false)
       .addChoices(...ITEM_TYPES))
     .addStringOption(o => o.setName('emoji').setDescription('Emoji for the item').setRequired(false))
-    .addStringOption(o => o.setName('description').setDescription('Item description').setRequired(false)),
+    .addStringOption(o => o.setName('description').setDescription('Item description').setRequired(false))
+    .addNumberOption(o => o.setName('multiplier').setDescription('Earnings/bet multiplier override (coin_boost, vip_casino_pass)').setMinValue(1).setRequired(false))
+    .addNumberOption(o => o.setName('duration_hours').setDescription('Effect duration override, in hours').setMinValue(0.1).setRequired(false))
+    .addStringOption(o => o.setName('badge_icon').setDescription('Icon to draw for a badge-type item').setRequired(false)
+      .addChoices(...BADGE_ICONS)),
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused(true);
@@ -72,14 +88,28 @@ module.exports = {
       const type  = interaction.options.getString('type');
       const emoji = interaction.options.getString('emoji') || '📦';
       const desc  = interaction.options.getString('description') || '';
+      const multiplier     = interaction.options.getNumber('multiplier');
+      const durationHours  = interaction.options.getNumber('duration_hours');
+      const badgeIcon      = interaction.options.getString('badge_icon');
       if (!id || !name || !price || !type)
         return interaction.reply({ content: '❌ `id`, `name`, `price`, and `type` are all required.', ephemeral: true });
+      if (type === 'badge' && !badgeIcon)
+        return interaction.reply({ content: '❌ `badge_icon` is required for badge-type items.', ephemeral: true });
 
       const data = readJson(SHOP_FILE, {});
       if (!data[guildId]) data[guildId] = { items: {} };
       if (!data[guildId].items) data[guildId].items = {};
-      data[guildId].items[id] = { name, price, type, emoji, description: desc };
+      const item = { name, price, type, emoji, description: desc };
+      if (multiplier != null) item.multiplier = multiplier;
+      if (durationHours != null) item.durationMs = Math.round(durationHours * 60 * 60 * 1000);
+      if (type === 'badge') item.badgeIcon = badgeIcon;
+      data[guildId].items[id] = item;
       writeJson(SHOP_FILE, data);
+
+      const extraFields = [];
+      if (multiplier != null) extraFields.push({ name: '✖️ Multiplier', value: `${multiplier}×`, inline: true });
+      if (durationHours != null) extraFields.push({ name: '⏳ Duration', value: `${durationHours}h`, inline: true });
+      if (badgeIcon) extraFields.push({ name: '🎖️ Badge Icon', value: badgeIcon, inline: true });
 
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0x2ECC71)
@@ -89,6 +119,7 @@ module.exports = {
           { name: '📦 Name',     value: name,                   inline: true },
           { name: '💸 Price',    value: `${fmt(price)} coins`,  inline: true },
           { name: '⚙️ Type',    value: `\`${type}\``,          inline: true },
+          ...extraFields,
         )
         .setTimestamp()], ephemeral: true });
     }

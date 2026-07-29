@@ -51,7 +51,7 @@ module.exports = {
     const tier = rollTier();
     let reward = Math.floor(Math.random() * (tier.max - tier.min + 1)) + tier.min;
     const boost = getEffect(userId, interaction.guild?.id, 'coin_boost');
-    if (boost) reward = Math.floor(reward * 1.5);
+    if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
 
     addCoins(userId, reward);
     setCooldown(userId, 'daily');
@@ -60,7 +60,7 @@ module.exports = {
       embeds: [new EmbedBuilder()
         .setColor(tier.color)
         .setTitle(`${tier.emoji} ${tier.label}!`)
-        .setDescription(`You claimed your daily reward and earned **${fmt(reward)}** coins!${boost ? '\n💰 *Coin Boost active — 1.5× earnings!*' : ''}`)
+        .setDescription(`You claimed your daily reward and earned **${fmt(reward)}** coins!${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}`)
         .addFields({ name: '💰 Balance', value: `**${fmt(getBalance(userId))}** coins`, inline: true })
         .setFooter({ text: 'Come back in 24 hours for more' })
         .setTimestamp()],

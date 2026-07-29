@@ -3,12 +3,15 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getBalance } = require('../../utils/economyManager');
 const { getSettings } = require('../../casino/settings');
+const { getEffectiveMaxBet } = require('../../utils/effectsManager');
 
 function fmt(n) { return Number(n).toLocaleString(); }
 
 function mainEmbed(userId, guildId, lastResult) {
   const balance = getBalance(userId);
   const s       = getSettings(guildId);
+  const maxBet  = getEffectiveMaxBet(userId, guildId, s.maxBet);
+  const isVip   = maxBet > s.maxBet;
   let resultLine = '—';
   if (lastResult) {
     const sign = lastResult.delta >= 0 ? '+' : '';
@@ -23,7 +26,7 @@ function mainEmbed(userId, guildId, lastResult) {
     .addFields(
       { name: '💰 Balance',     value: `**${fmt(balance)}** coins`,            inline: true },
       { name: '📊 Last Result', value: resultLine,                             inline: true },
-      { name: '📋 Bet Range',   value: `${fmt(s.minBet)} – ${fmt(s.maxBet)}`, inline: true },
+      { name: '📋 Bet Range',   value: `${fmt(s.minBet)} – ${fmt(maxBet)}${isVip ? ' 👑' : ''}`, inline: true },
     )
     .setFooter({ text: 'YSER Flow Casino  •  Bet responsibly' });
 }

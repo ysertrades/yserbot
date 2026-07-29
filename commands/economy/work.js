@@ -41,7 +41,7 @@ module.exports = {
 
     let earnings = Math.floor(Math.random() * (MAX_EARNINGS - MIN_EARNINGS + 1)) + MIN_EARNINGS;
     const boost  = getEffect(userId, interaction.guild?.id, 'coin_boost');
-    if (boost) earnings = Math.floor(earnings * 1.5);
+    if (boost) earnings = Math.floor(earnings * (boost.multiplier || 1.5));
 
     const task = TASKS[Math.floor(Math.random() * TASKS.length)];
     addCoins(userId, earnings);
@@ -50,7 +50,7 @@ module.exports = {
     return interaction.reply({ embeds: [new EmbedBuilder()
       .setColor(0x2ecc71)
       .setTitle('✅ Work Completed!')
-      .setDescription(`${task.emoji} You ${task.text} and earned **${fmt(earnings)}** coins!${boost ? '\n💰 *Coin Boost active — 1.5× earnings!*' : ''}`)
+      .setDescription(`${task.emoji} You ${task.text} and earned **${fmt(earnings)}** coins!${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}`)
       .addFields({ name: '💰 Balance', value: `**${fmt(getBalance(userId))}** coins`, inline: true })
       .setFooter({ text: 'Come back in 1 hour for more work' })
       .setTimestamp()] });
