@@ -94,9 +94,7 @@ function buildDropEmbed(card, expired = false) {
   if (expired) {
     const embed = new EmbedBuilder()
       .setColor(0x424242)
-      .setTitle('💨  Card Disappeared...')
-      .setDescription('> No one was fast enough.\n> The card vanished into thin air.')
-      .addFields({ name: 'What it was', value: `${cfg.emoji} **${cfg.label}** card`, inline: true })
+      .setDescription(`${cfg.stars}  **${cfg.label.toUpperCase()}**   💨 Nobody grabbed it in time`)
       .setFooter({ text: 'Better luck next drop!' })
       .setImage(`attachment://${attachment.name}`);
     return { embed, files: [attachment] };
@@ -104,15 +102,7 @@ function buildDropEmbed(card, expired = false) {
 
   const embed = new EmbedBuilder()
     .setColor(cfg.color)
-    .setTitle(`${cfg.emoji}  A Card Has Appeared!`)
-    .setDescription(
-      `> **${cfg.stars}  ${cfg.label.toUpperCase()}**\n` +
-      `> ✨ *A rare opportunity has surfaced in the server...*\n​`,
-    )
-    .addFields(
-      { name: '🃏 Mystery Card', value: '**???** — Can you grab it in time?', inline: true },
-      { name: '⏱️ Time Left',    value: '**8 seconds**',                        inline: true },
-    )
+    .setDescription(`${cfg.stars}  **${cfg.label.toUpperCase()}**   ⏱️ Time Left: \`8 seconds\``)
     .setFooter({ text: 'First to click wins the card!' })
     .setImage(`attachment://${attachment.name}`);
   return { embed, files: [attachment] };
