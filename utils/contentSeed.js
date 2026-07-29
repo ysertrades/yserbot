@@ -111,7 +111,7 @@ const RISK_GUIDE_TEMPLATE = {
     title: null,
     description: null,
     color: '#3498DB',
-    footer: 'YSER Flow Trading Tools',
+    footer: null,
     footerIcon: null,
     thumbnail: null,
     image: 'dynamic:riskGuide',
@@ -129,7 +129,7 @@ const NEWSFEED_GUIDE_TEMPLATE = {
     title: null,
     description: null,
     color: '#1D9BF0',
-    footer: 'YSER Flow News',
+    footer: null,
     footerIcon: null,
     thumbnail: null,
     image: 'dynamic:newsfeedGuide',
@@ -156,7 +156,9 @@ const TEMPLATE_SEEDS = {
 // footer needs to be force-applied to copies already sitting in a guild's
 // embeds.json, scoped to exactly the known template/field pairs listed here.
 const EMBED_TEMPLATE_MIGRATIONS = {
-  'nyse-open': { footer: null },
+  'nyse-open':      { footer: null },
+  'risk-guide':     { footer: null },
+  'newsfeed-guide': { footer: null },
 };
 
 function seedShopDefaults() {
