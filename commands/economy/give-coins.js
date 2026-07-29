@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { addCoins, getBalance } = require('../../utils/economyManager');
 
 function fmt(n) { return Number(n).toLocaleString(); }
@@ -23,15 +23,15 @@ module.exports = {
     const allMode = interaction.options.getBoolean('all-users') ?? false;
 
     if (!target && !allMode)
-      return interaction.reply({ content: '❌ Provide a **user** or enable **all-users**.', flags: 64 });
+      return interaction.reply({ content: '❌ Provide a **user** or enable **all-users**.', flags: MessageFlags.Ephemeral });
 
     if (target && allMode)
-      return interaction.reply({ content: '❌ Pick one: a specific **user** OR **all-users**, not both.', flags: 64 });
+      return interaction.reply({ content: '❌ Pick one: a specific **user** OR **all-users**, not both.', flags: MessageFlags.Ephemeral });
 
     // ── Single user ──────────────────────────────────────────────────────────
     if (target) {
       if (target.bot)
-        return interaction.reply({ content: '❌ You cannot give coins to a bot.', flags: 64 });
+        return interaction.reply({ content: '❌ You cannot give coins to a bot.', flags: MessageFlags.Ephemeral });
 
       addCoins(target.id, amount);
       const newBalance = getBalance(target.id);
