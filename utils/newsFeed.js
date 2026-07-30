@@ -15,6 +15,14 @@ const POLL_INTERVAL_MS  = 20_000;
 const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
 
+// MarketWatch's own feed declares <ttl>15</ttl> — they're asking for one poll
+// per 15 minutes, and they publish roughly 3 stories an hour, so polling any
+// faster gains nothing and just risks getting the bot blocked. Financial Juice
+// keeps its 20s cadence untouched: it's the real-time source and the whole
+// point of it is being first.
+const MARKETWATCH_FEED_URL = 'https://feeds.content.dowjones.io/public/rss/mw_topstories';
+const MARKETWATCH_POLL_MS  = 15 * 60_000;
+
 // Financial Juice's own feed double-encodes entities in places (raw XML has
 // literally "S&amp;amp;P 500" for "S&P 500" — the HTML-escaped "&amp;" got
 // XML-escaped again on top). A single decode pass leaves "S&amp;P 500"
@@ -28,6 +36,11 @@ function decodeEntities(str) {
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'")
       .replace(/&#39;/g, "'")
+      // MarketWatch encodes its curly quotes and dashes numerically
+      // (&#x2019; &#x201c; &#x2014; …). Without this they show up as literal
+      // gibberish mid-headline.
+      .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
       .replace(/&amp;/g, '&');
     if (next === prev) break;
     prev = next;
@@ -35,9 +48,29 @@ function decodeEntities(str) {
   return prev.trim();
 }
 
+// Strips a CDATA wrapper if the feed uses one (FT and some others do; neither
+// Financial Juice nor MarketWatch currently does, but it costs nothing to be
+// tolerant and it's a silent, ugly failure when missing).
+function stripCdata(str) {
+  const m = str.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
+  return m ? m[1] : str;
+}
+
 function extractTag(block, tag) {
   const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`));
-  return m ? decodeEntities(m[1]) : '';
+  return m ? decodeEntities(stripCdata(m[1])) : '';
+}
+
+// MarketWatch attaches each story's picture to the item as <media:content>,
+// so its headlines get a banner straight from the feed — no page scrape, which
+// matters because marketwatch.com itself blocks our fetches.
+function extractMediaImage(block) {
+  const m = block.match(/<media:content\b[^>]*\burl=["']([^"']+)["'][^>]*>/i);
+  if (!m) return null;
+  const tag = m[0];
+  if (/medium=["'](?!image)/i.test(tag)) return null;
+  if (/type=["'](?!image\/)/i.test(tag)) return null;
+  return m[1];
 }
 
 // Some items ship a picture either as a standard RSS <enclosure> (the usual
@@ -185,6 +218,33 @@ function parseFeedItems(xml) {
   return items;
 }
 
+// MarketWatch: same RSS shape, but every item ships a real one-line summary
+// and its own picture, so there's nothing to scrape and nothing to reconstruct
+// — the parse is deliberately much simpler than Financial Juice's.
+function parseMarketWatchItems(xml) {
+  const blocks = xml.match(/<item[ >][\s\S]*?<\/item>/g) || [];
+  const items = [];
+  for (const block of blocks) {
+    const guid  = extractTag(block, 'guid');
+    const title = extractTag(block, 'title');
+    if (!guid || !title) continue;
+    const link       = extractTag(block, 'link');
+    const pubDateRaw = extractTag(block, 'pubDate');
+    const pubDate    = pubDateRaw ? new Date(pubDateRaw) : new Date();
+    const body       = htmlToDiscordText(extractTag(block, 'description'));
+    items.push({
+      guid, title, link,
+      pubDate: isNaN(pubDate) ? new Date() : pubDate,
+      imageUrl: extractMediaImage(block),
+      body,
+      video: null,
+      source: null,
+      author: extractTag(block, 'dc:creator') || null,
+    });
+  }
+  return items;
+}
+
 // Financial Juice's Cloudflare front-end enforces its own rate limit on this
 // endpoint (confirmed: a request too soon after the last one gets a 429 with
 // a `retry-after` header). Polling faster than that limit doesn't get
@@ -212,6 +272,53 @@ async function fetchFeedItems() {
   return parseFeedItems(xml);
 }
 
+async function fetchMarketWatchItems() {
+  const res = await fetch(MARKETWATCH_FEED_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' } });
+  if (!res.ok) throw new Error(`MarketWatch feed request failed: ${res.status}`);
+  return parseMarketWatchItems(await res.text());
+}
+
+// ── Source registry ──────────────────────────────────────────────────────────
+// Each source owns its endpoint, its own polling cadence and its own embed
+// branding, so adding another later is one entry here rather than surgery on
+// the runner. Financial Juice keeps exactly the behaviour it always had.
+const SOURCES = {
+  financialjuice: {
+    key: 'financialjuice',
+    label: 'Financial Juice',
+    blurb: 'Real-time market-moving headlines, seconds after they break',
+    emoji: '⚡',
+    pollMs: POLL_INTERVAL_MS,
+    fetch: fetchFeedItems,
+    brand: {
+      title: '📰 Financial Juice',
+      breakingTitle: '🔴 BREAKING — Financial Juice',
+      footer: 'Financial Juice • Live Market News',
+      videoFooter: 'Financial Juice • Live Video',
+    },
+  },
+  marketwatch: {
+    key: 'marketwatch',
+    label: 'MarketWatch',
+    blurb: 'Analysis and context on the day\'s moves, with summaries',
+    emoji: '📊',
+    pollMs: MARKETWATCH_POLL_MS,
+    fetch: fetchMarketWatchItems,
+    color: 0x00A05A,
+    brand: {
+      title: '📊 MarketWatch',
+      breakingTitle: '🔴 BREAKING — MarketWatch',
+      footer: 'MarketWatch • Markets & Analysis',
+    },
+  },
+};
+
+const DEFAULT_SOURCES = ['financialjuice'];
+
+function listSources() {
+  return Object.values(SOURCES);
+}
+
 // Charts / infographics (FOMC crib sheets, indicator snapshots, etc.) aren't
 // linked from the RSS item at all — Financial Juice serves them at a
 // predictable per-article URL instead, which 404s for plain text-only items
@@ -221,8 +328,11 @@ async function fetchFeedItems() {
 const ARTICLE_IMAGE_BASE     = 'https://www.financialjuice.com/images/';
 const IMAGE_CHECK_TIMEOUT_MS = 4000;
 
-async function resolveArticleImage(item) {
-  if (item.imageUrl) return item.imageUrl; // already found via RSS enclosure/description <img>
+async function resolveArticleImage(item, source = SOURCES.financialjuice) {
+  if (item.imageUrl) return item.imageUrl; // already found via RSS enclosure/description <img>/media:content
+  // The probe below is a Financial-Juice-specific URL convention — running it
+  // with another source's guid would just be a guaranteed 404 per headline.
+  if (source.key !== 'financialjuice') return null;
   if (item._pictureChecked) return item._resolvedImage;
   item._pictureChecked = true;
   item._resolvedImage = null;
@@ -341,7 +451,8 @@ async function resolveYouTubeThumb(videoId) {
   return chosen;
 }
 
-async function buildNewsEmbed(item) {
+async function buildNewsEmbed(item, source = SOURCES.financialjuice) {
+  const brand = source.brand;
   const isBreaking = BREAKING_PATTERN.test(item.title);
 
   // When the item carries a video or an outbound source, that *is* the story
@@ -356,21 +467,24 @@ async function buildNewsEmbed(item) {
   else if (item.source) description += `\n\n🔗 **[Read on ${item.source.host}](${item.source.url})**`;
 
   // Banner priority: the video's thumbnail, then the linked page's own share
-  // image, then whatever picture the Financial Juice article itself carries —
-  // so a link that turns out to have no banner never loses the image slot.
+  // image, then whatever picture the article itself carries — so a link that
+  // turns out to have no banner never loses the image slot. Sources that ship
+  // their picture in the feed (MarketWatch) already have item.imageUrl set and
+  // resolveArticleImage hands it straight back without a network call.
   const pictureUrl = (item.video && await resolveYouTubeThumb(item.video.id))
     || (item.source && await resolveLinkBanner(item.source.url))
-    || await resolveArticleImage(item);
+    || await resolveArticleImage(item, source);
 
-  const footer = item.video ? 'Financial Juice • Live Video'
-    : item.source ? `Financial Juice • via ${item.source.host}`
-    : 'Financial Juice • Live Market News';
+  const footer = item.video ? (brand.videoFooter || brand.footer)
+    : item.source ? `${source.label} • via ${item.source.host}`
+    : brand.footer;
 
   const embed = createEmbed(isBreaking ? 'breaking' : 'news', {
-    title: isBreaking ? '🔴 BREAKING — Financial Juice' : '📰 Financial Juice',
+    title: isBreaking ? brand.breakingTitle : brand.title,
     description,
     footer,
     image: isValidUrl(pictureUrl) ? pictureUrl : undefined,
+    ...(source.color && !isBreaking ? { color: source.color } : {}),
   });
   embed.setTimestamp(null); // headline age is already obvious from post order — no timestamp on these
   return embed;
@@ -391,10 +505,46 @@ function matchesFilter(item, settings) {
   return words.some(w => haystack.includes(w));
 }
 
-async function runTick(client) {
-  const items = await fetchFeedItems();
-  if (!items || items.length === 0) return;
+// One fetch per source per tick at most, shared across every guild — and only
+// re-fetched once that source's own cadence has elapsed. The master tick still
+// runs on Financial Juice's 20s so it stays as fast as it ever was; MarketWatch
+// simply isn't due on most of those ticks.
+const sourceCache = new Map(); // key -> { items, fetchedAt }
 
+async function getSourceItems(source) {
+  const cached = sourceCache.get(source.key);
+  if (cached && Date.now() - cached.fetchedAt < source.pollMs) return cached.items;
+  try {
+    const items = await source.fetch();
+    if (items && items.length) {
+      sourceCache.set(source.key, { items, fetchedAt: Date.now() });
+      return items;
+    }
+    // A null return is the rate-limit/backoff path — keep serving the last
+    // good snapshot rather than treating it as "no news".
+    return cached?.items ?? null;
+  } catch (err) {
+    console.error(`[NEWSFEED] ${source.label} fetch failed:`, err.message ?? err);
+    return cached?.items ?? null;
+  }
+}
+
+// Which sources this guild wants. Guilds configured before multi-source
+// existed have no `sources` key at all and must keep getting Financial Juice.
+function enabledSourceKeys(settings) {
+  const picked = Array.isArray(settings.sources) ? settings.sources : DEFAULT_SOURCES;
+  return picked.filter(k => SOURCES[k]);
+}
+
+// Per-source read cursor, falling back to the single legacy `lastGuid` for
+// Financial Juice so upgrading doesn't replay or skip a backlog.
+function cursorFor(settings, key) {
+  if (settings.lastGuids && settings.lastGuids[key] !== undefined) return settings.lastGuids[key];
+  if (key === 'financialjuice') return settings.lastGuid ?? null;
+  return null;
+}
+
+async function runTick(client) {
   const config = readJson('config.json', {});
   let changed = false;
 
@@ -407,28 +557,36 @@ async function runTick(client) {
     const channel = guild.channels.cache.get(settings.channelId);
     if (!channel || !channel.isTextBased()) continue;
 
-    let toPost;
-    if (!settings.lastGuid) {
-      // Just enabled — establish a baseline silently instead of dumping the
-      // whole current feed window into the channel.
-      toPost = [];
-    } else {
-      const idx = items.findIndex(it => it.guid === settings.lastGuid);
-      toPost = idx === -1 ? items.slice(0, MAX_POST_PER_TICK) : items.slice(0, idx);
-    }
+    for (const key of enabledSourceKeys(settings)) {
+      const source = SOURCES[key];
+      const items  = await getSourceItems(source);
+      if (!items || items.length === 0) continue;
 
-    if (toPost.length > MAX_POST_PER_TICK) toPost = toPost.slice(0, MAX_POST_PER_TICK);
-
-    if (toPost.length > 0) {
-      const chronological = [...toPost].reverse().filter(item => matchesFilter(item, settings));
-      for (const item of chronological) {
-        const embed = await buildNewsEmbed(item);
-        await channel.send({ embeds: [embed] }).catch(() => {});
+      const cursor = cursorFor(settings, key);
+      let toPost;
+      if (!cursor) {
+        // Just enabled — establish a baseline silently instead of dumping the
+        // whole current feed window into the channel.
+        toPost = [];
+      } else {
+        const idx = items.findIndex(it => it.guid === cursor);
+        toPost = idx === -1 ? items.slice(0, MAX_POST_PER_TICK) : items.slice(0, idx);
       }
-    }
+      if (toPost.length > MAX_POST_PER_TICK) toPost = toPost.slice(0, MAX_POST_PER_TICK);
 
-    settings.lastGuid = items[0].guid;
-    changed = true;
+      if (toPost.length > 0) {
+        const chronological = [...toPost].reverse().filter(item => matchesFilter(item, settings));
+        for (const item of chronological) {
+          const embed = await buildNewsEmbed(item, source);
+          await channel.send({ embeds: [embed] }).catch(() => {});
+        }
+      }
+
+      if (!settings.lastGuids) settings.lastGuids = {};
+      settings.lastGuids[key] = items[0].guid;
+      if (key === 'financialjuice') settings.lastGuid = items[0].guid; // keep the legacy field in step
+      changed = true;
+    }
   }
 
   if (changed) writeJson('config.json', config);
@@ -441,4 +599,7 @@ function startNewsFeedRunner(client) {
   setInterval(tick, POLL_INTERVAL_MS);
 }
 
-module.exports = { startNewsFeedRunner, parseFeedItems, buildNewsEmbed };
+module.exports = {
+  startNewsFeedRunner, runTick, parseFeedItems, parseMarketWatchItems, buildNewsEmbed,
+  SOURCES, listSources, DEFAULT_SOURCES,
+};

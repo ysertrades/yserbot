@@ -25,7 +25,7 @@ const ADMIN_CATALOGUE = [
   ['giveaway',       'Create, end, reroll & list giveaways'],
   ['levelsettings',  'Configure XP & leveling system'],
   ['modlog',         'Toggle which events get logged to the mod-log channel'],
-  ['newsfeed',       'Post live Financial Juice market news headlines to a channel'],
+  ['newsfeed',       'Live market news to a channel — sources, topics & on/off in one panel'],
   ['schedule',       'Schedule embed templates to send automatically'],
   ['shopsettings',   'Add / remove items from the server shop'],
   ['ticket',         'Configure the support ticket system'],
