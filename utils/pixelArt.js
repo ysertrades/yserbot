@@ -256,6 +256,36 @@ const FONT = {
 FONT[String.fromCodePoint(0x2605)] = ['.....', '#.#.#', '.###.', '#####', '.###.', '#.#.#', '.....']; // ★ / used as the canonical "star" glyph
 FONT[String.fromCodePoint(0x2665)] = ['.#.#.', '#####', '#####', '#####', '.###.', '..#..', '.....']; // ♥ / used as the canonical "heart" glyph
 
+// Greek/Cyrillic letters with no real Latin lookalike (confirmed against
+// Unicode's own confusables.txt — see below) get their own accurate glyph
+// drawn here instead of a guessed-and-possibly-wrong Latin substitute.
+// Shapes shared between scripts (Greek Γ/Cyrillic Г, Greek Π/Cyrillic П,
+// Greek Φ/Cyrillic Ф are near-identical) reuse one glyph via
+// SCRIPT_CONFUSABLES below rather than duplicating it.
+FONT[String.fromCodePoint(0x0393)] = ['#####', '#....', '#....', '#....', '#....', '#....', '#....']; // Γ Gamma (shared: Cyrillic Г)
+FONT[String.fromCodePoint(0x0394)] = ['..#..', '..#..', '.#.#.', '.#.#.', '#...#', '#...#', '#####']; // Δ Delta
+FONT[String.fromCodePoint(0x0398)] = ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '.###.']; // Θ Theta
+FONT[String.fromCodePoint(0x039B)] = ['..#..', '..#..', '.#.#.', '.#.#.', '#...#', '#...#', '#...#']; // Λ Lambda
+FONT[String.fromCodePoint(0x039E)] = ['#####', '.....', '.....', '#####', '.....', '.....', '#####']; // Ξ Xi
+FONT[String.fromCodePoint(0x03A0)] = ['#####', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#']; // Π Pi (shared: Cyrillic П)
+FONT[String.fromCodePoint(0x03A3)] = ['#####', '#....', '.#...', '..#..', '.#...', '#....', '#####']; // Σ Sigma
+FONT[String.fromCodePoint(0x03A6)] = ['..#..', '.###.', '#.#.#', '#.#.#', '#.#.#', '.###.', '..#..']; // Φ Phi (shared: Cyrillic Ф)
+FONT[String.fromCodePoint(0x03A8)] = ['#.#.#', '#.#.#', '#.#.#', '.###.', '..#..', '..#..', '..#..']; // Ψ Psi
+FONT[String.fromCodePoint(0x03A9)] = ['.....', '.###.', '#...#', '#...#', '#...#', '#.#.#', '##.##']; // Ω Omega
+
+FONT[String.fromCodePoint(0x0411)] = ['#####', '#....', '#....', '####.', '#...#', '#...#', '####.']; // Б Be
+FONT[String.fromCodePoint(0x0414)] = ['.###.', '#...#', '#...#', '#...#', '#####', '#.#.#', '#.#.#']; // Д De
+FONT[String.fromCodePoint(0x0416)] = ['#.#.#', '#.#.#', '.###.', '..#..', '.###.', '#.#.#', '#.#.#']; // Ж Zhe
+FONT[String.fromCodePoint(0x041B)] = ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '##..#']; // Л El
+FONT[String.fromCodePoint(0x0426)] = ['#...#', '#...#', '#...#', '#...#', '#...#', '####.', '...#.']; // Ц Tse
+FONT[String.fromCodePoint(0x0427)] = ['#...#', '#...#', '#...#', '#...#', '.####', '....#', '....#']; // Ч Che
+FONT[String.fromCodePoint(0x0428)] = ['#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#####']; // Ш Sha (shared: Щ)
+FONT[String.fromCodePoint(0x042A)] = ['#....', '#....', '#....', '#.###', '#.#.#', '#.###', '.....']; // Ъ hard sign
+FONT[String.fromCodePoint(0x042B)] = ['#..#.', '#..#.', '#..#.', '#.##.', '#.#.#', '#.##.', '.....']; // Ы yery
+FONT[String.fromCodePoint(0x042C)] = ['#....', '#....', '#....', '#.##.', '#.#.#', '#.##.', '.....']; // Ь soft sign
+FONT[String.fromCodePoint(0x042D)] = ['.####', '....#', '....#', '.###.', '....#', '....#', '.####']; // Э reversed E
+FONT[String.fromCodePoint(0x042E)] = ['#.###', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.###']; // Ю yu
+
 function drawChar(png, ch, x, y, scale, color) {
   const glyph = FONT[ch.toUpperCase()] || FONT[' '];
   for (let row = 0; row < GLYPH_H; row++) {
@@ -278,30 +308,46 @@ const GLYPH_GAP = 1; // columns of spacing between characters, in font-pixel uni
 const COMBINING_MARKS_RE = new RegExp('[\\u0300-\\u036f]', 'g'); // combining diacritical marks block
 
 // "Fancy font" name generators love swapping in visually-similar letters from
-// other scripts (Greek, Cyrillic) — unlike the math-alphanumeric/circled/
-// fullwidth styles above, these are genuinely different characters with no
-// Unicode decomposition back to Latin, so NFKD alone can't recover them.
-// Hand-mapped to their closest Latin lookalike so a name like "YΛSSIΓ"
-// reads as "YASSIR" instead of dropping both letters entirely.
+// other scripts (Greek, Cyrillic). Two tiers here:
+//
+//  1. REAL LETTER (preferred): the character is a confirmed Latin lookalike,
+//     so it's converted straight to that letter. The uppercase entries are
+//     exactly Unicode's own confusables.txt security data (Α->A, В->B, Е->E,
+//     К->K, М->M, Н->H, О->O, Р->P, С->C, Т->T, У->Y, Х->X, and their Greek
+//     counterparts) — not a guess. A small, extremely well-established set
+//     beyond that official list is kept too (Ι->I, single vertical stroke,
+//     identical shape; И/Й->N and Я->R, the two most iconic Cyrillic-as-
+//     Latin stylizations there are — think "ЯUSSIA"; З->3, visually just
+//     is the digit).
+//
+//  2. RECREATE (fallback only): no confident real-letter match exists —
+//     Unicode's confusables data doesn't confirm one either — so instead of
+//     guessing wrong, the character maps to its own accurately-drawn glyph
+//     in FONT above. Lowercase forms map to the same drawn uppercase glyph.
 const SCRIPT_CONFUSABLES = {
-  // Greek uppercase
-  'Α': 'A', 'Β': 'B', 'Γ': 'R', 'Δ': 'A', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Θ': 'O',
-  'Ι': 'I', 'Κ': 'K', 'Λ': 'A', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'E', 'Ο': 'O', 'Ρ': 'P',
-  'Σ': 'E', 'Τ': 'T', 'Υ': 'Y', 'Φ': 'O', 'Χ': 'X', 'Ψ': 'Y', 'Ω': 'O',
-  // Greek lowercase
-  'α': 'a', 'β': 'b', 'γ': 'y', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'n', 'θ': 'o',
-  'ι': 'i', 'κ': 'k', 'λ': 'a', 'μ': 'u', 'ν': 'v', 'ξ': 'e', 'ο': 'o', 'ρ': 'p',
-  'σ': 'o', 'τ': 't', 'υ': 'u', 'φ': 'o', 'χ': 'x', 'ψ': 'y', 'ω': 'w',
-  // Cyrillic uppercase
-  'А': 'A', 'Б': 'B', 'В': 'B', 'Г': 'R', 'Д': 'D', 'Е': 'E', 'Ж': 'X', 'З': '3',
-  'И': 'N', 'Й': 'N', 'К': 'K', 'Л': 'A', 'М': 'M', 'Н': 'H', 'О': 'O', 'П': 'N',
-  'Р': 'P', 'С': 'C', 'Т': 'T', 'У': 'Y', 'Ф': 'O', 'Х': 'X', 'Ц': 'U', 'Ч': 'Y',
-  'Ш': 'W', 'Щ': 'W', 'Ъ': 'B', 'Ы': 'B', 'Ь': 'B', 'Э': 'E', 'Ю': 'U', 'Я': 'R',
-  // Cyrillic lowercase
-  'а': 'a', 'б': '6', 'в': 'b', 'г': 'r', 'д': 'd', 'е': 'e', 'ж': 'x', 'з': '3',
-  'и': 'n', 'й': 'n', 'к': 'k', 'л': 'a', 'м': 'm', 'н': 'h', 'о': 'o', 'п': 'n',
-  'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'ф': 'o', 'х': 'x', 'ц': 'u', 'ч': 'y',
-  'ш': 'w', 'щ': 'w', 'ъ': 'b', 'ы': 'b', 'ь': 'b', 'э': 'e', 'ю': 'u', 'я': 'r',
+  // Greek uppercase — real letter (confirmed)
+  'Α': 'A', 'Β': 'B', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'H', 'Ι': 'I', 'Κ': 'K', 'Μ': 'M',
+  'Ν': 'N', 'Ο': 'O', 'Ρ': 'P', 'Τ': 'T', 'Υ': 'Y', 'Χ': 'X',
+  // Greek lowercase — real letter (confirmed, mapped to the same uppercase target)
+  'α': 'A', 'β': 'B', 'ε': 'E', 'ζ': 'Z', 'η': 'H', 'ι': 'I', 'κ': 'K', 'μ': 'M',
+  'ν': 'N', 'ο': 'O', 'ρ': 'P', 'τ': 'T', 'υ': 'Y', 'χ': 'X',
+  // Greek — recreate (no confident real-letter match; own glyph in FONT)
+  'Γ': 'Γ', 'γ': 'Γ', 'Δ': 'Δ', 'δ': 'Δ', 'Θ': 'Θ', 'θ': 'Θ', 'Λ': 'Λ', 'λ': 'Λ',
+  'Ξ': 'Ξ', 'ξ': 'Ξ', 'Π': 'Π', 'π': 'Π', 'Σ': 'Σ', 'σ': 'Σ', 'ς': 'Σ',
+  'Φ': 'Φ', 'φ': 'Φ', 'Ψ': 'Ψ', 'ψ': 'Ψ', 'Ω': 'Ω', 'ω': 'Ω',
+
+  // Cyrillic uppercase — real letter (confirmed + the well-established extras noted above)
+  'А': 'A', 'В': 'B', 'Е': 'E', 'К': 'K', 'М': 'M', 'Н': 'H', 'О': 'O', 'Р': 'P',
+  'С': 'C', 'Т': 'T', 'У': 'Y', 'Х': 'X', 'И': 'N', 'Й': 'N', 'Я': 'R', 'З': '3',
+  // Cyrillic lowercase — real letter (same targets)
+  'а': 'A', 'в': 'B', 'е': 'E', 'к': 'K', 'м': 'M', 'н': 'H', 'о': 'O', 'р': 'P',
+  'с': 'C', 'т': 'T', 'у': 'Y', 'х': 'X', 'и': 'N', 'й': 'N', 'я': 'R', 'з': '3',
+  // Cyrillic — recreate (no confident real-letter match; own glyph in FONT,
+  // reusing the Greek glyph where the two scripts' letterforms are the same)
+  'Б': 'Б', 'б': 'Б', 'Г': 'Γ', 'г': 'Γ', 'Д': 'Д', 'д': 'Д', 'Ж': 'Ж', 'ж': 'Ж',
+  'Л': 'Л', 'л': 'Л', 'П': 'Π', 'п': 'Π', 'Ф': 'Φ', 'ф': 'Φ', 'Ц': 'Ц', 'ц': 'Ц',
+  'Ч': 'Ч', 'ч': 'Ч', 'Ш': 'Ш', 'ш': 'Ш', 'Щ': 'Ш', 'щ': 'Ш', 'Ъ': 'Ъ', 'ъ': 'Ъ',
+  'Ы': 'Ы', 'ы': 'Ы', 'Ь': 'Ь', 'ь': 'Ь', 'Э': 'Э', 'э': 'Э', 'Ю': 'Ю', 'ю': 'Ю',
 };
 
 // "Smallcaps" stylized text (e.g. "ᴡᴇʟᴄᴏᴍᴇ") is another very common Discord
