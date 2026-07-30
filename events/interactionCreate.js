@@ -370,6 +370,12 @@ module.exports = {
             const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
             const desc = (upd.data.description || '').replace(/📊 \*\*Entries:\*\* \d+ participants?/, `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`);
             upd.setDescription(desc);
+            // The cached embed's image URL is already the resolved CDN link, not
+            // "attachment://<name>" — re-pinning it to the still-attached file by
+            // name keeps Discord treating it as one embedded image instead of also
+            // rendering the untouched attachment as a second, separate preview.
+            const bannerName = interaction.message.attachments.first()?.name;
+            if (bannerName) upd.setImage(`attachment://${bannerName}`);
             await interaction.message.edit({ embeds: [upd] }).catch(() => {});
           } catch {}
           client.commands.get('coinsgiveaway')?.persistEntry?.(interaction.message.id, entrants);
