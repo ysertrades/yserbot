@@ -329,6 +329,18 @@ function _fillRectBlend(png, x, y, w, h, c, alpha) {
   }
 }
 
+// Same rounded-rect fill used for the /jobs candlestick icon — softened
+// corners instead of a sharp block, reused here purely for the trading
+// chart's candle bodies so both read as the same house style.
+function _fillRoundedRectBlend(png, px, py, w, h, radius, color, alpha) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!_roundedMask(w, h, radius, x, y)) continue;
+      _setPxBlend(png, px + x, py + y, color, alpha);
+    }
+  }
+}
+
 function _rect(png, x, y, w, h, c, th = 1) {
   for (let t = 0; t < th; t++) {
     _line(png, x + t, y + t, x + w - 1 - t, y + t, c, 1);
@@ -1199,7 +1211,7 @@ function _renderTradeChartPng({
     // rather than blending into whichever body color happens to sit on it.
     _lineBlend(png, x, yHigh, x, yLow, [210, 216, 226, 255], 0.9, 2);
     const bodyTop = Math.min(yOpen, yClose), bodyH = Math.max(2, Math.abs(yClose - yOpen));
-    _fillRect(png, x - Math.floor(bodyW / 2), bodyTop, bodyW, bodyH, color);
+    _fillRoundedRectBlend(png, x - Math.floor(bodyW / 2), bodyTop, bodyW, bodyH, 1, color, 1);
   };
 
   histCandles.forEach((c, i) => drawCandle(i, c, false));
