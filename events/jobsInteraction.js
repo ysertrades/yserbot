@@ -3,9 +3,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Handles all interactions whose customId starts with "job:"
 // Button IDs:
-//   job:work:<job_id>   — clock into a job
-//   job:list            — return to jobs hub
-//   job:close           — delete the message
+//   job:work:<job_id>:<owner_id>  — clock into a job
+//   job:list:<owner_id>           — return to jobs hub
+//   job:close:<owner_id>          — delete the message
+// The owner id is checked on every one of them: a Jobs Hub is one member's
+// panel, not a shared one.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
@@ -21,6 +23,17 @@ module.exports = {
 
     const parts = interaction.customId.split(':');
     const type  = parts[1]; // 'work' | 'list' | 'close'
+
+    // The hub belongs to whoever opened it — its id is baked into every
+    // button. Without this, anyone could clock into a job on someone else's
+    // panel (overwriting their view with their own result) or close it.
+    const ownerId = type === 'work' ? parts[3] : parts[2];
+    if (ownerId && interaction.user.id !== ownerId) {
+      return interaction.reply({
+        content: `🔒 This Jobs Hub belongs to <@${ownerId}> — run \`/jobs\` to open your own.`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
 
     // ── Close ────────────────────────────────────────────────────────────────
     if (type === 'close') {
@@ -62,8 +75,8 @@ module.exports = {
         const embed = new EmbedBuilder().setImage(`attachment://${imageName}`).setDescription(`Back on shift <t:${ts}:R>.`);
 
         const backRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('job:list').setLabel('← Jobs').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`job:list:${userId}`).setLabel('← Jobs').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`job:close:${userId}`).setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
         );
         return interaction.update({ embeds: [embed], files: [attachment], components: [backRow] });
       }
@@ -104,8 +117,8 @@ module.exports = {
         .setDescription(`💰 Balance: **${newBal.toLocaleString()}** coins · Next shift <t:${nextTs}:R>`);
 
       const afterRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('job:list').setLabel('💼 Back to Jobs').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`job:list:${userId}`).setLabel('💼 Back to Jobs').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`job:close:${userId}`).setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
       );
 
       return interaction.update({ embeds: [embed], files: [attachment], components: [afterRow] });

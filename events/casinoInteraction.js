@@ -11,7 +11,7 @@ const {
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
 const { getEffect, getEffectiveMaxBet } = require('../utils/effectsManager');
-const { getSession, createSession, updateSession, tryLock, unlock } = require('../casino/sessions');
+const { getSession, updateSession, tryLock, unlock } = require('../casino/sessions');
 const { getSettings } = require('../casino/settings');
 const { fetchAvatarPng } = require('../utils/avatarUtil');
 const { readJson, writeJson } = require('../utils/jsonStorage');
@@ -107,14 +107,37 @@ async function handleError(interaction, err) {
   try { interaction.replied || interaction.deferred ? await interaction.followUp(m) : await interaction.reply(m); } catch {}
 }
 
+// A casino panel belongs to exactly one player: whoever ran /casino to open
+// it. The session records that message id at creation, so requiring an exact
+// match is what stops a bystander — including one with their own table open
+// elsewhere — from driving someone else's panel.
+//
+// Note the missing `s.messageId &&` short-circuit that used to be here: it
+// meant a session with no recorded message id passed the check against ANY
+// message, which is precisely the hole this closes.
 function guardSession(interaction) {
   const s = getSession(interaction.user.id);
   if (!s) return null;
-  if (interaction.message && s.messageId && s.messageId !== interaction.message.id) return null;
+  if (interaction.message && s.messageId !== interaction.message.id) return null;
   return s;
 }
 
+/** The player who ran the slash command that created this panel, if known. */
+function panelOwnerId(interaction) {
+  return interaction.message?.interactionMetadata?.user?.id ?? null;
+}
+
+// Every guard failure routes here. "Not your table" and "your own session
+// expired" are very different situations, so tell the player which one it is
+// instead of sending everyone the same misleading "expired" notice.
 async function expired(interaction) {
+  const ownerId = panelOwnerId(interaction);
+  if (ownerId && ownerId !== interaction.user.id) {
+    return interaction.reply({
+      content: `🔒 This casino table belongs to <@${ownerId}> — run \`/casino\` to open your own.`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
   return interaction.reply({ content: '⚠️ Session expired. Use `/casino` to start a new game.', flags: MessageFlags.Ephemeral });
 }
 
@@ -133,7 +156,13 @@ async function handleButton(interaction) {
   const type  = parts[1];
 
   if (type === 'close') {
-    const s = getSession(interaction.user.id);
+    // Previously this deleted the message with no check whatsoever, so any
+    // passer-by could dismiss someone else's table. The session is the normal
+    // proof of ownership; the interaction-metadata fallback keeps the owner
+    // able to dismiss their own panel after their session has timed out.
+    const s = guardSession(interaction);
+    const owner = panelOwnerId(interaction);
+    if (!s && !(owner && owner === interaction.user.id)) return expired(interaction);
     if (s) unlock(s.userId);
     // Also stop any running crash session
     if (global.crashSessions.has(interaction.user.id)) {
@@ -145,7 +174,7 @@ async function handleButton(interaction) {
   }
 
   if (type === 'menu') {
-    const s = getSession(interaction.user.id);
+    const s = guardSession(interaction);
     if (!s) return expired(interaction);
     const { mainEmbed, mainRows } = require('../commands/economy/casino');
     updateSession(s.userId, { game: null, bjState: null, tradeState: null, raceState: null });
@@ -153,7 +182,7 @@ async function handleButton(interaction) {
   }
 
   if (type === 'again') {
-    const s = getSession(interaction.user.id);
+    const s = guardSession(interaction);
     if (!s || !s.game || !s.bet) return expired(interaction);
 
     // Race and roulette still need the user to pick a racer / bet-type before
@@ -386,7 +415,7 @@ async function handleButton(interaction) {
         { name: `<@${challengerId}>`, value: `**${fmt(cBal)}** coins`, inline: true },
         { name: `<@${accepterId}>`,   value: `**${fmt(aBal)}** coins`, inline: true },
       )
-      .setFooter({ text: 'YSER Flow Casino  •  Either player can start the rematch' });
+      .setFooter({ text: 'YSER Flow Casino  •  Table host can start a rematch' });
 
     // Previously this ended with no buttons at all, forcing both players to
     // run /casino again. Rematch re-opens the duel at the same stake for
@@ -404,19 +433,19 @@ async function handleButton(interaction) {
 
   // ── Dice PvP — rematch (either duellist re-opens at the same stake) ──────
   if (type === 'dicerematch') {
-    const [, , aId, bId, betStr] = parts;
-    const bet = parseInt(betStr, 10);
+    const bet = parseInt(parts[4], 10);
     const userId = interaction.user.id;
-    if (userId !== aId && userId !== bId)
-      return interaction.reply({ content: `❌ Only <@${aId}> and <@${bId}> can rematch this duel.`, flags: MessageFlags.Ephemeral });
+
+    // The rematch re-opens a challenge on this panel, and the panel belongs to
+    // the player who ran /casino — so it's theirs to restart, not the
+    // opponent's. The opponent opens their own table to host a duel.
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
     if (!hasEnough(userId, bet))
       return interaction.reply({ content: `❌ You need **${fmt(bet)}** coins to rematch. Balance: **${fmt(getBalance(userId))}**.`, flags: MessageFlags.Ephemeral });
     if (global.diceChallenges.has(userId))
       return interaction.reply({ content: '⚠️ You already have an open challenge.', flags: MessageFlags.Ephemeral });
 
-    // Whoever clicks becomes the new challenger, so they need a session of
-    // their own — the accepter never had one on this message.
-    createSession(userId, interaction.guild?.id, interaction.message.id);
     updateSession(userId, { game: 'dice', bet, diceOdds: engine.randomDiceOdds() });
     removeCoins(userId, bet);
     await interaction.deferUpdate();
@@ -425,8 +454,17 @@ async function handleButton(interaction) {
 
   // ── Dice PvP — cancel / refund ───────────────────────────────────────────
   if (type === 'dicepvpcancel') {
-    const s = getSession(interaction.user.id);
-    if (s && s.bet) { addCoins(s.userId, s.bet); global.diceChallenges.delete(s.userId); unlock(s.userId); }
+    // This used to refund whoever clicked, on any challenge message — so a
+    // player with an open bet could click Cancel on other people's duels and
+    // be refunded their own stake each time, as well as deleting the message.
+    // Only the challenger can withdraw their own challenge.
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    if (s.bet && global.diceChallenges.has(s.userId)) {
+      addCoins(s.userId, s.bet);
+      global.diceChallenges.delete(s.userId);
+    }
+    unlock(s.userId);
     try { await interaction.message.delete(); } catch {}
     return;
   }
