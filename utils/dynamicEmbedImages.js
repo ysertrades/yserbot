@@ -19,6 +19,8 @@ const { generateReportGuideImage } = require('./reportGuideVisual');
 const { generateNyseOpenImage } = require('./marketSessionVisual');
 const { generateRiskGuideImage } = require('./riskGuideVisual');
 const { generateNewsfeedGuideImage } = require('./newsfeedGuideVisual');
+const { generateTradingViewBannerImage } = require('./tradingViewVisual');
+const { generateWhopBannerImage } = require('./whopVisual');
 
 const DYNAMIC_IMAGES = {
   economyShowcase: { filename: 'economy_showcase.png', generate: generateEconomyShowcaseImage },
@@ -26,6 +28,8 @@ const DYNAMIC_IMAGES = {
   nyseOpen:         { filename: 'nyse_open.png',        generate: generateNyseOpenImage },
   riskGuide:        { filename: 'risk_guide.png',       generate: generateRiskGuideImage },
   newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: generateNewsfeedGuideImage },
+  tradingViewBanner: { filename: 'tradingview_banner.png', generate: generateTradingViewBannerImage },
+  whopBanner:        { filename: 'whop_banner.png',        generate: generateWhopBannerImage },
 };
 
 const DYNAMIC_PREFIX = 'dynamic:';

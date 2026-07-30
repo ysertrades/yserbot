@@ -142,12 +142,50 @@ const NEWSFEED_GUIDE_TEMPLATE = {
   }],
 };
 
+const TRADINGVIEW_BANNER_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#2962FF',
+    footer: null,
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:tradingViewBanner',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
+const WHOP_BANNER_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#16DE80',
+    footer: null,
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:whopBanner',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
 const TEMPLATE_SEEDS = {
   'economy-showcase': ECONOMY_SHOWCASE_TEMPLATE,
   'report-guide':      REPORT_GUIDE_TEMPLATE,
   'nyse-open':         NYSE_OPEN_TEMPLATE,
   'risk-guide':        RISK_GUIDE_TEMPLATE,
   'newsfeed-guide':    NEWSFEED_GUIDE_TEMPLATE,
+  'tradingview-banner': TRADINGVIEW_BANNER_TEMPLATE,
+  'whop-banner':        WHOP_BANNER_TEMPLATE,
 };
 
 // Same "already seeded before this field changed" problem as
