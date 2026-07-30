@@ -78,22 +78,58 @@ function extractYouTube(...sources) {
   return null;
 }
 
-// Once the video is surfaced as a thumbnail + "Watch on YouTube" link, the
-// bare URL left sitting in the body text is just noise — drop it (plus any
-// trailing ?si=… share params) so the description stays clean.
-// A line that introduced the link ("Watch here:") is left dangling once the
-// URL goes, so drop those too — but only when the whole line is a bare
-// label, never a real data line like "• **Rates:** unchanged".
-const DANGLING_LABEL_RE = /^[^\n*•]{0,40}:$/;
+// ── Other outbound links ─────────────────────────────────────────────────────
+// Items also link out to the original source (Reuters, Bloomberg, an official
+// release, an X post, …). Those get the same treatment as a video: pull the
+// page's own share banner (Open Graph) into this embed rather than leaking a
+// raw URL into the message content and letting Discord hang a second card.
+// Financial Juice's own article URLs are deliberately excluded — every one of
+// those would scrape back the same site-wide logo, which is noise, and
+// resolveArticleImage() already handles their real per-article pictures.
+const ANY_URL_RE   = /https?:\/\/[^\s"'<>)\]]+/gi;
+const SELF_HOST_RE = /(^|\.)financialjuice\.com$/i;
 
-function stripYouTubeUrls(text) {
+function hostOf(url) {
+  try { return new URL(url).hostname; } catch { return null; }
+}
+
+// A trailing ")" or "." is far more often sentence punctuation than part of
+// the URL, so trim those rather than shipping a link that 404s.
+function tidyUrl(url) {
+  return url.replace(/[.,;:!]+$/, '');
+}
+
+function extractExternalLink(...sources) {
+  for (const src of sources) {
+    if (!src) continue;
+    for (const raw of String(src).match(ANY_URL_RE) || []) {
+      const url = tidyUrl(raw);
+      const host = hostOf(url);
+      if (!host || SELF_HOST_RE.test(host)) continue;
+      if (YOUTUBE_URL_RE.test(url)) continue; // handled by the video path above
+      return { url, host: host.replace(/^www\./i, '') };
+    }
+  }
+  return null;
+}
+
+// Once a link is surfaced as a banner + labelled link, the bare URL left
+// sitting in the body text is just noise — drop it (plus any trailing
+// ?si=… share params) so the description stays clean.
+// A line that introduced it ("Watch here:") is left dangling once the URL
+// goes, so drop those too — but only when the whole line is a bare label,
+// never a real data line like "• **Rates:** unchanged". Same for the lone
+// connector left behind when one sentence held two links ("<url> and <url>").
+const DANGLING_LABEL_RE     = /^[^\n*•]{0,40}:$/;
+const DANGLING_CONNECTOR_RE = /^(?:and|or|via|by|at|from|the|a|&|[-–—+])$/i;
+
+function stripUrls(text) {
   if (!text) return text;
-  const global = new RegExp(`${YOUTUBE_URL_RE.source}[^\\s"'<>]*`, 'gi');
   return text
-    .replace(global, '')
+    .replace(ANY_URL_RE, '')
     .split('\n')
     .map(line => line.trim())
-    .filter(line => line && !DANGLING_LABEL_RE.test(line))
+    .filter(line => line && !DANGLING_LABEL_RE.test(line) && !DANGLING_CONNECTOR_RE.test(line))
     .join('\n')
     .trim();
 }
@@ -141,8 +177,10 @@ function parseFeedItems(xml) {
     const description = extractTag(block, 'description');
     const imageUrl = extractEnclosureImage(block) || extractImageFromHtml(description);
     const video = extractYouTube(description, link, rawTitle);
-    const body = video ? stripYouTubeUrls(htmlToDiscordText(description)) : htmlToDiscordText(description);
-    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl, body, video });
+    const source = video ? null : extractExternalLink(description, link);
+    const rawBody = htmlToDiscordText(description);
+    const body = (video || source) ? stripUrls(rawBody) : rawBody;
+    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl, body, video, source });
   }
   return items;
 }
@@ -200,6 +238,73 @@ async function resolveArticleImage(item) {
   return item._resolvedImage;
 }
 
+// Every other outbound link gets its banner the standard way: the share image
+// the page already declares for itself (Open Graph / Twitter card) — the exact
+// picture Discord would show if it unfurled the URL itself.
+// Only the <head> is needed, so the response is read in chunks and abandoned
+// as soon as the meta tags are in hand (or the cap is hit) rather than pulling
+// down a whole multi-megabyte page.
+const OG_TIMEOUT_MS   = 5000;
+const OG_MAX_BYTES    = 192 * 1024;
+const OG_CACHE_MAX    = 500;
+const ogImageCache = new Map();
+
+const OG_META_RE = /<meta[^>]+(?:property|name)=["'](og:image(?::secure_url|:url)?|twitter:image(?::src)?)["'][^>]*>/gi;
+const CONTENT_RE = /content=["']([^"']+)["']/i;
+
+function parseOgImage(html, baseUrl) {
+  const found = { og: null, twitter: null };
+  for (const tag of html.match(OG_META_RE) || []) {
+    const content = tag.match(CONTENT_RE)?.[1];
+    if (!content) continue;
+    const isTwitter = /twitter:/i.test(tag);
+    if (isTwitter) { found.twitter ||= content; } else { found.og ||= content; }
+  }
+  const raw = found.og || found.twitter;
+  if (!raw) return null;
+  try {
+    // Pages legitimately declare these as protocol-relative or site-root
+    // paths, so resolve against the page URL instead of discarding them.
+    const abs = new URL(raw.trim(), baseUrl);
+    return (abs.protocol === 'http:' || abs.protocol === 'https:') ? abs.href : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveLinkBanner(pageUrl) {
+  if (ogImageCache.has(pageUrl)) return ogImageCache.get(pageUrl);
+
+  let image = null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), OG_TIMEOUT_MS);
+    const res = await fetch(pageUrl, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)', Accept: 'text/html,*/*' },
+    }).catch(err => { throw err; });
+
+    try {
+      if (res.ok && /text\/html|application\/xhtml/i.test(res.headers.get('content-type') || '')) {
+        let html = '';
+        for await (const chunk of res.body) {
+          html += Buffer.from(chunk).toString('utf8');
+          if (html.length >= OG_MAX_BYTES || /<\/head>/i.test(html)) break;
+        }
+        image = parseOgImage(html, res.url || pageUrl);
+      }
+    } finally {
+      clearTimeout(timeout);
+      controller.abort(); // stop the body download once we have what we need
+    }
+  } catch { /* unreachable, timed out, or not HTML — just go without a banner */ }
+
+  if (ogImageCache.size >= OG_CACHE_MAX) ogImageCache.clear();
+  ogImageCache.set(pageUrl, image);
+  return image;
+}
+
 // maxresdefault is the size that actually fills an embed's image slot like a
 // proper banner, but plenty of videos (live streams especially) only ever get
 // the smaller hqdefault. Neither is guaranteed — a pulled or private video
@@ -239,25 +344,32 @@ async function resolveYouTubeThumb(videoId) {
 async function buildNewsEmbed(item) {
   const isBreaking = BREAKING_PATTERN.test(item.title);
 
-  // For a video item the stream *is* the story, so the headline points
-  // straight at it; the article link on those is only ever a stub of the
-  // same thing.
-  const headlineUrl = item.video?.url || item.link;
+  // When the item carries a video or an outbound source, that *is* the story
+  // — the headline points straight at it; the Financial Juice article link on
+  // those is only ever a stub of the same thing.
+  const headlineUrl = item.video?.url || item.source?.url || item.link;
   let description = headlineUrl ? `[**${item.title}**](${headlineUrl})` : `**${item.title}**`;
   if (item.body && item.body !== item.title) description += `\n\n${item.body}`;
-  // An embed image isn't clickable in Discord, so the thumbnail alone gives
-  // no way into the video — this line is what makes it playable.
+  // An embed image isn't clickable in Discord, so the banner alone gives no
+  // way through to the link — this line is what makes it followable.
   if (item.video) description += `\n\n▶️ **[Watch on YouTube](${item.video.url})**`;
+  else if (item.source) description += `\n\n🔗 **[Read on ${item.source.host}](${item.source.url})**`;
 
-  // A video with no usable thumbnail still falls back to whatever picture the
-  // article itself carries, rather than silently losing the image slot.
+  // Banner priority: the video's thumbnail, then the linked page's own share
+  // image, then whatever picture the Financial Juice article itself carries —
+  // so a link that turns out to have no banner never loses the image slot.
   const pictureUrl = (item.video && await resolveYouTubeThumb(item.video.id))
+    || (item.source && await resolveLinkBanner(item.source.url))
     || await resolveArticleImage(item);
+
+  const footer = item.video ? 'Financial Juice • Live Video'
+    : item.source ? `Financial Juice • via ${item.source.host}`
+    : 'Financial Juice • Live Market News';
 
   const embed = createEmbed(isBreaking ? 'breaking' : 'news', {
     title: isBreaking ? '🔴 BREAKING — Financial Juice' : '📰 Financial Juice',
     description,
-    footer: item.video ? 'Financial Juice • Live Video' : 'Financial Juice • Live Market News',
+    footer,
     image: isValidUrl(pictureUrl) ? pictureUrl : undefined,
   });
   embed.setTimestamp(null); // headline age is already obvious from post order — no timestamp on these
