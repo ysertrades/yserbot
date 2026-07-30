@@ -42,8 +42,7 @@ const COMMUNITY_CMDS = [
 ];
 
 const ECONOMY_CMDS = [
-  ['balance',    'Check your coin balance'],
-  ['bank',       'Deposit coins and earn 2% interest every 12h'],
+  ['bank',       'View your bank account, deposit, withdraw, check balances & the leaderboard'],
   ['casino',     'Play casino games (slots, crash, BJ, roulette, wheel…)'],
   ['daily',      'Claim your daily coins'],
   ['fish',       'Cast a line and see what you reel in'],

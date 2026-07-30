@@ -1,12 +1,20 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
+const {
+  SlashCommandBuilder, EmbedBuilder, AttachmentBuilder,
+  ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
+  MessageFlags,
+} = require('discord.js');
+const { getBalance, addCoins, removeCoins, getLeaderboard } = require('../../utils/economyManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const { filterNonBotIds } = require('../../utils/discordHelpers');
+const { fetchAvatarPng } = require('../../utils/avatarUtil');
+const { generateBankCardImage, generateLeaderboardImage } = require('../../utils/bankVisual');
 
 const BANK_FILE     = 'bank.json';
-const INTEREST_RATE = 0.02;                    // 2% per period
-const PERIOD_MS     = 12 * 60 * 60 * 1000;    // 12 hours
+const INTEREST_RATE = 0.02;                 // 2% per period
+const PERIOD_MS     = 12 * 60 * 60 * 1000; // 12 hours
 
 const fmt = n => Number(n).toLocaleString();
 
@@ -23,122 +31,191 @@ function saveBank(userId, bankData) {
 
 function calcInterest(bankData) {
   if (bankData.balance <= 0) return { interest: 0, periods: 0 };
-  const periods   = Math.floor((Date.now() - bankData.lastInterest) / PERIOD_MS);
-  const interest  = Math.floor(bankData.balance * INTEREST_RATE * periods);
+  const periods  = Math.floor((Date.now() - bankData.lastInterest) / PERIOD_MS);
+  const interest = Math.floor(bankData.balance * INTEREST_RATE * periods);
   return { interest, periods };
 }
+
+function errorEmbed(title, desc) {
+  return new EmbedBuilder().setColor(0xFF4757).setTitle(`❌ ${title}`).setDescription(desc);
+}
+
+function avatarUrlFor(userOrMember) {
+  return userOrMember.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+}
+
+// ── Panel builders ───────────────────────────────────────────────────────────
+
+async function buildBankPanel(member, ownerId) {
+  const userId    = member.id;
+  const bankData  = getBank(userId);
+  const wallet    = getBalance(userId);
+  const { interest } = calcInterest(bankData);
+  const avatarPng = await fetchAvatarPng(avatarUrlFor(member));
+
+  const imageName  = `bank_${Date.now()}.png`;
+  const attachment = new AttachmentBuilder(generateBankCardImage({
+    avatarPng, username: member.displayName, wallet, bank: bankData.balance, interestReady: interest,
+  }), { name: imageName });
+  const embed = new EmbedBuilder().setImage(`attachment://${imageName}`);
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`bank_panel:deposit:${ownerId}`).setLabel('Deposit').setEmoji('💵').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`bank_panel:withdraw:${ownerId}`).setLabel('Withdraw').setEmoji('🏦').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`bank_panel:collect:${ownerId}`).setLabel('Collect Interest').setEmoji('💹').setStyle(ButtonStyle.Secondary),
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`bank_panel:checkbalance:${ownerId}`).setLabel('Check Balance').setEmoji('🔍').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`bank_panel:leaderboard:${ownerId}`).setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`bank_close:${ownerId}`).setLabel('Close').setEmoji('✖️').setStyle(ButtonStyle.Secondary),
+  );
+
+  return { embeds: [embed], files: [attachment], components: [row1, row2] };
+}
+
+function buildAmountModal(action, ownerId) {
+  return new ModalBuilder()
+    .setCustomId(`bank_amount_modal:${action}:${ownerId}`)
+    .setTitle(action === 'deposit' ? 'Deposit Coins' : 'Withdraw Coins')
+    .addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('amount').setLabel('Amount').setStyle(TextInputStyle.Short)
+        .setRequired(true).setPlaceholder('e.g. 500'),
+    ));
+}
+
+async function buildLeaderboardPayload(interaction) {
+  const candidates = getLeaderboard(30);
+  const humanIds   = new Set(await filterNonBotIds(interaction.client, candidates.map(e => e.userId)));
+  const ranked     = candidates.filter(e => humanIds.has(e.userId)).slice(0, 10);
+
+  const entries = [];
+  for (const e of ranked) {
+    const member = interaction.guild.members.cache.get(e.userId)
+      ?? await interaction.guild.members.fetch(e.userId).catch(() => null);
+    if (!member) continue;
+    entries.push({
+      avatarPng: await fetchAvatarPng(avatarUrlFor(member)),
+      username: member.displayName,
+      balance: e.balance,
+    });
+  }
+
+  const imageName  = `bank_leaderboard_${Date.now()}.png`;
+  const attachment = new AttachmentBuilder(generateLeaderboardImage({ entries, guildName: interaction.guild.name }), { name: imageName });
+  return { content: null, embeds: [new EmbedBuilder().setImage(`attachment://${imageName}`)], files: [attachment], components: [] };
+}
+
+// ── Command ──────────────────────────────────────────────────────────────────
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('bank')
-    .setDescription('Deposit coins, earn 2% interest every 12 hours, and grow your wealth')
-    .addSubcommand(sub => sub
-      .setName('balance').setDescription('View your bank balance and pending interest'))
-    .addSubcommand(sub => sub
-      .setName('deposit').setDescription('Move coins from your wallet into the bank')
-      .addIntegerOption(o => o.setName('amount').setDescription('Amount to deposit').setMinValue(1).setRequired(true)))
-    .addSubcommand(sub => sub
-      .setName('withdraw').setDescription('Move coins from the bank back to your wallet')
-      .addIntegerOption(o => o.setName('amount').setDescription('Amount to withdraw').setMinValue(1).setRequired(true)))
-    .addSubcommand(sub => sub
-      .setName('collect').setDescription('Collect all accrued interest into your bank balance')),
+    .setDescription('View your bank account, deposit, withdraw, and earn interest'),
 
   async execute(interaction) {
-    const sub    = interaction.options.getSubcommand();
+    const payload = await buildBankPanel(interaction.member, interaction.user.id);
+    await interaction.reply(payload);
+  },
+
+  async handleButton(interaction) {
+    const [, action, ownerId] = interaction.customId.split(':');
+    if (interaction.user.id !== ownerId) {
+      return interaction.reply({ content: "❌ This isn't your bank panel.", flags: MessageFlags.Ephemeral });
+    }
     const userId = interaction.user.id;
 
-    if (sub === 'balance') {
-      const bankData  = getBank(userId);
-      const wallet    = getBalance(userId);
-      const { interest, periods } = calcInterest(bankData);
-      const nextTs    = Math.floor((bankData.lastInterest + PERIOD_MS) / 1000);
-
-      const embed = new EmbedBuilder()
-        .setColor(0x27AE60)
-        .setTitle('🏦  Your Bank Account')
-        .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
-        .addFields(
-          { name: '💵 Wallet',     value: `\`${fmt(wallet)}\` coins`,          inline: true },
-          { name: '🏦 Bank',       value: `\`${fmt(bankData.balance)}\` coins`, inline: true },
-          { name: '📊 Total',      value: `\`${fmt(wallet + bankData.balance)}\` coins`, inline: true },
-          {
-            name: '💹 Interest',
-            value: interest > 0
-              ? `> **+${fmt(interest)} coins** ready!\n> Use \`/bank collect\` to claim.`
-              : `> Next drop in <t:${nextTs}:R>`,
-            inline: false,
-          },
-        )
-        .setFooter({ text: '📈 2% interest every 12 hours on your bank balance' })
-        .setTimestamp();
-      return interaction.reply({ embeds: [embed] });
+    if (action === 'deposit' || action === 'withdraw') {
+      return interaction.showModal(buildAmountModal(action, ownerId));
     }
 
-    if (sub === 'deposit') {
-      const amount = interaction.options.getInteger('amount');
-      const wallet = getBalance(userId);
-      if (wallet < amount)
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Insufficient Wallet').setDescription(`You only have **${fmt(wallet)}** coins in your wallet.`)], flags: MessageFlags.Ephemeral });
-
-      removeCoins(userId, amount);
-      const bankData = getBank(userId);
-      bankData.balance += amount;
-      saveBank(userId, bankData);
-
-      return interaction.reply({ embeds: [new EmbedBuilder()
-        .setColor(0x27AE60)
-        .setTitle('🏦  Deposit Successful')
-        .setDescription(`> 💸 **${fmt(amount)}** coins deposited.`)
-        .addFields(
-          { name: '💵 New Wallet', value: `\`${fmt(getBalance(userId))}\` coins`,   inline: true },
-          { name: '🏦 New Bank',   value: `\`${fmt(bankData.balance)}\` coins`,     inline: true },
-        )
-        .setFooter({ text: 'Earning 2% interest every 12 hours' })
-        .setTimestamp()] });
-    }
-
-    if (sub === 'withdraw') {
-      const amount   = interaction.options.getInteger('amount');
-      const bankData = getBank(userId);
-      if (bankData.balance < amount)
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Insufficient Bank Balance').setDescription(`Your bank holds **${fmt(bankData.balance)}** coins.`)], flags: MessageFlags.Ephemeral });
-
-      bankData.balance -= amount;
-      saveBank(userId, bankData);
-      addCoins(userId, amount);
-
-      return interaction.reply({ embeds: [new EmbedBuilder()
-        .setColor(0x3498DB)
-        .setTitle('🏦  Withdrawal Successful')
-        .setDescription(`> 💸 **${fmt(amount)}** coins returned to your wallet.`)
-        .addFields(
-          { name: '💵 New Wallet', value: `\`${fmt(getBalance(userId))}\` coins`,   inline: true },
-          { name: '🏦 New Bank',   value: `\`${fmt(bankData.balance)}\` coins`,     inline: true },
-        )
-        .setTimestamp()] });
-    }
-
-    if (sub === 'collect') {
+    if (action === 'collect') {
       const bankData = getBank(userId);
       const { interest, periods } = calcInterest(bankData);
       if (interest <= 0) {
         const nextTs = Math.floor((bankData.lastInterest + PERIOD_MS) / 1000);
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('⏳ No Interest Yet').setDescription(`Next interest period: <t:${nextTs}:R>`)], flags: MessageFlags.Ephemeral });
+        return interaction.reply({ embeds: [errorEmbed('No Interest Yet', `Next interest period: <t:${nextTs}:R>`)], flags: MessageFlags.Ephemeral });
       }
       bankData.lastInterest += periods * PERIOD_MS;
       bankData.balance      += interest;
       saveBank(userId, bankData);
 
-      return interaction.reply({ embeds: [new EmbedBuilder()
-        .setColor(0xFFD700)
-        .setTitle('💹  Interest Collected!')
-        .setDescription(`> 🎉 **+${fmt(interest)} coins** added to your bank!`)
-        .addFields(
-          { name: '🏦 New Bank Balance', value: `\`${fmt(bankData.balance)}\` coins`, inline: true },
-          { name: '📈 Rate',             value: `2% × ${periods} period${periods > 1 ? 's' : ''}`, inline: true },
-        )
-        .setFooter({ text: 'Keep coins in the bank to grow your wealth!' })
-        .setTimestamp()] });
+      const payload = await buildBankPanel(interaction.member, ownerId);
+      return interaction.update(payload);
     }
+
+    if (action === 'checkbalance') {
+      const select = new UserSelectMenuBuilder().setCustomId(`bank_checkbalance_select:${ownerId}`).setPlaceholder('Select a user…').setMinValues(1).setMaxValues(1);
+      return interaction.reply({ content: 'Pick a user to check their balance:', components: [new ActionRowBuilder().addComponents(select)], flags: MessageFlags.Ephemeral });
+    }
+
+    if (action === 'leaderboard') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      const payload = await buildLeaderboardPayload(interaction);
+      return interaction.editReply(payload);
+    }
+  },
+
+  async handleClose(interaction) {
+    const ownerId = interaction.customId.split(':')[1];
+    if (interaction.user.id !== ownerId) {
+      return interaction.reply({ content: "❌ Only the person who opened this bank panel can close it.", flags: MessageFlags.Ephemeral });
+    }
+    try { await interaction.message.delete(); } catch {}
+  },
+
+  async handleModal(interaction) {
+    const [, action, ownerId] = interaction.customId.split(':');
+    if (interaction.user.id !== ownerId) {
+      return interaction.reply({ content: "❌ This isn't your bank panel.", flags: MessageFlags.Ephemeral });
+    }
+    const userId    = interaction.user.id;
+    const amountRaw = interaction.fields.getTextInputValue('amount').trim().replace(/,/g, '');
+    const amount    = parseInt(amountRaw, 10);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return interaction.reply({ embeds: [errorEmbed('Invalid Amount', 'Enter a positive whole number.')], flags: MessageFlags.Ephemeral });
+    }
+
+    if (action === 'deposit') {
+      const wallet = getBalance(userId);
+      if (wallet < amount) {
+        return interaction.reply({ embeds: [errorEmbed('Insufficient Wallet', `You only have **${fmt(wallet)}** coins in your wallet.`)], flags: MessageFlags.Ephemeral });
+      }
+      removeCoins(userId, amount);
+      const bankData = getBank(userId);
+      bankData.balance += amount;
+      saveBank(userId, bankData);
+    } else if (action === 'withdraw') {
+      const bankData = getBank(userId);
+      if (bankData.balance < amount) {
+        return interaction.reply({ embeds: [errorEmbed('Insufficient Bank Balance', `Your bank holds **${fmt(bankData.balance)}** coins.`)], flags: MessageFlags.Ephemeral });
+      }
+      bankData.balance -= amount;
+      saveBank(userId, bankData);
+      addCoins(userId, amount);
+    }
+
+    const payload = await buildBankPanel(interaction.member, ownerId);
+    return interaction.update(payload);
+  },
+
+  async handleUserSelect(interaction) {
+    const ownerId = interaction.customId.split(':')[1];
+    if (interaction.user.id !== ownerId) {
+      return interaction.reply({ content: "❌ This isn't your bank panel.", flags: MessageFlags.Ephemeral });
+    }
+    await interaction.deferUpdate();
+
+    const target = interaction.users.first();
+    const member = interaction.guild.members.cache.get(target.id) ?? await interaction.guild.members.fetch(target.id).catch(() => null);
+    const bankData  = getBank(target.id);
+    const wallet    = getBalance(target.id);
+    const avatarPng = await fetchAvatarPng(avatarUrlFor(member ?? target));
+
+    const imageName  = `bank_check_${Date.now()}.png`;
+    const attachment = new AttachmentBuilder(generateBankCardImage({
+      avatarPng, username: member?.displayName ?? target.username, wallet, bank: bankData.balance, viewingOther: true,
+    }), { name: imageName });
+
+    return interaction.editReply({ content: null, embeds: [new EmbedBuilder().setImage(`attachment://${imageName}`)], files: [attachment], components: [] });
   },
 };

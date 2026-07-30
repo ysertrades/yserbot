@@ -1,11 +1,11 @@
 const { Events, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { PNG } = require('pngjs');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createEmbed } = require('../utils/embedBuilder');
 const { addCoins } = require('../utils/economyManager');
 const { getModLogSettings } = require('../utils/modConfig');
 const { postCustomLog } = require('../utils/modLog');
 const { generateWelcomeCardImage } = require('../utils/welcomeVisual');
+const { fetchAvatarPng } = require('../utils/avatarUtil');
 
 const WELCOME_BONUS = 500;
 const MEMBER_HISTORY_FILE = 'member_history.json';
@@ -35,20 +35,6 @@ function ordinal(n) {
         case 2: return `${n}nd`;
         case 3: return `${n}rd`;
         default: return `${n}th`;
-    }
-}
-
-// A network hiccup or a decode failure here should never break the join
-// flow — welcomeVisual.js already draws a graceful initial-letter fallback
-// when handed null, so any failure just falls back to that.
-async function fetchAvatarPng(member) {
-    try {
-        const url = member.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        return PNG.sync.read(Buffer.from(await res.arrayBuffer()));
-    } catch {
-        return null;
     }
 }
 
@@ -91,7 +77,7 @@ module.exports = {
         if (guildConfig.welcomeChannel) {
             const channel = member.guild.channels.cache.get(guildConfig.welcomeChannel);
             if (channel) {
-                const avatarPng = await fetchAvatarPng(member);
+                const avatarPng = await fetchAvatarPng(member.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true }));
                 const image = generateWelcomeCardImage({
                     avatarPng,
                     username: member.displayName,

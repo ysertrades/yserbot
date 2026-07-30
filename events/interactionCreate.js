@@ -430,6 +430,14 @@ module.exports = {
           return client.commands.get('shop')?.handleButton(interaction);
         }
 
+        // Bank panel — deposit/withdraw/collect/check-balance/leaderboard/close
+        if (id.startsWith('bank_panel:')) {
+          return client.commands.get('bank')?.handleButton(interaction);
+        }
+        if (id.startsWith('bank_close:')) {
+          return client.commands.get('bank')?.handleClose(interaction);
+        }
+
         // Auto-mod — link request flow
         if (id.startsWith('automod_link_request:')) {
           return client.commands.get('automod')?.handleLinkRequestButton(interaction, id.slice('automod_link_request:'.length));
@@ -594,6 +602,11 @@ module.exports = {
         if (id === 'econcal_weekly_time_modal') {
           return client.commands.get('econcal')?.handleWeeklyTimeModalSubmit(interaction);
         }
+
+        // Bank panel — deposit/withdraw amount modal
+        if (id.startsWith('bank_amount_modal:')) {
+          return client.commands.get('bank')?.handleModal(interaction);
+        }
       } catch (err) {
         console.error(`[MODAL ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
@@ -652,6 +665,8 @@ module.exports = {
       try {
         if (id.startsWith('report_user_select:'))
           return client.commands.get('report')?.handleUserSelect(interaction);
+        if (id.startsWith('bank_checkbalance_select:'))
+          return client.commands.get('bank')?.handleUserSelect(interaction);
       } catch (err) {
         console.error(`[USER SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
