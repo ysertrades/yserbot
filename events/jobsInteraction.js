@@ -8,11 +8,10 @@
 //   job:close           — delete the message
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../utils/economyManager');
 const { getEffect } = require('../utils/effectsManager');
-
-const fmt = n => Number(n).toLocaleString();
+const { JOB_ICONS, JOB_COLORS, generateJobCardImage } = require('../utils/jobsVisual');
 
 module.exports = {
   name: 'interactionCreate',
@@ -31,47 +30,42 @@ module.exports = {
 
     // ── Back to list ──────────────────────────────────────────────────────────
     if (type === 'list') {
-      const { buildJobsEmbed, buildJobsRows } = require('../commands/economy/jobs');
+      const { buildJobsPayload, buildJobsRows } = require('../commands/economy/jobs');
       return interaction.update({
-        embeds:     [buildJobsEmbed(interaction.user.id, interaction.guild?.id)],
+        ...buildJobsPayload(interaction.user.id, interaction.guild?.id),
         components: buildJobsRows(interaction.user.id, interaction.guild?.id),
       });
     }
 
     // ── Work a job ────────────────────────────────────────────────────────────
     if (type === 'work') {
-      const { JOBS, buildJobsEmbed, buildJobsRows } = require('../commands/economy/jobs');
+      const { JOBS } = require('../commands/economy/jobs');
       const jobId  = parts[2];
       const job    = JOBS.find(j => j.id === jobId);
       if (!job) return interaction.reply({ content: '❌ Unknown job.', flags: MessageFlags.Ephemeral });
 
       const userId  = interaction.user.id;
       const guildId = interaction.guild?.id;
+      const icon    = JOB_ICONS[job.id];
+      const jobColor = JOB_COLORS[job.id];
 
-      // ── On cooldown → show "still on shift" embed (styled like wheel daily limit) ──
+      // ── On cooldown → "still on shift" visual ───────────────────────────────
       const cd = checkCooldown(userId, `job_${job.id}`, job.cooldownMs, guildId);
       if (cd > 0) {
         const ts = Math.floor((Date.now() + cd) / 1000);
-        const cooldownEmbed = new EmbedBuilder()
-          .setColor(0xFF4757)
-          .setTitle(`⏳  ${job.emoji} ${job.name} — Still on Shift`)
-          .setDescription(
-            `You're still recovering from your last **${job.emoji} ${job.name}** shift.\n` +
-            `You'll be clocked back in **<t:${ts}:R>**.\n\u200b`
-          )
-          .addFields(
-            { name: '⏱️ Shift Cooldown',  value: `**${job.cooldownLabel}** between shifts`,     inline: true },
-            { name: '📅 Available Again', value: `<t:${ts}:R>`,                                  inline: true },
-            { name: '💡 Tip',             value: 'Check other jobs — some may still be ready!',  inline: false },
-          )
-          .setFooter({ text: `YSER Jobs  •  ${job.emoji} ${job.name}  •  Come back later` })
-          .setTimestamp();
+        const imageName  = `job_cooldown_${Date.now()}.png`;
+        const attachment = new AttachmentBuilder(generateJobCardImage({
+          icon, accent: [255, 80, 80, 255],
+          kicker: job.name, banner: 'Still On Shift',
+          task: 'Check other jobs — some may still be ready!',
+        }), { name: imageName });
+        const embed = new EmbedBuilder().setImage(`attachment://${imageName}`).setDescription(`Back on shift <t:${ts}:R>.`);
 
         const backRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('job:list').setLabel('← Jobs').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
         );
-        return interaction.update({ embeds: [cooldownEmbed], components: [backRow] });
+        return interaction.update({ embeds: [embed], files: [attachment], components: [backRow] });
       }
 
       // ── Ready — calculate earnings ────────────────────────────────────────
@@ -96,34 +90,25 @@ module.exports = {
       const nextTs    = Math.floor((Date.now() + job.cooldownMs) / 1000);
       const newBal    = getBalance(userId);
 
-      const resultEmbed = new EmbedBuilder()
-        .setColor(isHighPay ? 0xFFD700 : boost ? 0x27AE60 : 0x2ECC71)
-        .setTitle(`${isHighPay ? '🤑' : '✅'}  Shift Complete — ${job.emoji} ${job.name}`)
-        .setDescription(`> You ${task}.\n\u200b`)
-        .addFields(
-          { name: '💸 Earned',      value: `**${fmt(earnings)}** coins${boost ? ' 💰' : ''}`, inline: true },
-          { name: '💰 Balance',     value: `**${fmt(newBal)}** coins`,                         inline: true },
-          { name: '⏱️ Next Shift',  value: `<t:${nextTs}:R>`,                                  inline: true },
-        )
-        .setFooter({
-          text: `${job.emoji} ${job.name}  •  YSER Jobs${boost ? `  •  💰 Coin Boost active (${boost.multiplier || 1.5}×)` : ''}`,
-        })
-        .setTimestamp();
+      const accent = isHighPay ? [255, 215, 0, 255] : boost ? [46, 204, 113, 255] : jobColor;
+      const banner = isHighPay ? 'Huge Payout!' : 'Shift Complete';
+      const taskLine = `You ${task}${boost ? ` (coin boost active — ${boost.multiplier || 1.5}x!)` : ''}.`;
 
-      if (boost) {
-        resultEmbed.addFields({
-          name: '💰 Coin Boost',
-          value: `Active this session — your earnings were **${boost.multiplier || 1.5}×**!`,
-          inline: false,
-        });
-      }
+      const imageName  = `job_result_${Date.now()}.png`;
+      const attachment = new AttachmentBuilder(generateJobCardImage({
+        icon, accent, kicker: job.name, banner, task: taskLine,
+        amountLabel: `+${earnings.toLocaleString()} COINS`,
+      }), { name: imageName });
+      const embed = new EmbedBuilder()
+        .setImage(`attachment://${imageName}`)
+        .setDescription(`💰 Balance: **${newBal.toLocaleString()}** coins · Next shift <t:${nextTs}:R>`);
 
       const afterRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('job:list').setLabel('💼 Back to Jobs').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('job:list').setLabel('💼 Back to Jobs').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
       );
 
-      return interaction.update({ embeds: [resultEmbed], components: [afterRow] });
+      return interaction.update({ embeds: [embed], files: [attachment], components: [afterRow] });
     }
   },
 };

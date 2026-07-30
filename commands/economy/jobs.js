@@ -1,10 +1,9 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { checkCooldown } = require('../../utils/economyManager');
 const { getEffect } = require('../../utils/effectsManager');
-
-const fmt = n => Number(n).toLocaleString();
+const { generateJobsHubImage } = require('../../utils/jobsVisual');
 
 const JOBS = [
   {
@@ -99,34 +98,21 @@ const JOBS = [
 
 // ── Shared embed/row builders (used by slash command + button handler) ────────
 
-function buildJobsEmbed(userId, guildId) {
-  const boost    = getEffect(userId, guildId, 'coin_boost');
-  const boostLine = boost ? `\n💰 **Coin Boost active** — all earnings are **${boost.multiplier || 1.5}×** this session!\n` : '';
+// The Jobs Hub visual — bold enough to read every job's pay/cooldown/ready
+// status without opening the image full-size. Regenerated fresh each call
+// so it reflects whoever's viewing it (their own live cooldowns).
+function buildJobsPayload(userId, guildId) {
+  const boost = getEffect(userId, guildId, 'coin_boost');
+  const statusFor = (job) => {
+    const cd = checkCooldown(userId, `job_${job.id}`, job.cooldownMs, guildId);
+    return { ready: cd <= 0 };
+  };
 
-  const lines = JOBS.map(j => {
-    const cd    = checkCooldown(userId, `job_${j.id}`, j.cooldownMs, guildId);
-    const ready = cd <= 0;
-    const ts    = Math.floor((Date.now() + cd) / 1000);
-    const status = ready ? '✅' : `⏳ <t:${ts}:R>`;
-    return `${j.emoji} **${j.name}**${j.variance ? ' ⚡' : ''} · \`${fmt(j.min)}–${fmt(j.max)}\` · \`${j.cooldownLabel}\` · ${status}`;
-  });
+  const imageName  = `jobs_hub_${Date.now()}.png`;
+  const attachment = new AttachmentBuilder(generateJobsHubImage(JOBS, statusFor, boost), { name: imageName });
+  const embed = new EmbedBuilder().setColor(boost ? 0xFFD700 : 0xF59E0B).setImage(`attachment://${imageName}`);
 
-  const readyCount = JOBS.filter(j => checkCooldown(userId, `job_${j.id}`, j.cooldownMs, guildId) <= 0).length;
-
-  return new EmbedBuilder()
-    .setColor(boost ? 0xFFD700 : 0xF59E0B)
-    .setTitle('💼  Jobs Hub')
-    .setDescription(
-      `Clock in at any available job for instant pay. Stack them all for maximum income.${boostLine}\n` +
-      lines.join('\n') +
-      `\n\u200b`
-    )
-    .addFields(
-      { name: '✅ Jobs Ready', value: `**${readyCount}** / ${JOBS.length}`, inline: true },
-      { name: '💰 Boost',      value: boost ? `**Active ${boost.multiplier || 1.5}×**` : 'None', inline: true },
-    )
-    .setFooter({ text: 'YSER Jobs  •  Click a job button to clock in  •  ⚡ = high-variance pay' })
-    .setTimestamp();
+  return { embeds: [embed], files: [attachment] };
 }
 
 function buildJobsRows(userId, guildId) {
@@ -154,19 +140,19 @@ function buildJobsRows(userId, guildId) {
 
 module.exports = {
   JOBS,
-  buildJobsEmbed,
+  buildJobsPayload,
   buildJobsRows,
 
   data: new SlashCommandBuilder()
     .setName('jobs')
-    .setDescription('Open the Jobs Hub — clock into any job from a single interactive embed'),
+    .setDescription('Open the Jobs Hub — clock into any job from a single interactive visual'),
 
   async execute(interaction) {
     const userId  = interaction.user.id;
     const guildId = interaction.guild?.id;
 
     await interaction.reply({
-      embeds:     [buildJobsEmbed(userId, guildId)],
+      ...buildJobsPayload(userId, guildId),
       components: buildJobsRows(userId, guildId),
     });
   },

@@ -1,13 +1,13 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { getEffect } = require('../../utils/effectsManager');
+const { generateWorkResultImage, generateWorkCooldownImage } = require('../../utils/workVisual');
 
 const WORK_COOLDOWN = 60 * 60 * 1000;
 const MIN_EARNINGS  = 50;
 const MAX_EARNINGS  = 200;
-const fmt = n => Number(n).toLocaleString();
 
 const TASKS = [
   { emoji: '💻', text: 'coded a Discord bot from scratch' },
@@ -32,11 +32,13 @@ module.exports = {
     if (cd > 0) {
       const hours   = Math.floor(cd / 3600000);
       const minutes = Math.floor((cd % 3600000) / 60000);
-      return interaction.reply({ embeds: [new EmbedBuilder()
-        .setColor(0xe74c3c)
-        .setTitle('⏰ Still on Cooldown')
-        .setDescription(`You need to wait **${hours}h ${minutes}m** before you can work again.`)
-        .setFooter({ text: 'Work again later!' })], flags: MessageFlags.Ephemeral });
+      const nextTs  = Math.floor((Date.now() + cd) / 1000);
+
+      const imageName  = `work_cooldown_${Date.now()}.png`;
+      const attachment = new AttachmentBuilder(generateWorkCooldownImage({ hours, minutes }), { name: imageName });
+      const embed = new EmbedBuilder().setImage(`attachment://${imageName}`).setDescription(`Available again <t:${nextTs}:R>.`);
+
+      return interaction.reply({ embeds: [embed], files: [attachment], flags: MessageFlags.Ephemeral });
     }
 
     let earnings = Math.floor(Math.random() * (MAX_EARNINGS - MIN_EARNINGS + 1)) + MIN_EARNINGS;
@@ -47,12 +49,15 @@ module.exports = {
     addCoins(userId, earnings);
     setCooldown(userId, 'work');
 
-    return interaction.reply({ embeds: [new EmbedBuilder()
-      .setColor(0x2ecc71)
-      .setTitle('✅ Work Completed!')
-      .setDescription(`${task.emoji} You ${task.text} and earned **${fmt(earnings)}** coins!${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}`)
-      .addFields({ name: '💰 Balance', value: `**${fmt(getBalance(userId))}** coins`, inline: true })
-      .setFooter({ text: 'Come back in 1 hour for more work' })
-      .setTimestamp()] });
+    const nextTs = Math.floor((Date.now() + WORK_COOLDOWN) / 1000);
+    const imageName  = `work_result_${Date.now()}.png`;
+    const attachment = new AttachmentBuilder(generateWorkResultImage({
+      taskEmoji: task.emoji, task: task.text, earnings, boostActive: Boolean(boost),
+    }), { name: imageName });
+    const embed = new EmbedBuilder()
+      .setImage(`attachment://${imageName}`)
+      .setDescription(`💰 Balance: **${getBalance(userId).toLocaleString()}** coins · Next shift <t:${nextTs}:R>`);
+
+    return interaction.reply({ embeds: [embed], files: [attachment] });
   },
 };
