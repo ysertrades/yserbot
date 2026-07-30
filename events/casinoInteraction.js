@@ -11,8 +11,9 @@ const {
 } = require('discord.js');
 const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
 const { getEffect, getEffectiveMaxBet } = require('../utils/effectsManager');
-const { getSession, updateSession, tryLock, unlock } = require('../casino/sessions');
+const { getSession, createSession, updateSession, tryLock, unlock } = require('../casino/sessions');
 const { getSettings } = require('../casino/settings');
+const { fetchAvatarPng } = require('../utils/avatarUtil');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const engine = require('../casino/engine');
 
@@ -350,11 +351,33 @@ async function handleButton(interaction) {
     else if (cWon) addCoins(challengerId, _applyBoost(bet * 2, bet, challengerId, interaction.guild?.id));
     else           addCoins(accepterId, _applyBoost(bet * 2, bet, accepterId, interaction.guild?.id));
     const cBal = getBalance(challengerId), aBal = getBalance(accepterId);
+
+    // The duel card needs both players' real names/avatars, which means a
+    // fetch — defer first so the 3s interaction window can't be missed.
+    await interaction.deferUpdate();
+    const [challenger, accepter] = await Promise.all([
+      interaction.client.users.fetch(challengerId).catch(() => null),
+      interaction.client.users.fetch(accepterId).catch(() => null),
+    ]);
+    const [cAvatar, aAvatar] = await Promise.all([
+      challenger ? fetchAvatarPng(challenger.displayAvatarURL({ extension: 'png', size: 128 })) : null,
+      accepter   ? fetchAvatarPng(accepter.displayAvatarURL({ extension: 'png', size: 128 }))   : null,
+    ]);
+
+    const imgName = `dicepvp-${Date.now()}.png`;
+    const file = new AttachmentBuilder(engine.renderDicePvpPng({
+      p1: { name: challenger?.username || 'Challenger', roll: pRoll, avatarPng: cAvatar },
+      p2: { name: accepter?.username   || 'Challenger', roll: aRoll, avatarPng: aAvatar },
+      winner: tie ? null : (cWon ? 'p1' : 'p2'),
+      pot: bet * 2,
+    }), { name: imgName });
+
     const pvpEmbed = new EmbedBuilder()
-      .setColor(tie ? 0x95a5a6 : cWon ? 0x2ecc71 : 0xe74c3c)
-      .setTitle('🎲 Dice — PvP Result')
+      .setColor(tie ? 0x95a5a6 : 0xf1c40f)
+      .setTitle('🎲 Dice — Duel Result')
+      .setImage(`attachment://${imgName}`)
       .setDescription(
-        `<@${challengerId}> rolled ${engine.DICE_FACES[pRoll]} **${pRoll}**\n` +
+        `<@${challengerId}> rolled ${engine.DICE_FACES[pRoll]} **${pRoll}**  ·  ` +
         `<@${accepterId}> rolled ${engine.DICE_FACES[aRoll]} **${aRoll}**\n\n` +
         (tie ? '⚖️ **Tie!** Both players get their coins back.'
              : `🏆 **<@${cWon ? challengerId : accepterId}>** wins **${fmt(bet * 2)}** coins!`),
@@ -363,8 +386,41 @@ async function handleButton(interaction) {
         { name: `<@${challengerId}>`, value: `**${fmt(cBal)}** coins`, inline: true },
         { name: `<@${accepterId}>`,   value: `**${fmt(aBal)}** coins`, inline: true },
       )
-      .setFooter({ text: 'YSER Flow Casino' });
-    return interaction.update({ embeds: [pvpEmbed], components: [] });
+      .setFooter({ text: 'YSER Flow Casino  •  Either player can start the rematch' });
+
+    // Previously this ended with no buttons at all, forcing both players to
+    // run /casino again. Rematch re-opens the duel at the same stake for
+    // whichever of the two clicks it, so the loop can keep going in place.
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`cs:dicerematch:${challengerId}:${accepterId}:${bet}`)
+        .setLabel(`⚔️ Rematch (${fmt(bet)})`)
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('cs:menu').setLabel('🏠 Menu').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('cs:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+    );
+    return interaction.editReply({ embeds: [pvpEmbed], components: [row], files: [file] });
+  }
+
+  // ── Dice PvP — rematch (either duellist re-opens at the same stake) ──────
+  if (type === 'dicerematch') {
+    const [, , aId, bId, betStr] = parts;
+    const bet = parseInt(betStr, 10);
+    const userId = interaction.user.id;
+    if (userId !== aId && userId !== bId)
+      return interaction.reply({ content: `❌ Only <@${aId}> and <@${bId}> can rematch this duel.`, flags: MessageFlags.Ephemeral });
+    if (!hasEnough(userId, bet))
+      return interaction.reply({ content: `❌ You need **${fmt(bet)}** coins to rematch. Balance: **${fmt(getBalance(userId))}**.`, flags: MessageFlags.Ephemeral });
+    if (global.diceChallenges.has(userId))
+      return interaction.reply({ content: '⚠️ You already have an open challenge.', flags: MessageFlags.Ephemeral });
+
+    // Whoever clicks becomes the new challenger, so they need a session of
+    // their own — the accepter never had one on this message.
+    createSession(userId, interaction.guild?.id, interaction.message.id);
+    updateSession(userId, { game: 'dice', bet, diceOdds: engine.randomDiceOdds() });
+    removeCoins(userId, bet);
+    await interaction.deferUpdate();
+    return showDicePvpChallenge(interaction, getSession(userId));
   }
 
   // ── Dice PvP — cancel / refund ───────────────────────────────────────────

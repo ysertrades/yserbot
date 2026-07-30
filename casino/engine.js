@@ -289,7 +289,15 @@ function _toCandles(prices, groupSize) {
 
 /* ─── Pixel-art / glassmorphism primitives ──────────────────────────────── */
 
+// A fractional x/y silently corrupts the row/column mapping: width*y only
+// lands on a clean row boundary for a whole-number y, so a fractional one
+// bleeds the write into a neighbouring row at a shifted column instead of
+// just landing "slightly off". (Real case: a 40px bar drawn at y=86.4 on an
+// 860px canvas reappeared 516px to the left, one row down.) Callers pass
+// computed positions that are often fractional, so round here — the failure
+// mode is pixels landing elsewhere on the canvas with no error at all.
 function _setPx(png, x, y, c) {
+  x = Math.round(x); y = Math.round(y);
   if (x < 0 || y < 0 || x >= png.width || y >= png.height) return;
   const i = (png.width * y + x) * 4;
   png.data[i] = c[0];
@@ -310,6 +318,7 @@ function _blendColor(bg, fg, alpha) {
 /** Alpha-blend a color onto whatever pixel is already there — the core trick
  *  that makes translucent "glass" panels/glows possible with raw pixel ops. */
 function _setPxBlend(png, x, y, color, alpha) {
+  x = Math.round(x); y = Math.round(y); // see _setPx — fractional coords corrupt the row mapping
   if (x < 0 || y < 0 || x >= png.width || y >= png.height || alpha <= 0) return;
   if (alpha >= 1) { _setPx(png, x, y, color); return; }
   const i = (png.width * y + x) * 4;
@@ -516,12 +525,17 @@ const _PIXEL_FONT = {
   '9': ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
   'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
   'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+  'C': ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
   'D': ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
   'E': ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+  'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+  'G': ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.###.'],
   'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+  'I': ['.###.', '..#..', '..#..', '..#..', '..#..', '..#..', '.###.'],
   'J': ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
   'K': ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
   'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+  'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#', '#...#', '#...#'],
   'N': ['#...#', '##..#', '#.#.#', '#.#.#', '#..##', '#...#', '#...#'],
   'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
   'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
@@ -530,20 +544,39 @@ const _PIXEL_FONT = {
   'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
   'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
   'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  'V': ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+  'W': ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '#.#.#', '.#.#.'],
   'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
   'Y': ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+  'Z': ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
   '-': ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
   '?': ['.###.', '#...#', '....#', '...#.', '..#..', '.....', '..#..'],
+  '!': ['..#..', '..#..', '..#..', '..#..', '..#..', '.....', '..#..'],
   '.': ['.....', '.....', '.....', '.....', '.....', '.##..', '.##..'],
+  ',': ['.....', '.....', '.....', '.....', '.##..', '.##..', '.#...'],
+  ':': ['.....', '.##..', '.##..', '.....', '.##..', '.##..', '.....'],
+  '+': ['.....', '..#..', '..#..', '#####', '..#..', '..#..', '.....'],
+  '×': ['.....', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '.....'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
 
+function _hasGlyph(ch) {
+  return Object.prototype.hasOwnProperty.call(_PIXEL_FONT, ch.toUpperCase());
+}
+
+// Characters with no glyph are skipped outright rather than falling back to a
+// blank space — player names can contain anything, and a silent run of blanks
+// reads as a broken label. Width and drawing share the same filter so a
+// centered label stays centered.
 function _pixelTextWidth(text, scale) {
-  return text.length * (_GLYPH_W + 1) * scale - scale;
+  const count = [...String(text)].filter(_hasGlyph).length;
+  if (count === 0) return 0;
+  return count * (_GLYPH_W + 1) * scale - scale;
 }
 
 function _drawPixelChar(png, ch, x, y, scale, color) {
-  const glyph = _PIXEL_FONT[ch.toUpperCase()] || _PIXEL_FONT[' '];
+  const glyph = _PIXEL_FONT[ch.toUpperCase()];
+  if (!glyph) return;
   for (let row = 0; row < _GLYPH_H; row++) {
     for (let col = 0; col < _GLYPH_W; col++) {
       if (glyph[row][col] !== '#') continue;
@@ -554,7 +587,8 @@ function _drawPixelChar(png, ch, x, y, scale, color) {
 
 function _drawPixelText(png, text, x, y, scale, color) {
   let cx = x;
-  for (const ch of text) {
+  for (const ch of String(text)) {
+    if (!_hasGlyph(ch)) continue;
     _drawPixelChar(png, ch, cx, y, scale, color);
     cx += (_GLYPH_W + 1) * scale;
   }
@@ -1144,6 +1178,108 @@ function renderDicePng(playerRoll, botRoll, outcome) {
   return PNG.sync.write(png);
 }
 
+/* ─── DICE PvP: head-to-head duel card ──────────────────────────────────── */
+
+const _GOLD  = [255, 205, 60, 255];
+const _LOSS  = [231, 76, 60, 255];
+const _TIE   = [149, 165, 166, 255];
+const _WHITE = [255, 255, 255, 255];
+
+function _truncatePixel(text, scale, maxWidth) {
+  if (_pixelTextWidth(text, scale) <= maxWidth) return text;
+  let t = text;
+  while (t.length > 1 && _pixelTextWidth(`${t}..`, scale) > maxWidth) t = t.slice(0, -1);
+  return `${t}..`;
+}
+
+// Nearest-neighbour avatar sample clipped to a circle. Kept local (rather
+// than pulling in utils/avatarUtil) so this module stays self-contained; the
+// caller passes an already-decoded PNG, or null for the initial fallback.
+function _drawAvatarCircle(png, cx, cy, radius, avatarPng, initial, accent) {
+  const r2 = radius * radius;
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx * dx + dy * dy > r2) continue;
+      if (avatarPng) {
+        const sx = Math.min(avatarPng.width - 1, Math.floor(((dx + radius) / (radius * 2)) * avatarPng.width));
+        const sy = Math.min(avatarPng.height - 1, Math.floor(((dy + radius) / (radius * 2)) * avatarPng.height));
+        const si = (avatarPng.width * sy + sx) * 4;
+        _setPxBlend(png, cx + dx, cy + dy, [avatarPng.data[si], avatarPng.data[si + 1], avatarPng.data[si + 2], 255], (avatarPng.data[si + 3] / 255) || 1);
+      } else {
+        _setPxBlend(png, cx + dx, cy + dy, accent, 0.22);
+      }
+    }
+  }
+  if (!avatarPng) _drawPixelLabel(png, initial, cx, cy, 4, _WHITE);
+}
+
+// A small crown above the winner's avatar — the one bit of the card that
+// says who took the pot without having to read anything.
+function _drawCrown(png, cx, cy, w, color) {
+  const h = w * 0.62;
+  const left = cx - w / 2, base = cy + h / 2;
+  const pts = [[left, base], [left, base - h * 0.55], [left + w * 0.25, base - h * 0.15],
+    [cx, base - h], [left + w * 0.75, base - h * 0.15], [left + w, base - h * 0.55], [left + w, base]];
+  for (let i = 0; i < pts.length - 1; i++) {
+    _line(png, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], color, 3);
+  }
+  _fillRectBlend(png, left, base - 4, w, 6, color, 1);
+  for (const bx of [left + w * 0.25, cx, left + w * 0.75]) _dot(png, bx, base - h * 0.32, 3, color);
+}
+
+/**
+ * @param {object} opts
+ * @param {{name: string, roll: number, avatarPng: object|null}} opts.p1 - challenger
+ * @param {{name: string, roll: number, avatarPng: object|null}} opts.p2 - accepter
+ * @param {'p1'|'p2'|null} opts.winner - null for a tie
+ * @param {number} opts.pot - total coins at stake
+ * @returns {Buffer} PNG image data
+ */
+function renderDicePvpPng({ p1, p2, winner, pot }) {
+  const W = 860, H = 430;
+  const png = new PNG({ width: W, height: H, colorType: 6 });
+  _flatBg(png, [18, 14, 26, 255]);
+
+  const accent = winner ? _GOLD : _TIE;
+  _glassPanel(png, 24, 24, W - 48, H - 48, { radius: 26, tint: accent, tintAlpha: 0.05, border: accent, borderAlpha: 0.35 });
+
+  _drawPixelLabel(png, 'DICE DUEL', W / 2, 56, 3, _WHITE);
+
+  const dieSize = 118;
+  const cols = [
+    { p: p1, cx: 214, isWinner: winner === 'p1' },
+    { p: p2, cx: W - 214, isWinner: winner === 'p2' },
+  ];
+
+  for (const { p, cx, isWinner } of cols) {
+    const ring = isWinner ? _GOLD : winner ? _LOSS : _TIE;
+
+    if (isWinner) _drawCrown(png, cx, 78, 40, _GOLD);
+
+    _dotBlend(png, cx, 148, 46, ring, 0.16);
+    _drawAvatarCircle(png, cx, 148, 42, p.avatarPng, (p.name || '?')[0].toUpperCase(), ring);
+    _ringStroke(png, cx, 148, 44, ring, 3);
+
+    _drawPixelLabel(png, _truncatePixel((p.name || 'PLAYER').toUpperCase(), 2, 260), cx, 214, 2, isWinner ? _GOLD : [225, 225, 235, 255]);
+
+    _drawDie(png, cx - dieSize / 2, 244, dieSize, p.roll, isWinner ? _GOLD : null);
+  }
+
+  // VS badge — sits between the two dice, matching the vs-bot card's cross.
+  const vsY = 244 + dieSize / 2;
+  _dotBlend(png, W / 2, vsY, 30, _WHITE, 0.09);
+  _ringStroke(png, W / 2, vsY, 30, [255, 255, 255, 90], 2);
+  _drawPixelLabel(png, 'VS', W / 2, vsY, 3, _WHITE);
+
+  const footer = winner
+    ? `${_truncatePixel((winner === 'p1' ? p1.name : p2.name).toUpperCase(), 2, 320)} TAKES ${pot.toLocaleString()} COINS`
+    : `TIE - ${pot.toLocaleString()} COINS RETURNED`;
+  _hLineBlend(png, 392, 120, W - 120, accent, 0.35, 1);
+  _drawPixelLabel(png, footer, W / 2, 408, 2, winner ? _GOLD : _TIE);
+
+  return PNG.sync.write(png);
+}
+
 /* ─── TRADING: real candlesticks in a glass panel ───────────────────────── */
 
 function _renderTradeChartPng({
@@ -1484,5 +1620,5 @@ module.exports = {
   generateChart, resolveTradeWithChart, RR_REWARD, RR_MULTIPLIER,
   spinRoulette, rouletteResult, renderRoulettePng, ROULETTE_RED, ROULETTE_BLACK,
   WHEEL_SEGMENTS, spinWheel, renderWheelPng,
-  DICE_FACES, rollDie, randomDiceOdds, playDiceVsBot, renderDicePng,
+  DICE_FACES, rollDie, randomDiceOdds, playDiceVsBot, renderDicePng, renderDicePvpPng,
 };
