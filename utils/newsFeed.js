@@ -59,6 +59,45 @@ function extractImageFromHtml(html) {
   return m ? m[1] : null;
 }
 
+// ── YouTube coverage ─────────────────────────────────────────────────────────
+// Financial Juice attaches live pressers / stream coverage as a YouTube link
+// on the item — sometimes as an <a href>, sometimes as a bare URL in the
+// description text, sometimes as the item's own <link>. Discord only
+// auto-unfurls a URL sitting in the *message content*, which would hang a
+// second, separate card underneath ours. So instead of leaking the raw URL
+// into the message, we pull the video's own thumbnail into this embed and
+// keep the whole thing as one card.
+const YOUTUBE_URL_RE = /https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:[^\s"'<>]*&)?v=|live\/|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/i;
+
+function extractYouTube(...sources) {
+  for (const src of sources) {
+    if (!src) continue;
+    const m = String(src).match(YOUTUBE_URL_RE);
+    if (m) return { id: m[1], url: `https://youtu.be/${m[1]}` };
+  }
+  return null;
+}
+
+// Once the video is surfaced as a thumbnail + "Watch on YouTube" link, the
+// bare URL left sitting in the body text is just noise — drop it (plus any
+// trailing ?si=… share params) so the description stays clean.
+// A line that introduced the link ("Watch here:") is left dangling once the
+// URL goes, so drop those too — but only when the whole line is a bare
+// label, never a real data line like "• **Rates:** unchanged".
+const DANGLING_LABEL_RE = /^[^\n*•]{0,40}:$/;
+
+function stripYouTubeUrls(text) {
+  if (!text) return text;
+  const global = new RegExp(`${YOUTUBE_URL_RE.source}[^\\s"'<>]*`, 'gi');
+  return text
+    .replace(global, '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !DANGLING_LABEL_RE.test(line))
+    .join('\n')
+    .trim();
+}
+
 const MAX_BODY_LEN = 1500; // well under Discord's 4096 embed-description limit
 
 // Financial Juice's descriptions carry the actual detail (bullet lists of
@@ -101,8 +140,9 @@ function parseFeedItems(xml) {
     const pubDate = pubDateRaw ? new Date(pubDateRaw) : new Date();
     const description = extractTag(block, 'description');
     const imageUrl = extractEnclosureImage(block) || extractImageFromHtml(description);
-    const body = htmlToDiscordText(description);
-    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl, body });
+    const video = extractYouTube(description, link, rawTitle);
+    const body = video ? stripYouTubeUrls(htmlToDiscordText(description)) : htmlToDiscordText(description);
+    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl, body, video });
   }
   return items;
 }
@@ -160,16 +200,64 @@ async function resolveArticleImage(item) {
   return item._resolvedImage;
 }
 
+// maxresdefault is the size that actually fills an embed's image slot like a
+// proper banner, but plenty of videos (live streams especially) only ever get
+// the smaller hqdefault. Neither is guaranteed — a pulled or private video
+// 404s on both, and handing Discord a dead URL leaves a broken image in the
+// card — so each candidate is verified and null means "no usable thumbnail",
+// letting the caller fall back. Memoized across guilds/ticks so a headline
+// posted to several servers only costs one lookup.
+const YT_THUMB_TIMEOUT_MS = 4000;
+const YT_THUMB_CACHE_MAX  = 500;
+const ytThumbCache = new Map();
+
+async function headOk(url) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), YT_THUMB_TIMEOUT_MS);
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal }).finally(() => clearTimeout(timeout));
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveYouTubeThumb(videoId) {
+  if (ytThumbCache.has(videoId)) return ytThumbCache.get(videoId);
+
+  let chosen = null;
+  for (const size of ['maxresdefault', 'hqdefault']) {
+    const url = `https://i.ytimg.com/vi/${videoId}/${size}.jpg`;
+    if (await headOk(url)) { chosen = url; break; }
+  }
+
+  if (ytThumbCache.size >= YT_THUMB_CACHE_MAX) ytThumbCache.clear();
+  ytThumbCache.set(videoId, chosen);
+  return chosen;
+}
+
 async function buildNewsEmbed(item) {
   const isBreaking = BREAKING_PATTERN.test(item.title);
-  let description = item.link ? `[**${item.title}**](${item.link})` : `**${item.title}**`;
-  if (item.body && item.body !== item.title) description += `\n\n${item.body}`;
 
-  const pictureUrl = await resolveArticleImage(item);
+  // For a video item the stream *is* the story, so the headline points
+  // straight at it; the article link on those is only ever a stub of the
+  // same thing.
+  const headlineUrl = item.video?.url || item.link;
+  let description = headlineUrl ? `[**${item.title}**](${headlineUrl})` : `**${item.title}**`;
+  if (item.body && item.body !== item.title) description += `\n\n${item.body}`;
+  // An embed image isn't clickable in Discord, so the thumbnail alone gives
+  // no way into the video — this line is what makes it playable.
+  if (item.video) description += `\n\n▶️ **[Watch on YouTube](${item.video.url})**`;
+
+  // A video with no usable thumbnail still falls back to whatever picture the
+  // article itself carries, rather than silently losing the image slot.
+  const pictureUrl = (item.video && await resolveYouTubeThumb(item.video.id))
+    || await resolveArticleImage(item);
+
   const embed = createEmbed(isBreaking ? 'breaking' : 'news', {
     title: isBreaking ? '🔴 BREAKING — Financial Juice' : '📰 Financial Juice',
     description,
-    footer: 'Financial Juice • Live Market News',
+    footer: item.video ? 'Financial Juice • Live Video' : 'Financial Juice • Live Market News',
     image: isValidUrl(pictureUrl) ? pictureUrl : undefined,
   });
   embed.setTimestamp(null); // headline age is already obvious from post order — no timestamp on these
@@ -241,4 +329,4 @@ function startNewsFeedRunner(client) {
   setInterval(tick, POLL_INTERVAL_MS);
 }
 
-module.exports = { startNewsFeedRunner, parseFeedItems };
+module.exports = { startNewsFeedRunner, parseFeedItems, buildNewsEmbed };
