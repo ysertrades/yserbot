@@ -204,10 +204,10 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    return interaction.reply({
-      ...buildPanel(interaction.guild, interaction.user.id),
-      flags: MessageFlags.Ephemeral,
-    });
+    // Posted publicly, not ephemerally: the panel is a piece of server config
+    // other admins should be able to see, and an ephemeral message can't be
+    // deleted — which is what made the Close button fail.
+    return interaction.reply(buildPanel(interaction.guild, interaction.user.id));
   },
 
   // ── Buttons ───────────────────────────────────────────────────────────────
@@ -219,7 +219,18 @@ module.exports = {
     const guild  = interaction.guild;
 
     if (action === 'close') {
-      try { await interaction.message.delete(); } catch {}
+      // Acknowledge before deleting. Discord marks an interaction failed if
+      // nothing responds within 3s, and a delete on its own doesn't count as
+      // a response — so a delete that throws left the user staring at
+      // "This interaction failed".
+      await interaction.deferUpdate().catch(() => {});
+      try {
+        await interaction.message.delete();
+      } catch {
+        // Couldn't remove the message (already gone, or ephemeral) — collapse
+        // it in place so the panel is still dismissed rather than left live.
+        await interaction.editReply({ content: '📰 News feed panel closed.', embeds: [], files: [], components: [] }).catch(() => {});
+      }
       return;
     }
     if (action === 'panel')   return interaction.update(buildPanel(guild, ownerId));
