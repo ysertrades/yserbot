@@ -246,8 +246,15 @@ const FONT = {
   '(': ['...#.', '..#..', '.#...', '.#...', '.#...', '..#..', '...#.'],
   ')': ['.#...', '..#..', '...#.', '...#.', '...#.', '..#..', '.#...'],
   '_': ['.....', '.....', '.....', '.....', '.....', '.....', '#####'],
+  '*': ['.....', '#.#.#', '.###.', '#####', '.###.', '#.#.#', '.....'],
   ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
 };
+
+// Decorative symbols people put in Discord names (stars, sparkles, hearts) —
+// drawn as themselves via a code-point key rather than force-mapped to a
+// wrong letter, since they're genuinely decoration, not an obscured letter.
+FONT[String.fromCodePoint(0x2605)] = ['.....', '#.#.#', '.###.', '#####', '.###.', '#.#.#', '.....']; // ★ / used as the canonical "star" glyph
+FONT[String.fromCodePoint(0x2665)] = ['.#.#.', '#####', '#####', '#####', '.###.', '..#..', '.....']; // ♥ / used as the canonical "heart" glyph
 
 function drawChar(png, ch, x, y, scale, color) {
   const glyph = FONT[ch.toUpperCase()] || FONT[' '];
@@ -296,6 +303,33 @@ const SCRIPT_CONFUSABLES = {
   'р': 'p', 'с': 'c', 'т': 't', 'у': 'y', 'ф': 'o', 'х': 'x', 'ц': 'u', 'ч': 'y',
   'ш': 'w', 'щ': 'w', 'ъ': 'b', 'ы': 'b', 'ь': 'b', 'э': 'e', 'ю': 'u', 'я': 'r',
 };
+
+// "Smallcaps" stylized text (e.g. "ᴡᴇʟᴄᴏᴍᴇ") is another very common Discord
+// aesthetic-name-generator trick — these come from the IPA Extensions /
+// Phonetic Extensions blocks, are genuinely different code points to their
+// plain Latin counterparts (no NFKD decomposition), but are always used to
+// spell real words, so they map straight to their uppercase Latin letter.
+const SMALLCAPS_LATIN = {
+  0x1D00: 'A', 0x0299: 'B', 0x1D04: 'C', 0x1D05: 'D', 0x1D07: 'E', 0xA730: 'F',
+  0x0262: 'G', 0x029C: 'H', 0x026A: 'I', 0x1D0A: 'J', 0x1D0B: 'K', 0x029F: 'L',
+  0x1D0D: 'M', 0x0274: 'N', 0x1D0F: 'O', 0x1D18: 'P', 0x0280: 'R', 0xA731: 'S',
+  0x1D1B: 'T', 0x1D1C: 'U', 0x1D20: 'V', 0x1D21: 'W', 0x028F: 'Y', 0x1D22: 'Z',
+};
+for (const [code, latin] of Object.entries(SMALLCAPS_LATIN)) {
+  SCRIPT_CONFUSABLES[String.fromCodePoint(Number(code))] = latin;
+}
+
+// Star/sparkle and heart variants people decorate names with — mapped to
+// the one canonical glyph of each drawn in FONT above, rather than to a
+// letter, since they're genuinely decoration and not an obscured letter.
+const STAR_CANON  = String.fromCodePoint(0x2605);
+const HEART_CANON = String.fromCodePoint(0x2665);
+for (const code of [0x2606, 0x2726, 0x2727, 0x2729, 0x272A, 0x272B, 0x272C, 0x272D, 0x272E, 0x272F, 0x2730, 0x22C6]) {
+  SCRIPT_CONFUSABLES[String.fromCodePoint(code)] = STAR_CANON;
+}
+for (const code of [0x2764, 0x2661, 0x2765]) {
+  SCRIPT_CONFUSABLES[String.fromCodePoint(code)] = HEART_CANON;
+}
 
 function normalizeForFont(text) {
   const decomposed = String(text).normalize('NFKD').replace(COMBINING_MARKS_RE, '');
