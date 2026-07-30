@@ -33,46 +33,33 @@ function arcStroke(png, cx, cy, r, th, startDeg, endDeg, color) {
 }
 
 // A classic padlock — closed (shackle looped fully into the body) or open
-// (shackle swung up on its right hinge, left leg lifted clear of the body).
+// (shackle raised clear of the body, left leg left dangling free — no
+// rotation math, just a taller gap, so there's no way to produce a stray
+// shape). Both states compute their own bounding box and center it on
+// (cx, cy) so the icon sits mid-circle regardless of which state it draws.
 function drawPadlock(png, cx, cy, size, color, locked) {
-  const bodyW = size * 1.3, bodyH = size * 1.05;
-  const bodyTop = cy + size * 0.15;
-  const shackleR = size * 0.6, shackleTh = size * 0.22;
+  const bodyW = size * 1.3, bodyH = size * 1.0;
+  const shackleR = size * 0.55, shackleTh = size * 0.22;
+  const openLift = size * 0.5; // extra headroom the shackle floats up when open
+
+  // Distance from bodyTop up to the highest drawn pixel, used to center
+  // the whole icon (shackle + body) vertically on cy.
+  const topExtent = locked ? shackleR : (openLift + shackleR);
+  const bodyTop = cy - (bodyH - topExtent) / 2;
 
   if (locked) {
-    const shackleCy = bodyTop - size * 0.02;
+    const shackleCy = bodyTop;
     arcStroke(png, cx, shackleCy, shackleR, shackleTh, 180, 360, color);
     line(png, cx - shackleR, shackleCy, cx - shackleR, bodyTop + 2, color, shackleTh);
     line(png, cx + shackleR, shackleCy, cx + shackleR, bodyTop + 2, color, shackleTh);
   } else {
-    // Hinge pivot: the right leg's anchor at the body. The loop (arc + left
-    // leg) is rotated ~50° up and to the left around that pivot.
-    const pivotX = cx + shackleR, pivotY = bodyTop;
-    line(png, pivotX, bodyTop - size * 0.5, pivotX, bodyTop + 2, color, shackleTh);
-    const theta = (-50 * Math.PI) / 180;
-    const cos = Math.cos(theta), sin = Math.sin(theta);
-    const rotate = (x, y) => {
-      const dx = x - pivotX, dy = y - (bodyTop - size * 0.5);
-      return [pivotX + dx * cos - dy * sin, (bodyTop - size * 0.5) + dx * sin + dy * cos];
-    };
-    const arcCx = cx - shackleR, arcCy = bodyTop - size * 0.5;
-    const [rArcCx, rArcCy] = rotate(arcCx, arcCy);
-    // Approximate the rotated arc by stepping the original arc's points
-    // through the same rotation (arcStroke only draws axis-aligned arcs).
-    const half = shackleTh / 2;
-    const steps = 240;
-    for (let i = 0; i <= steps; i++) {
-      const ang = Math.PI + (Math.PI * i) / steps; // 180deg -> 360deg sweep, centered at arcCx/arcCy
-      const px = arcCx + Math.cos(ang) * shackleR, py = arcCy + Math.sin(ang) * shackleR;
-      const [rx, ry] = rotate(px, py);
-      for (let d = -half; d <= half; d++) {
-        setPx(png, rx + d * 0.3, ry, color);
-        setPx(png, rx, ry + d * 0.3, color);
-      }
-    }
-    const legX = arcCx - shackleR, legY1 = arcCy, legY2 = arcCy + size * 0.02;
-    const [lx1, ly1] = rotate(legX, legY1), [lx2, ly2] = rotate(legX, legY2);
-    line(png, lx1, ly1, lx2, ly2, color, shackleTh);
+    const shackleCy = bodyTop - openLift;
+    arcStroke(png, cx, shackleCy, shackleR, shackleTh, 180, 360, color);
+    // Right leg stays anchored into the body...
+    line(png, cx + shackleR, shackleCy, cx + shackleR, bodyTop + 2, color, shackleTh);
+    // ...left leg is a short free-floating stub, leaving a visible gap
+    // above the body — reads as "unlocked" without touching anything else.
+    line(png, cx - shackleR, shackleCy, cx - shackleR, shackleCy + size * 0.22, color, shackleTh);
   }
 
   const radius = size * 0.22;
