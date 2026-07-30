@@ -415,6 +415,12 @@ async function dmWinners(client, guild, winnerIds, amount, { rerolled = false } 
 
 // ── End giveaway ──────────────────────────────────────────────────────────────
 
+// `message` may point at a message that no longer exists (deleted manually,
+// channel purged, etc). The draw, payout, and persisted-record cleanup must
+// all happen regardless — displaying the result in-channel is best-effort
+// on top of that, never a precondition for it. Returns a small summary
+// object so callers (e.g. earlyEndGiveaway) can report back when the
+// in-channel edit couldn't happen.
 async function endCoinsGiveaway(message, meta) {
   const { amount, winnersCount, hostId, guildId, bonusRoleId, createdAt } = meta;
   if (!global.coinsGiveawayEntrants) global.coinsGiveawayEntrants = new Map();
@@ -434,11 +440,11 @@ async function endCoinsGiveaway(message, meta) {
       .setDescription('No participants entered the giveaway. No coins were paid out.')
       .setFooter({ text: 'Better luck next time!' })
       .setTimestamp();
-    await message.edit({ embeds: [embed], files: [], components: [disabledRow] });
+    const displayed = await message.edit({ embeds: [embed], files: [], components: [disabledRow] }).then(() => true).catch(() => false);
     removeActive(message.id);
     global.coinsGiveawayEntrants.delete(message.id);
     global.coinsGiveawayMeta?.delete(message.id);
-    return;
+    return { displayed, winnerIds: [], totalPaid: 0, shortId: null };
   }
 
   const entrantIds = Array.from(entrants);
@@ -446,7 +452,9 @@ async function endCoinsGiveaway(message, meta) {
   const winnerIds  = pickWinners(pool, winnersCount);
 
   // Auto-credit — the defining difference from /giveaway: winners don't wait
-  // on the host, coins land the moment the draw happens.
+  // on the host, coins land the moment the draw happens. This (and the
+  // persisted ended-record below) must survive even if the announcement
+  // message is gone, so it happens before any message.edit is attempted.
   for (const id of winnerIds) addCoins(id, amount);
   const totalPaid = amount * winnerIds.length;
 
@@ -465,41 +473,49 @@ async function endCoinsGiveaway(message, meta) {
   };
   writeJson(ENDED_FILE, allEnded);
 
-  const winnerProfiles = [];
-  for (const id of winnerIds) {
-    try {
-      const user = await message.client.users.fetch(id);
-      winnerProfiles.push({
-        avatarPng: await fetchAvatarPng(user.displayAvatarURL({ extension: 'png', size: 128 })),
-        username: user.username,
-      });
-    } catch {
-      winnerProfiles.push({ avatarPng: null, username: 'Unknown' });
-    }
-  }
-
-  const imageName  = `coinsgiveaway_result_${Date.now()}.png`;
-  const attachment = new AttachmentBuilder(generateGiveawayResultImage({
-    winners: winnerProfiles, amountEach: amount, totalPaid,
-  }), { name: imageName });
-
-  const embed = new EmbedBuilder()
-    .setColor(GOLD)
-    .setImage(`attachment://${imageName}`)
-    .setDescription(
-      `👤 **Hosted by:** <@${hostId}>\n` +
-      `📊 **Total entries:** ${entrants.size}\n\n` +
-      `🔁 To reroll, use \`/coinsgiveaway reroll\``,
-    )
-    .setFooter({ text: `Congratulations! 🎉 • ID: ${shortId}` })
-    .setTimestamp();
-
-  await message.edit({ embeds: [embed], files: [attachment], components: [disabledRow] });
   removeActive(message.id);
   global.coinsGiveawayEntrants.delete(message.id);
   global.coinsGiveawayMeta?.delete(message.id);
 
+  let displayed = false;
+  try {
+    const winnerProfiles = [];
+    for (const id of winnerIds) {
+      try {
+        const user = await message.client.users.fetch(id);
+        winnerProfiles.push({
+          avatarPng: await fetchAvatarPng(user.displayAvatarURL({ extension: 'png', size: 128 })),
+          username: user.username,
+        });
+      } catch {
+        winnerProfiles.push({ avatarPng: null, username: 'Unknown' });
+      }
+    }
+
+    const imageName  = `coinsgiveaway_result_${Date.now()}.png`;
+    const attachment = new AttachmentBuilder(generateGiveawayResultImage({
+      winners: winnerProfiles, amountEach: amount, totalPaid,
+    }), { name: imageName });
+
+    const embed = new EmbedBuilder()
+      .setColor(GOLD)
+      .setImage(`attachment://${imageName}`)
+      .setDescription(
+        `👤 **Hosted by:** <@${hostId}>\n` +
+        `📊 **Total entries:** ${entrants.size}\n\n` +
+        `🔁 To reroll, use \`/coinsgiveaway reroll\``,
+      )
+      .setFooter({ text: `Congratulations! 🎉 • ID: ${shortId}` })
+      .setTimestamp();
+
+    await message.edit({ embeds: [embed], files: [attachment], components: [disabledRow] });
+    displayed = true;
+  } catch (err) {
+    console.error('[COINS GIVEAWAY END] Could not display result (message likely deleted):', err.message ?? err);
+  }
+
   await dmWinners(message.client, message.guild, winnerIds, amount);
+  return { displayed, winnerIds, totalPaid, shortId };
 }
 
 async function earlyEndGiveaway(interaction, msgId) {
@@ -507,19 +523,48 @@ async function earlyEndGiveaway(interaction, msgId) {
   if (!record || record.guildId !== interaction.guild.id) {
     return interaction.reply({ content: '❌ No active giveaway found with that selection.', flags: MessageFlags.Ephemeral });
   }
-  let msg;
+
+  let msg, messageGone = false;
   try {
     const ch = await interaction.guild.channels.fetch(record.channelId);
     msg = await ch.messages.fetch(msgId);
   } catch {
-    return interaction.reply({ content: '❌ Couldn\'t find the original giveaway message (it may have been deleted).', flags: MessageFlags.Ephemeral });
+    // The announcement message is gone (deleted, channel purged, etc). The
+    // draw and payout still need to happen — coins shouldn't get stuck
+    // because a message disappeared — so continue with a stub the rest of
+    // endCoinsGiveaway can use for guild/client access; its own message.edit
+    // attempt will fail harmlessly and get reported below instead.
+    messageGone = true;
+    msg = {
+      id: msgId,
+      channelId: record.channelId,
+      guild: interaction.guild,
+      client: interaction.client,
+      edit: async () => { throw new Error('Giveaway message no longer exists'); },
+    };
   }
+
+  // Normally already populated from launch/entries — this only kicks in if
+  // the bot never loaded this giveaway into memory (e.g. entries only ever
+  // reached the persisted file), so the draw still has a pool to pick from.
+  if (!global.coinsGiveawayEntrants) global.coinsGiveawayEntrants = new Map();
+  if (!global.coinsGiveawayEntrants.has(msgId)) {
+    global.coinsGiveawayEntrants.set(msgId, new Set(record.entrants || []));
+  }
+
   await interaction.reply({ content: `✅ Ending **${record.amount.toLocaleString()} coins** giveaway now…`, flags: MessageFlags.Ephemeral });
-  await endCoinsGiveaway(msg, {
+  const result = await endCoinsGiveaway(msg, {
     amount: record.amount, winnersCount: record.winnersCount,
     hostId: record.hostId, guildId: record.guildId, bonusRoleId: record.bonusRoleId,
     createdAt: record.createdAt,
   });
+
+  if (messageGone) {
+    const summary = result.winnerIds.length
+      ? `🪙 The original message was gone, so here's the result: **${result.winnerIds.length}** winner${result.winnerIds.length !== 1 ? 's' : ''} — ${result.winnerIds.map(id => `<@${id}>`).join(', ')} — each credited **${record.amount.toLocaleString()} coins** (ID: \`${result.shortId}\`).`
+      : `The original message was gone. No one had entered, so nothing was paid out.`;
+    await interaction.followUp({ content: summary, flags: MessageFlags.Ephemeral }).catch(() => {});
+  }
 }
 
 // ── Reroll ────────────────────────────────────────────────────────────────────
