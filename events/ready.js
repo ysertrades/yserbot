@@ -5,6 +5,7 @@ const { startEconCalRunner } = require('../utils/econCalRunner');
 const { startLotteryRunner } = require('../utils/lotteryRunner');
 const { seedDefaultContent } = require('../utils/contentSeed');
 const { restoreGiveaways } = require('../commands/utility/giveaway');
+const { restoreCoinsGiveaways } = require('../commands/economy/coinsgiveaway');
 
 // Registers every command in client.commands with Discord on every boot, so
 // a newly added or edited command is live the moment the bot restarts —
@@ -37,5 +38,6 @@ module.exports = {
         startLotteryRunner(client);
         seedDefaultContent(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));
+        await restoreCoinsGiveaways(client).catch(err => console.error('[COINS GIVEAWAY RESTORE]', err));
     },
 };

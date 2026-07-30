@@ -17,6 +17,7 @@ const ADMIN_CATALOGUE = [
   ['cardsettings',   'Set how many messages between card drops (server-wide)'],
   ['casino-settings','Set bet limits & cooldowns for casino'],
   ['cmd',            'Set which roles can use mod/admin commands'],
+  ['coinsgiveaway',  'Create, end, reroll & list casino coins giveaways (auto-credited to winners)'],
   ['config',         'Server-wide settings (prefix, channels, roles…)'],
   ['econcal',        'Weekly economic calendar with release reminders (ForexFactory data)'],
   ['embed',          'Create & manage embed templates'],

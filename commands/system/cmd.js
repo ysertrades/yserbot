@@ -11,7 +11,7 @@ const MOD_COMMANDS = [
 
 const ADMIN_COMMANDS = [
   'automod', 'autoreply', 'backup', 'button', 'cardsettings', 'casino-settings',
-  'cmd', 'config', 'econcal', 'embed', 'give-coins', 'giveaway',
+  'cmd', 'coinsgiveaway', 'config', 'econcal', 'embed', 'give-coins', 'giveaway',
   'levelsettings', 'modlog', 'newsfeed', 'restore', 'schedule', 'shopsettings',
   'ticket', 'verify', 'warn-settings',
 ];
