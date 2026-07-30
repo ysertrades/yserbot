@@ -115,6 +115,9 @@ function buildJobsPayload(userId, guildId) {
   return { embeds: [embed], files: [attachment] };
 }
 
+// Every button carries the id of the member who opened the hub. The handler
+// rejects anyone else, so a bystander can't work a job into someone else's
+// panel or delete it out from under them.
 function buildJobsRows(userId, guildId) {
   const row1Ids = JOBS.slice(0, 5);
   const row2Ids = JOBS.slice(5, 8);
@@ -122,7 +125,7 @@ function buildJobsRows(userId, guildId) {
   function makeBtn(j) {
     const ready = checkCooldown(userId, `job_${j.id}`, j.cooldownMs, guildId) <= 0;
     return new ButtonBuilder()
-      .setCustomId(`job:work:${j.id}`)
+      .setCustomId(`job:work:${j.id}:${userId}`)
       .setLabel(`${j.emoji} ${j.name}`)
       .setStyle(ready ? ButtonStyle.Success : ButtonStyle.Secondary);
   }
@@ -130,7 +133,7 @@ function buildJobsRows(userId, guildId) {
   const row1 = new ActionRowBuilder().addComponents(...row1Ids.map(makeBtn));
   const row2 = new ActionRowBuilder().addComponents(
     ...row2Ids.map(makeBtn),
-    new ButtonBuilder().setCustomId('job:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`job:close:${userId}`).setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
   );
 
   return [row1, row2];
