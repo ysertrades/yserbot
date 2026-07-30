@@ -1,8 +1,9 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const { generateLockToggleImage } = require('../../utils/lockVisual');
 
 const LOCK_FILE = 'locked_channels.json';
 const LOCKABLE_PERMS = ['SendMessages', 'SendMessagesInThreads', 'CreatePublicThreads', 'CreatePrivateThreads'];
@@ -36,7 +37,7 @@ module.exports = {
 
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel') || interaction.channel;
-    const reason  = interaction.options.getString('reason') || 'No reason provided';
+    const reason  = interaction.options.getString('reason') || null;
     const guildId = interaction.guild.id;
 
     if (!channel.isTextBased() || channel.isThread()) {
@@ -58,7 +59,7 @@ module.exports = {
 
     try {
       const denyAll = Object.fromEntries(LOCKABLE_PERMS.map(p => [p, false]));
-      await channel.permissionOverwrites.edit(everyoneId, denyAll, { reason: `Channel locked by ${interaction.user.tag}: ${reason}` });
+      await channel.permissionOverwrites.edit(everyoneId, denyAll, { reason: `Channel locked by ${interaction.user.tag}${reason ? `: ${reason}` : ''}` });
 
       for (const roleId of modAdminRoleIds) {
         const allowAll = Object.fromEntries(LOCKABLE_PERMS.map(p => [p, true]));
@@ -75,27 +76,17 @@ module.exports = {
     };
     writeJson(LOCK_FILE, locks);
 
-    const embed = createServerEmbed('error', {
-      title: '🔒  Channel Locked',
-      color: 0xC0392B,
-      thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f512.png',
-      description: `${channel} is locked — only **moderators and admins** can speak here.`,
-      fields: [
-        { name: '📋 Reason', value: reason, inline: true },
-        { name: '👮 By', value: `<@${interaction.user.id}>`, inline: true },
-      ],
-    }, interaction.guild);
+    const imageName  = `lock_${Date.now()}.png`;
+    const attachment = new AttachmentBuilder(generateLockToggleImage({ locked: true, channelName: channel.name, reason }), { name: imageName });
+    const embed = new EmbedBuilder().setImage(`attachment://${imageName}`);
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed], files: [attachment] });
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ embeds: [createServerEmbed('error', {
-          title: '🔒  Channel Locked',
-          color: 0xC0392B,
-          thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f512.png',
-          description: `Locked by <@${interaction.user.id}> — **${reason}**`,
-        }, interaction.guild)] });
+        const otherImageName  = `lock_${Date.now()}.png`;
+        const otherAttachment = new AttachmentBuilder(generateLockToggleImage({ locked: true, channelName: channel.name, reason }), { name: otherImageName });
+        await channel.send({ embeds: [new EmbedBuilder().setImage(`attachment://${otherImageName}`)], files: [otherAttachment] });
       } catch {}
     }
   },

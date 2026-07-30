@@ -1,8 +1,9 @@
 'use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const { generateLockToggleImage } = require('../../utils/lockVisual');
 
 const LOCK_FILE = 'locked_channels.json';
 
@@ -39,24 +40,17 @@ module.exports = {
     delete locks[guildId][channel.id];
     writeJson(LOCK_FILE, locks);
 
-    const embed = createServerEmbed('success', {
-      title: '🔓  Channel Unlocked',
-      color: 0x27AE60,
-      thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f513.png',
-      description: `${channel} is open again — everyone can send messages.`,
-      fields: [{ name: '👮 By', value: `<@${interaction.user.id}>`, inline: true }],
-    }, interaction.guild);
+    const imageName  = `unlock_${Date.now()}.png`;
+    const attachment = new AttachmentBuilder(generateLockToggleImage({ locked: false, channelName: channel.name, reason: null }), { name: imageName });
+    const embed = new EmbedBuilder().setImage(`attachment://${imageName}`);
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed], files: [attachment] });
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ embeds: [createServerEmbed('success', {
-          title: '🔓  Channel Unlocked',
-          color: 0x27AE60,
-          thumbnail: 'https://twemoji.maxcdn.com/v/latest/72x72/1f513.png',
-          description: `Unlocked by <@${interaction.user.id}> — everyone can chat again.`,
-        }, interaction.guild)] });
+        const otherImageName  = `unlock_${Date.now()}.png`;
+        const otherAttachment = new AttachmentBuilder(generateLockToggleImage({ locked: false, channelName: channel.name, reason: null }), { name: otherImageName });
+        await channel.send({ embeds: [new EmbedBuilder().setImage(`attachment://${otherImageName}`)], files: [otherAttachment] });
       } catch {}
     }
   },
