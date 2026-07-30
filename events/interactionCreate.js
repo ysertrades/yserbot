@@ -539,6 +539,11 @@ module.exports = {
           return client.commands.get(action)?.handleButton(interaction);
         }
 
+        // News feed panel — toggle/channel/sources/topics/close
+        if (id.startsWith('nf:')) {
+          return client.commands.get('newsfeed')?.handleButton(interaction);
+        }
+
         // Shop panel — buy/inventory/use/close buttons
         if (id === 'shop_buy' || id === 'shop_inventory' || id === 'shop_use' || id.startsWith('shop_close:')) {
           return client.commands.get('shop')?.handleButton(interaction);
@@ -753,8 +758,10 @@ module.exports = {
           return client.commands.get('automod')?.handleCooldownSelect(interaction);
         if (id === 'automod_req_select')
           return client.commands.get('automod')?.handleRequestsSelect(interaction);
-        if (id === 'newsfeed_topics_select')
+        if (id.startsWith('newsfeed_topics_select') || id.startsWith('nf_topics_select:'))
           return client.commands.get('newsfeed')?.handleTopicsSelect(interaction);
+        if (id.startsWith('nf_sources_select:'))
+          return client.commands.get('newsfeed')?.handleSourcesSelect(interaction);
         if (id === 'econcal_impact_select')
           return client.commands.get('econcal')?.handleImpactSelect(interaction);
         if (id === 'econcal_currency_select')
@@ -821,6 +828,8 @@ module.exports = {
           return client.commands.get('giveaway')?.handleChannelSelect(interaction);
         if (id.startsWith('cg_channel_select:'))
           return client.commands.get('coinsgiveaway')?.handleChannelSelect(interaction);
+        if (id.startsWith('nf_channel_select:'))
+          return client.commands.get('newsfeed')?.handleChannelSelect(interaction);
         if (id === 'econcal_channel_select')
           return client.commands.get('econcal')?.handleChannelSelect(interaction);
         if (id.startsWith('econcal_postchannel_select:'))

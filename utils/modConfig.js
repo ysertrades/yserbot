@@ -5,7 +5,13 @@ const { readJson, writeJson } = require('./jsonStorage');
 
 const AUTOMOD_DEFAULTS  = { badWords: false, linkFilter: false, customWords: [], mentionSpamProtection: false, mentionSpamRuleId: null };
 const MODLOG_DEFAULTS   = { members: true, messages: true, roles: true, purges: true };
-const NEWSFEED_DEFAULTS = { enabled: false, channelId: null, lastGuid: null, filterTopics: [] };
+// `sources` defaults to Financial Juice alone so existing servers keep exactly
+// the feed they already had; `lastGuids` is the per-source read cursor that
+// replaces the single `lastGuid` (kept for backward compatibility).
+const NEWSFEED_DEFAULTS = {
+  enabled: false, channelId: null, lastGuid: null, filterTopics: [],
+  sources: ['financialjuice'], lastGuids: {},
+};
 const ECONCAL_DEFAULTS  = {
   enabled: false, channelId: null, roleId: null,
   impactFilter: [], currencyFilter: [], // empty = everything
