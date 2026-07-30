@@ -29,9 +29,26 @@ function drawSkylineIcon(png, cx, cy, size, color) {
     { dx: 0.42, w: 0.34, h: 1.05 },
     { dx: 0.82, w: 0.3, h: 0.72 },
   ];
-  const baseY = cy + size * 0.9;
+  const flagBuilding = buildings[2]; // the flag sits atop this (tallest, middle) building
+
+  // The skyline's own silhouette isn't symmetric (the buildings/flag don't
+  // straddle dx=0 evenly, and the flag adds extra height above the roofline),
+  // so centering on (cx, cy) needs the actual drawn bounding box, not a
+  // guessed offset. Compute it once here and shift the whole icon so its
+  // true visual center — not just the building baseline — lands on (cx, cy).
+  let minX = Infinity, maxX = -Infinity;
   for (const b of buildings) {
-    const bx = cx + b.dx * size, bw = b.w * size, bh = b.h * size;
+    minX = Math.min(minX, b.dx - b.w / 2);
+    maxX = Math.max(maxX, b.dx + b.w / 2);
+  }
+  const topUnits = -(flagBuilding.h + 0.28 + 0.11); // flag rectangle's top edge — the highest drawn pixel
+  const bottomUnits = 0; // every building's base
+
+  const originX = cx - ((minX + maxX) / 2) * size;
+  const baseY = cy - ((topUnits + bottomUnits) / 2) * size;
+
+  for (const b of buildings) {
+    const bx = originX + b.dx * size, bw = b.w * size, bh = b.h * size;
     fillRoundedRectBlend(png, bx - bw / 2, baseY - bh, bw, bh, 3, color, 1);
     for (let wy = baseY - bh + 10; wy < baseY - 6; wy += 12) {
       for (let wx = bx - bw / 2 + 6; wx < bx + bw / 2 - 6; wx += 10) {
@@ -39,7 +56,7 @@ function drawSkylineIcon(png, cx, cy, size, color) {
       }
     }
   }
-  const flagX = cx - 0.08 * size, flagTopY = baseY - 1.65 * size;
+  const flagX = originX + flagBuilding.dx * size, flagTopY = baseY - flagBuilding.h * size;
   line(png, flagX, flagTopY, flagX, flagTopY - size * 0.28, color, 2);
   fillRoundedRectBlend(png, flagX, flagTopY - size * 0.28, size * 0.2, size * 0.11, 1, color, 0.9);
 }
