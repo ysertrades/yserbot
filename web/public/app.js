@@ -28,10 +28,18 @@ const WRITE_ERRORS = {
 // token back through postMessage, and it rides in a header from then on.
 const embedded = window.self !== window.top;
 
+// Kept so you are not signing in every time the panel opens. Inside an iframe
+// this store is partitioned per host site, which is fine — it just means the
+// Whop copy and the bookmarked copy each remember their own session.
+const STORE_KEY = 'yserflow.session';
+const remember = t => { try { t ? localStorage.setItem(STORE_KEY, t) : localStorage.removeItem(STORE_KEY); } catch {} };
+const recall = () => { try { return localStorage.getItem(STORE_KEY); } catch { return null; } };
+
 const state = {
-  csrf: null, token: null, guildId: null, guilds: [], overview: null,
+  csrf: null, token: recall(), guildId: null, guilds: [], overview: null,
   templates: [], tpl: null, copy: {},   // Studio
   tplName: null, draft: null,           // Composer
+  gawBump: null,                        // redraw the giveaway preview on demand
 };
 
 /* ── dom helpers ───────────────────────────────────────────────────────── */
@@ -150,9 +158,7 @@ function showLogin() {
       link.href = '#';
       link.addEventListener('click', e => {
         e.preventDefault();
-        // Discord refuses to render inside an iframe, and the popup is a
-        // first-party context where cookies still work normally.
-        window.open('/auth/login?popup=1', 'yserflow-login', 'width=520,height=760');
+        startEmbeddedLogin();
       });
     }
   }
@@ -163,6 +169,47 @@ function showLogin() {
     p.hidden = false;
   }
   root.dataset.state = 'login';
+}
+
+/**
+ * Signing in from inside someone else's page.
+ *
+ * On iOS this opens a whole new Safari tab with no opener relationship, so
+ * postMessage has nobody to reach. The page therefore mints a random id first,
+ * hands it to the login, and polls for the finished session against that id.
+ * postMessage still works when there is an opener; this is the path that works
+ * when there isn't.
+ */
+let handoffTimer = null;
+
+function startEmbeddedLogin() {
+  const id = (crypto.randomUUID?.() || String(Math.random()).slice(2) + Date.now()).replace(/-/g, '');
+  window.open(`/auth/login?popup=1&h=${id}`, '_blank');
+
+  const started = Date.now();
+  clearInterval(handoffTimer);
+  const status = $('#login-error');
+  status.hidden = false;
+  status.textContent = 'Waiting for Discord… you can come back to this tab once it says you are signed in.';
+
+  handoffTimer = setInterval(async () => {
+    if (Date.now() - started > 120000) {
+      clearInterval(handoffTimer);
+      status.textContent = 'That took too long. Tap sign in to try again.';
+      return;
+    }
+    try {
+      const res = await fetch(`/auth/handoff?h=${id}`, { credentials: 'same-origin' });
+      if (res.status !== 200) return;
+      const { token } = await res.json();
+      if (!token) return;
+      clearInterval(handoffTimer);
+      status.hidden = true;
+      state.token = token;
+      remember(token);
+      main().catch(() => {});
+    } catch { /* keep polling */ }
+  }, 1500);
 }
 
 function showSetup(missing) {
@@ -182,6 +229,7 @@ function renderIdentity(user) {
   wrap.append(el('span', 'who', user.name));
   const out = el('a', 'btn small', 'Sign out');
   out.href = '/auth/logout';
+  out.addEventListener('click', () => { state.token = null; remember(null); });
   wrap.append(out);
 }
 
@@ -257,6 +305,9 @@ function renderOverview() {
   renderAutoreplies();
   renderLevels();
   renderLevelRoles();
+  renderLottery();
+  renderGiveawayForm();
+  startTicking();
 }
 
 function renderBoard(data) {
@@ -742,7 +793,45 @@ function timeLeft(ts) {
   return `${duration(ms)} left`;
 }
 
+/* Live countdowns. One timer for the whole page rather than one per giveaway,
+   and it only touches text that changed. */
+const ticking = new Set();
+let tickTimer = null;
+
+function countdownEl(endsAt) {
+  const node = el('span', 'countdown');
+  const bar = el('div', 'bar');
+  const fill = el('i');
+  bar.append(fill);
+  const started = Date.now();
+  const span = Math.max(1, endsAt - started);
+
+  const paint = () => {
+    const left = endsAt - Date.now();
+    if (left <= 0) { node.textContent = 'ending now'; node.className = 'countdown over'; fill.style.width = '100%'; return false; }
+    const s = Math.floor(left / 1000);
+    const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60, sec = s % 60;
+    node.textContent = d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${m}m ${String(sec).padStart(2, '0')}s` : `${m}m ${String(sec).padStart(2, '0')}s`;
+    const soon = left < 5 * 60000;
+    node.className = `countdown${soon ? ' soon' : ''}`;
+    bar.className = `bar${soon ? ' soon' : ''}`;
+    fill.style.width = `${Math.min(100, ((span - left) / span) * 100).toFixed(1)}%`;
+    return true;
+  };
+  paint();
+  ticking.add(paint);
+  return { node, bar };
+}
+
+function startTicking() {
+  clearInterval(tickTimer);
+  tickTimer = setInterval(() => {
+    for (const paint of [...ticking]) if (!paint()) ticking.delete(paint);
+  }, 1000);
+}
+
 function renderGiveaways() {
+  ticking.clear();
   const g = state.overview?.giveaways || { active: [], ended: [] };
 
   const activeWrap = $('#gaw-active');
@@ -755,7 +844,13 @@ function renderGiveaways() {
       el('span', 'nm', x.title || 'Giveaway'),
     );
     d.append(top);
-    d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'} · ${timeLeft(x.endsAt)}`));
+    d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
+    if (x.endsAt) {
+      const c = countdownEl(x.endsAt);
+      const line = el('div', 'row');
+      line.append(el('span', 'k', 'Ends in'), c.node);
+      d.append(line, c.bar);
+    }
     const act = el('div', 'actions');
     const end = el('button', 'btn small danger', 'End now');
     end.type = 'button';
@@ -798,6 +893,114 @@ function renderGiveaways() {
     }
     return d;
   }));
+}
+
+/* ── start a giveaway ──────────────────────────────────────────────────── */
+
+let gawPreviewTimer = null;
+
+// Bounded on purpose. An unbounded retry would keep the page requesting
+// forever whenever the render pacer stayed busy, and a preview is cosmetic —
+// it is not worth a permanent poll.
+const PREVIEW_RETRIES = 4;
+
+function refreshGawPreview(draft, attempt = 0) {
+  clearTimeout(gawPreviewTimer);
+  gawPreviewTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/preview/giveaway?amount=${draft.amount}&winners=${draft.winners}`,
+        { credentials: 'same-origin', headers: authHeaders() });
+      if (res.status === 429) {
+        if (attempt < PREVIEW_RETRIES) gawPreviewTimer = setTimeout(() => refreshGawPreview(draft, attempt + 1), 320);
+        return;
+      }
+      if (!res.ok) return;
+      const img = $('#gaw-preview');
+      const previous = img.src;
+      img.src = URL.createObjectURL(await res.blob());
+      if (previous.startsWith('blob:')) URL.revokeObjectURL(previous);
+    } catch { /* preview is cosmetic; a failure must not block launching */ }
+  }, 320);
+}
+
+function renderGiveawayForm() {
+  const form = $('#form-gaw');
+  const draft = { amount: 5000, winners: 1, minutes: 60, channelId: '', mention: null,
+                  requiredRoleId: null, bonusRoleId: null, minAccountAgeDays: 0 };
+
+  const bump = () => refreshGawPreview(draft);
+
+  form.replaceChildren(
+    textField('Coins each winner gets', '5000', v => { draft.amount = Number(v); bump(); }),
+    textField('Winners', '1', v => { draft.winners = Number(v); bump(); }),
+    textField('Runs for (minutes)', '60', v => { draft.minutes = Number(v); }),
+    pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Pick a channel' }),
+    mentionPicker('Ping with the post', null, v => { draft.mention = v; }),
+    pickOne('Only this role may enter', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone' }),
+    pickOne('Extra entries for', 'role', '', v => { draft.bonusRoleId = v; }, { blank: 'No bonus role' }),
+    textField('Minimum account age (days)', '0', v => { draft.minAccountAgeDays = Number(v); }),
+    actions(async () => {
+      if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
+      if (!confirm(`Start a giveaway: ${num(draft.amount)} coins to ${draft.winners} winner(s), for ${draft.minutes} minutes?`)) return;
+      await post('giveawaystart', draft);
+    }),
+  );
+
+  // Only draw it when that section is actually on screen. Rendering a preview
+  // for a panel nobody is looking at costs a blocked event loop for nothing.
+  state.gawBump = bump;
+  if (root.dataset.section === 'giveaways') bump();
+}
+
+/* ── lottery ───────────────────────────────────────────────────────────── */
+
+function renderLottery() {
+  const l = state.overview?.features?.lottery;
+  const wrap = $('#lottery-live');
+  if (!l) { wrap.replaceChildren(); return; }
+
+  const nodes = [
+    row('Tickets in the pot', num(l.totalTickets)),
+    row('Players today', num(l.participants)),
+    row('Prize', `${num(l.reward)} coins`),
+  ];
+
+  if (l.nextDrawAt) {
+    const c = countdownEl(l.nextDrawAt);
+    const line = el('div', 'row');
+    line.append(el('span', 'k', 'Next draw'), c.node);
+    nodes.push(line, c.bar);
+  }
+
+  if (l.top.length) {
+    nodes.push(el('h2', null, 'Most tickets'));
+    const board = el('ol', 'board');
+    board.append(...l.top.map((t, i) => {
+      const li = el('li');
+      li.append(
+        el('span', 'rank', `${i + 1}`),
+        el('span', 'name', t.name || 'left the server'),
+        el('span', 'bal', `${num(t.tickets)}`),
+      );
+      return li;
+    }));
+    nodes.push(board);
+  } else {
+    nodes.push(el('p', 'muted', 'Nobody has bought a ticket today.'));
+  }
+
+  const act = el('div', 'actions');
+  const clear = el('button', 'btn small danger', 'Void today\'s pool');
+  clear.type = 'button';
+  clear.title = 'Clears entries without paying anyone. Drawing stays on its schedule.';
+  clear.addEventListener('click', async () => {
+    if (!confirm("Clear today's lottery entries? Nobody is paid and tickets are not refunded.")) return;
+    await post('lotteryclear', {});
+  });
+  act.append(clear);
+  nodes.push(act);
+
+  wrap.replaceChildren(...nodes);
 }
 
 /* ── settings ──────────────────────────────────────────────────────────── */
@@ -1190,6 +1393,7 @@ function initSections() {
   for (const b of document.querySelectorAll('#sections button')) {
     b.addEventListener('click', () => {
       root.dataset.section = b.dataset.goto;
+      if (b.dataset.goto === 'giveaways') state.gawBump?.();
       for (const other of document.querySelectorAll('#sections button')) {
         other.toggleAttribute('aria-current', other === b);
         if (other === b) other.setAttribute('aria-current', 'true');
@@ -1217,7 +1421,9 @@ async function main() {
     // that could reach this window could inject one.
     if (event.origin !== location.origin) return;
     if (event.data?.type !== 'yserflow-session' || typeof event.data.token !== 'string') return;
+    clearInterval(handoffTimer);
     state.token = event.data.token;
+    remember(event.data.token);
     main().catch(() => {});
   });
 
@@ -1226,10 +1432,14 @@ async function main() {
     me = await get('/api/me');
   } catch (err) {
     if (err.status === 503 && err.body?.missing) return showSetup(err.body.missing);
+    // A stored token that no longer works is worse than none — it would keep
+    // failing silently on every load.
+    if (err.status === 401 && state.token) { state.token = null; remember(null); }
     return showLogin();
   }
 
   state.csrf = me.csrf;
+  if (me.token) { state.token = me.token; remember(me.token); }
   state.guilds = me.guilds;
   renderIdentity(me.user);
   initSections();

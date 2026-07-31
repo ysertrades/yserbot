@@ -22,6 +22,7 @@
 const { memoizeRender } = require('../utils/renderCache');
 const { generateTradingViewBannerImage, TV_DEFAULTS } = require('../utils/tradingViewVisual');
 const { generateWhopBannerImage, WHOP_DEFAULTS } = require('../utils/whopVisual');
+const { generateGiveawayBannerImage } = require('../utils/giveawayVisual');
 
 // Caps chosen from what the card can actually show: past these the renderer
 // starts shrinking type toward unreadable rather than laying out badly.
@@ -41,6 +42,34 @@ const TEMPLATES = {
     render: memoizeRender(generateWhopBannerImage, { name: 'preview:whop', max: 24 }),
   },
 };
+
+// The giveaway banner takes labels rather than copy fields, so it is not in
+// TEMPLATES — the Studio form would not know what to do with it. It still goes
+// through the same memoiser and the same pacing.
+const giveawayBanner = memoizeRender(generateGiveawayBannerImage, { name: 'preview:giveaway', max: 24 });
+
+/**
+ * Preview of what a giveaway will look like before it is posted, built from
+ * the same generator coinsgiveaway.js uses when it actually launches one.
+ */
+function renderGiveaway(params) {
+  const amount = Math.max(0, Math.min(1e8, Number(params.get('amount')) || 0));
+  const winners = Math.max(1, Math.min(50, Number(params.get('winners')) || 1));
+  const opts = {
+    amountLabel: `${amount.toLocaleString()} COINS EACH`,
+    subLabel: `${winners} WINNER${winners !== 1 ? 'S' : ''} • HIT ENTER BELOW`,
+  };
+
+  const cached = giveawayBanner.peek(opts);
+  if (cached) return { png: cached, cached: true, filename: 'giveaway_preview.png' };
+
+  const since = Date.now() - lastRenderAt;
+  if (since < MIN_GAP_MS) return { retryAfterMs: MIN_GAP_MS - since };
+
+  const png = giveawayBanner(opts);
+  lastRenderAt = Date.now();
+  return { png, cached: false, filename: 'giveaway_preview.png' };
+}
 
 /** What the Studio screen needs to build its form. */
 function listTemplates() {
@@ -78,6 +107,7 @@ let lastRenderAt = 0;
  * @returns {{png: Buffer, cached: boolean} | {retryAfterMs: number}}
  */
 function render(key, params) {
+  if (key === 'giveaway') return renderGiveaway(params);
   const template = TEMPLATES[key];
   if (!template) return null;
 
@@ -97,4 +127,4 @@ function render(key, params) {
   return { png, cached: false, filename: template.filename };
 }
 
-module.exports = { listTemplates, render, TEMPLATES, LIMITS };
+module.exports = { listTemplates, render, renderGiveaway, TEMPLATES, LIMITS };

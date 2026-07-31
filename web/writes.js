@@ -297,6 +297,19 @@ Object.assign(OPS, {
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `♻️ Updated a posted **${r.templateName}** message`);
     return r;
   },
+  async giveawaystart(guildId, body, ctx) {
+    const r = await giveaways.create(guildId, body, ctx);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🎟️ Started a **${r.amount.toLocaleString()} coin** giveaway in #${r.channelName} — ${r.winners} winner${r.winners === 1 ? '' : 's'}, ends <t:${Math.floor(r.endsAt / 1000)}:R>`);
+    }
+    return r;
+  },
+  async lotteryclear(guildId, body, ctx) {
+    const r = features.clearLottery(guildId);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 Cleared today's lottery pool (${r.cleared} entrant${r.cleared === 1 ? '' : 's'})`);
+    return r;
+  },
   async giveawayend(guildId, body, ctx) {
     const r = await giveaways.endNow(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎟️ Ended a ${r.kind} giveaway early`);
