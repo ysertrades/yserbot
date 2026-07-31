@@ -66,10 +66,13 @@
 
     <nav class="sections" id="sections" aria-label="Sections">
       <button type="button" data-goto="overview" aria-current="true">Overview</button>
+      <button type="button" data-goto="composer">Composer</button>
       <button type="button" data-goto="studio">Studio</button>
+      <button type="button" data-goto="giveaways">Giveaways</button>
       <button type="button" data-goto="feeds">Feeds</button>
       <button type="button" data-goto="shop">Shop</button>
       <button type="button" data-goto="moderation">Moderation</button>
+      <button type="button" data-goto="settings">Settings</button>
     </nav>
 
     <!-- ── Overview ────────────────────────────────────────────────────── -->
@@ -122,6 +125,43 @@
           </div>
           <p class="hint">The pixel font is uppercase only, so copy is shown the way it will render.</p>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Composer ────────────────────────────────────────────────────── -->
+    <div class="section" data-section="composer">
+      <div class="composer">
+        <aside class="tpl-list">
+          <div class="tpl-list-head">
+            <h2>Messages</h2>
+            <button type="button" class="btn small" id="tpl-new">New</button>
+          </div>
+          <div id="tpl-index"></div>
+        </aside>
+        <div id="composer-body" class="composer-body"></div>
+      </div>
+    </div>
+
+    <!-- ── Giveaways ───────────────────────────────────────────────────── -->
+    <div class="section" data-section="giveaways">
+      <div class="grid">
+        <article class="panel">
+          <h2>Running now</h2>
+          <div id="gaw-active" class="items"></div>
+        </article>
+        <article class="panel">
+          <h2>Finished</h2>
+          <div id="gaw-ended" class="items"></div>
+        </article>
+      </div>
+      <p class="hint">Giveaways are created in Discord with <code>/giveaway</code> or <code>/coinsgiveaway</code> — the setup flow needs the message to live in a channel. Here you can watch them, end them early and reroll.</p>
+    </div>
+
+    <!-- ── Settings ────────────────────────────────────────────────────── -->
+    <div class="section" data-section="settings">
+      <div class="panel">
+        <h2>Server settings</h2>
+        <form id="form-settings" class="form"></form>
       </div>
     </div>
 

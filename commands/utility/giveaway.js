@@ -878,3 +878,8 @@ module.exports.reroll = async function(message, shortId) {
       .setFooter({ text: `ID: ${shortId}` })],
   });
 };
+
+// Exposed for the web control panel — same reason as coinsgiveaway.js: the
+// panel drives the real end path, it does not reimplement drawing winners.
+module.exports.endGiveaway = endGiveaway;
+module.exports.ACTIVE_FILE = ACTIVE_FILE;
