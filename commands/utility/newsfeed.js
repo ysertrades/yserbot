@@ -1,9 +1,9 @@
 'use strict';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// /newsfeed — one command, one panel. Enable/disable, pick the channel, choose
-// which sources run and filter topics, all from the same message rather than
-// four separate subcommands.
+// /newsfeed — one command, one panel. Enable/disable, pick the channel and
+// filter topics, all from the same message rather than four separate
+// subcommands.
 //
 // Buttons carry the opener's id and are checked, so a bystander can't
 // reconfigure a panel someone else opened.
@@ -72,7 +72,6 @@ function buildPanel(guild, ownerId) {
         .setStyle(ButtonStyle.Secondary)
         .setDisabled(!canRun),
       new ButtonBuilder().setCustomId(`nf:channel:${ownerId}`).setLabel('Channel').setEmoji('📢').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`nf:sources:${ownerId}`).setLabel('Sources').setEmoji('🗞️').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`nf:topics:${ownerId}`).setLabel('Topics').setEmoji('🎯').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`nf:close:${ownerId}`).setLabel('Close').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
     ),
@@ -83,44 +82,6 @@ function buildPanel(guild, ownerId) {
 
 // ── Sub-screens ──────────────────────────────────────────────────────────────
 
-function buildSourcesView(guild, ownerId) {
-  const settings = getNewsFeedSettings(guild.id);
-  const active   = new Set(activeSources(settings));
-  const sources  = listSources();
-
-  const embed = createServerEmbed('info', {
-    title: '🗞️  News Sources',
-    description:
-      'Pick which feeds post into your channel. Each runs on its own schedule.\n\n' +
-      sources.map(s =>
-        `${s.emoji} **${s.label}** — ${s.blurb}\n> Checked ${cadenceLabel(s.pollMs)}${active.has(s.key) ? '  ·  ✅ **On**' : ''}`,
-      ).join('\n\n') +
-      '\n\n*Turning every source off leaves nothing to post — keep at least one on.*',
-  }, guild);
-
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId(`nf_sources_select:${ownerId}`)
-    .setPlaceholder('Select the sources to run…')
-    .setMinValues(1)
-    .setMaxValues(sources.length)
-    .addOptions(sources.map(s => new StringSelectMenuOptionBuilder()
-      .setLabel(s.label)
-      .setDescription(s.blurb.slice(0, 100))
-      .setEmoji(s.emoji)
-      .setValue(s.key)
-      .setDefault(active.has(s.key))));
-
-  return {
-    embeds: [embed],
-    files: [],
-    components: [
-      new ActionRowBuilder().addComponents(menu),
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`nf:panel:${ownerId}`).setLabel('← Back').setStyle(ButtonStyle.Secondary),
-      ),
-    ],
-  };
-}
 
 function buildTopicsView(guild, ownerId) {
   const settings = getNewsFeedSettings(guild.id);
@@ -200,7 +161,7 @@ async function guardOwner(interaction) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('newsfeed')
-    .setDescription('Open the news feed panel — sources, channel, topics and on/off in one place')
+    .setDescription('Open the news feed panel — channel, topics and on/off in one place')
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
@@ -234,7 +195,6 @@ module.exports = {
       return;
     }
     if (action === 'panel')   return interaction.update(buildPanel(guild, ownerId));
-    if (action === 'sources') return interaction.update(buildSourcesView(guild, ownerId));
     if (action === 'topics')  return interaction.update(buildTopicsView(guild, ownerId));
     if (action === 'channel') return interaction.update(buildChannelView(guild, ownerId));
 
@@ -263,12 +223,6 @@ module.exports = {
   },
 
   // ── Selects ───────────────────────────────────────────────────────────────
-  async handleSourcesSelect(interaction) {
-    const ownerId = await guardOwner(interaction);
-    if (!ownerId) return;
-    setNewsFeedSettings(interaction.guild.id, { sources: interaction.values });
-    return interaction.update(buildSourcesView(interaction.guild, ownerId));
-  },
 
   async handleTopicsSelect(interaction) {
     const ownerId = await guardOwner(interaction);

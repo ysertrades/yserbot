@@ -15,14 +15,6 @@ const POLL_INTERVAL_MS  = 20_000;
 const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
 
-// MarketWatch's own feed declares <ttl>15</ttl> — they're asking for one poll
-// per 15 minutes, and they publish roughly 3 stories an hour, so polling any
-// faster gains nothing and just risks getting the bot blocked. Financial Juice
-// keeps its 20s cadence untouched: it's the real-time source and the whole
-// point of it is being first.
-const MARKETWATCH_FEED_URL = 'https://feeds.content.dowjones.io/public/rss/mw_topstories';
-const MARKETWATCH_POLL_MS  = 15 * 60_000;
-
 // Financial Juice's own feed double-encodes entities in places (raw XML has
 // literally "S&amp;amp;P 500" for "S&P 500" — the HTML-escaped "&amp;" got
 // XML-escaped again on top). A single decode pass leaves "S&amp;P 500"
@@ -36,9 +28,8 @@ function decodeEntities(str) {
       .replace(/&quot;/g, '"')
       .replace(/&apos;/g, "'")
       .replace(/&#39;/g, "'")
-      // MarketWatch encodes its curly quotes and dashes numerically
-      // (&#x2019; &#x201c; &#x2014; …). Without this they show up as literal
-      // gibberish mid-headline.
+      // Feeds that encode curly quotes/dashes numerically (&#x2019; &#x201c;
+      // &#x2014; …) would otherwise show that markup literally mid-headline.
       .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
       .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
       .replace(/&amp;/g, '&');
@@ -48,9 +39,9 @@ function decodeEntities(str) {
   return prev.trim();
 }
 
-// Strips a CDATA wrapper if the feed uses one (FT and some others do; neither
-// Financial Juice nor MarketWatch currently does, but it costs nothing to be
-// tolerant and it's a silent, ugly failure when missing).
+// Strips a CDATA wrapper if the feed uses one. Financial Juice doesn't today,
+// but it costs nothing to be tolerant and it's a silent, ugly failure when
+// missing.
 function stripCdata(str) {
   const m = str.match(/^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/);
   return m ? m[1] : str;
@@ -61,17 +52,6 @@ function extractTag(block, tag) {
   return m ? decodeEntities(stripCdata(m[1])) : '';
 }
 
-// MarketWatch attaches each story's picture to the item as <media:content>,
-// so its headlines get a banner straight from the feed — no page scrape, which
-// matters because marketwatch.com itself blocks our fetches.
-function extractMediaImage(block) {
-  const m = block.match(/<media:content\b[^>]*\burl=["']([^"']+)["'][^>]*>/i);
-  if (!m) return null;
-  const tag = m[0];
-  if (/medium=["'](?!image)/i.test(tag)) return null;
-  if (/type=["'](?!image\/)/i.test(tag)) return null;
-  return m[1];
-}
 
 // Some items ship a picture either as a standard RSS <enclosure> (the usual
 // way a feed attaches media) or as an <img> inside the HTML description —
@@ -218,32 +198,6 @@ function parseFeedItems(xml) {
   return items;
 }
 
-// MarketWatch: same RSS shape, but every item ships a real one-line summary
-// and its own picture, so there's nothing to scrape and nothing to reconstruct
-// — the parse is deliberately much simpler than Financial Juice's.
-function parseMarketWatchItems(xml) {
-  const blocks = xml.match(/<item[ >][\s\S]*?<\/item>/g) || [];
-  const items = [];
-  for (const block of blocks) {
-    const guid  = extractTag(block, 'guid');
-    const title = extractTag(block, 'title');
-    if (!guid || !title) continue;
-    const link       = extractTag(block, 'link');
-    const pubDateRaw = extractTag(block, 'pubDate');
-    const pubDate    = pubDateRaw ? new Date(pubDateRaw) : new Date();
-    const body       = htmlToDiscordText(extractTag(block, 'description'));
-    items.push({
-      guid, title, link,
-      pubDate: isNaN(pubDate) ? new Date() : pubDate,
-      imageUrl: extractMediaImage(block),
-      body,
-      video: null,
-      source: null,
-      author: extractTag(block, 'dc:creator') || null,
-    });
-  }
-  return items;
-}
 
 // Financial Juice's Cloudflare front-end enforces its own rate limit on this
 // endpoint (confirmed: a request too soon after the last one gets a 429 with
@@ -272,11 +226,6 @@ async function fetchFeedItems() {
   return parseFeedItems(xml);
 }
 
-async function fetchMarketWatchItems() {
-  const res = await fetch(MARKETWATCH_FEED_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' } });
-  if (!res.ok) throw new Error(`MarketWatch feed request failed: ${res.status}`);
-  return parseMarketWatchItems(await res.text());
-}
 
 // ── Source registry ──────────────────────────────────────────────────────────
 // Each source owns its endpoint, its own polling cadence and its own embed
@@ -297,20 +246,6 @@ const SOURCES = {
       videoFooter: 'Financial Juice • Live Video',
     },
   },
-  marketwatch: {
-    key: 'marketwatch',
-    label: 'MarketWatch',
-    blurb: 'Analysis and context on the day\'s moves, with summaries',
-    emoji: '📊',
-    pollMs: MARKETWATCH_POLL_MS,
-    fetch: fetchMarketWatchItems,
-    color: 0x00A05A,
-    brand: {
-      title: '📊 MarketWatch',
-      breakingTitle: '🔴 BREAKING — MarketWatch',
-      footer: 'MarketWatch • Markets & Analysis',
-    },
-  },
 };
 
 const DEFAULT_SOURCES = ['financialjuice'];
@@ -329,7 +264,7 @@ const ARTICLE_IMAGE_BASE     = 'https://www.financialjuice.com/images/';
 const IMAGE_CHECK_TIMEOUT_MS = 4000;
 
 async function resolveArticleImage(item, source = SOURCES.financialjuice) {
-  if (item.imageUrl) return item.imageUrl; // already found via RSS enclosure/description <img>/media:content
+  if (item.imageUrl) return item.imageUrl; // already found via RSS enclosure/description <img>
   // The probe below is a Financial-Juice-specific URL convention — running it
   // with another source's guid would just be a guaranteed 404 per headline.
   if (source.key !== 'financialjuice') return null;
@@ -468,9 +403,7 @@ async function buildNewsEmbed(item, source = SOURCES.financialjuice) {
 
   // Banner priority: the video's thumbnail, then the linked page's own share
   // image, then whatever picture the article itself carries — so a link that
-  // turns out to have no banner never loses the image slot. Sources that ship
-  // their picture in the feed (MarketWatch) already have item.imageUrl set and
-  // resolveArticleImage hands it straight back without a network call.
+  // turns out to have no banner never loses the image slot.
   const pictureUrl = (item.video && await resolveYouTubeThumb(item.video.id))
     || (item.source && await resolveLinkBanner(item.source.url))
     || await resolveArticleImage(item, source);
@@ -506,9 +439,9 @@ function matchesFilter(item, settings) {
 }
 
 // One fetch per source per tick at most, shared across every guild — and only
-// re-fetched once that source's own cadence has elapsed. The master tick still
-// runs on Financial Juice's 20s so it stays as fast as it ever was; MarketWatch
-// simply isn't due on most of those ticks.
+// re-fetched once that source's own cadence has elapsed. The registry is kept
+// (rather than collapsed back to a single hard-coded feed) so another source
+// can be added later as one entry instead of reworking the runner.
 const sourceCache = new Map(); // key -> { items, fetchedAt }
 
 async function getSourceItems(source) {
@@ -600,6 +533,6 @@ function startNewsFeedRunner(client) {
 }
 
 module.exports = {
-  startNewsFeedRunner, runTick, parseFeedItems, parseMarketWatchItems, buildNewsEmbed,
+  startNewsFeedRunner, runTick, parseFeedItems, buildNewsEmbed,
   SOURCES, listSources, DEFAULT_SOURCES,
 };
