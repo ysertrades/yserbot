@@ -877,6 +877,28 @@ function templateOptions() {
   return (state.overview?.composer || []).map(t => ({ value: t.name, label: t.name }));
 }
 
+// The browser's offset in minutes east of UTC — getTimezoneOffset() reports the
+// opposite sign to how the scheduler stores it, so it is negated here once.
+const tzOffset = () => -new Date().getTimezoneOffset();
+
+const freqOptions = () => (state.overview?.features?.frequencies || [])
+  .map(f => (typeof f === 'string' ? { value: f, label: f } : f));
+
+const freqLabel = value =>
+  (state.overview?.features?.frequencies || []).find(f => f.value === value)?.label || value;
+
+const fmtTime = ts => (ts ? new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'not set');
+
+/** Ping target: nothing, the two broadcast forms, or a role in this server. */
+function mentionPicker(label, value, onChange) {
+  const current = value && value.startsWith('<@&') ? value.replace(/[^0-9]/g, '') : value;
+  return select(label, current || '', [
+    { value: '@everyone', label: '@everyone' },
+    { value: '@here', label: '@here' },
+    ...roleList().map(r => ({ value: r.id, label: `@${r.name}` })),
+  ], v => onChange(v || null), { blank: 'No ping' });
+}
+
 function renderSchedules() {
   const list = $('#sched-list');
   const items = state.overview?.features?.schedules || [];
@@ -887,7 +909,7 @@ function renderSchedules() {
     const d = el('details', 'item');
     const sum = el('summary');
     sum.append(
-      el('span', 'bstyle secondary', s.frequency),
+      el('span', 'bstyle secondary', freqLabel(s.frequency)),
       el('span', 'nm', s.embedName),
       el('span', 'pr', s.channelName ? `#${s.channelName}` : 'channel gone'),
     );
@@ -895,10 +917,11 @@ function renderSchedules() {
     body.append(
       select('Message to post', s.embedName, templateOptions(), v => { draft.embedName = v; }),
       pickOne('Channel', 'channel', s.channelId, v => { draft.channelId = v; }),
-      select('How often', s.frequency,
-        (state.overview.features.frequencies || []).map(f => ({ value: f, label: f })),
-        v => { draft.frequency = v; }),
-      el('p', 'hint', s.lastRun ? `Last posted ${new Date(s.lastRun).toLocaleString()}` : 'Has not run yet.'),
+      select('How often', s.frequency, freqOptions(), v => { draft.frequency = v; }),
+      textField('Time (HH:MM, or "2h" from now)', '', v => { draft.time = v; draft.offsetMinutes = tzOffset(); },
+        { placeholder: fmtTime(s.time) }),
+      mentionPicker('Ping with the post', s.mention, v => { draft.mention = v; }),
+      el('p', 'hint', `Next: ${fmtTime(s.time)}${s.lastRun ? ` · last posted ${new Date(s.lastRun).toLocaleString()}` : ''}`),
     );
     const act = el('div', 'actions');
     const save = el('button', 'btn primary small', 'Save');
@@ -915,6 +938,25 @@ function renderSchedules() {
     d.append(sum, body);
     return d;
   }));
+
+  // Creating a schedule works here because the browser knows your UTC offset,
+  // so a typed "09:30" means the same instant it would from /schedule.
+  const add = el('details', 'item');
+  const addSum = el('summary');
+  addSum.append(el('span', 'nm', '+ Schedule a post'));
+  const nb = { embedName: '', channelId: '', frequency: 'everyday', time: '', mention: null, offsetMinutes: tzOffset() };
+  const addBody = el('div', 'body');
+  addBody.append(
+    select('Message to post', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a message' }),
+    pickOne('Channel', 'channel', '', v => { nb.channelId = v; }, { blank: 'Pick a channel' }),
+    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; }),
+    textField('Time', '', v => { nb.time = v; }, { placeholder: '09:30, or 2h from now' }),
+    mentionPicker('Ping with the post', null, v => { nb.mention = v; }),
+    el('p', 'hint', `Times are read in your timezone (UTC${tzOffset() >= 0 ? '+' : ''}${(tzOffset() / 60).toFixed(2).replace(/\.00$/, '')}).`),
+    actions(() => post('schedulenew', nb)),
+  );
+  add.append(addSum, addBody);
+  list.append(add);
 }
 
 function renderAutoreplies() {

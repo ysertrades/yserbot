@@ -12,6 +12,7 @@
  * something the bot itself doesn't believe.
  */
 
+const { ChannelType } = require('discord.js');
 const { readJson } = require('../utils/jsonStorage');
 const { getLeaderboard } = require('../utils/economyManager');
 const {
@@ -67,7 +68,10 @@ function guildOverview(guildId, client) {
       name: guild.name,
       icon: guild.iconURL({ size: 128 }),
       members: guild.memberCount,
-      channels: guild.channels.cache.size,
+      // Not cache.size — that counts categories and every open thread too, so
+      // it reads far higher than the channel list you actually see.
+      channels: guild.channels.cache.filter(c => !c.isThread?.() && c.type !== ChannelType.GuildCategory).size,
+      categories: guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).size,
     },
     newsfeed: {
       enabled: !!newsfeed.enabled,

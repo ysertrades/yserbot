@@ -333,6 +333,14 @@ Object.assign(OPS, {
     }
     return r;
   },
+  async schedulenew(guildId, body, ctx) {
+    const r = features.createSchedule(guildId, { ...body, createdBy: ctx.session.uid }, ctx.guild);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🗓️ Scheduled **${r.embedName}** in #${r.channelName} — first run <t:${Math.floor(r.time / 1000)}:F>`);
+    }
+    return r;
+  },
   async schedule(guildId, body, ctx) {
     const r = features.saveSchedule(guildId, body, ctx.guild);
     if (r.ok) {
