@@ -800,7 +800,7 @@ let tickTimer = null;
 
 function countdownEl(endsAt) {
   const node = el('span', 'countdown');
-  const bar = el('div', 'bar');
+  const bar = el('div', 'meter');
   const fill = el('i');
   bar.append(fill);
   const started = Date.now();
@@ -814,7 +814,7 @@ function countdownEl(endsAt) {
     node.textContent = d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${m}m ${String(sec).padStart(2, '0')}s` : `${m}m ${String(sec).padStart(2, '0')}s`;
     const soon = left < 5 * 60000;
     node.className = `countdown${soon ? ' soon' : ''}`;
-    bar.className = `bar${soon ? ' soon' : ''}`;
+    bar.className = `meter${soon ? ' soon' : ''}`;
     fill.style.width = `${Math.min(100, ((span - left) / span) * 100).toFixed(1)}%`;
     return true;
   };
@@ -1387,6 +1387,41 @@ async function initStudio() {
   selectTemplate(templates[0].key);
 }
 
+/* ── the pill ──────────────────────────────────────────────────────────────
+   Two small things the bar now has room for: how far down the page you are,
+   and which section you are in once the nav has scrolled past. */
+
+const SECTION_NAMES = {
+  overview: 'Overview', composer: 'Composer', studio: 'Studio',
+  giveaways: 'Giveaways', feeds: 'Feeds', economy: 'Economy',
+  automation: 'Automation', engagement: 'Engagement',
+  moderation: 'Moderation', settings: 'Settings',
+};
+
+function paintBar() {
+  const max = document.documentElement.scrollHeight - window.innerHeight;
+  const y = window.scrollY;
+  document.documentElement.style.setProperty('--scroll', max > 8 ? `${Math.min(100, (y / max) * 100).toFixed(1)}%` : '0%');
+  // 64px is roughly where the section nav leaves the screen, so the label
+  // arrives exactly as the thing it replaces goes away.
+  root.dataset.scrolled = y > 64 ? '1' : '0';
+  $('#here').textContent = SECTION_NAMES[root.dataset.section] || '';
+}
+
+function watchScroll() {
+  let queued = false;
+  const onScroll = () => {
+    if (queued) return;
+    queued = true;
+    // Coalesced into a frame — a scroll handler that writes styles directly is
+    // the classic way to make a phone feel sluggish.
+    requestAnimationFrame(() => { queued = false; paintBar(); });
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+  paintBar();
+}
+
 /* ── boot ──────────────────────────────────────────────────────────────── */
 
 function initSections() {
@@ -1394,6 +1429,7 @@ function initSections() {
     b.addEventListener('click', () => {
       root.dataset.section = b.dataset.goto;
       if (b.dataset.goto === 'giveaways') state.gawBump?.();
+      paintBar();
       for (const other of document.querySelectorAll('#sections button')) {
         other.toggleAttribute('aria-current', other === b);
         if (other === b) other.setAttribute('aria-current', 'true');
@@ -1414,6 +1450,7 @@ async function selectGuild(id) {
 async function main() {
   drawWeave();
   window.addEventListener('resize', drawWeave);
+  watchScroll();
 
   // The popup posts the session back here when it finishes.
   window.addEventListener('message', event => {
@@ -1460,6 +1497,8 @@ async function main() {
       else b.removeAttribute('aria-current');
     }
   }
+
+  paintBar();
 
   const first = me.guilds.some(g => g.id === wanted) ? wanted : me.guilds[0]?.id;
   if (first) await selectGuild(first);
