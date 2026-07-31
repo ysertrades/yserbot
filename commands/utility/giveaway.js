@@ -275,7 +275,15 @@ function buildChannelPickerView(sessionId) {
 
 // ── Launch ────────────────────────────────────────────────────────────────────
 
-async function launchGiveaway(interaction, data, sessionId) {
+/**
+ * Posts a prize giveaway and registers it.
+ *
+ * Split out of launchGiveaway for the same reason as the coins version: the
+ * web panel drives this exact path rather than rebuilding the embed, the entry
+ * button and the end timer, so the two entry points cannot produce different
+ * giveaways.
+ */
+async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const {
     prize, durationMs, winners, imageUrl, mention, channelId, guildId,
     requiredRoleId, bonusRoleId, minAccountAgeDays,
@@ -301,8 +309,8 @@ async function launchGiveaway(interaction, data, sessionId) {
     }
   }
 
-  const channel = interaction.guild.channels.cache.get(channelId);
-  if (!channel) return interaction.reply({ content: '❌ Target channel not found.', flags: MessageFlags.Ephemeral });
+  const channel = guild.channels.cache.get(channelId);
+  if (!channel) throw new Error('channel-missing');
 
   const createdAt     = Date.now();
   const endTime        = createdAt + durationMs;
@@ -315,7 +323,7 @@ async function launchGiveaway(interaction, data, sessionId) {
     .setDescription(
       `✨ Click **Enter** below to participate!\n\n` +
       `🏆 **Winners:** ${winners}\n` +
-      `👤 **Hosted by:** <@${interaction.user.id}>\n` +
+      `👤 **Hosted by:** <@${hostId}>\n` +
       `⏰ **Ends:** <t:${endTimestamp}:R>\n` +
       `📊 **Entries:** 0 participants` +
       (reqLines.length ? `\n\n${reqLines.join('\n')}` : ''),
@@ -324,7 +332,8 @@ async function launchGiveaway(interaction, data, sessionId) {
     .setTimestamp(endTime);
 
   if (imageUrl) embed.setImage(imageUrl);
-  embed.setThumbnail(interaction.guild.iconURL({ dynamic: true }) || interaction.user.displayAvatarURL());
+  const thumb = guild.iconURL({ dynamic: true }) || hostAvatarUrl;
+  if (thumb) embed.setThumbnail(thumb);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('giveaway_enter').setLabel('Enter').setStyle(ButtonStyle.Secondary).setEmoji('🎟️'),
@@ -333,33 +342,46 @@ async function launchGiveaway(interaction, data, sessionId) {
 
   const msg = await channel.send({ content, embeds: [embed], components: [row], allowedMentions: mentionOpts });
 
-  global.giveawaySessions?.delete(sessionId);
-
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   if (!global.giveawayMeta)     global.giveawayMeta     = new Map();
 
   global.giveawayEntrants.set(msg.id, new Set());
   global.giveawayMeta.set(msg.id, {
-    prize, winners, imageUrl, hostId: interaction.user.id, endTime, guildId,
+    prize, winners, imageUrl, hostId, endTime, guildId,
     requiredRoleId, bonusRoleId, minAccountAgeDays,
   });
 
   // Persist so entries and the timer survive a bot restart
   saveActiveGiveaway(msg.id, {
     prize, winnersCount: winners, imageUrl: imageUrl || null,
-    hostId: interaction.user.id, endTime, guildId, channelId: msg.channelId, entrants: [],
+    hostId, endTime, guildId, channelId: msg.channelId, entrants: [],
     requiredRoleId: requiredRoleId || null, bonusRoleId: bonusRoleId || null,
     minAccountAgeDays: minAccountAgeDays || 0, createdAt,
   });
 
   if (giveawayTimers.has(msg.id)) clearTimeout(giveawayTimers.get(msg.id));
   giveawayTimers.set(msg.id, setTimeout(
-    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId: interaction.user.id, guildId, bonusRoleId, createdAt }),
+    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId, guildId, bonusRoleId, createdAt }),
     durationMs,
   ));
 
+  return { message: msg, channel, endTime };
+}
+
+/** The slash-command path: post it, then close the setup panel. */
+async function launchGiveaway(interaction, data, sessionId) {
+  let out;
+  try {
+    out = await postGiveaway(interaction.guild, interaction.user.id, interaction.user.displayAvatarURL(), data);
+  } catch (err) {
+    if (err.message === 'channel-missing') {
+      return interaction.reply({ content: '❌ Target channel not found.', flags: MessageFlags.Ephemeral });
+    }
+    throw err;
+  }
+  global.giveawaySessions?.delete(sessionId);
   await interaction.update({
-    content: `🎉  Giveaway launched in ${channel}!`,
+    content: `🎉  Giveaway launched in ${out.channel}!`,
     embeds: [],
     components: [],
   });
@@ -881,5 +903,7 @@ module.exports.reroll = async function(message, shortId) {
 
 // Exposed for the web control panel — same reason as coinsgiveaway.js: the
 // panel drives the real end path, it does not reimplement drawing winners.
+module.exports.postGiveaway = postGiveaway;
+module.exports.performReroll = performReroll;
 module.exports.endGiveaway = endGiveaway;
 module.exports.ACTIVE_FILE = ACTIVE_FILE;

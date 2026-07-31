@@ -110,12 +110,15 @@ async function endNow(guildId, body, { guild }) {
 async function reroll(guildId, body, { guild }) {
   const shortId = String(body.shortId || '').trim().toLowerCase();
   if (!shortId || !/^[\w-]{1,40}$/.test(shortId)) return { error: 'bad_id' };
-  if (body.kind !== 'coins') return { error: 'reroll_coins_only' };
+  const kind = body.kind === 'coins' ? 'coins' : 'prize';
 
   try {
-    const result = await coinsCmd().performReroll(guild, shortId);
+    // Each system draws its own winners — coins pays out, prizes announce.
+    const result = kind === 'coins'
+      ? await coinsCmd().performReroll(guild, shortId)
+      : await giveawayCmd().performReroll(guild, shortId);
     if (result?.error) return { error: 'reroll_failed', detail: result.error };
-    return { ok: true, shortId };
+    return { ok: true, shortId, kind };
   } catch (err) {
     console.error('[Panel] reroll failed:', err.message);
     return { error: 'reroll_failed', detail: err.message.slice(0, 140) };
@@ -130,9 +133,18 @@ async function reroll(guildId, body, { guild }) {
  * produces. The panel decides what to run; it does not decide what a giveaway
  * looks like.
  */
-async function create(guildId, body, { guild, session }) {
-  const amount = Number(body.amount);
-  if (!Number.isInteger(amount) || amount < 1 || amount > 100_000_000) return { error: 'bad_amount' };
+async function create(guildId, body, { guild, session, client }) {
+  const kind = body.kind === 'prize' ? 'prize' : 'coins';
+
+  // Coins giveaways pay a number; prize giveaways name a thing.
+  let amount = 0, prize = '';
+  if (kind === 'coins') {
+    amount = Number(body.amount);
+    if (!Number.isInteger(amount) || amount < 1 || amount > 100_000_000) return { error: 'bad_amount' };
+  } else {
+    prize = String(body.prize || '').trim().slice(0, 200);
+    if (!prize) return { error: 'bad_prize' };
+  }
 
   const winners = Number(body.winners);
   if (!Number.isInteger(winners) || winners < 1 || winners > 50) return { error: 'bad_winners' };
@@ -158,15 +170,29 @@ async function create(guildId, body, { guild, session }) {
     mention = `<@&${body.mention}>`;
   }
 
+  const shared = {
+    winners, durationMs: minutes * 60000, mention,
+    channelId: channel.id, guildId,
+    requiredRoleId: body.requiredRoleId || null,
+    bonusRoleId: body.bonusRoleId || null,
+    minAccountAgeDays,
+  };
+
   try {
-    const out = await coinsCmd().postGiveaway(guild, session.uid, {
-      amount, winners, durationMs: minutes * 60000, mention,
-      channelId: channel.id, guildId,
-      requiredRoleId: body.requiredRoleId || null,
-      bonusRoleId: body.bonusRoleId || null,
-      minAccountAgeDays,
-    });
-    return { ok: true, messageId: out.message.id, channelName: channel.name, amount, winners, endsAt: out.endTime };
+    const out = kind === 'coins'
+      ? await coinsCmd().postGiveaway(guild, session.uid, { ...shared, amount })
+      : await giveawayCmd().postGiveaway(guild, session.uid,
+          // The host avatar is only a fallback thumbnail when the server has no
+          // icon, and the panel has no member object to ask — the bot's own
+          // avatar keeps the embed from looking broken in that case.
+          client?.user?.displayAvatarURL?.() || null,
+          { ...shared, prize, imageUrl: body.imageUrl || null });
+
+    return {
+      ok: true, kind, messageId: out.message.id, channelName: channel.name,
+      label: kind === 'coins' ? `${amount.toLocaleString()} coins` : prize,
+      winners, endsAt: out.endTime,
+    };
   } catch (err) {
     console.error('[Panel] starting a giveaway failed:', err.message);
     return { error: 'launch_failed', detail: err.message.slice(0, 140) };

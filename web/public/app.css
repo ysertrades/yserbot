@@ -440,4 +440,94 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .toast.bad { border-color: var(--warn); color: var(--warn); }
 .toast.good { border-color: var(--good); }
 
-@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+/* ── motion ───────────────────────────────────────────────────────────────
+   One easing curve and three durations for the whole panel, so everything
+   moves like it belongs to the same object. The curve overshoots very
+   slightly — enough to feel physical, not enough to look bouncy. */
+:root {
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fast: 140ms;
+  --mid: 260ms;
+  --slow: 420ms;
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pillDrop { from { opacity: 0; transform: translateY(-14px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes popIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes shimmer { to { background-position: 200% 0; } }
+
+/* Opening the panel: the bar drops in, then the content rises under it. */
+.bar { animation: pillDrop var(--slow) var(--ease) both; }
+.server { animation: rise var(--slow) var(--ease) both 60ms; }
+.sections { animation: rise var(--slow) var(--ease) both 110ms; }
+
+/* Cards arrive in sequence rather than all at once. The stagger is short —
+   it should read as one movement with depth, not as a queue. */
+.tiles > * { animation: popIn var(--mid) var(--ease) both; }
+.tiles > :nth-child(1) { animation-delay: 140ms; }
+.tiles > :nth-child(2) { animation-delay: 180ms; }
+.tiles > :nth-child(3) { animation-delay: 220ms; }
+.tiles > :nth-child(4) { animation-delay: 260ms; }
+.tiles > :nth-child(5) { animation-delay: 300ms; }
+.tiles > :nth-child(6) { animation-delay: 340ms; }
+
+/* Switching sections replays the entrance for whatever just became visible,
+   so a tab change is a movement rather than a jump cut. */
+.section { animation: rise var(--mid) var(--ease) both; }
+.section .panel { animation: rise var(--mid) var(--ease) both; }
+.section .panel:nth-child(2) { animation-delay: 45ms; }
+.section .panel:nth-child(3) { animation-delay: 90ms; }
+.section .panel:nth-child(4) { animation-delay: 135ms; }
+.grid > *:nth-child(2) { animation-delay: 45ms; }
+.grid > *:nth-child(3) { animation-delay: 90ms; }
+.grid > *:nth-child(4) { animation-delay: 135ms; }
+
+/* Controls respond to being pressed. On a phone this is most of what makes an
+   interface feel alive, because there is no hover to fall back on. */
+.btn { transition: filter var(--fast) var(--ease), transform var(--fast) var(--ease), opacity var(--fast); }
+.btn:active:not(:disabled) { transform: scale(0.96); }
+.sections button { transition: color var(--fast) var(--ease); }
+.sections button::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  background: var(--accent); transform: scaleX(0); transform-origin: center;
+  transition: transform var(--mid) var(--ease);
+}
+.sections button { position: relative; border-bottom-color: transparent !important; }
+.sections button[aria-current="true"]::after { transform: scaleX(1); }
+
+.tpl-entry, .chip-toggle, .guilds button {
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease),
+              color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.tpl-entry:active, .chip-toggle:active, .guilds button:active { transform: scale(0.97); }
+
+input, textarea, select { transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease); }
+.panel { transition: border-color var(--mid) var(--ease); }
+.item[open] .body, .embed-box[open] .body { animation: rise var(--mid) var(--ease) both; }
+
+/* The toast arrives from below and settles. */
+.toast { animation: rise var(--mid) var(--ease) both; }
+
+/* Loading placeholder — a moving sheen beats a spinner because it shows the
+   shape of what is coming. */
+.skeleton {
+  border-radius: 8px; min-height: 1rem;
+  background: linear-gradient(90deg, var(--raised) 25%, var(--rule) 50%, var(--raised) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+/* The preview swaps images; cross-fading hides the swap. */
+.stage-frame img { transition: opacity var(--mid) var(--ease); }
+.stage-busy { transition: opacity var(--fast) var(--ease); }
+
+/* All of it is decoration. Anyone who has asked their device to stop moving
+   things gets a panel that simply appears. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
