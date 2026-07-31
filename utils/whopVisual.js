@@ -13,6 +13,7 @@ const {
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
 } = require('./pixelArt');
 const { drawWhopMark, WHOP_ASPECT } = require('./brandMarks');
+const { drawFlowLattice, drawFlowSignature, signatureWidth } = require('./brandSignature');
 
 const ORANGE = [250, 69, 22, 255];   // Whop's brand orange
 const DEEP   = [198, 48, 12, 255];   // a darker orange, for depth
@@ -27,6 +28,9 @@ function generateWhopBannerImage() {
 
   // Orange edge to edge — this one is the brand colour rather than a dark card.
   flatBg(png, ORANGE);
+  // Woven straight into the background, so it runs under the panel and out to
+  // every edge rather than sitting on top as a removable stamp.
+  drawFlowLattice(png, { color: CREAM, alpha: 0.038 });
 
   // Inset panel in a deeper orange, so the card still has an edge to read
   // against Discord's dark background.
@@ -50,7 +54,14 @@ function generateWhopBannerImage() {
 
   // ── The wing mark, straight on the orange the way Whop present it ─────────
   const markW = 226;
-  drawWhopMark(png, 74, 150 - (markW / WHOP_ASPECT) / 2, markW, CREAM);
+  const markX = 74;
+  drawWhopMark(png, markX, 150 - (markW / WHOP_ASPECT) / 2, markW, CREAM);
+
+  // ── Signature, centred under the wing mark ───────────────────────────────
+  drawFlowSignature(png, Math.round(markX + (markW - signatureWidth()) / 2), 306, {
+    chip: CREAM, primary: CREAM, accent: [255, 184, 146, 255], caption: [255, 226, 208, 255],
+    chipAlpha: 0.16, borderAlpha: 0.55, captionAlpha: 0.7,
+  });
 
   // ── Wordmark + subtitle ──────────────────────────────────────────────────
   const contentLeft = 356, contentRight = W - 44;
