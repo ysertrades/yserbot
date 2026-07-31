@@ -250,7 +250,12 @@ async function route(req, res, client) {
       // Hand back a fresh token when this one is getting old, so an account in
       // regular use is never bounced back to the sign-in screen mid-task.
       const renewed = auth.refreshed(session);
-      const headers = renewed ? { 'set-cookie': auth.cookie(auth.SESSION_COOKIE, renewed, auth.SESSION_TTL_MS) } : {};
+      // Either a rolled token, or the first sight of a bearer-only session
+      // that has no cookie of its own yet. The second case is what keeps an
+      // embedded panel signed in: the token gets written back as a partitioned
+      // cookie belonging to the host page, so reopening the app finds it.
+      const plant = renewed || auth.adoptable(req);
+      const headers = plant ? { 'set-cookie': auth.cookie(auth.SESSION_COOKIE, plant, auth.SESSION_TTL_MS) } : {};
       return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(session), token: renewed || null }, headers);
     }
     if (p === '/api/health')    return json(res, 200, api.health(client));

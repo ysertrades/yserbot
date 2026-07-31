@@ -69,10 +69,39 @@ async function requestStorage() {
     if (typeof document.hasStorageAccess !== 'function') return false;
     if (await document.hasStorageAccess()) return true;
     await document.requestStorageAccess();
+    storageWorks = true;
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * The last resort, on browsers old enough to drop a partitioned cookie and
+ * strict enough to block localStorage in a frame.
+ *
+ * It is a button rather than something automatic because requestStorageAccess
+ * only resolves from a real user gesture — and because a permission prompt
+ * nobody asked for is worse than one attached to something they tapped. It
+ * shows up only once the panel is open and both quiet mechanisms have already
+ * failed, so most people never see it.
+ */
+function offerStorageAccess() {
+  if (!embedded || storageWorks) return;
+  if (document.querySelector('.storage-nudge')) return;
+
+  const note = el('div', 'panel storage-nudge');
+  note.append(el('p', 'muted', 'Your browser is blocking this panel from remembering you here, so you will have to sign in again next time.'));
+  const btn = el('button', 'btn', 'Keep me signed in');
+  btn.addEventListener('click', async () => {
+    btn.textContent = 'Asking…';
+    const ok = await requestStorage();
+    if (ok) { remember(state.token); }
+    if (storageWorks) note.remove();
+    else btn.textContent = 'Not allowed — try again';
+  });
+  note.append(btn);
+  $('#server').before(note);
 }
 
 const state = {
@@ -191,40 +220,19 @@ function drawWeave() {
 /* ── screens ───────────────────────────────────────────────────────────── */
 
 function showLogin() {
-  if (embedded) {
-    const link = document.querySelector('.view[data-view="login"] .btn.primary');
-    if (link && !link.dataset.wired) {
-      link.dataset.wired = '1';
-      link.href = '#';
-      link.addEventListener('click', async e => {
-        e.preventDefault();
-        link.textContent = 'Checking…';
-        // Least-effort first: if a session already exists on this domain,
-        // unlocking storage is enough and there is no need to visit Discord
-        // at all. Only a genuinely absent session goes the long way round.
-        const granted = await requestStorage();
-        if (granted) {
-          try {
-            await get('/api/me');
-            link.textContent = 'Sign in with Discord';
-            return main().catch(() => {});
-          } catch { /* no usable session — fall through to a real login */ }
-        }
-        link.textContent = 'Sign in with Discord';
-        startEmbeddedLogin();
-      });
-    }
-  }
+  if (embedded) wireEmbeddedLogin();
+
   const code = new URLSearchParams(location.search).get('error');
   if (code) {
     const p = $('#login-error');
     p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
+    p.classList.remove('soft');
     p.hidden = false;
   } else if (embedded) {
-    // Say why the button might ask for permission, rather than letting an
-    // unexplained browser prompt appear out of nowhere.
+    // Set expectations before the tab switch, rather than leaving you looking
+    // at a page that appears to have done nothing.
     const p = $('#login-error');
-    p.textContent = 'Your browser may ask to allow this panel to use its own data — that is what keeps you signed in here.';
+    p.textContent = 'This opens Discord in a new tab. Come back here once it says you are signed in.';
     p.classList.add('soft');
     p.hidden = false;
   }
@@ -232,24 +240,50 @@ function showLogin() {
 }
 
 /**
- * Signing in from inside someone else's page.
+ * The sign-in button inside a host page.
  *
- * On iOS this opens a whole new Safari tab with no opener relationship, so
- * postMessage has nobody to reach. The page therefore mints a random id first,
- * hands it to the login, and polls for the finished session against that id.
- * postMessage still works when there is an opener; this is the path that works
- * when there isn't.
+ * It has to stay a plain link. Opening the login from JavaScript works only
+ * while the click's user activation is still live, and every `await` in front
+ * of it spends that activation — the browser then blocks the new tab without
+ * saying anything, so the panel sat on "Waiting for Discord…" while nothing
+ * had actually opened. Building the href up front lets the browser perform the
+ * navigation itself, which no amount of asynchronous work beforehand can
+ * cancel. The handler is left with one job: start collecting the result.
+ *
+ * The handoff id has to be minted here for the same reason — it is part of the
+ * URL the browser is about to follow.
+ */
+function wireEmbeddedLogin() {
+  const link = document.querySelector('.view[data-view="login"] .btn.primary');
+  if (!link || link.dataset.wired) return;
+  link.dataset.wired = '1';
+
+  const id = (crypto.randomUUID?.() || String(Math.random()).slice(2) + Date.now()).replace(/-/g, '');
+  link.href = `/auth/login?popup=1&h=${id}`;
+  link.target = '_blank';
+  // Deliberately no rel="noopener": where the opener does survive, the login
+  // page posts the session straight back and the poll never has to run.
+
+  link.addEventListener('click', () => pollHandoff(id));
+}
+
+/**
+ * Collecting the session the login tab leaves behind.
+ *
+ * On iOS the login opens a whole new Safari tab with no opener relationship,
+ * so postMessage has nobody to reach. The page therefore hands a random id to
+ * the login and polls for the finished session against that id. postMessage
+ * still works when there is an opener; this is the path that works when there
+ * isn't.
  */
 let handoffTimer = null;
 
-function startEmbeddedLogin() {
-  const id = (crypto.randomUUID?.() || String(Math.random()).slice(2) + Date.now()).replace(/-/g, '');
-  window.open(`/auth/login?popup=1&h=${id}`, '_blank');
-
+function pollHandoff(id) {
   const started = Date.now();
   clearInterval(handoffTimer);
   const status = $('#login-error');
   status.hidden = false;
+  status.classList.add('soft');
   status.textContent = 'Waiting for Discord… you can come back to this tab once it says you are signed in.';
 
   handoffTimer = setInterval(async () => {
@@ -267,9 +301,9 @@ function startEmbeddedLogin() {
       status.hidden = true;
       state.token = token;
       remember(token);
-      // Ask for storage access now that we have a session, so reopening the
-      // host app finds the cookie rather than an empty frame.
-      requestStorage().finally(() => main().catch(() => {}));
+      // The first /api/me carrying this token is what plants the partitioned
+      // cookie, which is what makes the session outlive the app being closed.
+      main().catch(() => {});
     } catch { /* keep polling */ }
   }, 1500);
 }
@@ -1588,6 +1622,7 @@ async function main() {
     renderComposer();
   });
   root.dataset.state = 'panel';
+  offerStorageAccess();
 
   const params = new URLSearchParams(location.search);
   const wanted = params.get('g');
