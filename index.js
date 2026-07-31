@@ -4,6 +4,7 @@ const path = require('node:path');
 const { Client, Collection, GatewayIntentBits, Partials, Events } = require('discord.js');
 const { connect: connectMongo } = require('./utils/mongoStorage');
 const { warm: warmRenderCache } = require('./utils/dynamicEmbedImages');
+const { start: startPanel } = require('./web/server');
 
 const client = new Client({
     intents: [
@@ -72,5 +73,17 @@ for (const file of eventFiles) {
   // bot. Each render blocks the thread for 60-210 ms, so paying for all seven
   // here keeps that stall out of every later interaction.
   await warmRenderCache();
+
+  // The panel reads the bot's live guild list, so it starts once the gateway
+  // is up. Wrapped because nothing about the web server is worth taking the
+  // bot offline for — if it can't start, the bot still runs Discord normally.
+  client.once(Events.ClientReady, () => {
+    try {
+      startPanel(client);
+    } catch (err) {
+      console.error('[Panel] failed to start (bot keeps running):', err);
+    }
+  });
+
   client.login(process.env.TOKEN);
 })();

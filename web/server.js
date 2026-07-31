@@ -1,0 +1,243 @@
+'use strict';
+
+/**
+ * web/server.js
+ *
+ * The control panel's HTTP server, running inside the bot process.
+ *
+ * Sharing the process is deliberate. Storage is an in-memory cache warmed once
+ * at boot (utils/mongoStorage.js), so a separate process would read a snapshot
+ * the bot had already moved past, and its writes would be overwritten by the
+ * bot's next flush. In here, the panel and the slash commands are looking at
+ * exactly the same objects.
+ *
+ * The cost of that choice is that a fault in here can take the bot down with
+ * it, so nothing in this file is allowed to throw into the process: every
+ * handler is wrapped, the listener has its own error handling, and a failure
+ * to bind the port is logged and shrugged off rather than fatal.
+ */
+
+const http = require('node:http');
+const fs   = require('node:fs');
+const path = require('node:path');
+
+const auth = require('./auth');
+const api  = require('./api');
+
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+const MAX_BODY_BYTES = 64 * 1024;
+const RATE_LIMIT = { windowMs: 60_000, max: 120 };
+
+/* ─── rate limiting ──────────────────────────────────────────────────────── */
+
+// Per-IP fixed window. Crude, but this panel has one user — it exists to blunt
+// someone hammering the login endpoint, not to shape real traffic.
+const hits = new Map(); // ip → { count, resetAt }
+
+function rateLimited(ip) {
+  const now = Date.now();
+  const rec = hits.get(ip);
+  if (!rec || rec.resetAt < now) {
+    hits.set(ip, { count: 1, resetAt: now + RATE_LIMIT.windowMs });
+    if (hits.size > 5000) for (const [k, v] of hits) if (v.resetAt < now) hits.delete(k);
+    return false;
+  }
+  rec.count++;
+  return rec.count > RATE_LIMIT.max;
+}
+
+/* ─── responses ──────────────────────────────────────────────────────────── */
+
+// Locked down hard: the panel loads nothing from anywhere else, so anything
+// injected into a page has nothing to talk to. Avatars are the one exception,
+// and they come from Discord's CDN only.
+const CSP = [
+  "default-src 'self'",
+  "img-src 'self' data: https://cdn.discordapp.com",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self'",
+  "connect-src 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+].join('; ');
+
+function send(res, status, body, headers = {}) {
+  if (res.writableEnded) return;
+  res.writeHead(status, {
+    'content-security-policy': CSP,
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'cache-control': 'no-store',
+    ...headers,
+  });
+  res.end(body);
+}
+
+function json(res, status, data, headers = {}) {
+  send(res, status, JSON.stringify(data), { 'content-type': 'application/json; charset=utf-8', ...headers });
+}
+
+function redirect(res, location, headers = {}) {
+  send(res, 302, '', { location, ...headers });
+}
+
+/* ─── static files ───────────────────────────────────────────────────────── */
+
+const TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css':  'text/css; charset=utf-8',
+  '.js':   'text/javascript; charset=utf-8',
+  '.svg':  'image/svg+xml',
+  '.png':  'image/png',
+};
+
+function serveStatic(res, urlPath) {
+  const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  const file = path.resolve(PUBLIC_DIR, rel);
+
+  // resolve() collapses any ../ before this check, so a crafted path cannot
+  // escape the public directory.
+  if (file !== PUBLIC_DIR && !file.startsWith(PUBLIC_DIR + path.sep)) {
+    return send(res, 403, 'Forbidden', { 'content-type': 'text/plain' });
+  }
+
+  fs.readFile(file, (err, buf) => {
+    if (err) return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
+    send(res, 200, buf, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
+  });
+}
+
+/* ─── routing ────────────────────────────────────────────────────────────── */
+
+async function route(req, res, client) {
+  const url = new URL(req.url, 'http://internal');
+  const p = url.pathname;
+
+  /* -- health: the only thing reachable without logging in ---------------- */
+  if (p === '/healthz') return json(res, 200, { ok: true });
+
+  /* -- login ------------------------------------------------------------- */
+  if (p === '/auth/login') {
+    const missing = auth.missingConfig();
+    if (missing.length) return json(res, 503, { error: 'setup_incomplete', missing });
+    const { url: to, state } = auth.authorizeUrl();
+    return redirect(res, to, { 'set-cookie': auth.cookie(auth.STATE_COOKIE, state, auth.STATE_TTL_MS) });
+  }
+
+  if (p === '/auth/callback') {
+    const missing = auth.missingConfig();
+    if (missing.length) return json(res, 503, { error: 'setup_incomplete', missing });
+
+    const code  = url.searchParams.get('code');
+    const state = url.searchParams.get('state');
+    const cookieState = auth.parseCookies(req)[auth.STATE_COOKIE];
+
+    // The state must match the cookie we set AND still carry a valid
+    // signature — one without the other is a replay or a forged callback.
+    if (!code || !state || state !== cookieState || !auth.verify(state, auth.config().secret)) {
+      return redirect(res, '/?error=bad_state', { 'set-cookie': auth.clearCookie(auth.STATE_COOKIE) });
+    }
+
+    try {
+      const { token } = await auth.completeLogin(code, client);
+      return redirect(res, '/', {
+        'set-cookie': [auth.clearCookie(auth.STATE_COOKIE), auth.cookie(auth.SESSION_COOKIE, token, auth.SESSION_TTL_MS)],
+      });
+    } catch (err) {
+      const reason = err.code === 'no_manageable_guilds' ? 'no_access' : 'login_failed';
+      if (reason === 'login_failed') console.error('[Panel] login failed:', err.message);
+      return redirect(res, `/?error=${reason}`, { 'set-cookie': auth.clearCookie(auth.STATE_COOKIE) });
+    }
+  }
+
+  if (p === '/auth/logout') {
+    return redirect(res, '/', { 'set-cookie': auth.clearCookie(auth.SESSION_COOKIE) });
+  }
+
+  /* -- api (everything below requires a session) -------------------------- */
+  if (p.startsWith('/api/')) {
+    // Reported before the session check so a fresh install lands on the setup
+    // screen rather than a sign-in button that cannot work yet.
+    const missing = auth.missingConfig();
+    if (missing.length) return json(res, 503, { error: 'setup_incomplete', missing });
+
+    const session = auth.sessionFor(req);
+    if (!session) return json(res, 401, { error: 'not_authenticated' });
+
+    if (p === '/api/me')     return json(res, 200, api.me(session, client));
+    if (p === '/api/health') return json(res, 200, api.health(client));
+
+    if (p === '/api/leaderboard') {
+      return json(res, 200, await api.leaderboard(client, 10));
+    }
+
+    // /api/guild/<id>
+    const guildMatch = /^\/api\/guild\/(\d{5,25})$/.exec(p);
+    if (guildMatch) {
+      const guildId = guildMatch[1];
+      if (!auth.canAccessGuild(session, guildId, client)) return json(res, 403, { error: 'forbidden' });
+      return json(res, 200, api.guildOverview(guildId, client));
+    }
+
+    return json(res, 404, { error: 'unknown_endpoint' });
+  }
+
+  /* -- the page itself ---------------------------------------------------- */
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return send(res, 405, 'Method not allowed', { 'content-type': 'text/plain' });
+  }
+  return serveStatic(res, p);
+}
+
+/* ─── lifecycle ──────────────────────────────────────────────────────────── */
+
+function start(client) {
+  const port = Number(process.env.SERVER_PORT) || 3000;
+
+  const server = http.createServer((req, res) => {
+    // Behind Caddy, so the client address is the proxy — the forwarded header
+    // is what identifies the caller for rate limiting.
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+
+    if (rateLimited(ip)) return json(res, 429, { error: 'rate_limited' });
+
+    // Nothing here accepts a body yet, but an endpoint that reads one is
+    // coming, and an unbounded upload would be a trivial way to exhaust a
+    // 512 MB container.
+    let received = 0;
+    req.on('data', chunk => {
+      received += chunk.length;
+      if (received > MAX_BODY_BYTES) { json(res, 413, { error: 'body_too_large' }); req.destroy(); }
+    });
+
+    Promise.resolve(route(req, res, client)).catch(err => {
+      console.error('[Panel] request failed:', err);
+      if (!res.writableEnded) json(res, 500, { error: 'internal_error' });
+    });
+  });
+
+  // A socket error must not reach the process — an unhandled 'error' here
+  // would be an uncaught exception, and the bot would go offline with it.
+  server.on('clientError', (err, socket) => {
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+  });
+  server.on('error', err => {
+    console.error(`[Panel] server error (bot keeps running):`, err.message);
+  });
+
+  server.listen(port, '0.0.0.0', () => {
+    const missing = auth.missingConfig();
+    console.log(`[Panel] listening on 0.0.0.0:${port}`);
+    if (missing.length) {
+      console.warn(`[Panel] login is disabled until these are set: ${missing.join(', ')}`);
+    } else {
+      console.log(`[Panel] ${auth.config().baseUrl}`);
+    }
+  });
+
+  return server;
+}
+
+module.exports = { start };
