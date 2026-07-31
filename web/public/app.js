@@ -228,6 +228,15 @@ function renderOverview() {
   renderComposer();
   renderGiveaways();
   renderSettings();
+  renderGroupForm('#form-casino', 'casino');
+  renderGroupForm('#form-lottery', 'lottery');
+  renderGroupForm('#form-cards', 'cards');
+  renderGroupForm('#form-verify', 'verify');
+  renderCoins();
+  renderSchedules();
+  renderAutoreplies();
+  renderLevels();
+  renderLevelRoles();
 }
 
 function renderBoard(data) {
@@ -300,7 +309,7 @@ function renderFeedForms() {
     textField('Topics (comma separated, blank for all)', nf.filterTopics.join(', '),
       v => { nf.filterTopics = v.split(',').map(s => s.trim()).filter(Boolean); },
       { placeholder: 'forex, crypto' }),
-    row('Channel', d.newsfeed.channel ? `#${d.newsfeed.channel}` : 'not set', { dim: !d.newsfeed.channel }),
+    pickOne('Channel', 'channel', d.newsfeed.channelId, v => { nf.channelId = v; }),
     row('Sources', chips(d.newsfeed.sources)),
     actions(() => post('newsfeed', nf)),
   );
@@ -318,7 +327,7 @@ function renderFeedForms() {
     textField('Currencies (blank for all)', ec.currencyFilter.join(', '),
       v => { ec.currencyFilter = v.split(',').map(s => s.trim()).filter(Boolean); },
       { placeholder: 'USD, EUR' }),
-    row('Channel', d.econcal.channel ? `#${d.econcal.channel}` : 'not set', { dim: !d.econcal.channel }),
+    pickOne('Channel', 'channel', d.econcal.channelId, v => { ec.channelId = v; }),
     actions(() => post('econcal', ec)),
   );
 }
@@ -391,6 +400,68 @@ function select(label, value, options, onChange, { blank = null } = {}) {
   s.addEventListener('change', () => onChange(s.value));
   l.append(s);
   return l;
+}
+
+/* Pickers. Nothing in this panel should ever ask for a raw snowflake — you
+   cannot check one by eye, and a wrong digit fails silently at use time. */
+
+const channelList = () => state.overview?.settings?.channels || [];
+const roleList = () => state.overview?.settings?.roles || [];
+
+function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
+  const items = kind === 'role' ? roleList() : channelList();
+  return select(label, value || '',
+    items.map(i => ({ value: i.id, label: kind === 'role' ? i.name : `#${i.name}` })),
+    v => onChange(v || null), { blank });
+}
+
+/**
+ * Multi-select as toggleable chips rather than a <select multiple>, which is
+ * close to unusable on a phone — ctrl-click has no touch equivalent.
+ */
+function pickMany(label, kind, values, onChange) {
+  const items = kind === 'role' ? roleList() : channelList();
+  const chosen = new Set(values || []);
+  const wrap = el('div', 'field');
+  wrap.append(el('span', null, label));
+
+  const box = el('div', 'chipset');
+  if (!items.length) box.append(el('span', 'muted', kind === 'role' ? 'No roles found.' : 'No channels found.'));
+  for (const i of items) {
+    const b = el('button', 'chip-toggle', kind === 'role' ? i.name : `#${i.name}`);
+    b.type = 'button';
+    if (chosen.has(i.id)) b.setAttribute('aria-pressed', 'true');
+    b.addEventListener('click', () => {
+      if (chosen.has(i.id)) { chosen.delete(i.id); b.removeAttribute('aria-pressed'); }
+      else { chosen.add(i.id); b.setAttribute('aria-pressed', 'true'); }
+      onChange([...chosen]);
+    });
+    box.append(b);
+  }
+  wrap.append(box);
+  return wrap;
+}
+
+/** Member picker — a searchable datalist, since a server can have thousands. */
+function pickMember(label, value, onChange) {
+  const members = state.overview?.features?.members || [];
+  const wrap = el('label', 'field');
+  wrap.append(el('span', null, `${label} (${members.length} loaded)`));
+  const input = el('input');
+  input.type = 'text';
+  input.setAttribute('list', 'member-options');
+  input.placeholder = 'Start typing a name';
+  input.addEventListener('input', () => {
+    const hit = members.find(m => m.name === input.value);
+    onChange(hit ? hit.id : null);
+    input.classList.toggle('bad', !!input.value && !hit);
+  });
+  wrap.append(input);
+
+  let dl = document.getElementById('member-options');
+  if (!dl) { dl = el('datalist'); dl.id = 'member-options'; document.body.append(dl); }
+  dl.replaceChildren(...members.map(m => { const o = el('option'); o.value = m.name; return o; }));
+  return wrap;
 }
 
 function areaField(label, value, onInput, rows = 4) {
@@ -564,7 +635,7 @@ function renderComposer() {
         textField('Emoji', b.emoji, v => { draftBtn.emoji = v; }),
         select('Style', b.style, (meta?.styles || []).map(x => ({ value: x, label: x })), v => { draftBtn.style = v; }),
         select('Does what', b.type, (meta?.types || []).map(x => ({ value: x, label: x })), v => { draftBtn.type = v; }),
-        textField('Role id (for role buttons)', b.roleId, v => { draftBtn.roleId = v; }),
+        pickOne('Role it grants', 'role', b.roleId, v => { draftBtn.roleId = v; }, { blank: 'Not a role button' }),
         textField('URL (for link buttons)', b.url, v => { draftBtn.url = v; }),
       );
       const rowA = el('div', 'actions');
@@ -591,7 +662,7 @@ function renderComposer() {
       textField('Emoji', '', v => { nb.emoji = v; }),
       select('Style', 'Primary', (meta?.styles || []).map(x => ({ value: x, label: x })), v => { nb.style = v; }),
       select('Does what', 'custom', (meta?.types || []).map(x => ({ value: x, label: x })), v => { nb.type = v; }),
-      textField('Role id (role buttons)', '', v => { nb.roleId = v; }),
+      pickOne('Role it grants', 'role', '', v => { nb.roleId = v; }, { blank: 'Not a role button' }),
       textField('URL (link buttons)', '', v => { nb.url = v; }),
       actions(() => post('button', nb)),
     );
@@ -729,10 +800,7 @@ function renderSettings() {
       nodes.push(select(f.label, value || '', s.roles.map(r => ({ value: r.id, label: r.name })),
         v => { draft[f.key] = v || null; }, { blank: 'Not set' }));
     } else if (f.type === 'roles') {
-      const names = (s.resolved[f.key] || []).map(r => r.name || r.id).join(', ');
-      nodes.push(textField(`${f.label} (role ids, comma separated)`, (value || []).join(', '),
-        v => { draft[f.key] = v.split(',').map(x => x.trim()).filter(Boolean); },
-        { placeholder: names || 'none' }));
+      nodes.push(pickMany(f.label, 'role', value || [], v => { draft[f.key] = v; }));
     } else if (f.type === 'choice') {
       nodes.push(select(f.label, value || f.choices[0], f.choices.map(c => ({ value: c, label: c })),
         v => { draft[f.key] = v; }));
@@ -744,6 +812,216 @@ function renderSettings() {
 
   nodes.push(actions(() => post('settings', draft)));
   form.replaceChildren(...nodes);
+}
+
+/* ── feature groups ────────────────────────────────────────────────────────
+   Casino, lottery, cards and verification are all "a handful of typed
+   settings", so one renderer covers them from the field descriptions the
+   server sends. Adding the next one is a table entry in web/features.js. */
+
+function renderGroupForm(target, groupName) {
+  const g = state.overview?.features?.groups?.[groupName];
+  const form = $(target);
+  if (!g) { form.replaceChildren(el('p', 'muted', 'Not available.')); return; }
+
+  const draft = { group: groupName };
+  const nodes = g.fields.map(f => {
+    const v = g.values[f.key];
+    if (f.type === 'channel') return pickOne(f.label, 'channel', v, x => { draft[f.key] = x; });
+    if (f.type === 'role') return pickOne(f.label, 'role', v, x => { draft[f.key] = x; });
+    if (f.type === 'text') return areaField(f.label, v, x => { draft[f.key] = x; }, 4);
+    return textField(`${f.label}${f.min != null ? ` (${f.min}–${f.max})` : ''}`,
+      v == null ? '' : String(v), x => { draft[f.key] = Number(x); });
+  });
+  nodes.push(actions(() => post('feature', draft)));
+  form.replaceChildren(...nodes);
+}
+
+function renderCoins() {
+  const form = $('#form-coins');
+  const draft = { mode: 'give', amount: 0, userId: null, everyone: false };
+
+  const summary = el('p', 'hint', 'Pick someone, or apply to everyone.');
+  const memberField = pickMember('Member', null, v => { draft.userId = v; });
+
+  const everyone = toggle('Apply to every member', false, v => {
+    draft.everyone = v;
+    memberField.style.display = v ? 'none' : '';
+    summary.textContent = v
+      ? 'This will change the balance of every non-bot member. Set is unavailable in bulk.'
+      : 'Pick someone, or apply to everyone.';
+  });
+
+  form.replaceChildren(
+    select('What to do', 'give', [
+      { value: 'give', label: 'Give coins' },
+      { value: 'take', label: 'Take coins' },
+      { value: 'set', label: 'Set balance to' },
+    ], v => { draft.mode = v; }),
+    textField('Amount', '0', v => { draft.amount = Number(v); }),
+    memberField,
+    everyone,
+    summary,
+    actions(async () => {
+      if (!draft.everyone && !draft.userId) { toast('Pick a member first.', 'bad'); return; }
+      const who = draft.everyone ? 'every member' : 'that member';
+      if (!confirm(`${draft.mode === 'set' ? 'Set' : draft.mode === 'give' ? 'Give' : 'Take'} ${num(draft.amount)} coins — ${who}?`)) return;
+      await post('coins', draft);
+    }),
+  );
+}
+
+/* ── automation ────────────────────────────────────────────────────────── */
+
+function templateOptions() {
+  return (state.overview?.composer || []).map(t => ({ value: t.name, label: t.name }));
+}
+
+function renderSchedules() {
+  const list = $('#sched-list');
+  const items = state.overview?.features?.schedules || [];
+  if (!items.length) { list.replaceChildren(el('p', 'muted', 'No scheduled posts.')); return; }
+
+  list.replaceChildren(...items.map(s => {
+    const draft = { id: s.id, channelId: s.channelId, embedName: s.embedName, frequency: s.frequency };
+    const d = el('details', 'item');
+    const sum = el('summary');
+    sum.append(
+      el('span', 'bstyle secondary', s.frequency),
+      el('span', 'nm', s.embedName),
+      el('span', 'pr', s.channelName ? `#${s.channelName}` : 'channel gone'),
+    );
+    const body = el('div', 'body');
+    body.append(
+      select('Message to post', s.embedName, templateOptions(), v => { draft.embedName = v; }),
+      pickOne('Channel', 'channel', s.channelId, v => { draft.channelId = v; }),
+      select('How often', s.frequency,
+        (state.overview.features.frequencies || []).map(f => ({ value: f, label: f })),
+        v => { draft.frequency = v; }),
+      el('p', 'hint', s.lastRun ? `Last posted ${new Date(s.lastRun).toLocaleString()}` : 'Has not run yet.'),
+    );
+    const act = el('div', 'actions');
+    const save = el('button', 'btn primary small', 'Save');
+    save.type = 'button';
+    save.addEventListener('click', () => post('schedule', draft));
+    const del = el('button', 'btn small danger', 'Delete');
+    del.type = 'button';
+    del.addEventListener('click', async () => {
+      if (!confirm('Delete this scheduled post?')) return;
+      await post('schedule', { id: s.id, remove: true });
+    });
+    act.append(save, del);
+    body.append(act);
+    d.append(sum, body);
+    return d;
+  }));
+}
+
+function renderAutoreplies() {
+  const list = $('#reply-list');
+  const items = state.overview?.features?.autoreplies || [];
+  const nodes = [];
+
+  if (!items.length) nodes.push(el('p', 'muted', 'No auto-replies yet.'));
+  for (const r of items) {
+    const draft = { key: r.key, trigger: r.trigger, embedName: r.embedName, exact: r.exact, cooldown: r.cooldown, enabled: r.enabled };
+    const d = el('details', 'item');
+    const sum = el('summary');
+    sum.append(
+      el('span', `bstyle ${r.enabled ? 'success' : 'secondary'}`, r.enabled ? 'on' : 'off'),
+      el('span', 'nm', r.trigger),
+      el('span', 'pr', r.embedName),
+    );
+    const body = el('div', 'body');
+    body.append(
+      textField('Trigger phrase', r.trigger, v => { draft.trigger = v; }),
+      select('Reply with', r.embedName, templateOptions(), v => { draft.embedName = v; }),
+      textField('Cooldown (seconds)', String(r.cooldown), v => { draft.cooldown = Number(v); }),
+      toggle('Whole message must match exactly', r.exact, v => { draft.exact = v; }),
+      toggle('Enabled', r.enabled, v => { draft.enabled = v; }),
+    );
+    const act = el('div', 'actions');
+    const save = el('button', 'btn primary small', 'Save');
+    save.type = 'button';
+    save.addEventListener('click', () => post('autoreply', draft));
+    const del = el('button', 'btn small danger', 'Remove');
+    del.type = 'button';
+    del.addEventListener('click', async () => {
+      if (!confirm(`Remove the auto-reply for "${r.trigger}"?`)) return;
+      await post('autoreply', { key: r.key, remove: true });
+    });
+    act.append(save, del);
+    body.append(act);
+    d.append(sum, body);
+    nodes.push(d);
+  }
+
+  const add = el('details', 'item');
+  const addSum = el('summary');
+  addSum.append(el('span', 'nm', '+ Add an auto-reply'));
+  const nb = { key: '', trigger: '', embedName: '', cooldown: 5, exact: false, enabled: true };
+  const addBody = el('div', 'body');
+  addBody.append(
+    textField('Trigger phrase', '', v => { nb.key = v.toLowerCase(); nb.trigger = v; }),
+    select('Reply with', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a message' }),
+    textField('Cooldown (seconds)', '5', v => { nb.cooldown = Number(v); }),
+    toggle('Whole message must match exactly', false, v => { nb.exact = v; }),
+    actions(() => post('autoreply', nb)),
+  );
+  add.append(addSum, addBody);
+  nodes.push(add);
+
+  list.replaceChildren(...nodes);
+}
+
+/* ── engagement ────────────────────────────────────────────────────────── */
+
+function renderLevels() {
+  const lv = state.overview?.features?.levels;
+  const form = $('#form-levels');
+  if (!lv) { form.replaceChildren(el('p', 'muted', 'Not available.')); return; }
+
+  const draft = {};
+  const nodes = lv.fields.map(f => textField(
+    `${f.label} (${f.min}–${f.max})`,
+    String(lv.values[f.key] ?? f.fallback ?? ''),
+    v => { draft[f.key] = Number(v); },
+  ));
+  nodes.push(el('p', 'hint', `${num(lv.tracked)} members are being tracked.`));
+  nodes.push(actions(() => post('levels', draft)));
+  form.replaceChildren(...nodes);
+}
+
+function renderLevelRoles() {
+  const lv = state.overview?.features?.levels;
+  const list = $('#levelroles');
+  const nodes = [];
+
+  if (!lv?.roles?.length) nodes.push(el('p', 'muted', 'No level rewards set.'));
+  for (const r of (lv?.roles || [])) {
+    const line = el('div', 'post-row');
+    line.append(el('span', 'k', `Level ${r.level} → ${r.roleName || 'role deleted'}`));
+    const del = el('button', 'btn small danger', 'Remove');
+    del.type = 'button';
+    del.addEventListener('click', () => post('levelrole', { level: r.level, remove: true }));
+    line.append(del);
+    nodes.push(line);
+  }
+
+  const add = el('details', 'item');
+  const sum = el('summary');
+  sum.append(el('span', 'nm', '+ Reward a role at a level'));
+  const nb = { level: 5, roleId: null };
+  const body = el('div', 'body');
+  body.append(
+    textField('Level', '5', v => { nb.level = Number(v); }),
+    pickOne('Role to grant', 'role', '', v => { nb.roleId = v; }, { blank: 'Pick a role' }),
+    actions(() => post('levelrole', nb)),
+  );
+  add.append(sum, body);
+  nodes.push(add);
+
+  list.replaceChildren(...nodes);
 }
 
 /* ── studio ────────────────────────────────────────────────────────────── */

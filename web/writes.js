@@ -26,6 +26,7 @@ const { listSources } = require('../utils/newsFeed');
 const composer = require('./composer');
 const giveaways = require('./giveaways');
 const settings = require('./settings');
+const features = require('./features');
 
 const IMPACTS = ['high', 'medium', 'low'];
 
@@ -309,6 +310,56 @@ Object.assign(OPS, {
   async settings(guildId, body, ctx) {
     const r = settings.save(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`);
+    return r;
+  },
+
+  /* -- the remaining feature surfaces ------------------------------------ */
+  async feature(guildId, body, ctx) {
+    const r = features.saveGroup(guildId, String(body.group || ''), body, ctx.guild);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎛️ **${r.label}** — ${r.changed.join('; ')} updated`);
+    return r;
+  },
+  async levels(guildId, body, ctx) {
+    const r = features.saveLevels(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, '📈 **Levelling** settings updated');
+    return r;
+  },
+  async levelrole(guildId, body, ctx) {
+    const r = features.saveLevelRole(guildId, body, ctx.guild);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session, r.removed
+        ? `📈 Level ${r.removed} reward role removed`
+        : `📈 Level ${r.level} now grants <@&${r.roleId}>`);
+    }
+    return r;
+  },
+  async schedule(guildId, body, ctx) {
+    const r = features.saveSchedule(guildId, body, ctx.guild);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session, r.removed
+        ? `🗓️ Scheduled post \`${r.removed}\` deleted`
+        : `🗓️ Scheduled post \`${r.id}\` — ${r.changed.join(', ')} changed`);
+    }
+    return r;
+  },
+  async autoreply(guildId, body, ctx) {
+    const r = features.saveAutoreply(guildId, body);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session, r.removed
+        ? `💬 Auto-reply \`${r.removed}\` removed`
+        : `💬 Auto-reply \`${r.key}\` ${r.isNew ? 'added' : 'updated'}`);
+    }
+    return r;
+  },
+  async coins(guildId, body, ctx) {
+    const r = features.adjustCoins(guildId, body, ctx.guild);
+    if (r.ok) {
+      // Coin movements are the one thing worth logging in full detail — the
+      // before and after make an unintended change obvious at a glance.
+      await announce(ctx.client, guildId, ctx.session, r.count
+        ? `🪙 **${r.mode === 'give' ? 'Gave' : 'Took'} ${r.amount.toLocaleString()}** coins ${r.mode === 'give' ? 'to' : 'from'} **${r.count}** members`
+        : `🪙 <@${r.userId}> — ${r.mode} ${r.amount.toLocaleString()} · ${r.before.toLocaleString()} → **${r.after.toLocaleString()}**`);
+    }
     return r;
   },
 });

@@ -80,6 +80,9 @@ html[data-section="studio"]     .section[data-section="studio"],
 html[data-section="giveaways"]  .section[data-section="giveaways"],
 html[data-section="feeds"]      .section[data-section="feeds"],
 html[data-section="shop"]       .section[data-section="shop"],
+html[data-section="economy"]    .section[data-section="economy"],
+html[data-section="automation"] .section[data-section="automation"],
+html[data-section="engagement"] .section[data-section="engagement"],
 html[data-section="moderation"] .section[data-section="moderation"],
 html[data-section="settings"]   .section[data-section="settings"] { display: flex; }
 
@@ -298,6 +301,19 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .gaw .kind.coins { color: var(--good); }
 .gaw .kind.prize { color: var(--accent); }
 .gaw .idtag { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); flex: none; }
+
+/* ── chip multi-select ───────────────────────────────────────────────── */
+.chipset { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chip-toggle {
+  font: inherit; font-size: 0.8rem;
+  background: var(--sunken); border: 1px solid var(--rule); border-radius: 999px;
+  color: var(--muted); padding: 0.28rem 0.62rem; cursor: pointer;
+}
+.chip-toggle:hover { color: var(--soft); border-color: var(--off); }
+.chip-toggle[aria-pressed="true"] {
+  background: var(--accent-d); border-color: var(--accent); color: var(--ink);
+}
+input.bad { border-color: var(--warn); }
 
 /* ── controls ────────────────────────────────────────────────────────── */
 .btn {

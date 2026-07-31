@@ -23,6 +23,7 @@ const { stats: renderStats } = require('../utils/renderCache');
 const composer = require('./composer');
 const giveaways = require('./giveaways');
 const settings = require('./settings');
+const features = require('./features');
 
 /** Guilds this session may open, as the picker needs them. */
 function me(session, client) {
@@ -70,6 +71,9 @@ function guildOverview(guildId, client) {
     },
     newsfeed: {
       enabled: !!newsfeed.enabled,
+      // Both the id and the resolved name: the id drives the picker, the name
+      // is what the overview shows.
+      channelId: newsfeed.channelId ?? null,
       channel: channelName(newsfeed.channelId),
       topics: newsfeed.filterTopics || [],
       // Map the stored keys onto their display names, and keep any key that
@@ -82,6 +86,7 @@ function guildOverview(guildId, client) {
     },
     econcal: {
       enabled: !!econcal.enabled,
+      channelId: econcal.channelId ?? null,
       channel: channelName(econcal.channelId),
       impact: econcal.impactFilter || [],
       currencies: econcal.currencyFilter || [],
@@ -118,6 +123,7 @@ function guildOverview(guildId, client) {
     composerMeta: composer.meta(),
     giveaways: giveawayState,
     settings: settings.read(guildId, guild),
+    features: features.read(guildId, guild),
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,
