@@ -283,7 +283,7 @@ async function route(req, res, client) {
       const [, guildId, op] = guildMatch;
       if (!auth.canAccessGuild(session, guildId, client)) return json(res, 403, { error: 'forbidden' });
 
-      if (!op) return json(res, 200, api.guildOverview(guildId, client));
+      if (!op) return json(res, 200, await api.guildOverview(guildId, client));
 
       if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
       if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
@@ -297,7 +297,7 @@ async function route(req, res, client) {
       if (result.error) return json(res, 400, result);
       // Hand back the refreshed overview so the page never has to guess what
       // the write actually produced.
-      return json(res, 200, { ...result, overview: api.guildOverview(guildId, client) });
+      return json(res, 200, { ...result, overview: await api.guildOverview(guildId, client) });
     }
 
     return json(res, 404, { error: 'unknown_endpoint' });

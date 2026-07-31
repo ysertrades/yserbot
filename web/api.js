@@ -43,9 +43,37 @@ function me(session, client) {
   };
 }
 
+/**
+ * Makes sure the guild's member list is actually in cache.
+ *
+ * discord.js only caches members it has seen in events, so on a quiet server
+ * that is the bot and almost nobody else — which is why the coin picker was
+ * offering nothing to pick. Fetching pulls the full list over the gateway.
+ *
+ * Cached for a few minutes because it is a real round trip, and skipped
+ * entirely if the guild object has no fetch (the test stubs) or the call
+ * fails. Either way the panel falls back to whatever is already cached rather
+ * than failing the whole overview.
+ */
+const memberFetchedAt = new Map();
+const MEMBER_TTL_MS = 5 * 60 * 1000;
+
+async function ensureMembers(guild) {
+  if (typeof guild?.members?.fetch !== 'function') return;
+  if (Date.now() - (memberFetchedAt.get(guild.id) || 0) < MEMBER_TTL_MS) return;
+  memberFetchedAt.set(guild.id, Date.now());
+  try {
+    await guild.members.fetch({ time: 20_000 });
+  } catch (err) {
+    // A timeout or a missing intent must not take the overview down with it.
+    console.warn('[Panel] could not fetch the member list:', err.message);
+  }
+}
+
 /** Everything the overview screen shows for one guild. */
-function guildOverview(guildId, client) {
+async function guildOverview(guildId, client) {
   const guild = client.guilds.cache.get(guildId);
+  await ensureMembers(guild);
 
   const newsfeed = getNewsFeedSettings(guildId);
   const econcal  = getEconCalSettings(guildId);
