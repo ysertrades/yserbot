@@ -23,8 +23,13 @@ const WRITE_ERRORS = {
   body_too_large:  'That is too much text.',
 };
 
+// Inside someone else's iframe the session cookie may never be sent — Safari
+// drops third-party cookies entirely. The popup login hands the same signed
+// token back through postMessage, and it rides in a header from then on.
+const embedded = window.self !== window.top;
+
 const state = {
-  csrf: null, guildId: null, guilds: [], overview: null,
+  csrf: null, token: null, guildId: null, guilds: [], overview: null,
   templates: [], tpl: null, copy: {},   // Studio
   tplName: null, draft: null,           // Composer
 };
@@ -80,8 +85,10 @@ function toast(message, kind = '') {
 
 /* ── network ───────────────────────────────────────────────────────────── */
 
+const authHeaders = () => (state.token ? { authorization: `Bearer ${state.token}` } : {});
+
 async function get(path) {
-  const res = await fetch(path, { credentials: 'same-origin' });
+  const res = await fetch(path, { credentials: 'same-origin', headers: authHeaders() });
   if (!res.ok) {
     const err = new Error(`${path} → ${res.status}`);
     err.status = res.status;
@@ -95,7 +102,7 @@ async function post(op, body) {
   const res = await fetch(`/api/guild/${state.guildId}/${op}`, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json', 'x-csrf-token': state.csrf },
+    headers: { 'content-type': 'application/json', 'x-csrf-token': state.csrf, ...authHeaders() },
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
@@ -136,6 +143,19 @@ function drawWeave() {
 /* ── screens ───────────────────────────────────────────────────────────── */
 
 function showLogin() {
+  if (embedded) {
+    const link = document.querySelector('.view[data-view="login"] .btn.primary');
+    if (link && !link.dataset.wired) {
+      link.dataset.wired = '1';
+      link.href = '#';
+      link.addEventListener('click', e => {
+        e.preventDefault();
+        // Discord refuses to render inside an iframe, and the popup is a
+        // first-party context where cookies still work normally.
+        window.open('/auth/login?popup=1', 'yserflow-login', 'width=520,height=760');
+      });
+    }
+  }
   const code = new URLSearchParams(location.search).get('error');
   if (code) {
     const p = $('#login-error');
@@ -1086,7 +1106,7 @@ async function loadPreview() {
   const url = `/api/preview/${state.tpl.key}?${params}`;
 
   try {
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(url, { credentials: 'same-origin', headers: authHeaders() });
     if (res.status === 429) {
       // The server is pacing renders. Wait exactly as long as it asked.
       const { retryAfterMs } = await res.json();
@@ -1190,6 +1210,16 @@ async function selectGuild(id) {
 async function main() {
   drawWeave();
   window.addEventListener('resize', drawWeave);
+
+  // The popup posts the session back here when it finishes.
+  window.addEventListener('message', event => {
+    // Only our own origin may hand us a session. Without this check any page
+    // that could reach this window could inject one.
+    if (event.origin !== location.origin) return;
+    if (event.data?.type !== 'yserflow-session' || typeof event.data.token !== 'string') return;
+    state.token = event.data.token;
+    main().catch(() => {});
+  });
 
   let me;
   try {
