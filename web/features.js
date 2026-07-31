@@ -18,8 +18,17 @@
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { getBalance, addCoins, setBalance } = require('../utils/economyManager');
+const { generateScheduleId, parseScheduleTime, nextWeekdayTimestamp } = require('../utils/scheduler');
 
-const FREQUENCIES = ['once', 'daily', 'weekdays', 'weekly'];
+// Exactly what utils/scheduler.js implements. It special-cases 'once' and
+// 'weekdays' and treats everything else as daily — so offering 'weekly' would
+// have produced a schedule that silently fired every day.
+const FREQUENCIES = [
+  { value: 'once',     label: 'Once' },
+  { value: 'everyday', label: 'Every day' },
+  { value: 'weekdays', label: 'Weekdays (Mon–Fri)' },
+];
+const FREQUENCY_VALUES = FREQUENCIES.map(f => f.value);
 
 // file → the settings inside it, so one table covers several stores.
 const GROUPS = {
@@ -104,6 +113,7 @@ function read(guildId, guild) {
     channelId: s.channelId,
     channelName: guild.channels.cache.get(s.channelId)?.name || null,
     frequency: s.frequency,
+    mention: s.mention ?? null,
     time: s.time ?? null,
     offsetMinutes: s.offsetMinutes ?? 0,
     lastRun: s.lastRun ?? null,
@@ -267,6 +277,65 @@ function saveLevelRole(guildId, body, guild) {
   return { ok: true, level, roleId: body.roleId };
 }
 
+/**
+ * A mention is either nothing, one of the two broadcast forms, or a real role
+ * in this guild. Returns undefined for anything else so the caller can refuse.
+ */
+function normaliseMention(value, guild) {
+  if (!value) return null;
+  if (value === '@everyone' || value === '@here') return value;
+  const id = String(value).replace(/^<@&|>$/g, '');
+  if (guild.roles.cache.has(id)) return `<@&${id}>`;
+  return undefined;
+}
+
+/**
+ * Turns a typed time plus the browser's UTC offset into an absolute run time.
+ *
+ * This is why scheduling can live on the web at all: the page knows the
+ * viewer's offset, so "09:30" means the same instant it would have meant if
+ * you had typed it into /schedule.
+ */
+function resolveTime(input, offsetMinutes, frequency) {
+  const offset = Number(offsetMinutes);
+  if (!Number.isFinite(offset) || offset < -720 || offset > 840) return null;
+  let t = parseScheduleTime(String(input || '').trim(), offset);
+  if (!t) return null;
+  if (frequency === 'weekdays') t = nextWeekdayTimestamp(t, offset);
+  return t;
+}
+
+/** Creates a scheduled post. */
+function createSchedule(guildId, body, guild) {
+  const templates = readJson('embeds.json', {})[guildId] || {};
+  const embedName = String(body.embedName || '').trim();
+  if (!templates[embedName]) return { error: 'unknown_template' };
+
+  const channel = guild.channels.cache.get(String(body.channelId || ''));
+  if (!channel?.isTextBased?.()) return { error: 'bad_channel' };
+
+  const frequency = FREQUENCY_VALUES.includes(body.frequency) ? body.frequency : null;
+  if (!frequency) return { error: 'bad_frequency' };
+
+  const time = resolveTime(body.time, body.offsetMinutes, frequency);
+  if (!time) return { error: 'bad_time' };
+
+  const mention = normaliseMention(body.mention, guild);
+  if (mention === undefined) return { error: 'bad_mention' };
+
+  const all = readJson('schedules.json', {});
+  if (!all[guildId]) all[guildId] = {};
+  const id = generateScheduleId(Object.keys(all[guildId]));
+
+  all[guildId][id] = {
+    id, embedName, channelId: channel.id, time, frequency, mention,
+    offsetMinutes: Number(body.offsetMinutes) || 0,
+    createdBy: body.createdBy || null, createdAt: Date.now(), lastRun: null,
+  };
+  writeJson('schedules.json', all);
+  return { ok: true, id, embedName, channelName: channel.name, time };
+}
+
 function saveSchedule(guildId, body, guild) {
   const id = String(body.id || '').trim();
   const all = readJson('schedules.json', {});
@@ -292,9 +361,21 @@ function saveSchedule(guildId, body, guild) {
     changed.push('message');
   }
   if (body.frequency && body.frequency !== entry.frequency) {
-    if (!FREQUENCIES.includes(body.frequency)) return { error: 'bad_frequency' };
+    if (!FREQUENCY_VALUES.includes(body.frequency)) return { error: 'bad_frequency' };
     entry.frequency = body.frequency;
     changed.push('frequency');
+  }
+  if ('mention' in body) {
+    const m = normaliseMention(body.mention, guild);
+    if (m === undefined) return { error: 'bad_mention' };
+    if (m !== entry.mention) { entry.mention = m; changed.push('mention'); }
+  }
+  if (body.time) {
+    const t = resolveTime(body.time, body.offsetMinutes, entry.frequency);
+    if (!t) return { error: 'bad_time' };
+    entry.time = t;
+    entry.offsetMinutes = Number(body.offsetMinutes) || 0;
+    changed.push('time');
   }
   if (!changed.length) return { unchanged: true };
   all[guildId][id] = entry;
@@ -366,6 +447,6 @@ function adjustCoins(guildId, body, guild) {
 }
 
 module.exports = {
-  read, saveGroup, saveLevels, saveLevelRole, saveSchedule, saveAutoreply, adjustCoins,
-  GROUPS, CONFIG_GROUPS, LEVEL_FIELDS, FREQUENCIES,
+  read, saveGroup, saveLevels, saveLevelRole, createSchedule, saveSchedule, saveAutoreply, adjustCoins,
+  GROUPS, CONFIG_GROUPS, LEVEL_FIELDS, FREQUENCIES, FREQUENCY_VALUES,
 };
