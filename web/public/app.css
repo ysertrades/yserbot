@@ -425,6 +425,9 @@ input.bad { border-color: var(--warn); }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .note { color: var(--warn); font-size: 0.85rem; margin: 0; }
+/* The same slot used for errors also carries an explanation before anything
+   has gone wrong, and that should not be dressed as a warning. */
+.note.soft { color: var(--muted); }
 .keys { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .keys li { font-family: var(--mono); font-size: 0.85rem; background: var(--raised); border: 1px solid var(--rule); border-radius: 7px; padding: 0.4rem 0.6rem; }
 

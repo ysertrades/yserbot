@@ -29,12 +29,21 @@ const MANAGE_GUILD = 1n << 5n;
 
 const SESSION_COOKIE = 'yf_session';
 const STATE_COOKIE   = 'yf_state';
-// Long enough that you are not signing in every time you open the panel, but
-// still bounded: the guild list inside a session is only as fresh as the
-// session itself, so this is the window in which revoked Manage Server has not
-// taken effect yet. Bot-presence and allowlist checks stay live regardless.
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
-const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;    // reissue once a day of use
+// Effectively "until you sign out": a long window that slides forward every
+// time the panel is opened, so ordinary use never ends in a login screen.
+//
+// It is still bounded, and the bound matters: the guild list inside a session
+// is only as fresh as the session, so this is also the window in which a
+// revoked Manage Server has not taken effect yet. Bot-presence and the guild
+// allowlist are re-checked live on every request regardless, so the worst case
+// is a former manager keeping access to a guild the bot is still in — not to
+// a guild they were never in. PANEL_SESSION_DAYS tightens it if that trade
+// ever stops being acceptable.
+const SESSION_DAYS = Math.min(365, Math.max(1, Number(process.env.PANEL_SESSION_DAYS) || 90));
+const SESSION_TTL_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
+// Reissued once a week of use, so the window keeps sliding without minting a
+// new token on every single request.
+const REFRESH_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 const STATE_TTL_MS   = 10 * 60 * 1000;      // 10 minutes to finish logging in
 
 /* ─── config ─────────────────────────────────────────────────────────────── */

@@ -28,12 +28,52 @@ const WRITE_ERRORS = {
 // token back through postMessage, and it rides in a header from then on.
 const embedded = window.self !== window.top;
 
-// Kept so you are not signing in every time the panel opens. Inside an iframe
-// this store is partitioned per host site, which is fine — it just means the
-// Whop copy and the bookmarked copy each remember their own session.
+// Kept so you are not signing in every time the panel opens.
+//
+// Inside a third-party iframe this is not reliable on its own: Safari's
+// Prevent Cross-Site Tracking — on by default — can block localStorage in an
+// embedded frame outright, and setItem simply throws. That is why the login
+// never stuck inside Whop, and why storageWorks is tracked rather than the
+// failure being swallowed: if the store is unavailable the panel falls back to
+// asking for storage access instead of silently making you sign in again.
 const STORE_KEY = 'yserflow.session';
-const remember = t => { try { t ? localStorage.setItem(STORE_KEY, t) : localStorage.removeItem(STORE_KEY); } catch {} };
-const recall = () => { try { return localStorage.getItem(STORE_KEY); } catch { return null; } };
+let storageWorks = true;
+
+const remember = t => {
+  try {
+    if (t) localStorage.setItem(STORE_KEY, t);
+    else localStorage.removeItem(STORE_KEY);
+    storageWorks = true;
+  } catch {
+    storageWorks = false;
+  }
+};
+
+const recall = () => {
+  try { return localStorage.getItem(STORE_KEY); }
+  catch { storageWorks = false; return null; }
+};
+
+/**
+ * Asks the browser to let this frame use its own first-party storage.
+ *
+ * This is the Storage Access API, which exists for exactly this situation: an
+ * embedded frame that legitimately owns a session on its own domain. Granting
+ * it makes the SameSite=None cookie start being sent, so the session persists
+ * across closing and reopening the host app without another Discord round
+ * trip. It must be called from a real user gesture, which is why it hangs off
+ * the sign-in button rather than running on load.
+ */
+async function requestStorage() {
+  try {
+    if (typeof document.hasStorageAccess !== 'function') return false;
+    if (await document.hasStorageAccess()) return true;
+    await document.requestStorageAccess();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const state = {
   csrf: null, token: recall(), guildId: null, guilds: [], overview: null,
@@ -156,8 +196,21 @@ function showLogin() {
     if (link && !link.dataset.wired) {
       link.dataset.wired = '1';
       link.href = '#';
-      link.addEventListener('click', e => {
+      link.addEventListener('click', async e => {
         e.preventDefault();
+        link.textContent = 'Checking…';
+        // Least-effort first: if a session already exists on this domain,
+        // unlocking storage is enough and there is no need to visit Discord
+        // at all. Only a genuinely absent session goes the long way round.
+        const granted = await requestStorage();
+        if (granted) {
+          try {
+            await get('/api/me');
+            link.textContent = 'Sign in with Discord';
+            return main().catch(() => {});
+          } catch { /* no usable session — fall through to a real login */ }
+        }
+        link.textContent = 'Sign in with Discord';
         startEmbeddedLogin();
       });
     }
@@ -166,6 +219,13 @@ function showLogin() {
   if (code) {
     const p = $('#login-error');
     p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
+    p.hidden = false;
+  } else if (embedded) {
+    // Say why the button might ask for permission, rather than letting an
+    // unexplained browser prompt appear out of nowhere.
+    const p = $('#login-error');
+    p.textContent = 'Your browser may ask to allow this panel to use its own data — that is what keeps you signed in here.';
+    p.classList.add('soft');
     p.hidden = false;
   }
   root.dataset.state = 'login';
@@ -207,7 +267,9 @@ function startEmbeddedLogin() {
       status.hidden = true;
       state.token = token;
       remember(token);
-      main().catch(() => {});
+      // Ask for storage access now that we have a session, so reopening the
+      // host app finds the cookie rather than an empty frame.
+      requestStorage().finally(() => main().catch(() => {}));
     } catch { /* keep polling */ }
   }, 1500);
 }
