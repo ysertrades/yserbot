@@ -301,7 +301,7 @@ Object.assign(OPS, {
     const r = await giveaways.create(guildId, body, ctx);
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session,
-        `🎟️ Started a **${r.amount.toLocaleString()} coin** giveaway in #${r.channelName} — ${r.winners} winner${r.winners === 1 ? '' : 's'}, ends <t:${Math.floor(r.endsAt / 1000)}:R>`);
+        `🎟️ Started a **${r.label}** giveaway in #${r.channelName} — ${r.winners} winner${r.winners === 1 ? '' : 's'}, ends <t:${Math.floor(r.endsAt / 1000)}:R>`);
     }
     return r;
   },

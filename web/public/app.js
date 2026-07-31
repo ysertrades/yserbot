@@ -513,26 +513,19 @@ function pickMany(label, kind, values, onChange) {
   return wrap;
 }
 
-/** Member picker — a searchable datalist, since a server can have thousands. */
+/**
+ * Member picker — a list, like channels and roles.
+ *
+ * It used to be a type-to-match box, which was a bad idea the moment a name
+ * contained styled unicode: you cannot type 𝓎☆𝒮𝒮𝐸𝑅 on a phone keyboard, so
+ * the field was effectively unusable for exactly the people most likely to
+ * have a name like that.
+ */
 function pickMember(label, value, onChange) {
   const members = state.overview?.features?.members || [];
-  const wrap = el('label', 'field');
-  wrap.append(el('span', null, `${label} (${members.length} loaded)`));
-  const input = el('input');
-  input.type = 'text';
-  input.setAttribute('list', 'member-options');
-  input.placeholder = 'Start typing a name';
-  input.addEventListener('input', () => {
-    const hit = members.find(m => m.name === input.value);
-    onChange(hit ? hit.id : null);
-    input.classList.toggle('bad', !!input.value && !hit);
-  });
-  wrap.append(input);
-
-  let dl = document.getElementById('member-options');
-  if (!dl) { dl = el('datalist'); dl.id = 'member-options'; document.body.append(dl); }
-  dl.replaceChildren(...members.map(m => { const o = el('option'); o.value = m.name; return o; }));
-  return wrap;
+  return select(`${label} (${members.length})`, value || '',
+    members.map(m => ({ value: m.id, label: m.name })),
+    v => onChange(v || null), { blank: members.length ? 'Pick a member' : 'No members loaded' });
 }
 
 function areaField(label, value, onInput, rows = 4) {
@@ -925,13 +918,34 @@ function refreshGawPreview(draft, attempt = 0) {
 
 function renderGiveawayForm() {
   const form = $('#form-gaw');
-  const draft = { amount: 5000, winners: 1, minutes: 60, channelId: '', mention: null,
-                  requiredRoleId: null, bonusRoleId: null, minAccountAgeDays: 0 };
+  const draft = { kind: 'coins', amount: 5000, prize: '', winners: 1, minutes: 60, channelId: '',
+                  mention: null, requiredRoleId: null, bonusRoleId: null, minAccountAgeDays: 0 };
 
   const bump = () => refreshGawPreview(draft);
 
+  // Coins pay out automatically; a prize is announced and handed over by you.
+  // Only one of the two fields is ever relevant, so the other is hidden rather
+  // than left sitting there inert.
+  const amountField = textField('Coins each winner gets', '5000', v => { draft.amount = Number(v); bump(); });
+  const prizeField = textField('What you are giving away', '', v => { draft.prize = v; },
+    { placeholder: 'Blue Guardian $10k account' });
+  prizeField.style.display = 'none';
+
+  const kindField = select('Type', 'coins', [
+    { value: 'coins', label: 'Coins — paid out automatically' },
+    { value: 'prize', label: 'Prize — announced, you hand it over' },
+  ], v => {
+    draft.kind = v;
+    amountField.style.display = v === 'coins' ? '' : 'none';
+    prizeField.style.display = v === 'prize' ? '' : 'none';
+    $('#gaw-preview').closest('.stage').style.display = v === 'coins' ? '' : 'none';
+    if (v === 'coins') bump();
+  });
+
   form.replaceChildren(
-    textField('Coins each winner gets', '5000', v => { draft.amount = Number(v); bump(); }),
+    kindField,
+    amountField,
+    prizeField,
     textField('Winners', '1', v => { draft.winners = Number(v); bump(); }),
     textField('Runs for (minutes)', '60', v => { draft.minutes = Number(v); }),
     pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Pick a channel' }),
@@ -1422,12 +1436,37 @@ function watchScroll() {
   paintBar();
 }
 
+/**
+ * Tapping outside a field closes the keyboard.
+ *
+ * Browsers only blur an input when you tap something else focusable, so on a
+ * phone the keyboard stays up over half the screen while you try to read what
+ * you just typed. Tapping any non-interactive part of the page now dismisses
+ * it, which is what every native app does.
+ */
+function dismissKeyboardOnOutsideTap() {
+  const isControl = node => node instanceof Element
+    && node.closest('input, textarea, select, button, a, label, [contenteditable]');
+
+  document.addEventListener('pointerdown', event => {
+    const active = document.activeElement;
+    if (!active || !/^(INPUT|TEXTAREA)$/.test(active.tagName)) return;
+    if (isControl(event.target)) return;
+    active.blur();
+  }, { passive: true });
+}
+
 /* ── boot ──────────────────────────────────────────────────────────────── */
 
 function initSections() {
   for (const b of document.querySelectorAll('#sections button')) {
     b.addEventListener('click', () => {
       root.dataset.section = b.dataset.goto;
+      // Restart the entrance animation for the section that just appeared.
+      // Reading offsetWidth between removing and re-adding the class is what
+      // forces the browser to acknowledge the reset.
+      const shown = document.querySelector(`.section[data-section="${b.dataset.goto}"]`);
+      if (shown) { shown.style.animation = 'none'; void shown.offsetWidth; shown.style.animation = ''; }
       if (b.dataset.goto === 'giveaways') state.gawBump?.();
       paintBar();
       for (const other of document.querySelectorAll('#sections button')) {
@@ -1451,6 +1490,7 @@ async function main() {
   drawWeave();
   window.addEventListener('resize', drawWeave);
   watchScroll();
+  dismissKeyboardOnOutsideTap();
 
   // The popup posts the session back here when it finishes.
   window.addEventListener('message', event => {
