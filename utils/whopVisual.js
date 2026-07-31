@@ -10,7 +10,7 @@
 
 const {
   PNG, setPxBlend, flatBg, dot, roundedMask,
-  fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
+  fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, fitScale, GLYPH_H,
 } = require('./pixelArt');
 const { drawWhopMark, WHOP_ASPECT } = require('./brandMarks');
 const { drawFlowLattice, drawFlowSignature, signatureWidth } = require('./brandSignature');
@@ -19,10 +19,21 @@ const ORANGE = [250, 69, 22, 255];   // Whop's brand orange
 const DEEP   = [198, 48, 12, 255];   // a darker orange, for depth
 const CREAM  = [255, 240, 224, 255]; // the mark's own off-white
 
+// As above: passing nothing reproduces the original card exactly, so existing
+// callers are unaffected and the no-arg render keeps its cache entry.
+const WHOP_DEFAULTS = {
+  pill:     'PREMIUM',
+  heading:  'WHOP',
+  subtitle: 'MEMBERSHIP & PREMIUM ACCESS',
+  tagline:  'COURSES, COMMUNITY AND PREMIUM PERKS - ALL IN ONE PLACE.',
+};
+
 /**
+ * @param {object} [copy] pill / heading / subtitle / tagline overrides
  * @returns {Buffer} PNG image data
  */
-function generateWhopBannerImage() {
+function generateWhopBannerImage(copy = {}) {
+  const { pill, heading, subtitle, tagline } = { ...WHOP_DEFAULTS, ...copy };
   const W = 1000, H = 400;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
@@ -45,7 +56,7 @@ function generateWhopBannerImage() {
   }
 
   // ── Status pill, top-right — cream on orange, inverting the card ──────────
-  const pillText = 'PREMIUM';
+  const pillText = pill;
   const pillW = 40 + textWidth(pillText, 2);
   const pillX = W - 44 - pillW, pillY = 40;
   fillRoundedRectBlend(png, pillX, pillY, pillW, 42, 10, CREAM, 0.96);
@@ -66,16 +77,23 @@ function generateWhopBannerImage() {
   // ── Wordmark + subtitle ──────────────────────────────────────────────────
   const contentLeft = 356, contentRight = W - 44;
   const contentCx = (contentLeft + contentRight) / 2;
-  drawTextCentered(png, 'WHOP', contentCx, 96, 6, CREAM);
-  drawTextCentered(png, 'MEMBERSHIP & PREMIUM ACCESS', contentCx, 96 + 6 * GLYPH_H + 16, 2, [255, 214, 190, 255]);
+  const contentW = contentRight - contentLeft;
+  // Scale steps down for longer copy rather than letting it run off the card.
+  const headScale = fitScale(heading, contentW, 6, 2);
+  drawTextCentered(png, heading, contentCx, 96 + (6 - headScale) * GLYPH_H / 2, headScale, CREAM);
+  drawTextCentered(png, subtitle, contentCx, 96 + 6 * GLYPH_H + 16, fitScale(subtitle, contentW, 2, 1), [255, 214, 190, 255]);
 
   // ── Tagline ───────────────────────────────────────────────────────────────
   for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 262, CREAM, 0.4);
-  const lines = wrapText('COURSES, COMMUNITY AND PREMIUM PERKS - ALL IN ONE PLACE.', 2, contentRight - contentLeft);
+  const lines = wrapText(tagline, 2, contentW);
+  // Two lines is all the card has room for. Copy that runs past it gets a
+  // visible ellipsis — silently dropping the end just looked like a bug.
+  const shown = lines.slice(0, 2);
+  if (lines.length > 2) shown[1] += '...';
   let ty = 284;
-  for (const l of lines.slice(0, 2)) { drawTextCentered(png, l, contentCx, ty, 2, [255, 226, 208, 255]); ty += GLYPH_H * 2 + 10; }
+  for (const l of shown) { drawTextCentered(png, l, contentCx, ty, 2, [255, 226, 208, 255]); ty += GLYPH_H * 2 + 10; }
 
   return PNG.sync.write(png);
 }
 
-module.exports = { generateWhopBannerImage };
+module.exports = { generateWhopBannerImage, WHOP_DEFAULTS };

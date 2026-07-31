@@ -226,8 +226,28 @@ function canAccessGuild(session, guildId, client) {
   return true;
 }
 
+/**
+ * CSRF token bound to the session it was issued for.
+ *
+ * SameSite=Lax already blocks cross-site POSTs in current browsers, but it is
+ * one flag on one cookie — this is the second lock, and it costs nothing.
+ */
+function csrfFor(session) {
+  const c = config();
+  return crypto.createHmac('sha256', c.secret)
+    .update(`csrf:${session.uid}:${session.exp}`)
+    .digest('base64url');
+}
+
+function csrfValid(session, token) {
+  if (typeof token !== 'string' || !token) return false;
+  const want = Buffer.from(csrfFor(session));
+  const got = Buffer.from(token);
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
+
 module.exports = {
-  config, missingConfig,
+  config, missingConfig, csrfFor, csrfValid,
   authorizeUrl, completeLogin,
   sessionFor, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,
