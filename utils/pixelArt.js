@@ -287,12 +287,16 @@ FONT[String.fromCodePoint(0x042C)] = ['#....', '#....', '#....', '#.##.', '#.#.#
 FONT[String.fromCodePoint(0x042D)] = ['.####', '....#', '....#', '.###.', '....#', '....#', '.####']; // Э reversed E
 FONT[String.fromCodePoint(0x042E)] = ['#.###', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.#.#', '#.###']; // Ю yu
 
-function drawChar(png, ch, x, y, scale, color) {
+// `alpha` defaults to 1, which keeps the original opaque fill — it only takes
+// the blended path when a caller actually asks for translucent text (the
+// tiled brand watermark does).
+function drawChar(png, ch, x, y, scale, color, alpha = 1) {
   const glyph = FONT[ch.toUpperCase()] || FONT[' '];
   for (let row = 0; row < GLYPH_H; row++) {
     for (let col = 0; col < GLYPH_W; col++) {
       if (glyph[row][col] !== '#') continue;
-      fillRect(png, x + col * scale, y + row * scale, scale, scale, color);
+      if (alpha >= 1) fillRect(png, x + col * scale, y + row * scale, scale, scale, color);
+      else fillRectBlend(png, x + col * scale, y + row * scale, scale, scale, color, alpha);
     }
   }
 }
@@ -395,17 +399,17 @@ function textWidth(text, scale) {
   return chars.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
 }
 
-function drawText(png, text, x, y, scale, color) {
+function drawText(png, text, x, y, scale, color, alpha = 1) {
   let cx = x;
   for (const ch of normalizeForFont(text)) {
     if (!hasGlyph(ch)) continue;
-    drawChar(png, ch, cx, y, scale, color);
+    drawChar(png, ch, cx, y, scale, color, alpha);
     cx += (GLYPH_W + GLYPH_GAP) * scale;
   }
 }
 
-function drawTextCentered(png, text, cx, y, scale, color) {
-  drawText(png, text, Math.round(cx - textWidth(text, scale) / 2), y, scale, color);
+function drawTextCentered(png, text, cx, y, scale, color, alpha = 1) {
+  drawText(png, text, Math.round(cx - textWidth(text, scale) / 2), y, scale, color, alpha);
 }
 
 // Wraps text to a max pixel width at a given scale, returning an array of

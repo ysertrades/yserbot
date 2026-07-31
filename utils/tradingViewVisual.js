@@ -14,6 +14,7 @@ const {
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
 } = require('./pixelArt');
 const { drawTradingViewMark, TV_ASPECT } = require('./brandMarks');
+const { drawFlowLattice, drawFlowSignature, signatureWidth } = require('./brandSignature');
 
 const BLUE  = [41, 98, 255, 255];    // TradingView's brand blue
 const WHITE = [255, 255, 255, 255];
@@ -36,6 +37,9 @@ function generateTradingViewBannerImage() {
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
   flatBg(png, BG);
+  // Woven straight into the background, so it runs under the panel and out to
+  // every edge rather than sitting on top as a removable stamp.
+  drawFlowLattice(png, { color: WHITE, alpha: 0.03 });
   drawGrid(png, W, H, BLUE);
   glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: BLUE, tintAlpha: 0.05, border: BLUE, borderAlpha: 0.38 });
 
@@ -54,6 +58,11 @@ function generateTradingViewBannerImage() {
 
   const markW = 176;
   drawTradingViewMark(png, tileX + (tileW - markW) / 2, tileY + (tileH - markW / TV_ASPECT) / 2, markW, WHITE);
+
+  // ── Signature, centred under the logo tile ───────────────────────────────
+  drawFlowSignature(png, Math.round(tileX + (tileW - signatureWidth()) / 2), 306, {
+    chip: BLUE, primary: WHITE, accent: BLUE, caption: MUTED,
+  });
 
   // ── Wordmark + subtitle ──────────────────────────────────────────────────
   const contentLeft = 356, contentRight = W - 44;
