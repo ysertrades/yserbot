@@ -70,7 +70,9 @@
       <button type="button" data-goto="studio">Studio</button>
       <button type="button" data-goto="giveaways">Giveaways</button>
       <button type="button" data-goto="feeds">Feeds</button>
-      <button type="button" data-goto="shop">Shop</button>
+      <button type="button" data-goto="economy">Economy</button>
+      <button type="button" data-goto="automation">Automation</button>
+      <button type="button" data-goto="engagement">Engagement</button>
       <button type="button" data-goto="moderation">Moderation</button>
       <button type="button" data-goto="settings">Settings</button>
     </nav>
@@ -179,11 +181,60 @@
       </div>
     </div>
 
-    <!-- ── Shop ────────────────────────────────────────────────────────── -->
-    <div class="section" data-section="shop">
+    <!-- ── Economy ─────────────────────────────────────────────────────── -->
+    <div class="section" data-section="economy">
+      <div class="grid">
+        <article class="panel">
+          <h2>Adjust coins</h2>
+          <form id="form-coins" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Casino limits</h2>
+          <form id="form-casino" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Lottery</h2>
+          <form id="form-lottery" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Card drops</h2>
+          <form id="form-cards" class="form"></form>
+        </article>
+      </div>
       <div class="panel">
         <h2>Shop items</h2>
         <div id="shop-list" class="items"></div>
+      </div>
+    </div>
+
+    <!-- ── Automation ──────────────────────────────────────────────────── -->
+    <div class="section" data-section="automation">
+      <div class="panel">
+        <h2>Scheduled posts</h2>
+        <div id="sched-list" class="items"></div>
+        <p class="hint">New schedules are created with <code>/schedule</code> — picking a time needs your timezone, which Discord knows and a web page does not.</p>
+      </div>
+      <div class="panel">
+        <h2>Auto-replies</h2>
+        <div id="reply-list" class="items"></div>
+      </div>
+    </div>
+
+    <!-- ── Engagement ──────────────────────────────────────────────────── -->
+    <div class="section" data-section="engagement">
+      <div class="grid">
+        <article class="panel">
+          <h2>Levelling</h2>
+          <form id="form-levels" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Verification</h2>
+          <form id="form-verify" class="form"></form>
+        </article>
+      </div>
+      <div class="panel">
+        <h2>Level reward roles</h2>
+        <div id="levelroles" class="items"></div>
       </div>
     </div>
 
