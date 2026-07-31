@@ -760,8 +760,6 @@ module.exports = {
           return client.commands.get('automod')?.handleRequestsSelect(interaction);
         if (id.startsWith('newsfeed_topics_select') || id.startsWith('nf_topics_select:'))
           return client.commands.get('newsfeed')?.handleTopicsSelect(interaction);
-        if (id.startsWith('nf_sources_select:'))
-          return client.commands.get('newsfeed')?.handleSourcesSelect(interaction);
         if (id === 'econcal_impact_select')
           return client.commands.get('econcal')?.handleImpactSelect(interaction);
         if (id === 'econcal_currency_select')
