@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Client, Collection, GatewayIntentBits, Partials, Events } = require('discord.js');
 const { connect: connectMongo } = require('./utils/mongoStorage');
+const { warm: warmRenderCache } = require('./utils/dynamicEmbedImages');
 
 const client = new Client({
     intents: [
@@ -67,5 +68,9 @@ for (const file of eventFiles) {
 // command handler has storage available from the very first interaction.
 (async () => {
   await connectMongo(process.env.MONGODB_URI);
+  // Draw the embed-template images once now, while nothing is waiting on the
+  // bot. Each render blocks the thread for 60-210 ms, so paying for all seven
+  // here keeps that stall out of every later interaction.
+  await warmRenderCache();
   client.login(process.env.TOKEN);
 })();

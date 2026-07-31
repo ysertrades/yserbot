@@ -21,16 +21,40 @@ const { generateRiskGuideImage } = require('./riskGuideVisual');
 const { generateNewsfeedGuideImage } = require('./newsfeedGuideVisual');
 const { generateTradingViewBannerImage } = require('./tradingViewVisual');
 const { generateWhopBannerImage } = require('./whopVisual');
+const { memoizeRender } = require('./renderCache');
 
+// Every one of these takes no arguments, so each call was redrawing a
+// byte-identical image — 875 ms of blocked event loop across the seven, every
+// time one was sent or previewed. They're memoised, and warm() renders them
+// once at boot so no interaction ever pays for the first one either.
 const DYNAMIC_IMAGES = {
-  economyShowcase: { filename: 'economy_showcase.png', generate: generateEconomyShowcaseImage },
-  reportGuide:      { filename: 'report_guide.png',     generate: generateReportGuideImage },
-  nyseOpen:         { filename: 'nyse_open.png',        generate: generateNyseOpenImage },
-  riskGuide:        { filename: 'risk_guide.png',       generate: generateRiskGuideImage },
-  newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: generateNewsfeedGuideImage },
-  tradingViewBanner: { filename: 'tradingview_banner.png', generate: generateTradingViewBannerImage },
-  whopBanner:        { filename: 'whop_banner.png',        generate: generateWhopBannerImage },
+  economyShowcase: { filename: 'economy_showcase.png', generate: memoizeRender(generateEconomyShowcaseImage, { name: 'economyShowcase', max: 1 }) },
+  reportGuide:      { filename: 'report_guide.png',     generate: memoizeRender(generateReportGuideImage,     { name: 'reportGuide',      max: 1 }) },
+  nyseOpen:         { filename: 'nyse_open.png',        generate: memoizeRender(generateNyseOpenImage,        { name: 'nyseOpen',         max: 1 }) },
+  riskGuide:        { filename: 'risk_guide.png',       generate: memoizeRender(generateRiskGuideImage,       { name: 'riskGuide',        max: 1 }) },
+  newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: memoizeRender(generateNewsfeedGuideImage,   { name: 'newsfeedGuide',    max: 1 }) },
+  tradingViewBanner: { filename: 'tradingview_banner.png', generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 1 }) },
+  whopBanner:        { filename: 'whop_banner.png',        generate: memoizeRender(generateWhopBannerImage,        { name: 'whopBanner',        max: 1 }) },
 };
+
+/**
+ * Renders every template image once, yielding to the event loop between each
+ * so a slow boot never looks like a hang. Called from index.js before login.
+ */
+async function warm() {
+  const started = Date.now();
+  for (const [key, entry] of Object.entries(DYNAMIC_IMAGES)) {
+    try {
+      entry.generate();
+    } catch (err) {
+      // A broken generator must not stop the bot from starting — it just
+      // means that one template pays for its render on first use, as before.
+      console.error(`[RenderCache] failed to warm "${key}":`, err.message);
+    }
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  console.log(`[RenderCache] warmed ${Object.keys(DYNAMIC_IMAGES).length} template images in ${Date.now() - started}ms`);
+}
 
 const DYNAMIC_PREFIX = 'dynamic:';
 
@@ -64,4 +88,4 @@ function collectDynamicAttachments(template) {
   return files;
 }
 
-module.exports = { DYNAMIC_IMAGES, isDynamicImage, dynamicImageKey, dynamicAttachmentRef, collectDynamicAttachments };
+module.exports = { DYNAMIC_IMAGES, isDynamicImage, dynamicImageKey, dynamicAttachmentRef, collectDynamicAttachments, warm };
