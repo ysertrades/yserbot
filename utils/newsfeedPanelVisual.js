@@ -37,16 +37,7 @@ function drawBoltIcon(png, cx, cy, size, color) {
   }
 }
 
-// A bar-chart — the analysis source.
-function drawBarsIcon(png, cx, cy, size, color) {
-  const bars = [[-0.62, 0.55], [-0.2, 0.95], [0.22, 0.72], [0.64, 1.25]];
-  for (const [dx, h] of bars) {
-    fillRoundedRectBlend(png, cx + dx * size - size * 0.16, cy + size * 0.7 - h * size, size * 0.32, h * size, 2, color, 1);
-  }
-  line(png, cx - size, cy + size * 0.78, cx + size, cy + size * 0.78, color, 3);
-}
-
-const SOURCE_ICONS = { financialjuice: drawBoltIcon, marketwatch: drawBarsIcon };
+const SOURCE_ICONS = { financialjuice: drawBoltIcon };
 
 /**
  * @param {object} opts

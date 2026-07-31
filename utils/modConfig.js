@@ -50,9 +50,31 @@ function setModLogSettings(guildId, patch) {
   return config[guildId].modLogSettings;
 }
 
+/**
+ * The registry lives in newsFeed.js. Required lazily and guarded, so this
+ * cannot create a load-order problem or a require cycle — and if it ever
+ * fails, the stored list is returned untouched rather than emptied.
+ */
+function knownSourceKeys() {
+  try { return require('./newsFeed').listSources().map(s => s.key); }
+  catch { return null; }
+}
+
 function getNewsFeedSettings(guildId) {
   const config = readJson('config.json', {});
-  return { ...NEWSFEED_DEFAULTS, ...(config[guildId]?.newsFeedSettings || {}) };
+  const settings = { ...NEWSFEED_DEFAULTS, ...(config[guildId]?.newsFeedSettings || {}) };
+
+  // Drop sources that no longer exist. Removing one from the registry used to
+  // leave it sitting in every guild that had selected it — visible in the
+  // panels, and quietly skipped by the runner. Filtering on read means it
+  // disappears everywhere at once, and the next save writes the clean list.
+  const known = knownSourceKeys();
+  if (known) {
+    const kept = (settings.sources || []).filter(key => known.includes(key));
+    // Never hand back an empty list: a feed with no sources silently stops.
+    settings.sources = kept.length ? kept : [...NEWSFEED_DEFAULTS.sources];
+  }
+  return settings;
 }
 
 function setNewsFeedSettings(guildId, patch) {
