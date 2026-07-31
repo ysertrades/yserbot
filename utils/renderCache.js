@@ -81,6 +81,19 @@ function memoizeRender(fn, { name = fn.name || 'anonymous', max = DEFAULT_MAX_EN
 
   wrapped.clear = () => cache.clear();
   wrapped.cacheSize = () => cache.size;
+
+  // Answers "would this call block?" without making it. Callers that pace
+  // renders need to know before they commit, not after — checking afterwards
+  // would mean the thread was already blocked and the limit achieved nothing.
+  wrapped.peek = (...args) => {
+    let key;
+    try { key = args.length === 0 ? '' : JSON.stringify(args); } catch { return undefined; }
+    const hit = cache.get(key);
+    if (hit === undefined) return undefined;
+    cache.delete(key); cache.set(key, hit); // keep LRU ordering honest
+    return Buffer.from(hit);
+  };
+
   return wrapped;
 }
 

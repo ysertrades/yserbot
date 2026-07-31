@@ -412,6 +412,20 @@ function drawTextCentered(png, text, cx, y, scale, color, alpha = 1) {
   drawText(png, text, Math.round(cx - textWidth(text, scale) / 2), y, scale, color, alpha);
 }
 
+/**
+ * Largest whole scale at which `text` fits inside `maxWidth`.
+ *
+ * Headings used to be fixed-scale, which was fine when the copy was a
+ * constant. Now that it can be typed in, a long line would run straight off
+ * the card — so it steps down instead, and only clamps at `min`.
+ */
+function fitScale(text, maxWidth, max, min = 1) {
+  for (let s = max; s > min; s--) {
+    if (textWidth(text, s) <= maxWidth) return s;
+  }
+  return min;
+}
+
 // Wraps text to a max pixel width at a given scale, returning an array of
 // lines (word-aware — never splits mid-word).
 function wrapText(text, scale, maxWidth) {
@@ -437,5 +451,5 @@ module.exports = {
   fillRect, fillRectBlend, line, dot, dotBlend, ringBlend, ringStroke,
   flatBg, roundedMask, fillRoundedRectBlend, glassPanel, hexToRgb,
   GLYPH_W, GLYPH_H, GLYPH_GAP,
-  drawChar, drawText, drawTextCentered, textWidth, wrapText,
+  drawChar, drawText, drawTextCentered, textWidth, wrapText, fitScale,
 };

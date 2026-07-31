@@ -1,21 +1,23 @@
 <!doctype html>
-<html lang="en" data-state="loading">
+<html lang="en" data-state="loading" data-section="overview">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex, nofollow">
 <title>YSER FLOW — Control Panel</title>
-<!-- Inlined so it costs no request and cannot 404. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect width='26' height='26' rx='7' fill='%2314181F'/%3E%3Cg stroke='%234C7DFF' stroke-width='2.4' stroke-linecap='round' fill='none'%3E%3Cpath d='M7 7.5 13 14.5M19 7.5 13 14.5'/%3E%3Cpath d='M13 17.8v2.7'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 
+<!-- The same woven YSER FLOW lattice that watermarks the banners, drawn once
+     into a canvas and tiled. It is the one piece of decoration on the page,
+     and it is here because it ties the panel to what it produces. -->
+<canvas id="weave" aria-hidden="true"></canvas>
+
 <header class="bar">
   <div class="brand">
-    <!-- The banner monogram: a Y whose stem is cut. Drawn rather than styled,
-         because the break is the point and CSS borders cannot hold it. -->
     <svg class="mark" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
       <rect x="0.5" y="0.5" width="25" height="25" rx="7"></rect>
       <g class="y"><path d="M7 7.5 13 14.5M19 7.5 13 14.5"></path><path d="M13 17.8v2.9"></path></g>
@@ -27,12 +29,10 @@
 
 <main id="main">
 
-  <!-- Shown until /api/me answers. -->
   <section class="view" data-view="loading">
-    <p class="muted">Loading…</p>
+    <div class="panel center"><p class="muted">Loading…</p></div>
   </section>
 
-  <!-- Not logged in. -->
   <section class="view" data-view="login">
     <div class="panel center">
       <h1>Control panel</h1>
@@ -42,7 +42,6 @@
     </div>
   </section>
 
-  <!-- Env vars not set yet. -->
   <section class="view" data-view="setup">
     <div class="panel">
       <h1>Almost there</h1>
@@ -53,44 +52,113 @@
 
   <!-- Logged in. -->
   <section class="view" data-view="panel">
-    <nav class="guilds" id="guilds" aria-label="Servers"></nav>
 
-    <div class="grid">
-      <article class="panel">
-        <h2>News feed</h2>
-        <div id="card-newsfeed" class="rows"></div>
-      </article>
-
-      <article class="panel">
-        <h2>Economic calendar</h2>
-        <div id="card-econcal" class="rows"></div>
-      </article>
-
-      <article class="panel">
-        <h2>Moderation</h2>
-        <div id="card-mod" class="rows"></div>
-      </article>
-
-      <article class="panel">
-        <h2>Content</h2>
-        <div id="card-counts" class="rows"></div>
-      </article>
-
-      <article class="panel">
-        <h2>Top balances <span class="tag">global</span></h2>
-        <ol class="board" id="board"></ol>
-      </article>
-
-      <article class="panel">
-        <h2>Bot health</h2>
-        <div id="card-health" class="rows"></div>
-      </article>
+    <div class="server" id="server">
+      <div class="server-id">
+        <div class="crest" id="crest"></div>
+        <div>
+          <h1 id="server-name">—</h1>
+          <p class="server-meta" id="server-meta"></p>
+        </div>
+      </div>
+      <nav class="guilds" id="guilds" aria-label="Servers"></nav>
     </div>
 
-    <p class="footnote">Read-only. Nothing on this page can change anything yet.</p>
-  </section>
+    <nav class="sections" id="sections" aria-label="Sections">
+      <button type="button" data-goto="overview" aria-current="true">Overview</button>
+      <button type="button" data-goto="studio">Studio</button>
+      <button type="button" data-goto="feeds">Feeds</button>
+      <button type="button" data-goto="shop">Shop</button>
+      <button type="button" data-goto="moderation">Moderation</button>
+    </nav>
 
+    <!-- ── Overview ────────────────────────────────────────────────────── -->
+    <div class="section" data-section="overview">
+      <div class="tiles" id="tiles"></div>
+
+      <div class="grid">
+        <article class="panel">
+          <h2>Systems</h2>
+          <div id="card-systems" class="rows"></div>
+        </article>
+        <article class="panel">
+          <h2>Top balances <span class="tag">global</span></h2>
+          <ol class="board" id="board"></ol>
+        </article>
+        <article class="panel">
+          <h2>Bot health</h2>
+          <div id="card-health" class="rows"></div>
+        </article>
+        <article class="panel">
+          <h2>Content</h2>
+          <div id="card-counts" class="rows"></div>
+        </article>
+      </div>
+    </div>
+
+    <!-- ── Studio ──────────────────────────────────────────────────────── -->
+    <div class="section" data-section="studio">
+      <div class="studio">
+        <div class="stage">
+          <div class="stage-frame">
+            <img id="preview" alt="Banner preview">
+            <div class="stage-busy" id="stage-busy" hidden></div>
+          </div>
+          <div class="stage-foot">
+            <span class="hint" id="preview-status">Live preview</span>
+            <a class="btn small" id="preview-download" download>Download PNG</a>
+          </div>
+        </div>
+
+        <div class="panel editor">
+          <h2>Banner copy</h2>
+          <label class="field">
+            <span>Template</span>
+            <select id="tpl-select"></select>
+          </label>
+          <div id="tpl-fields"></div>
+          <div class="editor-foot">
+            <button type="button" class="btn small" id="tpl-reset">Reset to default</button>
+          </div>
+          <p class="hint">The pixel font is uppercase only, so copy is shown the way it will render.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Feeds ───────────────────────────────────────────────────────── -->
+    <div class="section" data-section="feeds">
+      <div class="grid">
+        <article class="panel">
+          <h2>News feed</h2>
+          <form id="form-newsfeed" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Economic calendar</h2>
+          <form id="form-econcal" class="form"></form>
+        </article>
+      </div>
+    </div>
+
+    <!-- ── Shop ────────────────────────────────────────────────────────── -->
+    <div class="section" data-section="shop">
+      <div class="panel">
+        <h2>Shop items</h2>
+        <div id="shop-list" class="items"></div>
+      </div>
+    </div>
+
+    <!-- ── Moderation ──────────────────────────────────────────────────── -->
+    <div class="section" data-section="moderation">
+      <div class="panel">
+        <h2>Moderation</h2>
+        <form id="form-moderation" class="form"></form>
+      </div>
+    </div>
+
+  </section>
 </main>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="/app.js"></script>
 </body>

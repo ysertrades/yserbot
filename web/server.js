@@ -21,8 +21,10 @@ const http = require('node:http');
 const fs   = require('node:fs');
 const path = require('node:path');
 
-const auth = require('./auth');
-const api  = require('./api');
+const auth    = require('./auth');
+const api     = require('./api');
+const preview = require('./preview');
+const writes  = require('./writes');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -54,7 +56,10 @@ function rateLimited(ip) {
 // and they come from Discord's CDN only.
 const CSP = [
   "default-src 'self'",
-  "img-src 'self' data: https://cdn.discordapp.com",
+  // blob: is needed for the Studio previews — the PNG arrives as a blob and is
+  // shown via createObjectURL. Blob URLs are same-origin and minted by our own
+  // script, so this doesn't widen what the page can reach.
+  "img-src 'self' data: blob: https://cdn.discordapp.com",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self'",
   "connect-src 'self'",
@@ -81,6 +86,35 @@ function json(res, status, data, headers = {}) {
 
 function redirect(res, location, headers = {}) {
   send(res, 302, '', { location, ...headers });
+}
+
+/** Reads a JSON body, refusing anything oversized or malformed. */
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    const onData = chunk => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        // Deliberately not req.destroy(): tearing the socket down here means
+        // the 413 never reaches the client, which then sees a connection
+        // error instead of a reason. Stop collecting, let the rest drain, and
+        // let the route answer properly.
+        req.off('data', onData);
+        req.resume();
+        reject(new Error('body_too_large'));
+        return;
+      }
+      chunks.push(chunk);
+    };
+    req.on('data', onData);
+    req.on('end', () => {
+      if (chunks.length === 0) return resolve({});
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch { reject(new Error('bad_json')); }
+    });
+    req.on('error', reject);
+  });
 }
 
 /* ─── static files ───────────────────────────────────────────────────────── */
@@ -166,19 +200,56 @@ async function route(req, res, client) {
     const session = auth.sessionFor(req);
     if (!session) return json(res, 401, { error: 'not_authenticated' });
 
-    if (p === '/api/me')     return json(res, 200, api.me(session, client));
-    if (p === '/api/health') return json(res, 200, api.health(client));
+    // The CSRF token rides along with identity so the page always has a fresh
+    // one without a separate round trip.
+    if (p === '/api/me') {
+      return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(session) });
+    }
+    if (p === '/api/health')    return json(res, 200, api.health(client));
+    if (p === '/api/templates') return json(res, 200, { templates: preview.listTemplates() });
 
     if (p === '/api/leaderboard') {
       return json(res, 200, await api.leaderboard(client, 10));
     }
 
-    // /api/guild/<id>
-    const guildMatch = /^\/api\/guild\/(\d{5,25})$/.exec(p);
+    /* -- banner previews -------------------------------------------------- */
+    const previewMatch = /^\/api\/preview\/([a-z]+)$/.exec(p);
+    if (previewMatch) {
+      const out = preview.render(previewMatch[1], url.searchParams);
+      if (!out) return json(res, 404, { error: 'unknown_template' });
+      if (out.retryAfterMs) {
+        // Deliberately not queued: a backlog of renders would block the bot
+        // for as long as it took to drain. The client retries instead.
+        return json(res, 429, { error: 'too_fast', retryAfterMs: out.retryAfterMs });
+      }
+      return send(res, 200, out.png, {
+        'content-type': 'image/png',
+        'content-disposition': `inline; filename="${out.filename}"`,
+        'x-render-cached': String(out.cached),
+      });
+    }
+
+    /* -- guild reads and writes ------------------------------------------- */
+    const guildMatch = /^\/api\/guild\/(\d{5,25})(?:\/([a-z]+))?$/.exec(p);
     if (guildMatch) {
-      const guildId = guildMatch[1];
+      const [, guildId, op] = guildMatch;
       if (!auth.canAccessGuild(session, guildId, client)) return json(res, 403, { error: 'forbidden' });
-      return json(res, 200, api.guildOverview(guildId, client));
+
+      if (!op) return json(res, 200, api.guildOverview(guildId, client));
+
+      if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
+      if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+
+      let body;
+      try { body = await readJsonBody(req); }
+      catch (err) { return json(res, err.message === 'body_too_large' ? 413 : 400, { error: err.message }); }
+
+      const guild = client.guilds.cache.get(guildId);
+      const result = await writes.apply(op, guildId, body, { client, session, guild });
+      if (result.error) return json(res, 400, result);
+      // Hand back the refreshed overview so the page never has to guess what
+      // the write actually produced.
+      return json(res, 200, { ...result, overview: api.guildOverview(guildId, client) });
     }
 
     return json(res, 404, { error: 'unknown_endpoint' });
@@ -203,15 +274,9 @@ function start(client) {
 
     if (rateLimited(ip)) return json(res, 429, { error: 'rate_limited' });
 
-    // Nothing here accepts a body yet, but an endpoint that reads one is
-    // coming, and an unbounded upload would be a trivial way to exhaust a
-    // 512 MB container.
-    let received = 0;
-    req.on('data', chunk => {
-      received += chunk.length;
-      if (received > MAX_BODY_BYTES) { json(res, 413, { error: 'body_too_large' }); req.destroy(); }
-    });
-
+    // Body size is capped inside readJsonBody, which is the only thing that
+    // consumes the stream. A second listener here would read the same chunks
+    // and race it to the 413.
     Promise.resolve(route(req, res, client)).catch(err => {
       console.error('[Panel] request failed:', err);
       if (!res.writableEnded) json(res, 500, { error: 'internal_error' });

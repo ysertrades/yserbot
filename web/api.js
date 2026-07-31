@@ -97,6 +97,17 @@ function guildOverview(guildId, client) {
       roles: !!modlog.roles,
       purges: !!modlog.purges,
     },
+    // The editable fields only. Effect payloads (multipliers, durations, tier
+    // definitions) are deliberately left out — those change game balance and
+    // belong in /shopsettings where the command can validate them together.
+    shop: Object.entries(shop).map(([id, item]) => ({
+      id,
+      name: item.name || id,
+      description: item.description || '',
+      price: Number(item.price) || 0,
+      emoji: item.emoji || '',
+      type: item.type || '',
+    })).sort((a, b) => a.name.localeCompare(b.name)),
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,
