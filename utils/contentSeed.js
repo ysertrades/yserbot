@@ -164,7 +164,7 @@ const WHOP_BANNER_TEMPLATE = {
   embeds: [{
     title: null,
     description: null,
-    color: '#16DE80',
+    color: '#FA4516',
     footer: null,
     footerIcon: null,
     thumbnail: null,
@@ -197,6 +197,9 @@ const EMBED_TEMPLATE_MIGRATIONS = {
   'nyse-open':      { footer: null },
   'risk-guide':     { footer: null },
   'newsfeed-guide': { footer: null },
+  // Seeded green before the banner was restyled to Whop's own orange — the
+  // sidebar would otherwise stay green against an orange card.
+  'whop-banner':    { color: '#FA4516' },
 };
 
 function seedShopDefaults() {
