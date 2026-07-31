@@ -428,6 +428,11 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 /* The same slot used for errors also carries an explanation before anything
    has gone wrong, and that should not be dressed as a warning. */
 .note.soft { color: var(--muted); }
+/* Only ever rendered on browsers that block both quiet ways of remembering a
+   session, so it is styled as a nudge rather than an alarm. */
+.storage-nudge { display: flex; flex-direction: column; gap: 0.7rem; align-items: flex-start; border-color: color-mix(in srgb, var(--accent) 34%, var(--rule)); }
+.storage-nudge .btn { align-self: stretch; }
+
 .keys { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
 .keys li { font-family: var(--mono); font-size: 0.85rem; background: var(--raised); border: 1px solid var(--rule); border-radius: 7px; padding: 0.4rem 0.6rem; }
 

@@ -139,16 +139,26 @@ function parseCookies(req) {
 // outright, which is why the bearer-token path below exists.
 const sameSite = () => (embeddable() ? 'None' : 'Lax');
 
+// Partitioned (CHIPS) is what actually makes the login stick inside a host
+// page. A plain third-party cookie is dropped by Safari no matter what
+// SameSite says; a partitioned one is allowed, because it is keyed to the host
+// page and so cannot be used to follow anyone between sites. It needs Secure
+// and SameSite=None, both of which are already true when embedding is on.
+//
+// Browsers that predate CHIPS ignore the attribute, so this costs nothing
+// where it is not understood — the bearer token still covers those.
+const partitioned = () => (embeddable() ? '; Partitioned' : '');
+
 function cookie(name, value, maxAgeMs) {
   return [
     `${name}=${encodeURIComponent(value)}`,
     'Path=/', 'HttpOnly', 'Secure', `SameSite=${sameSite()}`,
     `Max-Age=${Math.floor(maxAgeMs / 1000)}`,
-  ].join('; ');
+  ].join('; ') + partitioned();
 }
 
 function clearCookie(name) {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=${sameSite()}; Max-Age=0`;
+  return `${name}=; Path=/; HttpOnly; Secure; SameSite=${sameSite()}; Max-Age=0${partitioned()}`;
 }
 
 /* ─── login flow ─────────────────────────────────────────────────────────── */
@@ -282,6 +292,30 @@ function collectHandoff(id) {
  * A session close enough to expiry to be worth reissuing, so an active user is
  * never logged out mid-use. Returns a fresh token, or null if it is still young.
  */
+/**
+ * A valid bearer token that arrived without a session cookie beside it.
+ *
+ * This is the moment worth planting a cookie. The login happens in a separate
+ * top-level tab, so the cookie it sets belongs to a different storage
+ * partition and is invisible from inside the host page — the embedded panel
+ * only ever holds the token in memory, which is why closing the host app used
+ * to mean signing in again. Writing the token back as a partitioned cookie
+ * from a request the frame itself made puts it in the frame's own partition,
+ * where it survives the app being closed and reopened.
+ *
+ * Returns null when a cookie is already present, so this is a one-time
+ * adoption rather than a Set-Cookie on every call.
+ */
+function adoptable(req) {
+  const c = config();
+  if (!c.secret) return null;
+  const header = req.headers.authorization || '';
+  if (!header.startsWith('Bearer ')) return null;
+  if (parseCookies(req)[SESSION_COOKIE]) return null;
+  const token = header.slice(7).trim();
+  return verify(token, c.secret) ? token : null;
+}
+
 function refreshed(session) {
   const remaining = session.exp - Date.now();
   if (remaining > SESSION_TTL_MS - REFRESH_AFTER_MS) return null;
@@ -346,7 +380,7 @@ function csrfValid(session, token) {
 
 module.exports = {
   config, missingConfig, csrfFor, csrfValid, embeddable,
-  parkHandoff, collectHandoff, refreshed,
+  parkHandoff, collectHandoff, refreshed, adoptable,
   authorizeUrl, completeLogin,
   sessionFor, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,
