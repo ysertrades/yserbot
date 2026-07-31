@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en" data-state="loading">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>YSER FLOW — Control Panel</title>
+<!-- Inlined so it costs no request and cannot 404. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect width='26' height='26' rx='7' fill='%2314181F'/%3E%3Cg stroke='%234C7DFF' stroke-width='2.4' stroke-linecap='round' fill='none'%3E%3Cpath d='M7 7.5 13 14.5M19 7.5 13 14.5'/%3E%3Cpath d='M13 17.8v2.7'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <!-- The banner monogram: a Y whose stem is cut. Drawn rather than styled,
+         because the break is the point and CSS borders cannot hold it. -->
+    <svg class="mark" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+      <rect x="0.5" y="0.5" width="25" height="25" rx="7"></rect>
+      <g class="y"><path d="M7 7.5 13 14.5M19 7.5 13 14.5"></path><path d="M13 17.8v2.9"></path></g>
+    </svg>
+    <span class="wordmark">YSER<b>FLOW</b></span>
+  </div>
+  <div class="bar-right" id="bar-right"></div>
+</header>
+
+<main id="main">
+
+  <!-- Shown until /api/me answers. -->
+  <section class="view" data-view="loading">
+    <p class="muted">Loading…</p>
+  </section>
+
+  <!-- Not logged in. -->
+  <section class="view" data-view="login">
+    <div class="panel center">
+      <h1>Control panel</h1>
+      <p class="muted">Sign in with the Discord account that manages your server.</p>
+      <a class="btn primary" href="/auth/login">Sign in with Discord</a>
+      <p class="note" id="login-error" hidden></p>
+    </div>
+  </section>
+
+  <!-- Env vars not set yet. -->
+  <section class="view" data-view="setup">
+    <div class="panel">
+      <h1>Almost there</h1>
+      <p class="muted">Add these to the Env tab on your host, then restart the bot.</p>
+      <ul class="keys" id="setup-missing"></ul>
+    </div>
+  </section>
+
+  <!-- Logged in. -->
+  <section class="view" data-view="panel">
+    <nav class="guilds" id="guilds" aria-label="Servers"></nav>
+
+    <div class="grid">
+      <article class="panel">
+        <h2>News feed</h2>
+        <div id="card-newsfeed" class="rows"></div>
+      </article>
+
+      <article class="panel">
+        <h2>Economic calendar</h2>
+        <div id="card-econcal" class="rows"></div>
+      </article>
+
+      <article class="panel">
+        <h2>Moderation</h2>
+        <div id="card-mod" class="rows"></div>
+      </article>
+
+      <article class="panel">
+        <h2>Content</h2>
+        <div id="card-counts" class="rows"></div>
+      </article>
+
+      <article class="panel">
+        <h2>Top balances <span class="tag">global</span></h2>
+        <ol class="board" id="board"></ol>
+      </article>
+
+      <article class="panel">
+        <h2>Bot health</h2>
+        <div id="card-health" class="rows"></div>
+      </article>
+    </div>
+
+    <p class="footnote">Read-only. Nothing on this page can change anything yet.</p>
+  </section>
+
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
