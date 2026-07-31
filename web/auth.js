@@ -29,7 +29,12 @@ const MANAGE_GUILD = 1n << 5n;
 
 const SESSION_COOKIE = 'yf_session';
 const STATE_COOKIE   = 'yf_state';
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;  // 8 hours
+// Long enough that you are not signing in every time you open the panel, but
+// still bounded: the guild list inside a session is only as fresh as the
+// session itself, so this is the window in which revoked Manage Server has not
+// taken effect yet. Bot-presence and allowlist checks stay live regardless.
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
+const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;    // reissue once a day of use
 const STATE_TTL_MS   = 10 * 60 * 1000;      // 10 minutes to finish logging in
 
 /* ─── config ─────────────────────────────────────────────────────────────── */
@@ -146,12 +151,19 @@ function clearCookie(name) {
  * because the callback arrives from Discord and cannot be trusted to preserve
  * anything we did not sign.
  */
-function authorizeUrl({ popup = false } = {}) {
+function authorizeUrl({ popup = false, handoff = null } = {}) {
   const c = config();
   // The state is signed rather than stored, and echoed back in a cookie the
   // callback must match. Without it, anyone could feed you a callback URL and
   // log you into their account.
-  const state = sign({ n: crypto.randomBytes(16).toString('base64url'), popup: !!popup, exp: Date.now() + STATE_TTL_MS }, c.secret);
+  const state = sign({
+    n: crypto.randomBytes(16).toString('base64url'),
+    popup: !!popup,
+    // The handoff id lets a login that opened in a whole new browser tab still
+    // reach the page that started it — see collectHandoff below.
+    h: typeof handoff === 'string' && /^[\w-]{8,64}$/.test(handoff) ? handoff : null,
+    exp: Date.now() + STATE_TTL_MS,
+  }, c.secret);
   const url = new URL('https://discord.com/oauth2/authorize');
   url.searchParams.set('client_id', c.clientId);
   url.searchParams.set('redirect_uri', c.redirectUri);
@@ -222,7 +234,51 @@ async function completeLogin(code, client) {
   };
 }
 
+/* ─── handoff ────────────────────────────────────────────────────────────────
+ *
+ * On iOS, a link opened from inside a third-party iframe becomes a full Safari
+ * tab with no opener relationship at all — so postMessage has nobody to talk
+ * to and the embedded panel sits there still logged out.
+ *
+ * So the page mints a random id before it starts, and the finished login parks
+ * the session against that id for a minute. The page polls for it. No opener,
+ * no shared storage and no third-party cookie required — which is exactly the
+ * set of things that stop working inside someone else's iframe.
+ */
+
+const handoffs = new Map(); // id → { token, at }
+const HANDOFF_TTL_MS = 2 * 60 * 1000;
+
+function parkHandoff(id, token) {
+  if (!id) return;
+  const now = Date.now();
+  for (const [k, v] of handoffs) if (now - v.at > HANDOFF_TTL_MS) handoffs.delete(k);
+  if (handoffs.size > 200) return; // refuse to grow without bound
+  handoffs.set(id, { token, at: now });
+}
+
+/** Single use: the token is deleted as it is handed over. */
+function collectHandoff(id) {
+  if (typeof id !== 'string' || !/^[\w-]{8,64}$/.test(id)) return null;
+  const entry = handoffs.get(id);
+  if (!entry) return null;
+  handoffs.delete(id);
+  if (Date.now() - entry.at > HANDOFF_TTL_MS) return null;
+  return entry.token;
+}
+
 /* ─── request-time checks ────────────────────────────────────────────────── */
+
+/**
+ * A session close enough to expiry to be worth reissuing, so an active user is
+ * never logged out mid-use. Returns a fresh token, or null if it is still young.
+ */
+function refreshed(session) {
+  const remaining = session.exp - Date.now();
+  if (remaining > SESSION_TTL_MS - REFRESH_AFTER_MS) return null;
+  const { exp, ...rest } = session;
+  return sign({ ...rest, exp: Date.now() + SESSION_TTL_MS }, config().secret);
+}
 
 /**
  * The signed session on a request, or null.
@@ -281,6 +337,7 @@ function csrfValid(session, token) {
 
 module.exports = {
   config, missingConfig, csrfFor, csrfValid, embeddable,
+  parkHandoff, collectHandoff, refreshed,
   authorizeUrl, completeLogin,
   sessionFor, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,

@@ -14,7 +14,7 @@
  * failure mode is paying the wrong people.
  */
 
-const { readJson } = require('../utils/jsonStorage');
+const { readJson, writeJson } = require('../utils/jsonStorage');
 
 const giveawayCmd = () => require('../commands/utility/giveaway.js');
 const coinsCmd = () => require('../commands/economy/coinsgiveaway.js');
@@ -122,4 +122,55 @@ async function reroll(guildId, body, { guild }) {
   }
 }
 
-module.exports = { list, endNow, reroll };
+/**
+ * Starts a coins giveaway.
+ *
+ * Goes through coinsgiveaway.js's own postGiveaway, so the message, the entry
+ * button, the banner and the end timer are all the ones the slash command
+ * produces. The panel decides what to run; it does not decide what a giveaway
+ * looks like.
+ */
+async function create(guildId, body, { guild, session }) {
+  const amount = Number(body.amount);
+  if (!Number.isInteger(amount) || amount < 1 || amount > 100_000_000) return { error: 'bad_amount' };
+
+  const winners = Number(body.winners);
+  if (!Number.isInteger(winners) || winners < 1 || winners > 50) return { error: 'bad_winners' };
+
+  const minutes = Number(body.minutes);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60 * 24 * 30) return { error: 'bad_duration' };
+
+  const channel = guild.channels.cache.get(String(body.channelId || ''));
+  if (!channel?.isTextBased?.()) return { error: 'bad_channel' };
+
+  // Optional gates. An id for a role that no longer exists would silently
+  // exclude everyone, so each is checked against the guild.
+  for (const key of ['requiredRoleId', 'bonusRoleId']) {
+    if (body[key] && !guild.roles.cache.has(body[key])) return { error: 'bad_role' };
+  }
+  const minAccountAgeDays = Number(body.minAccountAgeDays) || 0;
+  if (minAccountAgeDays < 0 || minAccountAgeDays > 3650) return { error: 'bad_age' };
+
+  let mention = null;
+  if (body.mention === '@everyone' || body.mention === '@here') mention = body.mention;
+  else if (body.mention) {
+    if (!guild.roles.cache.has(body.mention)) return { error: 'bad_mention' };
+    mention = `<@&${body.mention}>`;
+  }
+
+  try {
+    const out = await coinsCmd().postGiveaway(guild, session.uid, {
+      amount, winners, durationMs: minutes * 60000, mention,
+      channelId: channel.id, guildId,
+      requiredRoleId: body.requiredRoleId || null,
+      bonusRoleId: body.bonusRoleId || null,
+      minAccountAgeDays,
+    });
+    return { ok: true, messageId: out.message.id, channelName: channel.name, amount, winners, endsAt: out.endTime };
+  } catch (err) {
+    console.error('[Panel] starting a giveaway failed:', err.message);
+    return { error: 'launch_failed', detail: err.message.slice(0, 140) };
+  }
+}
+
+module.exports = { list, create, endNow, reroll };

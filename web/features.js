@@ -19,6 +19,7 @@
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { getBalance, addCoins, setBalance } = require('../utils/economyManager');
 const { generateScheduleId, parseScheduleTime, nextWeekdayTimestamp } = require('../utils/scheduler');
+const { todaysSlotUTC, REWARD: LOTTERY_REWARD } = require('../utils/lotteryRunner');
 
 // Exactly what utils/scheduler.js implements. It special-cases 'once' and
 // 'weekdays' and treats everything else as daily — so offering 'weekly' would
@@ -147,6 +148,23 @@ function read(guildId, guild) {
         .map(m => ({ id: m.id, name: m.displayName || m.user?.username || m.id }))
         .sort((a, b) => a.name.localeCompare(b.name))
     : [];
+
+  // Today's lottery pool, resolved to names. The draw itself is run by
+  // utils/lotteryRunner on its own schedule; this is the window onto it.
+  const lot = readJson('lottery.json', {})[guildId] || { pool: {}, lastDrawAt: 0, history: [] };
+  const pool = Object.entries(lot.pool || {}).sort((a, b) => b[1] - a[1]);
+  out.lottery = {
+    reward: LOTTERY_REWARD,
+    totalTickets: pool.reduce((n, [, c]) => n + c, 0),
+    participants: pool.length,
+    nextDrawAt: todaysSlotUTC(Date.now() + 86400000),
+    lastDrawAt: lot.lastDrawAt || null,
+    top: pool.slice(0, 10).map(([userId, tickets]) => ({
+      userId, tickets,
+      name: guild.members?.cache?.get(userId)?.displayName || null,
+    })),
+    history: (lot.history || []).slice(-5).reverse(),
+  };
 
   out.frequencies = FREQUENCIES;
   return out;
@@ -446,7 +464,24 @@ function adjustCoins(guildId, body, guild) {
   return { ok: true, mode, amount, userId, name: member.displayName, before, after: getBalance(userId) };
 }
 
+/**
+ * Clears today's lottery pool.
+ *
+ * Deliberately not a "draw now" button: the runner owns drawing, and a second
+ * path into it would race the scheduled one and could pay a winner twice.
+ * Clearing is the safe intervention — it voids a round without touching money.
+ */
+function clearLottery(guildId) {
+  const all = readJson('lottery.json', {});
+  const state = all[guildId];
+  const count = Object.keys(state?.pool || {}).length;
+  if (!count) return { unchanged: true };
+  state.pool = {};
+  writeJson('lottery.json', all);
+  return { ok: true, cleared: count };
+}
+
 module.exports = {
-  read, saveGroup, saveLevels, saveLevelRole, createSchedule, saveSchedule, saveAutoreply, adjustCoins,
+  read, saveGroup, saveLevels, saveLevelRole, createSchedule, saveSchedule, saveAutoreply, adjustCoins, clearLottery,
   GROUPS, CONFIG_GROUPS, LEVEL_FIELDS, FREQUENCIES, FREQUENCY_VALUES,
 };

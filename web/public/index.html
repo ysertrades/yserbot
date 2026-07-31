@@ -156,8 +156,20 @@
           <div id="gaw-ended" class="items"></div>
         </article>
       </div>
-      <p class="hint">Giveaways are created in Discord with <code>/giveaway</code> or <code>/coinsgiveaway</code> — the setup flow needs the message to live in a channel. Here you can watch them, end them early and reroll.</p>
+      <div class="panel">
+        <h2>Start a coins giveaway</h2>
+        <div class="studio">
+          <div class="stage">
+            <div class="stage-frame gaw-preview"><img id="gaw-preview" alt="Giveaway banner preview"></div>
+            <p class="hint">This is the banner members will see.</p>
+          </div>
+          <form id="form-gaw" class="form"></form>
+        </div>
+      </div>
+      <p class="hint">Prize giveaways (non-coin) are still created with <code>/giveaway</code> in Discord.</p>
     </div>
+
+    <!-- ── Lottery lives in Economy ─────────────────────────────────────── -->
 
     <!-- ── Settings ────────────────────────────────────────────────────── -->
     <div class="section" data-section="settings">
@@ -194,6 +206,7 @@
         </article>
         <article class="panel">
           <h2>Lottery</h2>
+          <div id="lottery-live" class="rows"></div>
           <form id="form-lottery" class="form"></form>
         </article>
         <article class="panel">

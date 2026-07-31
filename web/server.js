@@ -176,7 +176,10 @@ async function route(req, res, client) {
   if (p === '/auth/login') {
     const missing = auth.missingConfig();
     if (missing.length) return json(res, 503, { error: 'setup_incomplete', missing });
-    const { url: to, state } = auth.authorizeUrl({ popup: url.searchParams.get('popup') === '1' });
+    const { url: to, state } = auth.authorizeUrl({
+      popup: url.searchParams.get('popup') === '1',
+      handoff: url.searchParams.get('h'),
+    });
     return redirect(res, to, { 'set-cookie': auth.cookie(auth.STATE_COOKIE, state, auth.STATE_TTL_MS) });
   }
 
@@ -194,18 +197,22 @@ async function route(req, res, client) {
       return redirect(res, '/?error=bad_state', { 'set-cookie': auth.clearCookie(auth.STATE_COOKIE) });
     }
 
-    const wantsPopup = !!auth.verify(state, auth.config().secret)?.popup;
+    const stateData = auth.verify(state, auth.config().secret) || {};
 
     try {
       const { token } = await auth.completeLogin(code, client);
       const cookies = [auth.clearCookie(auth.STATE_COOKIE), auth.cookie(auth.SESSION_COOKIE, token, auth.SESSION_TTL_MS)];
+
+      // Park the session for the page that started this, whether or not the
+      // browser kept an opener relationship. On iOS it usually does not.
+      if (stateData.h) auth.parkHandoff(stateData.h, token);
 
       // A popup login hands the token back to the page that opened it. That
       // page is the panel running inside someone else's iframe, where the
       // cookie we just set may never be sent — Safari drops third-party
       // cookies outright. The popup itself is first-party, so this is the one
       // moment the token can cross over.
-      if (wantsPopup) return send(res, 200, popupPage(token), { 'content-type': 'text/html; charset=utf-8', 'set-cookie': cookies });
+      if (stateData.popup) return send(res, 200, popupPage(token), { 'content-type': 'text/html; charset=utf-8', 'set-cookie': cookies });
 
       return redirect(res, '/', { 'set-cookie': cookies });
     } catch (err) {
@@ -213,6 +220,14 @@ async function route(req, res, client) {
       if (reason === 'login_failed') console.error('[Panel] login failed:', err.message);
       return redirect(res, `/?error=${reason}`, { 'set-cookie': auth.clearCookie(auth.STATE_COOKIE) });
     }
+  }
+
+  if (p === '/auth/handoff') {
+    // Unauthenticated on purpose: this is how a page that has no session yet
+    // collects one. The id is 128 bits of randomness, single use, and expires
+    // in two minutes, so guessing it is the only attack and it is not viable.
+    const token = auth.collectHandoff(url.searchParams.get('h'));
+    return json(res, token ? 200 : 404, token ? { token } : { error: 'not_ready' });
   }
 
   if (p === '/auth/logout') {
@@ -232,7 +247,11 @@ async function route(req, res, client) {
     // The CSRF token rides along with identity so the page always has a fresh
     // one without a separate round trip.
     if (p === '/api/me') {
-      return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(session) });
+      // Hand back a fresh token when this one is getting old, so an account in
+      // regular use is never bounced back to the sign-in screen mid-task.
+      const renewed = auth.refreshed(session);
+      const headers = renewed ? { 'set-cookie': auth.cookie(auth.SESSION_COOKIE, renewed, auth.SESSION_TTL_MS) } : {};
+      return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(session), token: renewed || null }, headers);
     }
     if (p === '/api/health')    return json(res, 200, api.health(client));
     if (p === '/api/templates') return json(res, 200, { templates: preview.listTemplates() });
