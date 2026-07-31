@@ -23,7 +23,11 @@ const WRITE_ERRORS = {
   body_too_large:  'That is too much text.',
 };
 
-const state = { csrf: null, guildId: null, guilds: [], overview: null, templates: [], tpl: null, copy: {} };
+const state = {
+  csrf: null, guildId: null, guilds: [], overview: null,
+  templates: [], tpl: null, copy: {},   // Studio
+  tplName: null, draft: null,           // Composer
+};
 
 /* ── dom helpers ───────────────────────────────────────────────────────── */
 
@@ -194,8 +198,9 @@ function renderOverview() {
   $('#tiles').replaceChildren(
     tile(d.newsfeed.enabled ? 'LIVE' : 'OFF', 'News feed', d.newsfeed.enabled ? 'live' : 'idle'),
     tile(d.econcal.enabled ? 'LIVE' : 'OFF', 'Calendar', d.econcal.enabled ? 'live' : 'idle'),
+    tile(num(d.counts.activeGiveaways), 'Giveaways', d.counts.activeGiveaways ? 'live' : 'idle'),
+    tile(num(d.counts.embedTemplates), 'Messages'),
     tile(num(d.counts.shopItems), 'Shop items'),
-    tile(num(d.counts.embedTemplates), 'Templates'),
     tile(num(d.counts.moderationCases), 'Mod cases'),
   );
 
@@ -220,6 +225,9 @@ function renderOverview() {
   renderFeedForms();
   renderModerationForm();
   renderShop();
+  renderComposer();
+  renderGiveaways();
+  renderSettings();
 }
 
 function renderBoard(data) {
@@ -365,6 +373,379 @@ function renderShop() {
   }));
 }
 
+/* ── composer ──────────────────────────────────────────────────────────────
+   Embeds and buttons in one editor. They are two files on disk and two
+   commands in Discord, but a message is both, so it is edited as both. */
+
+function select(label, value, options, onChange, { blank = null } = {}) {
+  const l = el('label', 'field');
+  l.append(el('span', null, label));
+  const s = el('select');
+  if (blank !== null) { const o = el('option', null, blank); o.value = ''; s.append(o); }
+  for (const opt of options) {
+    const o = el('option', null, opt.label);
+    o.value = opt.value;
+    s.append(o);
+  }
+  s.value = value ?? '';
+  s.addEventListener('change', () => onChange(s.value));
+  l.append(s);
+  return l;
+}
+
+function areaField(label, value, onInput, rows = 4) {
+  const l = el('label', 'field');
+  l.append(el('span', null, label));
+  const t = el('textarea');
+  t.rows = rows;
+  t.value = value ?? '';
+  t.addEventListener('input', () => onInput(t.value));
+  l.append(t);
+  return l;
+}
+
+function renderComposerIndex() {
+  const wrap = $('#tpl-index');
+  const list = state.overview?.composer || [];
+  if (!list.length) { wrap.replaceChildren(el('p', 'muted', 'No messages yet.')); return; }
+  wrap.replaceChildren(...list.map(t => {
+    const b = el('button', 'tpl-entry');
+    b.type = 'button';
+    b.append(el('span', 'nm', t.name));
+    const meta = el('span', 'mt');
+    meta.textContent = `${t.embeds.length}▦ ${t.buttons.length}⬤ ${t.posts.length}↗`;
+    meta.title = `${t.embeds.length} embeds · ${t.buttons.length} buttons · ${t.posts.length} posted`;
+    b.append(meta);
+    if (t.name === state.tplName) b.setAttribute('aria-current', 'true');
+    b.addEventListener('click', () => { state.tplName = t.name; state.draft = null; renderComposer(); });
+    return b;
+  }));
+}
+
+function newDraft(name = '') {
+  return {
+    name,
+    embeds: [{ title: '', description: '', color: '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false }],
+    buttons: [], posts: [],
+  };
+}
+
+function renderComposer() {
+  renderComposerIndex();
+  const body = $('#composer-body');
+  const list = state.overview?.composer || [];
+  const meta = state.overview?.composerMeta;
+
+  const tpl = state.draft || list.find(t => t.name === state.tplName);
+  if (!tpl) {
+    body.replaceChildren(el('p', 'muted', 'Pick a message on the left, or create a new one.'));
+    return;
+  }
+
+  // Everything below edits this local copy; nothing is written until Save.
+  const draft = state.draft || JSON.parse(JSON.stringify(tpl));
+  state.draft = draft;
+
+  const parts = [];
+
+  /* -- name + embeds --------------------------------------------------- */
+  const head = el('div', 'panel');
+  head.append(el('h2', null, 'Message'));
+  head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
+
+  draft.embeds.forEach((e, i) => {
+    const box = el('details', 'embed-box');
+    if (i === 0) box.open = true;
+    const sum = el('summary');
+    sum.append(el('span', 'swatch'), el('span', 'nm', e.title || `Embed ${i + 1}`));
+    sum.querySelector('.swatch').style.background = e.color || '#5865F2';
+    const inner = el('div', 'body');
+    inner.append(
+      textField('Title', e.title, v => { e.title = v; }),
+      areaField('Description', e.description, v => { e.description = v; }, 5),
+      textField('Colour (hex)', e.color, v => { e.color = v; }),
+      textField('Footer', e.footer, v => { e.footer = v; }),
+      select('Image', e.image || '', [
+        ...(meta?.dynamicImages || []).map(d => ({ value: d, label: `Generated · ${d.slice(8)}` })),
+      ], v => { e.image = v; }, { blank: 'None or paste a URL below' }),
+      textField('Image URL (overrides the picker)', e.image && !e.image.startsWith('dynamic:') ? e.image : '', v => { if (v) e.image = v; }),
+      textField('Thumbnail URL', e.thumbnail, v => { e.thumbnail = v; }),
+      toggle('Show a timestamp', !!e.timestamp, v => { e.timestamp = v; }),
+    );
+
+    // Fields
+    const fieldWrap = el('div', 'subfields');
+    fieldWrap.append(el('h2', null, 'Fields'));
+    e.fields = e.fields || [];
+    e.fields.forEach((f, fi) => {
+      const rowEl = el('div', 'subfield');
+      rowEl.append(
+        textField('Name', f.name, v => { f.name = v; }),
+        textField('Value', f.value, v => { f.value = v; }),
+        toggle('Inline', !!f.inline, v => { f.inline = v; }),
+      );
+      const del = el('button', 'btn small danger', 'Remove field');
+      del.type = 'button';
+      del.addEventListener('click', () => { e.fields.splice(fi, 1); renderComposer(); });
+      rowEl.append(del);
+      fieldWrap.append(rowEl);
+    });
+    const addField = el('button', 'btn small', 'Add field');
+    addField.type = 'button';
+    addField.addEventListener('click', () => { e.fields.push({ name: '', value: '', inline: false }); renderComposer(); });
+    fieldWrap.append(addField);
+    inner.append(fieldWrap);
+
+    if (draft.embeds.length > 1) {
+      const rm = el('button', 'btn small danger', 'Remove this embed');
+      rm.type = 'button';
+      rm.addEventListener('click', () => { draft.embeds.splice(i, 1); renderComposer(); });
+      inner.append(rm);
+    }
+
+    box.append(sum, inner);
+    head.append(box);
+  });
+
+  const addEmbed = el('button', 'btn small', 'Add embed');
+  addEmbed.type = 'button';
+  addEmbed.disabled = draft.embeds.length >= (meta?.limits?.embeds || 10);
+  addEmbed.addEventListener('click', () => {
+    draft.embeds.push({ title: '', description: '', color: '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false });
+    renderComposer();
+  });
+
+  const saveRow = el('div', 'actions');
+  const saveBtn = el('button', 'btn primary small', 'Save message');
+  saveBtn.type = 'button';
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    const res = await post('template', { name: draft.name, embeds: draft.embeds });
+    saveBtn.disabled = false;
+    if (res?.ok) { state.tplName = draft.name; state.draft = null; renderComposer(); }
+  });
+  saveRow.append(addEmbed, saveBtn);
+
+  if (!state.draft?.isNew && list.some(t => t.name === draft.name)) {
+    const del = el('button', 'btn small danger', 'Delete message');
+    del.type = 'button';
+    del.addEventListener('click', async () => {
+      if (!confirm(`Delete "${draft.name}" and its buttons?`)) return;
+      const res = await post('templatedelete', { name: draft.name });
+      if (res?.ok) { state.tplName = null; state.draft = null; renderComposer(); }
+    });
+    saveRow.append(del);
+  }
+  head.append(saveRow);
+  parts.push(head);
+
+  /* -- buttons ---------------------------------------------------------- */
+  const btnPanel = el('div', 'panel');
+  btnPanel.append(el('h2', null, 'Buttons on this message'));
+  const saved = list.find(t => t.name === draft.name);
+  const savedButtons = saved?.buttons || [];
+
+  if (!saved) {
+    btnPanel.append(el('p', 'hint', 'Save the message first, then you can attach buttons to it.'));
+  } else {
+    if (!savedButtons.length) btnPanel.append(el('p', 'muted', 'No buttons yet.'));
+    for (const b of savedButtons) {
+      const d = el('details', 'item');
+      const s = el('summary');
+      s.append(
+        el('span', `bstyle ${b.style.toLowerCase()}`, b.style),
+        el('span', 'nm', b.label || b.id),
+        el('span', 'pr', `${b.uses} uses`),
+      );
+      const inner = el('div', 'body');
+      const draftBtn = { ...b, embedName: draft.name };
+      inner.append(
+        textField('Label', b.label, v => { draftBtn.label = v; }),
+        textField('Emoji', b.emoji, v => { draftBtn.emoji = v; }),
+        select('Style', b.style, (meta?.styles || []).map(x => ({ value: x, label: x })), v => { draftBtn.style = v; }),
+        select('Does what', b.type, (meta?.types || []).map(x => ({ value: x, label: x })), v => { draftBtn.type = v; }),
+        textField('Role id (for role buttons)', b.roleId, v => { draftBtn.roleId = v; }),
+        textField('URL (for link buttons)', b.url, v => { draftBtn.url = v; }),
+      );
+      const rowA = el('div', 'actions');
+      const save = el('button', 'btn primary small', 'Save button');
+      save.type = 'button';
+      save.addEventListener('click', () => post('button', draftBtn));
+      const rm = el('button', 'btn small danger', 'Remove');
+      rm.type = 'button';
+      rm.addEventListener('click', () => post('buttondelete', { id: b.id }));
+      rowA.append(save, rm);
+      inner.append(rowA);
+      d.append(s, inner);
+      btnPanel.append(d);
+    }
+
+    const add = el('details', 'item');
+    const addSum = el('summary');
+    addSum.append(el('span', 'nm', '+ Add a button'));
+    const addBody = el('div', 'body');
+    const nb = { embedName: draft.name, id: '', label: '', style: 'Primary', type: 'custom', emoji: '', roleId: '', url: '' };
+    addBody.append(
+      textField('Button id (letters, numbers, dashes)', '', v => { nb.id = v; }),
+      textField('Label', '', v => { nb.label = v; }),
+      textField('Emoji', '', v => { nb.emoji = v; }),
+      select('Style', 'Primary', (meta?.styles || []).map(x => ({ value: x, label: x })), v => { nb.style = v; }),
+      select('Does what', 'custom', (meta?.types || []).map(x => ({ value: x, label: x })), v => { nb.type = v; }),
+      textField('Role id (role buttons)', '', v => { nb.roleId = v; }),
+      textField('URL (link buttons)', '', v => { nb.url = v; }),
+      actions(() => post('button', nb)),
+    );
+    add.append(addSum, addBody);
+    btnPanel.append(add);
+  }
+  parts.push(btnPanel);
+
+  /* -- send + live posts ------------------------------------------------ */
+  if (saved) {
+    const sendPanel = el('div', 'panel');
+    sendPanel.append(el('h2', null, 'Send and update'));
+    const target = { name: draft.name, channelId: '', content: '' };
+    const channels = state.overview?.settings?.channels || [];
+    sendPanel.append(
+      select('Channel', '', channels.map(c => ({ value: c.id, label: `#${c.name}` })), v => { target.channelId = v; }, { blank: 'Pick a channel' }),
+      textField('Text above the embed (optional)', '', v => { target.content = v; }),
+    );
+    const sendRow = el('div', 'actions');
+    const sendBtn = el('button', 'btn primary small', 'Send to channel');
+    sendBtn.type = 'button';
+    sendBtn.addEventListener('click', async () => {
+      if (!target.channelId) { toast('Pick a channel first.', 'bad'); return; }
+      sendBtn.disabled = true;
+      await post('send', target);
+      sendBtn.disabled = false;
+    });
+    sendRow.append(sendBtn);
+    sendPanel.append(sendRow);
+
+    if (saved.posts.length) {
+      sendPanel.append(el('h2', null, 'Already posted'));
+      for (const p of saved.posts) {
+        const line = el('div', 'post-row');
+        const ch = channels.find(c => c.id === p.channelId);
+        line.append(el('span', 'k', `#${ch?.name || p.channelId} · ${new Date(p.sentAt).toLocaleString()}`));
+        const up = el('button', 'btn small', 'Push update');
+        up.type = 'button';
+        up.title = 'Re-render this template into the message that is already posted';
+        up.addEventListener('click', () => post('updatepost', { channelId: p.channelId, messageId: p.messageId, name: draft.name }));
+        line.append(up);
+        sendPanel.append(line);
+      }
+    }
+    parts.push(sendPanel);
+  }
+
+  body.replaceChildren(...parts);
+}
+
+/* ── giveaways ─────────────────────────────────────────────────────────── */
+
+function timeLeft(ts) {
+  if (!ts) return 'no end time';
+  const ms = ts - Date.now();
+  if (ms <= 0) return 'ending now';
+  return `${duration(ms)} left`;
+}
+
+function renderGiveaways() {
+  const g = state.overview?.giveaways || { active: [], ended: [] };
+
+  const activeWrap = $('#gaw-active');
+  if (!g.active.length) activeWrap.replaceChildren(el('p', 'muted', 'Nothing running.'));
+  else activeWrap.replaceChildren(...g.active.map(x => {
+    const d = el('div', 'gaw');
+    const top = el('div', 'gaw-top');
+    top.append(
+      el('span', `kind ${x.kind}`, x.kind === 'coins' ? 'COINS' : 'PRIZE'),
+      el('span', 'nm', x.title || 'Giveaway'),
+    );
+    d.append(top);
+    d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'} · ${timeLeft(x.endsAt)}`));
+    const act = el('div', 'actions');
+    const end = el('button', 'btn small danger', 'End now');
+    end.type = 'button';
+    end.addEventListener('click', async () => {
+      if (!confirm('End this giveaway and draw winners now?')) return;
+      end.disabled = true;
+      await post('giveawayend', { messageId: x.messageId, kind: x.kind });
+      end.disabled = false;
+    });
+    act.append(end);
+    d.append(act);
+    return d;
+  }));
+
+  const endedWrap = $('#gaw-ended');
+  if (!g.ended.length) endedWrap.replaceChildren(el('p', 'muted', 'Nothing finished yet.'));
+  else endedWrap.replaceChildren(...g.ended.map(x => {
+    const d = el('div', 'gaw');
+    const top = el('div', 'gaw-top');
+    top.append(
+      el('span', `kind ${x.kind}`, x.kind === 'coins' ? 'COINS' : 'PRIZE'),
+      el('span', 'nm', x.title || 'Giveaway'),
+      el('span', 'idtag', x.shortId),
+    );
+    d.append(top);
+    d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
+    if (x.kind === 'coins') {
+      const act = el('div', 'actions');
+      const rr = el('button', 'btn small', 'Reroll');
+      rr.type = 'button';
+      rr.title = 'Draw new winners and pay them';
+      rr.addEventListener('click', async () => {
+        if (!confirm('Draw new winners? They get paid again.')) return;
+        rr.disabled = true;
+        await post('giveawayreroll', { shortId: x.shortId, kind: 'coins' });
+        rr.disabled = false;
+      });
+      act.append(rr);
+      d.append(act);
+    }
+    return d;
+  }));
+}
+
+/* ── settings ──────────────────────────────────────────────────────────── */
+
+function renderSettings() {
+  const s = state.overview?.settings;
+  if (!s) return;
+  const draft = {};
+  const form = $('#form-settings');
+  const nodes = [];
+
+  for (const f of s.fields) {
+    const value = s.values[f.key];
+    if (f.type === 'bool') {
+      nodes.push(toggle(f.label, !!value, v => { draft[f.key] = v; }));
+    } else if (f.type === 'channel') {
+      nodes.push(select(f.label, value || '', s.channels.map(c => ({ value: c.id, label: `#${c.name}` })),
+        v => { draft[f.key] = v || null; }, { blank: 'Not set' }));
+    } else if (f.type === 'role') {
+      nodes.push(select(f.label, value || '', s.roles.map(r => ({ value: r.id, label: r.name })),
+        v => { draft[f.key] = v || null; }, { blank: 'Not set' }));
+    } else if (f.type === 'roles') {
+      const names = (s.resolved[f.key] || []).map(r => r.name || r.id).join(', ');
+      nodes.push(textField(`${f.label} (role ids, comma separated)`, (value || []).join(', '),
+        v => { draft[f.key] = v.split(',').map(x => x.trim()).filter(Boolean); },
+        { placeholder: names || 'none' }));
+    } else if (f.type === 'choice') {
+      nodes.push(select(f.label, value || f.choices[0], f.choices.map(c => ({ value: c, label: c })),
+        v => { draft[f.key] = v; }));
+    } else {
+      nodes.push(textField(`${f.label}${f.min != null ? ` (${f.min}–${f.max})` : ''}`, value == null ? '' : String(value),
+        v => { draft[f.key] = Number(v); }));
+    }
+  }
+
+  nodes.push(actions(() => post('settings', draft)));
+  form.replaceChildren(...nodes);
+}
+
 /* ── studio ────────────────────────────────────────────────────────────── */
 
 let previewTimer = null;
@@ -502,6 +883,11 @@ async function main() {
   state.guilds = me.guilds;
   renderIdentity(me.user);
   initSections();
+  $('#tpl-new').addEventListener('click', () => {
+    state.tplName = null;
+    state.draft = { ...newDraft(''), isNew: true };
+    renderComposer();
+  });
   root.dataset.state = 'panel';
 
   const params = new URLSearchParams(location.search);

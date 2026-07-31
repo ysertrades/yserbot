@@ -23,6 +23,9 @@ const {
   getModLogChannel,
 } = require('../utils/modConfig');
 const { listSources } = require('../utils/newsFeed');
+const composer = require('./composer');
+const giveaways = require('./giveaways');
+const settings = require('./settings');
 
 const IMPACTS = ['high', 'medium', 'low'];
 
@@ -253,40 +256,62 @@ const OPS = {
     return { ok: true };
   },
 
-  /* -- embed templates --------------------------------------------------- */
-  async template(guildId, body, { client, session }) {
-    const name = str(body, 'name', 80);
-    if (!name) return { error: 'bad_template' };
-
-    const all = readJson('embeds.json', {});
-    const template = all[guildId]?.[name];
-    if (!template || !Array.isArray(template.embeds) || !template.embeds.length) return { error: 'unknown_template' };
-
-    const index = Number.isInteger(body.index) ? body.index : 0;
-    const embed = template.embeds[index];
-    if (!embed) return { error: 'unknown_embed' };
-
-    const notes = [];
-    const title = str(body, 'title', 256);
-    if (title !== null && title !== embed.title) { notes.push('title updated'); embed.title = title || null; }
-
-    const description = str(body, 'description', 4000);
-    if (description !== null && description !== embed.description) { notes.push('description updated'); embed.description = description || null; }
-
-    if ('color' in body) {
-      const color = String(body.color || '').trim();
-      if (!/^#?[0-9a-fA-F]{6}$/.test(color)) return { error: 'bad_color' };
-      const norm = color.startsWith('#') ? color.toUpperCase() : `#${color.toUpperCase()}`;
-      if (norm !== embed.color) { notes.push(`colour ${norm}`); embed.color = norm; }
-    }
-
-    if (notes.length === 0) return { unchanged: true };
-    all[guildId][name] = template;
-    writeJson('embeds.json', all);
-    await announce(client, guildId, session, `🧩 **Template** — \`${name}\`: ${notes.join('; ')}`);
-    return { ok: true };
-  },
 };
+
+/* ─── composer, giveaways, settings ──────────────────────────────────────── */
+
+// These delegate to their own modules, and only add the audit entry — the
+// modules stay free of Discord-message concerns and can be tested on their own.
+Object.assign(OPS, {
+  async template(guildId, body, ctx) {
+    const r = composer.saveTemplate(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🧩 **Template** \`${r.name}\` ${r.isNew ? 'created' : 'updated'}`);
+    return r;
+  },
+  async templatedelete(guildId, body, ctx) {
+    const r = composer.deleteTemplate(guildId, body);
+    if (r.ok) {
+      const extra = r.removedButtons ? ` (and ${r.removedButtons} button${r.removedButtons === 1 ? '' : 's'})` : '';
+      await announce(ctx.client, guildId, ctx.session, `🗑️ **Template** \`${r.name}\` deleted${extra}`);
+    }
+    return r;
+  },
+  async button(guildId, body, ctx) {
+    const r = composer.saveButton(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🔘 **Button** \`${r.id}\` ${r.isNew ? 'added' : 'updated'}`);
+    return r;
+  },
+  async buttondelete(guildId, body, ctx) {
+    const r = composer.deleteButton(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🔘 **Button** \`${r.id}\` removed`);
+    return r;
+  },
+  async send(guildId, body, ctx) {
+    const r = await composer.send(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📤 Sent **${body.name}** to <#${r.channelId}>`);
+    return r;
+  },
+  async updatepost(guildId, body, ctx) {
+    const r = await composer.updatePost(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `♻️ Updated a posted **${r.templateName}** message`);
+    return r;
+  },
+  async giveawayend(guildId, body, ctx) {
+    const r = await giveaways.endNow(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎟️ Ended a ${r.kind} giveaway early`);
+    return r;
+  },
+  async giveawayreroll(guildId, body, ctx) {
+    const r = await giveaways.reroll(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎲 Rerolled giveaway \`${r.shortId}\``);
+    return r;
+  },
+  async settings(guildId, body, ctx) {
+    const r = settings.save(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`);
+    return r;
+  },
+});
 
 async function apply(op, guildId, body, ctx) {
   const handler = OPS[op];

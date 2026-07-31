@@ -75,10 +75,13 @@ html[data-state="panel"]   .view[data-view="panel"] { display: flex; }
 
 .section { display: none; flex-direction: column; gap: 0.85rem; }
 html[data-section="overview"]   .section[data-section="overview"],
+html[data-section="composer"]   .section[data-section="composer"],
 html[data-section="studio"]     .section[data-section="studio"],
+html[data-section="giveaways"]  .section[data-section="giveaways"],
 html[data-section="feeds"]      .section[data-section="feeds"],
 html[data-section="shop"]       .section[data-section="shop"],
-html[data-section="moderation"] .section[data-section="moderation"] { display: flex; }
+html[data-section="moderation"] .section[data-section="moderation"],
+html[data-section="settings"]   .section[data-section="settings"] { display: flex; }
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
 @media (min-width: 46rem) { .grid { grid-template-columns: 1fr 1fr; } }
@@ -238,6 +241,64 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .item[open] summary { border-bottom: 1px solid var(--rule); }
 .item .body { padding: 0.8rem; display: flex; flex-direction: column; gap: 0.6rem; }
 
+/* ── composer ────────────────────────────────────────────────────────── */
+.composer { display: grid; grid-template-columns: 1fr; gap: 0.85rem; align-items: start; }
+@media (min-width: 52rem) { .composer { grid-template-columns: 15rem 1fr; } }
+
+.tpl-list {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--rule); border-radius: 12px; padding: 0.85rem;
+}
+.tpl-list-head { display: flex; align-items: center; justify-content: space-between; }
+.tpl-list-head h2 { margin: 0; }
+#tpl-index { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.7rem; max-height: 24rem; overflow-y: auto; }
+.tpl-entry {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  background: none; border: 1px solid transparent; border-radius: 8px;
+  color: var(--soft); font: inherit; font-size: 0.86rem;
+  padding: 0.4rem 0.5rem; cursor: pointer; text-align: left; width: 100%;
+}
+.tpl-entry:hover { background: var(--raised); }
+.tpl-entry[aria-current="true"] { background: var(--raised); border-color: var(--accent); color: var(--ink); }
+.tpl-entry .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-entry .mt { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); flex: none; }
+
+.composer-body { display: flex; flex-direction: column; gap: 0.85rem; }
+
+.embed-box { border: 1px solid var(--rule); border-radius: 10px; background: var(--sunken); margin-top: 0.6rem; }
+.embed-box summary { display: flex; align-items: center; gap: 0.55rem; padding: 0.6rem 0.75rem; cursor: pointer; list-style: none; font-size: 0.9rem; }
+.embed-box summary::-webkit-details-marker { display: none; }
+.embed-box .swatch { width: 4px; height: 20px; border-radius: 2px; flex: none; }
+.embed-box[open] summary { border-bottom: 1px solid var(--rule); }
+.embed-box .body { padding: 0.8rem; display: flex; flex-direction: column; gap: 0.6rem; }
+
+.subfields { display: flex; flex-direction: column; gap: 0.6rem; border-top: 1px solid var(--rule); padding-top: 0.7rem; }
+.subfield { display: flex; flex-direction: column; gap: 0.45rem; border-left: 2px solid var(--rule); padding-left: 0.6rem; }
+
+.bstyle {
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em;
+  border-radius: 5px; padding: 0.1rem 0.36rem; border: 1px solid currentColor; flex: none;
+}
+.bstyle.primary { color: var(--accent); }
+.bstyle.success { color: var(--good); }
+.bstyle.danger  { color: var(--warn); }
+.bstyle.secondary, .bstyle.link { color: var(--muted); }
+
+.post-row { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; font-size: 0.84rem; padding: 0.35rem 0; border-top: 1px solid var(--rule-soft, var(--rule)); }
+.post-row .k { color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── giveaways ───────────────────────────────────────────────────────── */
+.gaw { border: 1px solid var(--rule); border-radius: 10px; background: var(--sunken); padding: 0.75rem 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.gaw-top { display: flex; align-items: center; gap: 0.5rem; }
+.gaw-top .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
+.gaw .kind {
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em;
+  border-radius: 999px; padding: 0.12rem 0.42rem; border: 1px solid currentColor; flex: none;
+}
+.gaw .kind.coins { color: var(--good); }
+.gaw .kind.prize { color: var(--accent); }
+.gaw .idtag { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); flex: none; }
+
 /* ── controls ────────────────────────────────────────────────────────── */
 .btn {
   display: inline-block; text-decoration: none; font: inherit; text-align: center;
@@ -246,6 +307,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
 .btn.small { padding: 0.32rem 0.65rem; font-size: 0.8rem; }
+.btn.danger { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .btn:hover:not(:disabled) { filter: brightness(1.12); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

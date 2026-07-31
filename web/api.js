@@ -20,6 +20,9 @@ const {
 } = require('../utils/modConfig');
 const { listSources } = require('../utils/newsFeed');
 const { stats: renderStats } = require('../utils/renderCache');
+const composer = require('./composer');
+const giveaways = require('./giveaways');
+const settings = require('./settings');
 
 /** Guilds this session may open, as the picker needs them. */
 function me(session, client) {
@@ -55,6 +58,7 @@ function guildOverview(guildId, client) {
   const embeds   = readJson('embeds.json', {})[guildId] || {};
   const cases    = readJson('cases.json', {})[guildId] || {};
   const known    = listSources();
+  const giveawayState = giveaways.list(guildId);
 
   return {
     guild: {
@@ -108,10 +112,17 @@ function guildOverview(guildId, client) {
       emoji: item.emoji || '',
       type: item.type || '',
     })).sort((a, b) => a.name.localeCompare(b.name)),
+    // The composer, giveaways and settings screens all read from the same
+    // overview call, so switching between sections never waits on the network.
+    composer: composer.list(guildId),
+    composerMeta: composer.meta(),
+    giveaways: giveawayState,
+    settings: settings.read(guildId, guild),
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,
       moderationCases: Object.keys(cases).length,
+      activeGiveaways: giveawayState.active.length,
     },
   };
 }

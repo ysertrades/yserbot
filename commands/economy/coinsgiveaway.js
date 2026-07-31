@@ -929,3 +929,11 @@ module.exports = {
   persistEntry,
   restoreCoinsGiveaways,
 };
+
+// Exposed for the web control panel, which ends and rerolls giveaways through
+// exactly the same code path the slash command uses rather than a parallel one.
+module.exports.endCoinsGiveaway = endCoinsGiveaway;
+module.exports.performReroll    = performReroll;
+module.exports.getActive        = getActive;
+module.exports.ACTIVE_FILE      = ACTIVE_FILE;
+module.exports.ENDED_FILE       = ENDED_FILE;
