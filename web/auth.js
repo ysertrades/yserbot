@@ -45,7 +45,15 @@ function config() {
     // Empty means "any guild the bot is in that you can manage".
     allowlist: (process.env.PANEL_GUILD_IDS || '')
       .split(',').map(s => s.trim()).filter(Boolean),
+    // Origins allowed to embed the panel. Empty (the default) means nobody.
+    frameAncestors: (process.env.PANEL_FRAME_ANCESTORS || '')
+      .split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
   };
+}
+
+/** Whether the panel is configured to be embedded anywhere at all. */
+function embeddable() {
+  return config().frameAncestors.length > 0;
 }
 
 /** Which required settings are missing, so the server can say so precisely. */
@@ -109,30 +117,41 @@ function parseCookies(req) {
 
 // Secure is unconditional: the panel is only ever reached over the HTTPS
 // domain, and a cookie that would travel in clear is worse than no login.
-// SameSite=Lax lets the Discord redirect back in while still blocking
-// cross-site requests; the Whop iframe would need None, and that is phase 4.
+//
+// SameSite is Lax normally, which lets the Discord redirect back in while
+// blocking cross-site requests. When embedding is enabled it has to be None,
+// or the cookie is not sent from inside the host page at all. Note that None
+// is necessary but not sufficient — Safari blocks third-party cookies
+// outright, which is why the bearer-token path below exists.
+const sameSite = () => (embeddable() ? 'None' : 'Lax');
+
 function cookie(name, value, maxAgeMs) {
-  const parts = [
+  return [
     `${name}=${encodeURIComponent(value)}`,
-    'Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax',
+    'Path=/', 'HttpOnly', 'Secure', `SameSite=${sameSite()}`,
     `Max-Age=${Math.floor(maxAgeMs / 1000)}`,
-  ];
-  return parts.join('; ');
+  ].join('; ');
 }
 
 function clearCookie(name) {
-  return `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+  return `${name}=; Path=/; HttpOnly; Secure; SameSite=${sameSite()}; Max-Age=0`;
 }
 
 /* ─── login flow ─────────────────────────────────────────────────────────── */
 
-/** Step 1 — where to send the browser to start a login. */
-function authorizeUrl() {
+/**
+ * Step 1 — where to send the browser to start a login.
+ *
+ * `popup` is carried inside the signed state rather than as a query parameter,
+ * because the callback arrives from Discord and cannot be trusted to preserve
+ * anything we did not sign.
+ */
+function authorizeUrl({ popup = false } = {}) {
   const c = config();
   // The state is signed rather than stored, and echoed back in a cookie the
   // callback must match. Without it, anyone could feed you a callback URL and
   // log you into their account.
-  const state = sign({ n: crypto.randomBytes(16).toString('base64url'), exp: Date.now() + STATE_TTL_MS }, c.secret);
+  const state = sign({ n: crypto.randomBytes(16).toString('base64url'), popup: !!popup, exp: Date.now() + STATE_TTL_MS }, c.secret);
   const url = new URL('https://discord.com/oauth2/authorize');
   url.searchParams.set('client_id', c.clientId);
   url.searchParams.set('redirect_uri', c.redirectUri);
@@ -205,10 +224,24 @@ async function completeLogin(code, client) {
 
 /* ─── request-time checks ────────────────────────────────────────────────── */
 
-/** The signed session on a request, or null. */
+/**
+ * The signed session on a request, or null.
+ *
+ * A bearer token is accepted alongside the cookie. That is what makes the
+ * embedded panel work: inside a third-party iframe Safari drops the cookie
+ * entirely, so the page holds the same signed token in memory and sends it as
+ * a header instead. Same token, same signature check — only the transport
+ * differs.
+ */
 function sessionFor(req) {
   const c = config();
   if (!c.secret) return null;
+
+  const header = req.headers.authorization || '';
+  if (header.startsWith('Bearer ')) {
+    const fromHeader = verify(header.slice(7).trim(), c.secret);
+    if (fromHeader) return fromHeader;
+  }
   return verify(parseCookies(req)[SESSION_COOKIE], c.secret);
 }
 
@@ -247,7 +280,7 @@ function csrfValid(session, token) {
 }
 
 module.exports = {
-  config, missingConfig, csrfFor, csrfValid,
+  config, missingConfig, csrfFor, csrfValid, embeddable,
   authorizeUrl, completeLogin,
   sessionFor, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,

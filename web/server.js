@@ -54,24 +54,30 @@ function rateLimited(ip) {
 // Locked down hard: the panel loads nothing from anywhere else, so anything
 // injected into a page has nothing to talk to. Avatars are the one exception,
 // and they come from Discord's CDN only.
-const CSP = [
-  "default-src 'self'",
-  // blob: is needed for the Studio previews — the PNG arrives as a blob and is
-  // shown via createObjectURL. Blob URLs are same-origin and minted by our own
-  // script, so this doesn't widen what the page can reach.
-  "img-src 'self' data: blob: https://cdn.discordapp.com",
-  "style-src 'self' 'unsafe-inline'",
-  "script-src 'self'",
-  "connect-src 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "base-uri 'none'",
-].join('; ');
+function csp() {
+  // Who may embed the panel. Defaults to nobody; PANEL_FRAME_ANCESTORS opts
+  // specific hosts in (Whop, typically). Built per-request rather than once at
+  // load so the setting takes effect on restart without a code change.
+  const { frameAncestors } = auth.config();
+  return [
+    "default-src 'self'",
+    // blob: is needed for the Studio previews — the PNG arrives as a blob and
+    // is shown via createObjectURL. Blob URLs are same-origin and minted by
+    // our own script, so this doesn't widen what the page can reach.
+    "img-src 'self' data: blob: https://cdn.discordapp.com",
+    "style-src 'self' 'unsafe-inline'",
+    "script-src 'self'",
+    "connect-src 'self'",
+    "form-action 'self'",
+    `frame-ancestors ${frameAncestors.length ? frameAncestors.join(' ') : "'none'"}`,
+    "base-uri 'none'",
+  ].join('; ');
+}
 
 function send(res, status, body, headers = {}) {
   if (res.writableEnded) return;
   res.writeHead(status, {
-    'content-security-policy': CSP,
+    'content-security-policy': csp(),
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'cache-control': 'no-store',
@@ -117,6 +123,20 @@ function readJsonBody(req) {
   });
 }
 
+/**
+ * The page a popup login lands on. It carries the token in a data attribute
+ * and hands it to the opener from an external script — the CSP forbids inline
+ * script, and relaxing that for one page would be a poor trade.
+ */
+function popupPage(token) {
+  const base = auth.config().baseUrl;
+  const safe = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">`
+    + `<title>Signed in</title></head>`
+    + `<body data-token="${safe(token)}" data-origin="${safe(base)}" style="background:#0B0D11;color:#E8EBF1;font:15px system-ui;padding:2rem">`
+    + `Signed in. You can close this window.<script src="/popup.js"></script></body></html>`;
+}
+
 /* ─── static files ───────────────────────────────────────────────────────── */
 
 const TYPES = {
@@ -156,7 +176,7 @@ async function route(req, res, client) {
   if (p === '/auth/login') {
     const missing = auth.missingConfig();
     if (missing.length) return json(res, 503, { error: 'setup_incomplete', missing });
-    const { url: to, state } = auth.authorizeUrl();
+    const { url: to, state } = auth.authorizeUrl({ popup: url.searchParams.get('popup') === '1' });
     return redirect(res, to, { 'set-cookie': auth.cookie(auth.STATE_COOKIE, state, auth.STATE_TTL_MS) });
   }
 
@@ -174,11 +194,20 @@ async function route(req, res, client) {
       return redirect(res, '/?error=bad_state', { 'set-cookie': auth.clearCookie(auth.STATE_COOKIE) });
     }
 
+    const wantsPopup = !!auth.verify(state, auth.config().secret)?.popup;
+
     try {
       const { token } = await auth.completeLogin(code, client);
-      return redirect(res, '/', {
-        'set-cookie': [auth.clearCookie(auth.STATE_COOKIE), auth.cookie(auth.SESSION_COOKIE, token, auth.SESSION_TTL_MS)],
-      });
+      const cookies = [auth.clearCookie(auth.STATE_COOKIE), auth.cookie(auth.SESSION_COOKIE, token, auth.SESSION_TTL_MS)];
+
+      // A popup login hands the token back to the page that opened it. That
+      // page is the panel running inside someone else's iframe, where the
+      // cookie we just set may never be sent — Safari drops third-party
+      // cookies outright. The popup itself is first-party, so this is the one
+      // moment the token can cross over.
+      if (wantsPopup) return send(res, 200, popupPage(token), { 'content-type': 'text/html; charset=utf-8', 'set-cookie': cookies });
+
+      return redirect(res, '/', { 'set-cookie': cookies });
     } catch (err) {
       const reason = err.code === 'no_manageable_guilds' ? 'no_access' : 'login_failed';
       if (reason === 'login_failed') console.error('[Panel] login failed:', err.message);
