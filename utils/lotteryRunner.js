@@ -50,10 +50,7 @@ async function runTick(client) {
   for (const guildId of Object.keys(config)) {
     const settings = config[guildId]?.lotterySettings;
     if (!settings?.channelId) continue;
-    // Paused from the control panel. Entries already in the pool stay exactly
-    // where they are — pausing skips the draw, it does not cancel it, so
-    // resuming picks up with everyone who had already entered.
-    if (settings.paused) continue;
+    if (isPaused(guildId)) continue;
 
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
@@ -104,4 +101,18 @@ function startLotteryRunner(client) {
   setInterval(tick, TICK_INTERVAL_MS);
 }
 
-module.exports = { startLotteryRunner, todaysSlotUTC, REWARD };
+/**
+ * Whether the daily draw is switched off for this server.
+ *
+ * Entries already in the pool stay exactly where they are — pausing skips the
+ * draw, it does not cancel it, so resuming picks up with everyone who had
+ * already entered.
+ *
+ * A named predicate rather than an inline `settings.paused`, so the panel's
+ * toggle can be checked against the thing the runner actually consults.
+ */
+function isPaused(guildId) {
+  return readJson('config.json', {})[guildId]?.lotterySettings?.paused === true;
+}
+
+module.exports = { startLotteryRunner, todaysSlotUTC, isPaused, REWARD };

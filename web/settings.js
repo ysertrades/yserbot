@@ -35,8 +35,13 @@ const FIELDS = [
   { key: 'warnThreshold',  path: ['warnSettings', 'threshold'],    type: 'int',    label: 'Warnings before action', min: 1, max: 50 },
   { key: 'warnAction',     path: ['warnSettings', 'action'],       type: 'choice', label: 'Action at threshold', choices: WARN_ACTIONS },
   { key: 'warnMuteMs',     path: ['warnSettings', 'muteDuration'], type: 'int',    label: 'Mute length (minutes)', min: 1, max: 40320, scale: 60000 },
-  { key: 'ticketInactivityEnabled', path: ['ticketSettings', 'inactivityEnabled'], type: 'bool', label: 'Close inactive tickets' },
-  { key: 'ticketInactivityHours',   path: ['ticketSettings', 'inactivityTime'],    type: 'int',  label: 'Close after (hours)', min: 1, max: 720 },
+  // The two ticket settings that used to sit here are gone, not moved: the
+  // Tickets screen already edits the same two stored fields, and this copy
+  // described them wrongly in both directions. `inactivityTime` is minutes
+  // everywhere in the bot — /ticket labels it "Inactivity Time (minutes)" and
+  // multiplies it by 60000 — so a row reading "Close after (hours)" set a
+  // value sixty times smaller than whoever typed it meant. And the feature
+  // nudges a quiet ticket; it has never closed one.
 ];
 
 const dig = (obj, path) => path.reduce((o, k) => (o == null ? o : o[k]), obj);
