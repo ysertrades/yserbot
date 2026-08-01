@@ -256,10 +256,28 @@ async function route(req, res, client) {
       // cookie belonging to the host page, so reopening the app finds it.
       const plant = renewed || auth.adoptable(req);
       const headers = plant ? { 'set-cookie': auth.cookie(auth.SESSION_COOKIE, plant, auth.SESSION_TTL_MS) } : {};
-      return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(session), token: renewed || null }, headers);
+      // csrfFor is bound to session.exp, so it has to be computed against
+      // whichever session the client is about to start using — the renewed
+      // one, when there is one — or every write on this page load would fail
+      // with a stale token until the next reload.
+      const csrfSession = renewed ? auth.verify(renewed, auth.config().secret) : session;
+      return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(csrfSession), token: renewed || null }, headers);
     }
     if (p === '/api/health')    return json(res, 200, api.health(client));
     if (p === '/api/templates') return json(res, 200, { templates: preview.listTemplates() });
+
+    /* -- the Whop embed link ----------------------------------------------
+     * Whop reloads whatever URL sits in its own embed settings rather than
+     * anything the page did on its own, so a session that needs to survive
+     * the app being closed there has to live in that URL instead of in
+     * browser storage. These are account-level, not guild-scoped. */
+    if (p === '/api/embed-link') {
+      if (req.method !== 'POST' && req.method !== 'DELETE') return json(res, 405, { error: 'use_post_or_delete' });
+      if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+      if (req.method === 'DELETE') { auth.revokeEmbedLinks(session.uid); return json(res, 200, { revoked: true }); }
+      const token = auth.mintEmbedLink(session);
+      return json(res, 200, { url: `${auth.config().baseUrl}/?t=${token}` });
+    }
 
     if (p === '/api/leaderboard') {
       return json(res, 200, await api.leaderboard(client, 10));
