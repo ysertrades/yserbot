@@ -1647,6 +1647,58 @@ function renderSocial() {
 }
 
 /**
+ * A brand colour, lifted just far enough to be seen on the panel's own cards.
+ *
+ * X's brand colour is black, and the panel's card is nearly black, so the
+ * stripe down the side of its row disappeared and the row read as broken. The
+ * lift is for the panel only — the posted card keeps the real colour, where
+ * the background is lighter and black is exactly right.
+ */
+function visibleBrand(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  // The brightest channel, not perceptual luma. Luma weights red at a tenth of
+  // green, so it scores pure #FF0000 as dark and would have quietly lightened
+  // YouTube's red — a colour that is perfectly visible as a stripe. What
+  // actually matters against a near-black card is whether any channel is lit
+  // at all, which is what this measures.
+  const peak = Math.max(r, g, b);
+  // High enough that the stripe still reads on a paused row, which is drawn
+  // at just over half opacity.
+  const floor = 96;
+  if (peak >= floor) return `#${m[1]}`;
+  // Lifted towards white rather than towards its own hue, so a black stays a
+  // grey instead of becoming some colour the brand never chose.
+  const k = (floor - peak) / 255;
+  r = Math.round(r + (255 - r) * k);
+  g = Math.round(g + (255 - g) * k);
+  b = Math.round(b + (255 - b) * k);
+  return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * The platform's mark.
+ *
+ * The picture the panel serves, which is the same one the posted card carries
+ * — one drawing, so the list and the message can never show different logos.
+ * The platform's colour sits behind it as a plain disc until it loads, so a
+ * slow or blocked image leaves the row its shape rather than a gap.
+ */
+function platformMark(platform) {
+  const badge = el('span', 'social-badge');
+  badge.style.background = platform.color;
+  if (!platform.mark) return badge;
+  const img = el('img');
+  img.src = platform.mark;
+  img.alt = '';
+  img.addEventListener('load', () => { badge.style.background = 'none'; });
+  badge.append(img);
+  return badge;
+}
+
+/**
  * A fold-away section. Native <details>, so it needs no script to open.
  *
  * The key is what makes it survive a redraw. Saving re-renders the screen from
@@ -1694,12 +1746,9 @@ function socialStrip(account, d) {
 
   const strip = el('button', 'social-strip');
   strip.type = 'button';
-  strip.style.borderLeftColor = platform.color;
+  strip.style.borderLeftColor = visibleBrand(platform.color);
   strip.setAttribute('aria-expanded', 'false');
   if (!account.enabled) strip.classList.add('off');
-
-  const badge = el('span', 'social-badge', platform.emoji);
-  badge.style.background = platform.color;
 
   const names = el('span', 'social-names');
   names.append(
@@ -1710,7 +1759,7 @@ function socialStrip(account, d) {
   const state_ = el('span', `pill ${health.tone}`, health.word);
   const chev = el('span', 'social-chev', '›');
 
-  strip.append(badge, names, state_, chev);
+  strip.append(platformMark(platform), names, state_, chev);
   strip.addEventListener('click', () => {
     if (!state.socialOpen) state.socialOpen = new Set();
     state.socialOpen.add(account.id);
@@ -1725,15 +1774,13 @@ function socialAccountCard(account, d, isNew) {
   const draft = { id: isNew ? '' : account.id, ...account };
 
   const card = el('article', 'panel social-card');
-  card.style.borderLeftColor = platform.color;
+  card.style.borderLeftColor = visibleBrand(platform.color);
   if (!isNew && !account.enabled) card.classList.add('off');
 
   const head = el('div', 'queue-head');
-  const badge = el('span', 'social-badge', platform.emoji);
-  badge.style.background = platform.color;
   const title = el('h2', null, isNew ? 'New account' : (account.label || account.handle));
   const headLeft = el('div', 'social-head-left');
-  headLeft.append(badge, title);
+  headLeft.append(platformMark(platform), title);
   head.append(headLeft);
 
   if (!isNew) {
@@ -1750,7 +1797,7 @@ function socialAccountCard(account, d, isNew) {
   /* -- the few things worth asking for ----------------------------------- */
   const basics = el('div');
   basics.append(
-    select('Platform', draft.platform, d.platforms.map(p => ({ value: p.key, label: `${p.emoji} ${p.label}` })),
+    select('Platform', draft.platform, d.platforms.map(p => ({ value: p.key, label: p.label })),
       v => {
         draft.platform = v;
         // The hint under the name box is per platform, so the card is redrawn

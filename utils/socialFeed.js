@@ -52,11 +52,12 @@ const FILE = 'social.json';
 /**
  * Brand colours.
  *
- * X's actual brand colour is black, which on Discord's dark theme is a spine
- * you cannot see — the embed reads as broken rather than as X. The old
- * Twitter blue is what people still recognise, so that is the default; the
- * colour is editable on the Appearance screen like every other, so anyone who
- * wants the black can have it.
+ * X's is black. Not #000000 though — Discord reads an embed colour of zero as
+ * "no colour set" and draws its own grey instead, so pure black is the one
+ * black that cannot be used. #0F1419 is X's own near-black and renders as
+ * black.
+ *
+ * Each is editable on the Appearance screen like every other message.
  */
 const PLATFORMS = {
   youtube: {
@@ -64,6 +65,7 @@ const PLATFORMS = {
     label: 'YouTube',
     emoji: '▶️',
     color: '#FF0000',
+    mark: 'youtube',
     styleKey: 'social.youtube',
     // The one that needs nothing in between.
     direct: true,
@@ -80,6 +82,7 @@ const PLATFORMS = {
     label: 'TikTok',
     emoji: '🎵',
     color: '#FE2C55',
+    mark: 'tiktok',
     styleKey: 'social.tiktok',
     direct: false,
     handleHint: '@username',
@@ -92,6 +95,7 @@ const PLATFORMS = {
     label: 'Instagram',
     emoji: '📸',
     color: '#E1306C',
+    mark: 'instagram',
     styleKey: 'social.instagram',
     direct: false,
     handleHint: '@username',
@@ -103,7 +107,8 @@ const PLATFORMS = {
     key: 'twitter',
     label: 'X',
     emoji: '𝕏',
-    color: '#1D9BF0',
+    color: '#0F1419',
+    mark: 'twitter',
     styleKey: 'social.twitter',
     direct: false,
     handleHint: '@username',

@@ -747,11 +747,14 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .social-strip:active { transform: scale(0.995); }
 .social-strip.off { opacity: 0.55; }
 
+/* The drawn mark. Round, because the marks are drawn as discs — the same
+   shape Discord crops an author icon to, so the panel and the posted card
+   show the same thing. */
 .social-badge {
-  flex: 0 0 auto; display: grid; place-items: center;
-  width: 1.8rem; height: 1.8rem; border-radius: 8px;
-  font-size: 0.9rem; line-height: 1;
+  flex: 0 0 auto; display: grid; place-items: center; overflow: hidden;
+  width: 1.9rem; height: 1.9rem; border-radius: 50%;
 }
+.social-badge img { width: 100%; height: 100%; display: block; }
 .social-names { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1 1 auto; }
 .social-names .nm { font-size: 0.92rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .social-names .mt { font-size: 0.72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
