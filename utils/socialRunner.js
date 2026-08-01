@@ -174,13 +174,16 @@ async function checkAccount(client, guildId, account) {
     return { error: err.message || String(err) };
   }
 
-  const { items, channelId } = result;
+  const { items, channelId, feedPath } = result;
   const patch = {
     lastCheckedAt: now,
     lastError: null,
     failures: 0,
     // Remembered so the handle lookup happens once rather than every check.
     ...(channelId && channelId !== account.channelId ? { channelId } : {}),
+    // And which of the candidate addresses answered, so the next check starts
+    // with the one that worked instead of walking the list again.
+    ...(feedPath && feedPath !== account.feedPath ? { feedPath } : {}),
   };
 
   const fresh = social.newItems(items, account, settings.maxPerCheck);

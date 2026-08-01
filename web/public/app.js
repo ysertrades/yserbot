@@ -142,6 +142,7 @@ const state = {
   styleKey: null,                       // Appearance — the message being edited
   socialDraft: null,                    // Social — the account being added
   socialBridge: null, socialTests: {},   // Social — results of the two network buttons
+  liveOn: false,                        // whether the push stream is connected
   socialOpen: new Set(),                // Social — which account cards are open
   openFolds: new Set(),                 // which fold-away sections are open
   gawBump: null,                        // redraw the giveaway preview on demand
@@ -467,7 +468,13 @@ function tile(value, label, kind = '') {
   return t;
 }
 
-function renderOverview() {
+/**
+ * The read-only half of the overview screen: identity, tiles, the two cards.
+ *
+ * Split out because the live stream repaints these on every change and must
+ * not go near a form while it is being filled in.
+ */
+function renderOverviewCards() {
   const d = state.overview;
   if (!d) return;
 
@@ -504,6 +511,11 @@ function renderOverview() {
     row('Custom words', num(d.automod.customWords)),
   );
 
+}
+
+function renderOverview() {
+  if (!state.overview) return;
+  renderOverviewCards();
   renderFeedForms();
   renderModerationForm();
   renderShop();
@@ -1174,13 +1186,25 @@ function timeLeft(ts) {
 const ticking = new Set();
 let tickTimer = null;
 
-function countdownEl(endsAt) {
+/**
+ * @param {number} endsAt
+ * @param {number|null} startedAt
+ *   When the thing being counted actually began. Without it the bar measured
+ *   from the moment the page opened, so every reload put it back to empty and
+ *   it filled again over whatever was left — a bar that looked like progress
+ *   and was really just "how long have you been looking at this". Given the
+ *   real start it shows the same fraction on every device, at any time, and
+ *   survives a refresh unchanged.
+ */
+function countdownEl(endsAt, startedAt = null) {
   const node = el('span', 'countdown');
   const bar = el('div', 'meter');
   const fill = el('i');
   bar.append(fill);
-  const started = Date.now();
-  const span = Math.max(1, endsAt - started);
+  // Falling back to now keeps an old record without a start time working; it
+  // is the previous behaviour, and only for those.
+  const began = Number(startedAt) > 0 ? Number(startedAt) : Date.now();
+  const span = Math.max(1, endsAt - began);
 
   const paint = () => {
     const left = endsAt - Date.now();
@@ -1222,7 +1246,7 @@ function renderGiveaways() {
     d.append(top);
     d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
     if (x.endsAt) {
-      const c = countdownEl(x.endsAt);
+      const c = countdownEl(x.endsAt, x.startedAt);
       const line = el('div', 'row');
       line.append(el('span', 'k', 'Ends in'), c.node);
       d.append(line, c.bar);
@@ -1942,8 +1966,14 @@ function socialAccountCard(account, d, isNew) {
 function socialTestResult(res) {
   const box = el('div', 'social-test');
   if (res.failed) {
-    box.append(el('p', 'hint bad', `Could not read it: ${res.detail}`));
-    if (res.url) box.append(el('p', 'hint', `Asked: ${res.url}`));
+    box.append(el('p', 'hint bad', res.detail || 'Could not read it.'));
+    // Every address that was tried, and what each one said. When a route has
+    // been renamed this is the difference between "404" and knowing which
+    // address 404'd.
+    for (const t of res.tried || []) {
+      box.append(el('p', 'hint mono', `${t.url} — ${t.why}`));
+    }
+    if (!(res.tried || []).length && res.url) box.append(el('p', 'hint mono', res.url));
     return box;
   }
 
@@ -2409,7 +2439,9 @@ function renderLottery() {
   ];
 
   if (l.nextDrawAt) {
-    const c = countdownEl(l.nextDrawAt);
+    // The draw is daily, so the bar runs from the previous one. Without that
+    // it filled from whenever the page happened to be opened.
+    const c = countdownEl(l.nextDrawAt, l.lastDrawAt || l.nextDrawAt - 86400000);
     const line = el('div', 'row');
     line.append(el('span', 'k', 'Next draw'), c.node);
     nodes.push(line, c.bar);
@@ -3689,6 +3721,122 @@ function dismissKeyboardOnOutsideTap() {
   }, { passive: true });
 }
 
+/* ── live ──────────────────────────────────────────────────────────────────
+   The panel used to be a snapshot: it read everything once and then showed
+   you that until you reloaded. Someone entering a giveaway, a report coming
+   in, a watched account starting to fail — none of it appeared without a
+   refresh, so the number on screen was only true at the moment you last
+   looked at it.
+
+   The server pushes the whole overview whenever it changes. What arrives is
+   applied to the parts of the page that only ever display things; forms are
+   never touched, because the one thing worse than a stale number is a
+   half-typed one disappearing. */
+
+let live = null;
+let liveMissed = false;
+
+/** Is the person in the middle of typing something? */
+function isEditing() {
+  const a = document.activeElement;
+  if (!a) return false;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+  return a.isContentEditable === true;
+}
+
+/**
+ * Repaints what the stream can safely repaint.
+ *
+ * Lists and counters only. The composer, the appearance editor, Studio, the
+ * economy dials and every settings form are left exactly as they are — a
+ * repaint would throw away whatever was in them.
+ *
+ * Social is a special case: its account list is read-only once collapsed, but
+ * an open card is a form, so it is only redrawn when none is open.
+ */
+function renderLive() {
+  if (!state.overview) return;
+  // Deferred rather than dropped: whatever arrived is already in state, and
+  // the next tick — or the moment the field loses focus — will show it.
+  if (isEditing() || sheetIsOpen()) { liveMissed = true; return; }
+  liveMissed = false;
+
+  renderOverviewCards();
+  renderGiveaways();
+  renderLottery();
+  renderModeration();
+  renderLinkRequests();
+  renderTickets();
+  if (!state.socialDraft && !(state.socialOpen?.size)) renderSocial();
+  startTicking();
+}
+
+function sheetIsOpen() {
+  const sheet = $('#sheet');
+  return !!sheet && !sheet.hidden;
+}
+
+function setLiveState(on) {
+  const dot = $('#live-dot');
+  if (!dot) return;
+  dot.hidden = false;
+  dot.className = `live-dot${on ? ' on' : ''}`;
+  dot.title = on ? 'Live — changes appear on their own' : 'Reconnecting…';
+}
+
+function stopLive() {
+  if (live) { live.close(); live = null; }
+}
+
+/**
+ * Opens the stream for the guild being looked at.
+ *
+ * EventSource reconnects by itself, so there is no retry loop here — the only
+ * thing worth doing on an error is saying so, and letting it get on with it.
+ */
+function startLive() {
+  stopLive();
+  if (typeof EventSource !== 'function' || !state.guildId) return;
+
+  // The token rides on the query string because EventSource cannot set a
+  // header, and inside somebody else's iframe the cookie is blocked outright.
+  // The server checks it exactly as it checks a header.
+  const qs = state.token ? `?t=${encodeURIComponent(state.token)}` : '';
+  try {
+    live = new EventSource(`/api/guild/${state.guildId}/stream${qs}`, { withCredentials: true });
+  } catch {
+    return;
+  }
+
+  live.addEventListener('open', () => setLiveState(true));
+  live.addEventListener('overview', ev => {
+    setLiveState(true);
+    let next;
+    try { next = JSON.parse(ev.data); } catch { return; }
+    // Guard against a payload that arrives after the guild has been switched.
+    if (!next?.guild?.id || next.guild.id !== state.guildId) return;
+    state.overview = next;
+    renderLive();
+  });
+  live.addEventListener('error', () => setLiveState(false));
+}
+
+// A field losing focus is the moment a deferred repaint becomes safe.
+document.addEventListener('focusout', () => {
+  if (!liveMissed) return;
+  // A tick of delay: focusout fires before focus lands on the next field, and
+  // repainting in between would take that field out from under it.
+  setTimeout(() => { if (liveMissed) renderLive(); }, 60);
+});
+
+// Nothing is pushed to a page nobody is looking at, and a phone suspends the
+// connection anyway. Reopening on return is also what makes the first thing
+// you see current rather than however old the tab was.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') stopLive();
+  else if (state.guildId) startLive();
+});
+
 /* ── boot ──────────────────────────────────────────────────────────────── */
 
 /**
@@ -3734,6 +3882,8 @@ async function selectGuild(id) {
   // Banner wording is per guild, so Studio has to re-read it rather than keep
   // showing the previous server's copy.
   if (state.tpl) selectTemplate(state.tpl.key);
+  // And the stream follows whichever server is being looked at.
+  startLive();
 }
 
 async function main() {

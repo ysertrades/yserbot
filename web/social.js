@@ -293,12 +293,14 @@ async function testAccount(guildId, body, { guild }) {
 
   const url = social.feedUrlFor(account, settings);
   try {
-    const { items, channelId } = await social.fetchAccount(account, settings);
-    // A resolved YouTube id is worth keeping even from a test — it is the
-    // slow part, and the next real check should not have to do it again.
-    if (channelId && channelId !== account.channelId) {
-      social.patchAccount(guildId, account.id, { channelId });
-    }
+    const { items, channelId, feedPath } = await social.fetchAccount(account, settings);
+    // A resolved YouTube id, and the address that answered, are both worth
+    // keeping from a test — they are the slow parts, and the next real check
+    // should not have to work them out again.
+    const learned = {};
+    if (channelId && channelId !== account.channelId) learned.channelId = channelId;
+    if (feedPath && feedPath !== account.feedPath) learned.feedPath = feedPath;
+    if (Object.keys(learned).length) social.patchAccount(guildId, account.id, learned);
     const kept = items.filter(i => social.matches(i, account));
     return {
       ok: true,
@@ -323,7 +325,14 @@ async function testAccount(guildId, body, { guild }) {
       lastError: err.message || String(err),
       failures: (account.failures || 0) + 1,
     });
-    return { ok: true, failed: true, url, detail: (err.message || String(err)).slice(0, 200) };
+    return {
+      ok: true, failed: true, url,
+      detail: (err.message || String(err)).slice(0, 300),
+      // Every address that was tried and what each one said. When a route has
+      // been renamed this is the difference between "404" and knowing which
+      // address 404'd.
+      tried: (err.tried || []).slice(0, 4).map(x => ({ url: x.url, why: String(x.why).slice(0, 80) })),
+    };
   }
 }
 
