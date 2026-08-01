@@ -1,8 +1,8 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
-const { readJson, writeJson } = require('../../utils/jsonStorage');
+const { clearWarnings } = require('../../utils/modActions');
+const { memberAction } = require('../../utils/modEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -11,19 +11,18 @@ module.exports = {
     .addUserOption(o => o.setName('user').setDescription('User to clear').setRequired(true)),
 
   async execute(interaction) {
-    const user       = interaction.options.getUser('user');
-    const cases      = readJson('cases.json', {});
-    const guildCases = cases[interaction.guild.id] || [];
-    const before     = guildCases.filter(c => c.type === 'warn' && c.userId === user.id).length;
-
-    cases[interaction.guild.id] = guildCases.filter(c => !(c.type === 'warn' && c.userId === user.id));
-    writeJson('cases.json', cases);
+    const user = interaction.options.getUser('user');
+    // Through modActions rather than editing cases.json here: it marks the
+    // warnings cleared instead of deleting them, which keeps the history and
+    // stops a later case reusing a number that has already been handed out.
+    const before = clearWarnings(interaction.guild.id, user.id);
 
     return interaction.reply({
-      embeds: [createServerEmbed('success', {
-        title: '🗑️ Warnings Cleared',
-        description: `Cleared **${before}** warning${before !== 1 ? 's' : ''} from <@${user.id}>.`,
-      }, interaction.guild)],
+      embeds: [memberAction({
+        user, member: interaction.guild.members.cache.get(user.id),
+        action: 'warnclear',
+        note: `**Cleared:** ${before} warning${before !== 1 ? 's' : ''}`,
+      })],
       flags: MessageFlags.Ephemeral,
     });
   },

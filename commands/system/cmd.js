@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, REST, Routes, MessageFlags } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const { serverAction } = require('../../utils/modEmbed');
 
 const MOD_COMMANDS = [
   'ban', 'clearwarnings', 'kick', 'lock', 'mute', 'purge',
@@ -155,16 +156,12 @@ module.exports = {
 
     const category = isAdmin ? 'admin' : 'moderation';
     return interaction.editReply({
-      embeds: [createServerEmbed('success', {
-        title: '✅ Role Toggled',
-        description: `**${role.name}** has been **${action}** the **${category}** command role list.${syncNote}`,
-        fields: [
-          {
-            name: isAdmin ? 'Admin roles' : 'Mod roles',
-            value: list.length ? list.map(id => `<@&${id}>`).join(', ') : '*(none — using default visibility)*',
-          },
-        ],
-      }, interaction.guild)],
+      embeds: [serverAction({
+        guild: interaction.guild,
+        title: `${role.name} ${action} the ${category} roles`,
+        note: `**Now:** ${list.length ? list.map(id => `<@&${id}>`).join(', ') : 'none — default visibility'}${syncNote}`,
+        color: 0x2ECC71,
+      })],
     });
   },
 };

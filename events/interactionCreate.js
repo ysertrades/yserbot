@@ -31,6 +31,7 @@ function isUnknownInteractionError(err) {
 // ── Cmd permission helper ─────────────────────────────────────────────────────
 const { MOD_COMMANDS, ADMIN_COMMANDS, PUBLIC_COMMANDS } = require('../commands/system/cmd');
 const { reattachEmbedImage, reattachBuilt } = require('../utils/embedAttachments');
+const { memberAction, actionCard } = require('../utils/modEmbed');
 
 function checkCmdPermission(interaction) {
   if (!interaction.inGuild()) return true;
@@ -165,7 +166,7 @@ async function executeReportAction(interaction, action, targetUserId, reportChan
       if (record) reports.update(record.id, { status: 'dismissed', handledBy: interaction.user.tag, handledAt: Date.now(), action: 'dismiss' });
       await markReportCard(interaction.guild, reportChannelId, reportMsgId, `✅ Dismissed by ${interaction.user.tag}`, 0x95a5a6);
       return interaction.update({
-        embeds: [new EmbedBuilder().setColor(0x95a5a6).setTitle('✅ Dismissed').setDescription('Report dismissed.')],
+        embeds: [actionCard({ title: 'Report dismissed', iconURL: interaction.user.displayAvatarURL({ size: 64 }), color: 0x95a5a6 })],
         components: [],
       });
     }
@@ -184,10 +185,14 @@ async function executeReportAction(interaction, action, targetUserId, reportChan
 
     if (!result.ok) {
       return interaction.update({
-        embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('❌ Could not finish')
-          .setDescription(result.error === 'not_in_server'
+        embeds: [actionCard({
+          title: 'Could not finish that',
+          iconURL: interaction.guild.iconURL({ size: 64 }),
+          note: result.error === 'not_in_server'
             ? 'That member is not in the server any more.'
-            : `Discord refused it: ${result.detail || result.error}`)],
+            : `Discord refused it: ${result.detail || result.error}`,
+          color: 0xe74c3c,
+        })],
         components: [],
       });
     }
@@ -197,8 +202,7 @@ async function executeReportAction(interaction, action, targetUserId, reportChan
       `✅ Handled by ${interaction.user.tag} — ${result.label}`, 0x2ecc71);
 
     return interaction.update({
-      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Action Taken')
-        .setDescription(`<@${targetUserId}> has been **${result.label}**.`)],
+      embeds: [memberAction({ user: targetUser, member, action, reason: 'reported' })],
       components: [],
     });
   } catch (err) {

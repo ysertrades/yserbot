@@ -2,9 +2,10 @@
 
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
-const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { sendModLog, dmUser } = require('../../utils/modLog');
 const { parseDuration } = require('../../utils/duration');
+const { memberAction } = require('../../utils/modEmbed');
+const { appendCase } = require('../../utils/modActions');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -28,22 +29,19 @@ module.exports = {
 
     await member.timeout(ms, reason);
 
-    const cases = readJson('cases.json', {});
-    const guildCases = cases[interaction.guild.id] || [];
-    const caseId = guildCases.length + 1;
-    guildCases.push({ id: caseId, type: 'mute', userId: user.id, userTag: user.tag, moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason, duration: durationStr, timestamp: Date.now() });
-    cases[interaction.guild.id] = guildCases;
-    writeJson('cases.json', cases);
+    const { id: caseId } = appendCase(interaction.guild.id, {
+      type: 'mute', userId: user.id, userTag: user.tag,
+      moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason,
+      duration: durationStr,
+    });
 
     await dmUser(user, 'mute', interaction.guild, reason, { duration: durationStr, caseId });
     await sendModLog(interaction.guild, 'mute', user, interaction.user, reason, { duration: durationStr, caseId });
 
     return interaction.reply({
-      embeds: [createServerEmbed('success', {
-        title: '🔇 User Timed Out',
-        description: `<@${user.id}> has been timed out for **${durationStr}**.`,
-        fields: [{ name: '📋 Reason', value: reason }, { name: '🗂️ Case', value: `#${caseId}`, inline: true }],
-      }, interaction.guild)],
+      // How long is the one extra fact that cannot be worked out from
+      // anywhere else, so it rides on the same line as the reason.
+      embeds: [memberAction({ user, member, action: 'timeout', reason, note: `**For:** ${durationStr}` })],
     });
   },
 };
