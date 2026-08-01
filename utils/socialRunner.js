@@ -46,6 +46,20 @@ const BACKOFF_MAX_MS = 60 * 60_000;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/**
+ * Where the platform's mark is served from.
+ *
+ * Discord's CDN fetches an author icon itself, so this has to be an address
+ * reachable from outside — the panel's own, which is the same address the
+ * login link uses. Null when there is not one, and the card simply goes
+ * without a picture.
+ */
+function markUrl(platform) {
+  const base = String(process.env.PUBLIC_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (!base || !/^https?:\/\//i.test(base) || !platform?.mark) return null;
+  return `${base}/social/${platform.mark}-128.png`;
+}
+
 function backoffFor(failures) {
   if (!failures) return 0;
   return Math.min(BACKOFF_MAX_MS, BACKOFF_START_MS * (2 ** (failures - 1)));
@@ -71,6 +85,10 @@ function buildPostEmbed(guildId, account, item) {
   const name = account.label || item.author || account.handle || platform.label;
 
   const embed = messageStyle.build(guildId, platform.styleKey, {
+    // The platform's own mark, beside the heading. Discord fetches this from
+    // the panel, so it only appears when the panel has a public address —
+    // without one the heading is drawn on its own rather than broken.
+    iconURL: markUrl(platform),
     thumbnailURL: item.image,
     // When it was published, not when we noticed. A card that says "just now"
     // for a video from yesterday is worse than no timestamp at all.
@@ -223,6 +241,6 @@ function stopSocialRunner() {
 
 module.exports = {
   startSocialRunner, stopSocialRunner, runTick,
-  checkAccount, postItem, buildPostEmbed, targetFor, isDue, backoffFor,
+  checkAccount, postItem, buildPostEmbed, targetFor, isDue, backoffFor, markUrl,
   TICK_MS, GAP_MS,
 };

@@ -31,6 +31,9 @@ function platformMeta() {
     key: p.key,
     label: p.label,
     emoji: p.emoji,
+    // The drawn mark, served by this panel. Same picture the posted card
+    // carries, so the list and the message cannot show different logos.
+    mark: p.mark ? `/social/${p.mark}-64.png` : null,
     color: p.color,
     styleKey: p.styleKey,
     direct: !!p.direct,
@@ -47,6 +50,7 @@ function describeAccount(account, guild) {
     ...account,
     platformLabel: platform?.label || account.platform,
     platformEmoji: platform?.emoji || '',
+    platformMark: platform?.mark ? `/social/${platform.mark}-64.png` : null,
     platformColor: platform?.color || '#5865F2',
     // Shown so somebody can paste it into a browser and see for themselves
     // what the bot is reading. Half of diagnosing a quiet feed is knowing

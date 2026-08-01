@@ -25,6 +25,7 @@ const auth    = require('./auth');
 const api     = require('./api');
 const preview = require('./preview');
 const { generateAppIcon } = require('../utils/appIconVisual');
+const { generateSocialMark, MARK_KEYS } = require('../utils/socialMarks');
 const { memoizeRender } = require('../utils/renderCache');
 
 // 180 is what iOS asks for as an apple-touch-icon; 192 and 512 are the sizes
@@ -32,6 +33,12 @@ const { memoizeRender } = require('../utils/renderCache');
 // changes at runtime, and drawing one blocks the same thread Discord uses.
 const ICON_SIZES = [180, 192, 512];
 const appIcon = memoizeRender(generateAppIcon, { name: 'appIcon', max: ICON_SIZES.length });
+
+// The platform marks. Two sizes: one for the panel's own list, one for the
+// author icon on a posted card. Memoised for the same reason the app icon is —
+// drawing one blocks the thread Discord is on.
+const MARK_SIZES = [64, 128];
+const socialMark = memoizeRender(generateSocialMark, { name: 'socialMark', max: MARK_KEYS.length * MARK_SIZES.length });
 const writes  = require('./writes');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -188,6 +195,22 @@ async function route(req, res, client) {
   // Home-screen icons. Public on purpose: iOS and Android fetch these from
   // outside any session — often before one exists — so putting them behind the
   // auth gate would mean an installed app with a blank icon.
+  // The platform marks, on the same terms as the icons and for the same
+  // reason: Discord's CDN fetches the author icon on a posted card from
+  // outside any session, so these cannot sit behind the auth gate.
+  const markMatch = /^\/social\/([a-z]+)-(\d{2,4})\.png$/.exec(p);
+  if (markMatch) {
+    const [, key, raw] = markMatch;
+    const size = Number(raw);
+    if (!MARK_KEYS.includes(key) || !MARK_SIZES.includes(size)) {
+      return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
+    }
+    return send(res, 200, socialMark(key, size), {
+      'content-type': 'image/png',
+      'cache-control': 'public, max-age=604800',
+    });
+  }
+
   const iconMatch = /^\/icon-(\d{2,4})\.png$/.exec(p);
   if (iconMatch) {
     const size = Number(iconMatch[1]);

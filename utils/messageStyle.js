@@ -83,19 +83,25 @@ const action = (label, blurb, color, done, extra = {}) => ({
  * own switch there, and a second one here that meant something subtly
  * different would only be confusing.
  */
-const social = (key, name, color, emoji, blurb) => ({
+const social = (key, name, color, blurb) => ({
   [`social.${key}`]: {
     group: 'Social',
     label: name,
     blurb,
     shape: 'card',
+    // The heading goes in the author row rather than the title, because that
+    // is the only slot on a Discord embed that can carry a picture beside the
+    // words — and the picture is the platform's own mark. A title with an
+    // emoji glued to the front was the nearest thing before there was one.
+    iconInAuthor: true,
     parts: ['color', 'title', 'body', 'footer', 'thumbnail', 'timestamp'],
     tokens: ['{author}', '{handle}', '{title}', '{text}', '{url}', '{platform}'],
+    titleLabel: 'Heading',
     bodyLabel: 'Body',
     bodyHint: 'Leave {url} in somewhere — it is what makes the card followable.',
     defaults: {
       enabled: true, color,
-      title: `${emoji} {author} on ${name}`,
+      title: `{author} on ${name}`,
       body: '**[{title}]({url})**\n\n{text}',
       footer: `${name} • {handle}`,
       thumbnail: true, timestamp: true,
@@ -262,14 +268,14 @@ const CATALOGUE = {
 
   /* -- social ------------------------------------------------------------- */
 
-  ...social('youtube', 'YouTube', '#FF0000', '▶️',
+  ...social('youtube', 'YouTube', '#FF0000',
     'Posted when a watched YouTube channel publishes. {title} is the video title.'),
-  ...social('tiktok', 'TikTok', '#FE2C55', '🎵',
+  ...social('tiktok', 'TikTok', '#FE2C55',
     'Posted when a watched TikTok account puts something out.'),
-  ...social('instagram', 'Instagram', '#E1306C', '📸',
+  ...social('instagram', 'Instagram', '#E1306C',
     'Posted when a watched Instagram account puts something out.'),
-  ...social('twitter', 'X', '#1D9BF0', '𝕏',
-    'Posted when a watched X account posts. X\'s own brand colour is black, which is a spine you cannot see on Discord\'s dark theme — this is the blue people still recognise. Change it if you would rather have the black.'),
+  ...social('twitter', 'X', '#0F1419',
+    'Posted when a watched X account posts. The colour is X\'s own black — not quite #000000, because Discord reads a colour of exactly zero as "no colour" and draws its grey instead.'),
 
   'report.submitted': {
     group: 'Reports',
@@ -487,7 +493,17 @@ function build(guildId, key, opts = {}) {
     return embed;
   }
 
-  if (title) set(() => embed.setTitle(title));
+  if (entry.iconInAuthor) {
+    // Author rather than title: it is the one slot that takes a picture beside
+    // the words. The icon is tried first and dropped if Discord refuses it, so
+    // a mark that cannot be fetched costs the picture and not the heading.
+    if (title) {
+      try { embed.setAuthor({ name: title, iconURL: iconURL || undefined }); }
+      catch { set(() => embed.setAuthor({ name: title })); }
+    }
+  } else if (title) {
+    set(() => embed.setTitle(title));
+  }
   if (body) set(() => embed.setDescription(body));
 
   for (const f of fields) {
@@ -523,6 +539,7 @@ function catalogue() {
     shape: entry.shape,
     parts: partsOf(key),
     tokens: [...COMMON_TOKENS, ...(entry.tokens || [])],
+    titleLabel: entry.titleLabel || null,
     bodyLabel: entry.bodyLabel || 'Body',
     bodyHint: entry.bodyHint || null,
     wordingNote: entry.wordingNote || null,
