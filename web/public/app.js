@@ -142,6 +142,8 @@ const state = {
   styleKey: null,                       // Appearance — the message being edited
   socialDraft: null,                    // Social — the account being added
   socialBridge: null, socialTests: {},   // Social — results of the two network buttons
+  socialOpen: new Set(),                // Social — which account cards are open
+  openFolds: new Set(),                 // which fold-away sections are open
   gawBump: null,                        // redraw the giveaway preview on demand
 };
 
@@ -1449,6 +1451,48 @@ const ago = ms => {
   return `${Math.round(s / 86400)} d ago`;
 };
 
+/**
+ * The bits of Discord markdown worth drawing in a preview.
+ *
+ * Nodes, never HTML: every piece of this is either something typed into a box
+ * on this page or a value from the server, and the whole panel's rule is that
+ * nothing is ever assigned as markup. **bold**, *italic* and [text](url) are
+ * the three that change how a card reads — the social cards default to a
+ * bolded link, which without this shows as a line of asterisks and brackets.
+ */
+function mdNodes(text, depth = 0) {
+  const out = [];
+  const src = String(text ?? '');
+  const re = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([\s\S]+?)\*\*|\*([^*\n]+)\*|`([^`\n]+)`/g;
+  let last = 0;
+  for (const m of src.matchAll(re)) {
+    if (m.index > last) out.push(document.createTextNode(src.slice(last, m.index)));
+    if (m[1] !== undefined) {
+      const a = el('span', 'md-link', m[1]);
+      a.title = m[2];
+      out.push(a);
+    } else if (m[3] !== undefined) {
+      // Recursive, because these nest: the social cards default to a bolded
+      // link, and reading ** first swallowed the whole [text](url) inside it
+      // and drew the brackets literally. Depth-capped so a pathological
+      // string cannot spin.
+      const b = el('b');
+      b.append(...(depth < 4 ? mdNodes(m[3], depth + 1) : [document.createTextNode(m[3])]));
+      out.push(b);
+    } else if (m[4] !== undefined) {
+      const i = el('i');
+      i.append(...(depth < 4 ? mdNodes(m[4], depth + 1) : [document.createTextNode(m[4])]));
+      out.push(i);
+    } else {
+      // Code is literal by definition — nothing inside it is markup.
+      out.push(el('code', null, m[5]));
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < src.length) out.push(document.createTextNode(src.slice(last)));
+  return out.length ? out : [document.createTextNode(src)];
+}
+
 /** What a bridge check came back with. */
 function bridgeResultNodes(res) {
   return [
@@ -1497,11 +1541,12 @@ function renderSocial() {
   };
   const landNote = el('p', 'hint', '');
   const syncLand = () => {
+    const watching = d.accounts.filter(a => a.enabled).length;
     landNote.textContent = !s.enabled
       ? 'Nothing is being checked.'
       : !s.channelId
         ? 'Pick a channel — until then there is nowhere for a post to go.'
-        : `${d.accounts.filter(a => a.enabled).length} account${d.accounts.filter(a => a.enabled).length === 1 ? '' : 's'} being watched.`;
+        : `${watching} account${watching === 1 ? '' : 's'} being watched.`;
     landNote.className = `hint${s.enabled && !s.channelId ? ' bad' : ''}`;
   };
 
@@ -1509,69 +1554,68 @@ function renderSocial() {
     toggle('Watch social accounts', s.enabled, v => { s.enabled = v; syncLand(); }),
     pickOne('Channel', 'channel', s.channelId, v => { s.channelId = v; syncLand(); }),
     pickOne('Ping this role', 'role', s.mentionRoleId, v => { s.mentionRoleId = v; }),
-    toggle('Also paste the link', s.showLinkPreview, v => { s.showLinkPreview = v; }),
-    el('p', 'hint', 'Pasting the link makes Discord draw its own card underneath ours, which is two cards for one post. Off unless you want that.'),
     landNote,
     actions(() => post('social', s)),
   );
   syncLand();
 
-  /* -- how it reaches them ------------------------------------------------ */
-  const b = { bridgeUrl: d.bridgeUrl, pollMinutes: d.pollMinutes, maxPerCheck: d.maxPerCheck };
-  const bridgeNote = el('p', 'hint', '');
+  /* -- how often ----------------------------------------------------------
+     Everything about *how* a platform is reached lives behind Advanced. Most
+     of it is jargon nobody should have to learn to watch a YouTube channel,
+     and all of it has a working default. */
+  const b = {
+    pollMinutes: d.pollMinutes, maxPerCheck: d.maxPerCheck,
+    bridgeUrl: d.bridgeUrl, showLinkPreview: d.showLinkPreview,
+  };
 
-  // The result is kept in state rather than in this node. A successful write
-  // hands back a fresh overview and re-renders the whole screen, which would
-  // otherwise throw away the answer a moment after it arrived — the node this
-  // closure is holding would no longer be the one on the page.
   const bridgeOut = el('div', 'social-test');
   bridgeOut.hidden = !state.socialBridge;
   if (state.socialBridge) bridgeOut.replaceChildren(...bridgeResultNodes(state.socialBridge));
 
-  const syncBridge = () => {
-    bridgeNote.textContent = d.bridgeAccounts === 0
-      ? 'Nothing here depends on the bridge right now — only YouTube is being watched, and YouTube publishes its own feed.'
-      : `${d.bridgeAccounts} of ${d.accounts.length} accounts go through the bridge. If they all go quiet at once, the bridge is why.`;
-    bridgeNote.className = 'hint';
-  };
-
-  // Its own button rather than part of Save: this reaches the network, and it
-  // is worth being able to ask "is the bridge up" without changing anything.
-  const checkBtn = el('button', 'btn small', 'Check the bridge');
+  // The result is kept in state rather than in this node. A successful write
+  // hands back a fresh overview and re-renders the whole screen, which would
+  // otherwise throw away the answer a moment after it arrived.
+  const checkBtn = el('button', 'btn small', 'Test the connection');
   checkBtn.type = 'button';
   checkBtn.addEventListener('click', async () => {
     checkBtn.disabled = true;
-    checkBtn.textContent = 'Asking…';
+    checkBtn.textContent = 'Checking…';
     try {
       state.socialBridge = await post('socialbridge', { bridgeUrl: b.bridgeUrl }, { quiet: true })
         || { reason: 'Could not run the check.', url: b.bridgeUrl };
       renderSocial();
     } finally {
       checkBtn.disabled = false;
-      checkBtn.textContent = 'Check the bridge';
+      checkBtn.textContent = 'Test the connection';
     }
   });
 
-  const bridgeFoot = el('div', 'actions');
-  const saveBridge = el('button', 'btn primary small', 'Save changes');
-  saveBridge.type = 'button';
-  saveBridge.addEventListener('click', async () => {
-    saveBridge.disabled = true;
-    try { await post('social', b); } finally { saveBridge.disabled = false; }
-  });
-  bridgeFoot.append(saveBridge, checkBtn);
+  const advanced = disclosure('social:advanced', 'Advanced', [
+    el('p', 'muted', 'YouTube hands out its posts directly, so it needs nothing here. TikTok, Instagram and X do not, so the bot reads those through a helper service. The one below is free and shared by everybody, which means it is sometimes busy — if those three go quiet, this is the first thing to check.'),
+    textField('Helper service', b.bridgeUrl, v => { b.bridgeUrl = v; }, { placeholder: d.defaultBridgeUrl }),
+    toggle('Also paste the link under the card', b.showLinkPreview, v => { b.showLinkPreview = v; }),
+    el('p', 'hint', 'Discord draws its own preview from a pasted link, so this gives you two cards for one post.'),
+    (() => { const row = el('div', 'actions'); row.append(checkBtn); return row; })(),
+    bridgeOut,
+  ]);
+
+  const bridgeNote = el('p', 'hint', '');
+  const failing = d.accounts.filter(a => a.needsBridge && a.lastError).length;
+  bridgeNote.textContent = failing
+    ? `${failing} account${failing === 1 ? ' is' : 's are'} not loading. Open Advanced and test the connection.`
+    : d.bridgeAccounts === 0
+      ? 'Only YouTube is being watched, which needs nothing extra.'
+      : `${d.bridgeAccounts} of ${d.accounts.length} accounts need the helper service.`;
+  bridgeNote.className = `hint${failing ? ' bad' : ''}`;
 
   $('#form-social-bridge').replaceChildren(
-    el('p', 'muted', 'YouTube publishes a feed of its own, so it is read directly and needs nothing in between. TikTok, Instagram and X do not publish one, so those go through a bridge that reads the page and republishes it as a feed. The public bridge is shared by everybody and turns people away when it is busy — point this at your own if you run one.'),
-    textField('Bridge address', b.bridgeUrl, v => { b.bridgeUrl = v; }, { placeholder: d.defaultBridgeUrl }),
     textField('Check every (minutes)', String(b.pollMinutes), v => { b.pollMinutes = Number(v); }),
     textField('At most this many per check', String(b.maxPerCheck), v => { b.maxPerCheck = Number(v); }),
     el('p', 'hint', 'The cap stops an account that has been quiet for a week filling the channel the moment it posts again.'),
     bridgeNote,
-    bridgeFoot,
-    bridgeOut,
+    advanced,
+    actions(() => post('social', b)),
   );
-  syncBridge();
 
   /* -- the accounts ------------------------------------------------------- */
   const wrap = $('#social-accounts');
@@ -1581,7 +1625,9 @@ function renderSocial() {
   if (!d.accounts.length && !state.socialDraft) {
     rows.push(el('p', 'muted', 'No accounts watched yet. Add one and its posts will land in your channel as they go out.'));
   }
-  for (const a of d.accounts) rows.push(socialAccountCard(a, d, false));
+  for (const a of d.accounts) {
+    rows.push(state.socialOpen?.has(a.id) ? socialAccountCard(a, d, false) : socialStrip(a, d));
+  }
 
   // The cards are styled with every other message the bot sends, not here.
   // Saying so with a button beats leaving someone to find it.
@@ -1600,7 +1646,80 @@ function renderSocial() {
   wrap.replaceChildren(...rows);
 }
 
-/** One account: what it is, where it posts, and what it last did. */
+/**
+ * A fold-away section. Native <details>, so it needs no script to open.
+ *
+ * The key is what makes it survive a redraw. Saving re-renders the screen from
+ * the server's reply, and a fresh <details> starts closed — so a section you
+ * had opened would snap shut under you, taking with it whatever you had just
+ * asked for. The Test-the-connection result landed inside one of these.
+ */
+function disclosure(key, label, nodes) {
+  const box = el('details', 'disc');
+  const head = el('summary', null, label);
+  box.append(head, ...nodes);
+  if (state.openFolds?.has(key)) box.open = true;
+  box.addEventListener('toggle', () => {
+    if (!state.openFolds) state.openFolds = new Set();
+    if (box.open) state.openFolds.add(key);
+    else state.openFolds.delete(key);
+  });
+  return box;
+}
+
+/**
+ * How an account is doing, in one word and one colour.
+ *
+ * Green once it is posting, amber while it has not been looked at yet, red
+ * when the last look failed, grey when it is switched off.
+ */
+function socialHealth(a) {
+  if (!a.enabled) return { tone: 'off', word: 'Paused' };
+  if (a.lastError) return { tone: 'bad', word: 'Not loading' };
+  if (!a.lastCheckedAt) return { tone: 'wait', word: 'Not checked yet' };
+  if (a.posts) return { tone: 'on', word: `${a.posts} posted` };
+  return { tone: 'on', word: 'Watching' };
+}
+
+/**
+ * The collapsed account: a strip you can read a list of at a glance.
+ *
+ * A watched account is mostly something you set up once and then only want to
+ * see the state of. Fifteen inputs each is unreadable at four accounts, so
+ * the list collapses to this and opens on a tap.
+ */
+function socialStrip(account, d) {
+  const platform = d.platforms.find(p => p.key === account.platform) || d.platforms[0];
+  const health = socialHealth(account);
+
+  const strip = el('button', 'social-strip');
+  strip.type = 'button';
+  strip.style.borderLeftColor = platform.color;
+  strip.setAttribute('aria-expanded', 'false');
+  if (!account.enabled) strip.classList.add('off');
+
+  const badge = el('span', 'social-badge', platform.emoji);
+  badge.style.background = platform.color;
+
+  const names = el('span', 'social-names');
+  names.append(
+    el('span', 'nm', account.label || account.handle || platform.label),
+    el('span', 'mt', `${platform.label}${account.label && account.handle ? ` · ${account.handle}` : ''}`),
+  );
+
+  const state_ = el('span', `pill ${health.tone}`, health.word);
+  const chev = el('span', 'social-chev', '›');
+
+  strip.append(badge, names, state_, chev);
+  strip.addEventListener('click', () => {
+    if (!state.socialOpen) state.socialOpen = new Set();
+    state.socialOpen.add(account.id);
+    renderSocial();
+  });
+  return strip;
+}
+
+/** One account, opened up: the few things worth changing, and the rest folded away. */
 function socialAccountCard(account, d, isNew) {
   const platform = d.platforms.find(p => p.key === account.platform) || d.platforms[0];
   const draft = { id: isNew ? '' : account.id, ...account };
@@ -1610,44 +1729,58 @@ function socialAccountCard(account, d, isNew) {
   if (!isNew && !account.enabled) card.classList.add('off');
 
   const head = el('div', 'queue-head');
-  const name = el('h2', null, isNew ? 'New account' : `${account.platformEmoji} ${account.label || account.handle}`);
-  head.append(name);
+  const badge = el('span', 'social-badge', platform.emoji);
+  badge.style.background = platform.color;
+  const title = el('h2', null, isNew ? 'New account' : (account.label || account.handle));
+  const headLeft = el('div', 'social-head-left');
+  headLeft.append(badge, title);
+  head.append(headLeft);
+
   if (!isNew) {
-    const tag = el('span', 'tag', account.platformLabel);
-    tag.style.color = platform.color;
-    head.append(tag);
+    const fold = el('button', 'btn small', 'Collapse');
+    fold.type = 'button';
+    fold.addEventListener('click', () => {
+      state.socialOpen?.delete(account.id);
+      renderSocial();
+    });
+    head.append(fold);
   }
   card.append(head);
 
-  const fields = el('div');
-  fields.append(
+  /* -- the few things worth asking for ----------------------------------- */
+  const basics = el('div');
+  basics.append(
     select('Platform', draft.platform, d.platforms.map(p => ({ value: p.key, label: `${p.emoji} ${p.label}` })),
       v => {
         draft.platform = v;
-        // The hint under the handle box is per platform, so the card is
-        // redrawn rather than left describing the wrong one.
+        // The hint under the name box is per platform, so the card is redrawn
+        // rather than left describing the wrong one.
         if (isNew) { state.socialDraft = { ...draft }; renderSocial(); }
       }),
     textField('Account name', draft.handle, v => { draft.handle = v; },
-      { placeholder: platform.handleHint }),
+      { placeholder: platform.direct ? '@channelhandle' : '@username' }),
     el('p', 'hint', platform.direct
-      ? 'YouTube is read directly — a handle, a UC… id or a channel URL all work.'
-      : `Read through the bridge. If ${platform.label} goes quiet, try a feed address of your own below.`),
+      ? 'A @handle, or the link to the channel — either works.'
+      : 'The @name from their profile.'),
     textField('Show them as (optional)', draft.label || '', v => { draft.label = v; }),
-    textField('Feed address (optional)', draft.feedUrl || '', v => { draft.feedUrl = v; },
-      { placeholder: 'https://…  any RSS or Atom feed' }),
-    el('p', 'hint', 'Set this and the platform and bridge are ignored entirely — it is the way out when a bridge stops working.'),
+    toggle('Watching', draft.enabled !== false, v => { draft.enabled = v; }),
+  );
+  card.append(basics);
+
+  /* -- and the rest, folded away ------------------------------------------ */
+  card.append(disclosure(`social:more:${draft.id || 'new'}`, 'More options', [
     pickOne('Post to (leave blank for the main channel)', 'channel', draft.postChannelId, v => { draft.postChannelId = v; }),
     pickOne('Ping (leave blank for the main role)', 'role', draft.mentionRoleId, v => { draft.mentionRoleId = v; }),
     wordsField('Only post if it mentions', draft.includeKeywords, v => { draft.includeKeywords = v; },
       'Comma separated. Leave empty to post everything.'),
     wordsField('Never post if it mentions', draft.excludeKeywords, v => { draft.excludeKeywords = v; },
       'Checked first — a post matching both is skipped.'),
-    toggle('Watching', draft.enabled !== false, v => { draft.enabled = v; }),
-  );
-  card.append(fields);
+    textField('Read from this address instead', draft.feedUrl || '', v => { draft.feedUrl = v; },
+      { placeholder: 'https://…' }),
+    el('p', 'hint', 'Only if somebody has given you one. It replaces the normal way this account is read.'),
+  ]));
 
-  /* status */
+  /* -- how it is doing ---------------------------------------------------- */
   if (!isNew) {
     const status = el('div', 'rows social-status');
     status.append(
@@ -1659,13 +1792,6 @@ function socialAccountCard(account, d, isNew) {
       const errRow = row('Last error', account.lastError);
       errRow.classList.add('bad');
       status.append(errRow);
-    }
-    if (account.resolvedFeedUrl) {
-      const link = el('a', 'hint mono', account.resolvedFeedUrl);
-      link.href = account.resolvedFeedUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      status.append(link);
     }
     card.append(status);
   }
@@ -1698,6 +1824,10 @@ function socialAccountCard(account, d, isNew) {
       });
       if (res?.ok) {
         state.socialDraft = null;
+        // A newly added account opens, so its status is visible straight away
+        // rather than needing to be found and tapped.
+        if (!state.socialOpen) state.socialOpen = new Set();
+        if (res.id) state.socialOpen.add(res.id);
         state.overview = await get(`/api/guild/${state.guildId}`);
         renderOverview();
       }
@@ -1749,6 +1879,7 @@ function socialAccountCard(account, d, isNew) {
       })) return;
       const res = await post('socialaccount', { id: account.id, remove: true });
       if (res?.ok) {
+        state.socialOpen?.delete(account.id);
         state.overview = await get(`/api/guild/${state.guildId}`);
         renderOverview();
       }
@@ -1765,13 +1896,13 @@ function socialTestResult(res) {
   const box = el('div', 'social-test');
   if (res.failed) {
     box.append(el('p', 'hint bad', `Could not read it: ${res.detail}`));
-    box.append(el('p', 'hint', `Asked: ${res.url || 'no address could be built'}`));
+    if (res.url) box.append(el('p', 'hint', `Asked: ${res.url}`));
     return box;
   }
 
-  box.append(el('p', 'hint', `${res.found} post${res.found === 1 ? '' : 's'} in the feed · ${res.keptByFilters} would pass your filters`));
+  box.append(el('p', 'hint', `${res.found} post${res.found === 1 ? '' : 's'} found · ${res.keptByFilters} would pass your filters`));
   if (!res.baselineSet) {
-    box.append(el('p', 'hint', 'Nothing has been posted from this account yet — the first real check sets a baseline, and everything after that arrives. Use "Post the latest" if you want to see the card now.'));
+    box.append(el('p', 'hint', 'Nothing has been posted from this account yet — the first check sets a starting point, and everything after that arrives. Use "Post the latest" if you want to see the card now.'));
   }
   const list = el('div', 'rows');
   for (const item of res.sample) {
@@ -1835,12 +1966,18 @@ function stylePreview(entry, values, sample) {
     const a = el('div', 'a lead');
     a.append(el('span', 'av'), el('span', null, title || 'Update'));
     box.append(a);
-    if (body) box.append(el('p', 'd', body));
+    if (body) { const d = el('p', 'd'); d.append(...mdNodes(body)); box.append(d); }
     return box;
   }
 
-  if (title) box.append(el('p', 't', title));
-  if (body) box.append(el('p', 'd', body));
+  // The corner picture is a real element beside the text rather than something
+  // floated over the top of it. It used to be an ::after pinned to the
+  // corner, which on a card shorter than the square itself — a card that is
+  // only a timestamp, say — hung out of the bottom and sat on the sentence
+  // underneath.
+  const main = el('div', 'demb-main');
+  if (title) main.append(el('p', 't', title));
+  if (body) { const d = el('p', 'd'); d.append(...mdNodes(body)); main.append(d); }
 
   // The rows the bot fills in at send time. Shown greyed so it is clear the
   // card will be taller than the parts on the left, without implying they can
@@ -1852,16 +1989,19 @@ function stylePreview(entry, values, sample) {
     cell.append(el('b', null, f));
     cell.append(el('span', null, 'added when it is sent'));
     fixed.append(cell);
-    box.append(fixed);
+    main.append(fixed);
   }
 
   const footer = fillTokens(values.footer, sample);
   const bits = [];
   if (footer) bits.push(footer);
   if (values.timestamp) bits.push(new Date().toLocaleString());
-  if (bits.length) box.append(el('p', 'ft', bits.join(' • ')));
+  if (bits.length) main.append(el('p', 'ft', bits.join(' • ')));
 
-  if (values.thumbnail) box.classList.add('has-thumb');
+  const row = el('div', 'demb-row');
+  row.append(main);
+  if (values.thumbnail) row.append(el('span', 'demb-thumb'));
+  box.append(row);
   return box;
 }
 
