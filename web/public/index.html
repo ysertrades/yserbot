@@ -332,6 +332,17 @@
 
     <!-- ── Moderation ──────────────────────────────────────────────────── -->
     <div class="section" data-section="moderation">
+      <!-- Queues first: the things waiting on a person, before the settings
+           that govern them. -->
+      <div class="panel" id="report-card">
+        <div class="queue-head">
+          <h2>Reports <span class="tag" id="report-count" hidden></span></h2>
+          <span class="hint" id="report-channel-state"></span>
+        </div>
+        <p class="muted">Every report members file with <code>/report</code>. Acting here does exactly what the buttons on the report card do — a case is logged, the member is told, and it goes to your mod log.</p>
+        <div class="rows" id="report-open"></div>
+      </div>
+
       <div class="panel" id="link-queue-card">
         <div class="queue-head">
           <h2>Link requests <span class="tag" id="link-count" hidden></span></h2>
@@ -354,9 +365,37 @@
         </article>
       </div>
 
+      <div class="grid">
+        <article class="panel">
+          <h2>Members with warnings</h2>
+          <p class="muted">Tap someone to see their record and clear it.</p>
+          <div class="rows" id="warned-list"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Case log <span class="tag" id="case-total"></span></h2>
+          <p class="muted">The last thirty actions taken on this server, wherever they were taken from.</p>
+          <div class="rows" id="case-log"></div>
+        </article>
+      </div>
+
+      <div class="grid">
+        <article class="panel">
+          <h2>Filters</h2>
+          <form id="form-moderation" class="form"></form>
+        </article>
+
+        <article class="panel">
+          <h2>Automatic punishment</h2>
+          <p class="muted">What happens once a member reaches a set number of warnings.</p>
+          <form id="form-warnsettings" class="form"></form>
+        </article>
+      </div>
+
       <div class="panel">
-        <h2>Moderation</h2>
-        <form id="form-moderation" class="form"></form>
+        <h2>Filtered words</h2>
+        <p class="muted">Added on top of the built-in list. Messages containing any of them are removed and the sender warned.</p>
+        <form id="form-badwords" class="form"></form>
       </div>
     </div>
 

@@ -22,6 +22,7 @@
 const { memoizeRender } = require('../utils/renderCache');
 const { generateTradingViewBannerImage, TV_DEFAULTS } = require('../utils/tradingViewVisual');
 const { generateWhopBannerImage, WHOP_DEFAULTS } = require('../utils/whopVisual');
+const { generatePrizeGiveawayBannerImage, PRIZE_DEFAULTS } = require('../utils/prizeGiveawayVisual');
 const { generateGiveawayBannerImage } = require('../utils/giveawayVisual');
 const { LIMITS, normalise, getBannerCopy, copyForDynamicKey } = require('../utils/bannerCopy');
 const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
@@ -38,6 +39,12 @@ const TEMPLATES = {
     filename: 'whop_banner.png',
     defaults: WHOP_DEFAULTS,
     render: memoizeRender(generateWhopBannerImage, { name: 'preview:whop', max: 24 }),
+  },
+  prize: {
+    label: 'Prize giveaway',
+    filename: 'prize_giveaway_banner.png',
+    defaults: PRIZE_DEFAULTS,
+    render: memoizeRender(generatePrizeGiveawayBannerImage, { name: 'preview:prize', max: 24 }),
   },
 };
 

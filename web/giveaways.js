@@ -16,6 +16,7 @@
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { parseDuration } = require('../utils/duration');
+const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
 
 // A month, matching what the panel already allowed in minutes.
 const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -211,6 +212,22 @@ async function create(guildId, body, { guild, session, client }) {
     mention = `<@&${body.mention}>`;
   }
 
+  // Either a generated banner (drawn and attached at post time) or an ordinary
+  // https link. Anything else is refused rather than passed to Discord, which
+  // rejects the whole message for a malformed image and loses the giveaway.
+  let imageUrl = null;
+  if (kind === 'prize' && body.imageUrl) {
+    const raw = String(body.imageUrl).trim();
+    if (raw.startsWith('dynamic:')) {
+      if (!DYNAMIC_IMAGES[raw.slice(8)]) return { error: 'bad_image' };
+      imageUrl = raw;
+    } else if (/^https:\/\/\S+$/i.test(raw) && raw.length <= 500) {
+      imageUrl = raw;
+    } else {
+      return { error: 'bad_image' };
+    }
+  }
+
   const shared = {
     winners, durationMs, mention,
     channelId: channel.id, guildId,
@@ -227,7 +244,7 @@ async function create(guildId, body, { guild, session, client }) {
           // icon, and the panel has no member object to ask — the bot's own
           // avatar keeps the embed from looking broken in that case.
           client?.user?.displayAvatarURL?.() || null,
-          { ...shared, prize, imageUrl: body.imageUrl || null });
+          { ...shared, prize, imageUrl });
 
     return {
       ok: true, kind, messageId: out.message.id, channelName: channel.name,

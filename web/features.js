@@ -48,7 +48,12 @@ const GROUPS = {
 const CONFIG_GROUPS = {
   lottery: {
     label: 'Lottery',
-    fields: [{ key: 'channelId', path: ['lotterySettings', 'channelId'], label: 'Results channel', type: 'channel' }],
+    fields: [
+      { key: 'channelId', path: ['lotterySettings', 'channelId'], label: 'Results channel', type: 'channel' },
+      // Skips the daily draw without touching the pool, so entries already
+      // bought are still there when it is switched back on.
+      { key: 'paused', path: ['lotterySettings', 'paused'], label: 'Pause the daily draw', type: 'bool' },
+    ],
   },
   verify: {
     label: 'Verification',
@@ -189,6 +194,12 @@ function coerce(field, incoming, guild) {
     }
     case 'text':
       return { value: typeof incoming === 'string' ? incoming.slice(0, field.max || 2000) : '' };
+    case 'bool':
+      // Strictly a boolean: a checkbox that arrived as the string "false"
+      // would otherwise be stored as true, which for a pause switch means the
+      // opposite of what was asked for.
+      if (typeof incoming !== 'boolean') return { error: 'bad_bool' };
+      return { value: incoming };
     default:
       return { error: 'bad_field' };
   }

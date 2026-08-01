@@ -478,6 +478,7 @@ function renderOverview() {
   renderTickets();
   renderCasino();
   renderLinkRequests();
+  renderModeration();
   renderGroupForm('#form-lottery', 'lottery');
   renderGroupForm('#form-cards', 'cards');
   renderGroupForm('#form-verify', 'verify');
@@ -1422,6 +1423,21 @@ function renderGiveawayForm() {
     { placeholder: 'Blue Guardian $10k account' });
   prizeField.style.display = 'none';
 
+  // Prize giveaways can carry a banner; coins ones already draw their own.
+  // Either a generated image — the Prize giveaway one is editable in Studio —
+  // or a link, with the picker winning if both are filled in.
+  const generated = (state.overview?.composerMeta?.dynamicImages || [])
+    .map(d => ({ value: d, label: `Generated · ${d.slice(8)}` }));
+  let pickedImage = '', typedImage = '';
+  const syncImage = () => { draft.imageUrl = pickedImage || typedImage || null; };
+
+  const imagePick = select('Banner', '', generated, v => { pickedImage = v; syncImage(); },
+    { blank: 'None, or paste a link below' });
+  const imageUrlField = textField('Image link (https)', '', v => { typedImage = v.trim(); syncImage(); },
+    { placeholder: 'https://…' });
+  const imageNote = el('p', 'hint', 'The Prize giveaway banner can be reworded in Studio, and every giveaway using it picks that up.');
+  for (const node of [imagePick, imageUrlField, imageNote]) node.style.display = 'none';
+
   const kindField = select('Type', 'coins', [
     { value: 'coins', label: 'Coins — paid out automatically' },
     { value: 'prize', label: 'Prize — announced, you hand it over' },
@@ -1429,6 +1445,11 @@ function renderGiveawayForm() {
     draft.kind = v;
     amountField.style.display = v === 'coins' ? '' : 'none';
     prizeField.style.display = v === 'prize' ? '' : 'none';
+    for (const node of [imagePick, imageUrlField, imageNote]) {
+      node.style.display = v === 'prize' ? '' : 'none';
+    }
+    // A prize giveaway does not use the coins banner, so its preview would be
+    // showing something that will not be posted.
     $('#gaw-preview').closest('.stage').style.display = v === 'coins' ? '' : 'none';
     if (v === 'coins') bump();
   });
@@ -1437,6 +1458,9 @@ function renderGiveawayForm() {
     kindField,
     amountField,
     prizeField,
+    imagePick,
+    imageUrlField,
+    imageNote,
     textField('Winners', '1', v => { draft.winners = Number(v); bump(); }),
     durationField('Runs for', '1h', v => { draft.duration = v; }),
     pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Pick a channel' }),
@@ -1552,6 +1576,160 @@ function renderSettings() {
   form.replaceChildren(...nodes);
 }
 
+/* ── reports, cases and warnings ───────────────────────────────────────────
+   Reports lead the section because they are the only thing here waiting on a
+   person. Everything below is reference or settings. */
+
+function renderModeration() {
+  const m = state.overview?.mod;
+  if (!m) return;
+
+  /* -- the report queue -------------------------------------------------- */
+  const chState = $('#report-channel-state');
+  chState.textContent = m.reports.channel
+    ? `Filed to #${m.reports.channel}`
+    : 'No report channel set — /report cannot be used';
+  chState.className = `hint${m.reports.channel ? '' : ' bad'}`;
+
+  const count = $('#report-count');
+  count.hidden = m.reports.open.length === 0;
+  count.textContent = String(m.reports.open.length);
+
+  const open = $('#report-open');
+  open.replaceChildren(...(m.reports.open.length ? m.reports.open.map(r => {
+    const d = el('button', 'gaw tappable');
+    d.type = 'button';
+    const top = el('div', 'gaw-top');
+    // Repeat offenders are the ones worth spotting from the list.
+    const repeat = r.priorActioned > 0 || r.warnings > 0;
+    top.append(
+      el('span', `kind ${repeat ? 'sev-warn' : 'sev-clear'}`, repeat ? 'REPEAT' : 'NEW'),
+      el('span', 'nm', r.targetName),
+    );
+    d.append(top);
+    d.append(el('p', 'hint', `${r.reason} · from ${r.reporterName}${r.createdAt ? ` · ${relativeTime(r.createdAt)}` : ''}`));
+    const bits = [];
+    if (r.warnings) bits.push(`${r.warnings} warning${r.warnings === 1 ? '' : 's'}`);
+    if (r.priorActioned) bits.push(`${r.priorActioned} report${r.priorActioned === 1 ? '' : 's'} actioned before`);
+    if (!r.inServer) bits.push('no longer in the server');
+    if (bits.length) d.append(el('p', 'hint', bits.join(' · ')));
+    d.append(el('span', 'chev', '›'));
+    d.addEventListener('click', () => openReport(r));
+    return d;
+  }) : [el('p', 'muted', 'No reports waiting.')]));
+
+  /* -- members with warnings --------------------------------------------- */
+  const warned = $('#warned-list');
+  warned.replaceChildren(...(m.warned.length ? m.warned.map(w => {
+    const r = el('div', 'permit');
+    r.append(el('span', 'who', w.name));
+    const right = el('div', 'permit-right');
+    right.append(el('span', `pill ${w.count >= 3 ? 'wait' : 'off'}`, `${w.count} warning${w.count === 1 ? '' : 's'}`));
+    const clear = el('button', 'btn small', 'Clear');
+    clear.type = 'button';
+    clear.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: `Clear warnings for ${w.name}?`,
+        message: `All ${w.count} warning${w.count === 1 ? '' : 's'} are removed. Kicks and bans stay on the case log — those are a record of something that happened.`,
+        confirmLabel: 'Clear them', danger: true,
+      })) return;
+      clear.disabled = true;
+      await post('warnclear', { userId: w.userId });
+    });
+    right.append(clear);
+    r.append(right);
+    return r;
+  }) : [el('p', 'muted', 'Nobody has a warning.')]));
+
+  /* -- the case log ------------------------------------------------------- */
+  $('#case-total').textContent = m.caseTotal ? `${num(m.caseTotal)} total` : '';
+  const log = $('#case-log');
+  log.replaceChildren(...(m.cases.length ? m.cases.map(c => {
+    const r = el('div', 'row');
+    r.append(el('span', 'k', `${c.icon} #${c.id} ${c.userName}`));
+    r.append(el('span', 'v dim', `${c.moderator}${c.at ? ` · ${relativeTime(c.at)}` : ''}`));
+    return r;
+  }) : [el('p', 'muted', 'Nothing logged yet.')]));
+
+  /* -- automatic punishment ---------------------------------------------- */
+  const ws = { ...m.warnSettings };
+  const muteField = textField('Mute length (minutes)', String(ws.muteMinutes), v => { ws.muteMinutes = Number(v); });
+  muteField.style.display = ws.action === 'mute' ? '' : 'none';
+
+  $('#form-warnsettings').replaceChildren(
+    textField('Act after this many warnings — 0 for never', String(ws.threshold), v => { ws.threshold = Number(v); }),
+    select('What to do', ws.action, [
+      { value: 'kick', label: 'Kick them' },
+      { value: 'ban', label: 'Ban them' },
+      { value: 'mute', label: 'Time them out' },
+    ], v => { ws.action = v; muteField.style.display = v === 'mute' ? '' : 'none'; }),
+    muteField,
+    actions(() => post('warnsettings', ws)),
+  );
+
+  /* -- filtered words ----------------------------------------------------- */
+  const words = { customWords: m.filters.customWords.slice() };
+  $('#form-badwords').replaceChildren(
+    areaField(`Words and phrases, one per line (${m.filters.customWords.length})`,
+      words.customWords.join('\n'),
+      v => { words.customWords = v.split('\n').map(w => w.trim()).filter(Boolean); }, 5),
+    actions(() => post('moderation', words)),
+  );
+}
+
+/** A report, and everything that can be done about it. */
+function openReport(r) {
+  const body = [
+    sheetRow('Reported', `${r.targetName} (${r.targetTag})`),
+    sheetRow('Reason', r.reason),
+    sheetRow('Reported by', r.reporterName),
+    sheetRow('Account age', r.accountAge),
+    sheetRow('Still here', r.inServer ? 'yes' : 'no'),
+    sheetRow('Warnings', String(r.warnings)),
+    sheetRow('Past reports', r.priorReports
+      ? `${r.priorReports} · ${r.priorActioned} actioned`
+      : 'none'),
+  ];
+  if (r.link) body.push(sheetRow('Message', el('span', 'v mono wrap', r.link)));
+
+  const why = { text: '' };
+  body.push(textField('Reason to record (optional)', '', v => { why.text = v; }));
+
+  const timeout = { minutes: 60 };
+  const timeoutField = textField('Timeout length (minutes)', '60', v => { timeout.minutes = Number(v); });
+  body.push(timeoutField);
+
+  const act = (label, action, danger) => {
+    const b = el('button', `btn ${danger ? 'danger' : ''}`.trim(), label);
+    b.type = 'button';
+    // A member who has left can still be banned, but not kicked or timed out.
+    if (!r.inServer && (action === 'kick' || action === 'timeout')) b.disabled = true;
+    b.addEventListener('click', async () => {
+      if (b.dataset.armed !== '1' && action !== 'dismiss') {
+        b.dataset.armed = '1';
+        b.textContent = `Tap again to ${label.toLowerCase()}`;
+        return;
+      }
+      b.disabled = true;
+      const out = await post('report', {
+        reportId: r.id, action, reason: why.text,
+        timeoutMinutes: timeout.minutes,
+      });
+      if (out) closeSheet();
+      else { b.disabled = false; b.dataset.armed = ''; b.textContent = label; }
+    });
+    return b;
+  };
+
+  openSheet(`Report · ${r.targetName}`, body, [
+    act('Warn', 'warn', false),
+    act('Timeout', 'timeout', false),
+    act('Kick', 'kick', true),
+    act('Ban', 'ban', true),
+    act('Dismiss', 'dismiss', false),
+  ]);
+}
+
 /* ── link requests ─────────────────────────────────────────────────────────
    The queue used to live only as cards in the mod-log channel, which means
    noticing one requires being in Discord, on the right channel, at the time.
@@ -1618,15 +1796,22 @@ function renderLinkRequests() {
   wrap.replaceChildren(...(rows.length ? rows : [el('p', 'muted', 'Nothing waiting.')]));
 
   /* -- standing permissions ---------------------------------------------- */
+  // Its own row rather than the generic one: a name, a state and a button do
+  // not sit on a shared baseline, and the button needs to be held off the
+  // text rather than butted against it.
   const permits = $('#link-permits');
   permits.replaceChildren(...(l.permits.length ? l.permits.map(p => {
-    const r = el('div', 'row');
-    const label = p.state === 'locked'
-      ? `locked · ${readableWait(p.secondsLeft)}`
-      : p.state === 'waiting' ? `next link in ${readableWait(p.secondsLeft)}` : 'may post now';
-    r.append(el('span', 'k', p.displayName));
-    const right = el('span', 'v');
-    right.append(el('span', 'dim', label));
+    const r = el('div', 'permit');
+    r.append(el('span', 'who', p.displayName));
+
+    const right = el('div', 'permit-right');
+    const state = p.state === 'locked'
+      ? { cls: 'off', text: `locked ${readableWait(p.secondsLeft)}` }
+      : p.state === 'waiting'
+        ? { cls: 'wait', text: `next in ${readableWait(p.secondsLeft)}` }
+        : { cls: 'on', text: 'may post now' };
+    right.append(el('span', `pill ${state.cls}`, state.text));
+
     const revoke = el('button', 'btn small danger', 'Revoke');
     revoke.type = 'button';
     revoke.addEventListener('click', async () => {
@@ -1639,6 +1824,7 @@ function renderLinkRequests() {
       await post('linkrevoke', { userId: p.userId });
     });
     right.append(revoke);
+
     r.append(right);
     return r;
   }) : [el('p', 'muted', 'Nobody has a standing permission.')]));

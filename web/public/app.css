@@ -201,6 +201,9 @@ h2 {
 
 /* ── rows ────────────────────────────────────────────────────────────── */
 .rows { display: flex; flex-direction: column; gap: 0.62rem; }
+/* A list that follows explanatory copy needs air between the two, or the
+   first entry reads as the next sentence of the paragraph. */
+.panel > .muted + .rows, .panel > .hint + .rows { margin-top: 0.85rem; }
 .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; font-size: 0.9rem; }
 .row .k { color: var(--soft); }
 .row .v { font-family: var(--mono); font-size: 0.85rem; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
@@ -213,6 +216,28 @@ h2 {
 }
 .pill.on { color: var(--good); }
 .pill.off { color: var(--off); }
+.pill.wait { color: var(--warn); }
+
+/* A name, a state and a control on one line.
+   Not the generic .row: that aligns on a shared baseline, which puts a button
+   and a line of text on the same invisible line and reads as crooked, and it
+   leaves nothing between the state and the button so they touch. */
+.permit {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.75rem; min-height: 2rem;
+}
+.permit .who {
+  font-size: 0.9rem; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.permit-right { display: flex; align-items: center; gap: 0.55rem; flex: none; }
+
+/* On a narrow phone the name and its controls stack rather than the name
+   being squeezed down to a few characters. */
+@media (max-width: 26rem) {
+  .permit { flex-direction: column; align-items: stretch; gap: 0.45rem; }
+  .permit-right { justify-content: space-between; }
+}
 
 .tag {
   font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em;
