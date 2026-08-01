@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, MessageFlags } = require('discord.js');
 
 const pollVotes = new Map(); // messageId -> Map(optionIndex -> Set(userIds))
 
@@ -59,12 +59,25 @@ module.exports.handleButton = async function(interaction) {
     const optionIndex = parseInt(parts[2]);
     const messageId = interaction.message.id;
 
+    // The tally lives in memory, so every poll that outlives a restart comes
+    // through here — which makes this the common path, not the rare one. The
+    // options are the embed's fields; without them there is nothing to rebuild
+    // from, and reading through them anyway turned the poll into a row of
+    // buttons that errored for everyone who pressed one.
+    const source = interaction.message.embeds?.[0];
+    const options = Array.isArray(source?.fields) ? source.fields : null;
+    if (!options || options.length === 0) {
+        return interaction.reply({
+            content: '⚠️ This poll has lost its options, so votes cannot be counted. Start a new one with `/poll`.',
+            flags: MessageFlags.Ephemeral,
+        });
+    }
+
     let votes = pollVotes.get(messageId);
     if (!votes) {
-        // Rebuild vote tracking from the embed if the bot restarted after the poll was created
+        // Rebuilt from the embed after a restart.
         votes = new Map();
-        const embed = interaction.message.embeds[0];
-        embed.fields.forEach((_, i) => votes.set(i, new Set()));
+        options.forEach((_, i) => votes.set(i, new Set()));
         pollVotes.set(messageId, votes);
     }
 
@@ -75,12 +88,11 @@ module.exports.handleButton = async function(interaction) {
     votes.get(optionIndex)?.add(interaction.user.id);
 
     const embed = EmbedBuilder.from(interaction.message.embeds[0]);
-    const fields = embed.data.fields.map((field, i) => ({
+    embed.setFields(options.map((field, i) => ({
         name: field.name,
         value: `**${votes.get(i)?.size || 0}** votes`,
         inline: false,
-    }));
-    embed.setFields(fields);
+    })));
 
     await interaction.update({ embeds: [embed] });
 };

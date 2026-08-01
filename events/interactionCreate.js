@@ -30,7 +30,7 @@ function isUnknownInteractionError(err) {
 
 // ── Cmd permission helper ─────────────────────────────────────────────────────
 const { MOD_COMMANDS, ADMIN_COMMANDS, PUBLIC_COMMANDS } = require('../commands/system/cmd');
-const { keepAttachmentRefs } = require('../utils/embedAttachments');
+const { reattachEmbedImage, reattachBuilt } = require('../utils/embedAttachments');
 
 function checkCmdPermission(interaction) {
   if (!interaction.inGuild()) return true;
@@ -314,12 +314,14 @@ module.exports = {
             const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
             const desc = (upd.data.description || '').replace(/📊 \*\*Entries:\*\* \d+ participants?/, `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`);
             upd.setDescription(desc);
-            // Reading the embed back gives resolved CDN links, which leaves the
-            // banner unclaimed — Discord then shows it above the embed as well
-            // as inside it. Putting the attachment:// references back keeps it
-            // in one place.
-            keepAttachmentRefs(interaction.message, upd);
-            await interaction.message.edit({ embeds: [upd] }).catch(() => {});
+            // The banner is re-uploaded rather than re-linked. A signed CDN URL
+            // copied out of the live embed is not something Discord can match
+            // back to the attachment, so it drew the picture twice — once
+            // inside the embed and once above it. See utils/embedAttachments.
+            const stored = global.giveawayMeta?.get(interaction.message.id)
+              ?? client.commands.get('giveaway')?.getActiveGiveaway?.(interaction.message.id);
+            const imageOpts = reattachEmbedImage(upd, stored?.imageUrl ?? null, interaction.guild?.id);
+            await interaction.message.edit({ embeds: [upd], ...imageOpts }).catch(() => {});
           } catch {}
           // Persist the new entry so it survives future restarts
           client.commands.get('giveaway')?.persistGiveawayEntry?.(interaction.message.id, entrants);
@@ -396,13 +398,16 @@ module.exports = {
             const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
             const desc = (upd.data.description || '').replace(/📊 \*\*Entries:\*\* \d+ participants?/, `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`);
             upd.setDescription(desc);
-            // The cached embed's image URL is already the resolved CDN link, not
-            // "attachment://<name>" — re-pinning it to the still-attached file by
-            // name keeps Discord treating it as one embedded image instead of also
-            // rendering the untouched attachment as a second, separate preview.
-            const bannerName = interaction.message.attachments.first()?.name;
-            if (bannerName) upd.setImage(`attachment://${bannerName}`);
-            await interaction.message.edit({ embeds: [upd] }).catch(() => {});
+            // Redrawn and re-uploaded, for the same reason as the prize
+            // giveaway above: pointing the embed at the file already on the
+            // message is a guess, and it was the wrong one.
+            const cgCmdRef = client.commands.get('coinsgiveaway');
+            const forBanner = cgMeta ?? cgCmdRef?.getActive?.(interaction.message.id);
+            const banner = forBanner
+              ? cgCmdRef?.buildBanner?.({ amount: forBanner.amount, winners: forBanner.winners ?? forBanner.winnersCount ?? 1 })
+              : null;
+            const coinsOpts = banner ? reattachBuilt(upd, banner) : {};
+            await interaction.message.edit({ embeds: [upd], ...coinsOpts }).catch(() => {});
           } catch {}
           client.commands.get('coinsgiveaway')?.persistEntry?.(interaction.message.id, entrants);
           return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });

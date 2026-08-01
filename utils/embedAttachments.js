@@ -7,13 +7,11 @@
  *
  * Two traps, and the giveaway hit both.
  *
- * The first: Discord renders an attachment inline *unless* an embed claims it
- * through `attachment://name`. Reading an embed back with EmbedBuilder.from()
- * gives you the resolved CDN URL rather than that reference, so re-saving it
- * leaves the file unclaimed — and it appears a second time, above the embed,
- * as well as inside it. That is what happened every time somebody pressed
- * Enter on a giveaway: the entry count edit re-wrote the embed and orphaned
- * its own banner.
+ * The first: Discord shows an attachment above an embed unless it can tell the
+ * embed is displaying that same file — and a signed CDN link copied out of one
+ * message and written back into another is not something it can tell that
+ * from. So the banner appeared twice, once inside the embed and once above it,
+ * every time somebody pressed Enter and the entry count was rewritten.
  *
  * The second: editing with `files` and no `attachments` *adds* to what is
  * already there rather than replacing it, so re-sending the same banner on
@@ -26,32 +24,64 @@ const {
 } = require('./dynamicEmbedImages');
 
 /**
- * Rewrites CDN links back into `attachment://` references.
+ * Edit options for a message whose picture must survive a text-only change.
  *
- * Called before editing an embed that was read off an existing message, so the
- * files stay claimed and Discord keeps showing them in one place.
+ * This is the entry-count edit on a giveaway, and it took three attempts to get
+ * right, so it is worth writing down why it ends up here.
  *
- * @param {import('discord.js').Message} message
- * @param {import('discord.js').EmbedBuilder} embed
- * @returns {import('discord.js').EmbedBuilder} the same builder, for chaining
+ * A CDN link is not a stable name for an attachment. Discord signs them —
+ * `?ex=…&is=…&hm=…` — and re-signs them every time it hands the message back.
+ * The client only hides a file from the standalone previews above an embed when
+ * it can tell the embed is showing that same file, so an embed carrying a
+ * link that no longer matches gets both: the picture inside the embed, and the
+ * attachment again above it. Copying the URL out of the live message with
+ * EmbedBuilder.from() and writing it straight back is exactly that.
+ *
+ * Rewriting the link to `attachment://name` is closer but still a guess about
+ * what Discord will resolve it against, because the request carries no files.
+ *
+ * So this does the one thing that is not a guess: it re-uploads the picture,
+ * the same way the original message that renders correctly was posted, and
+ * clears the old attachment so there is exactly one. `attachment://name` then
+ * refers to a file in this very request. The banner is memoised, so redrawing
+ * costs nothing; the upload is the price of the message being right.
+ *
+ * @param {import('discord.js').EmbedBuilder} embed  edited in place
+ * @param {string|null} imageUrl  what the giveaway stored: a generated key, a
+ *   link, or nothing
+ * @param {string|null} guildId   so a generated banner uses this server's wording
+ * @returns {object} extra options to spread into the edit
  */
-function keepAttachmentRefs(message, embed) {
-  const names = [...(message?.attachments?.values?.() || [])].map(a => a.name).filter(Boolean);
-  if (!names.length) return embed;
+function reattachEmbedImage(embed, imageUrl, guildId = null) {
+  if (!imageUrl) return {};
 
-  const restore = url => {
-    if (typeof url !== 'string' || url.startsWith('attachment://')) return url;
-    // The CDN path ends in the original filename, which is what ties a
-    // resolved URL back to the attachment it came from.
-    const match = names.find(n => url.includes(`/${n}`));
-    return match ? `attachment://${match}` : url;
-  };
+  // A plain link is hosted somewhere else, so there is no attachment to lose
+  // and nothing to re-upload. Setting it is enough.
+  if (!isDynamicImage(imageUrl)) {
+    const files = applyEmbedImage(embed, imageUrl, guildId);
+    return files.length ? replaceFiles(files) : {};
+  }
 
-  const image = embed.data?.image?.url;
-  if (image) embed.setImage(restore(image));
-  const thumb = embed.data?.thumbnail?.url;
-  if (thumb) embed.setThumbnail(restore(thumb));
-  return embed;
+  const files = applyEmbedImage(embed, imageUrl, guildId);
+  // If the banner could not be drawn, leave the embed exactly as it was rather
+  // than editing it into a state with a reference to a file that is not there.
+  return files.length ? replaceFiles(files) : {};
+}
+
+/**
+ * The same, for a picture that is built by the caller rather than looked up.
+ *
+ * The coins giveaway draws its own banner with its own wording, so it hands the
+ * finished attachment in instead of a key to look up.
+ */
+function reattachBuilt(embed, attachment) {
+  if (!attachment?.name) return {};
+  try { embed.setImage(`attachment://${attachment.name}`); }
+  catch (err) {
+    console.error('[Embed] could not reference the rebuilt image:', err.message ?? err);
+    return {};
+  }
+  return replaceFiles([attachment]);
 }
 
 /**
@@ -99,4 +129,4 @@ function replaceFiles(files) {
   return { files, attachments: [] };
 }
 
-module.exports = { keepAttachmentRefs, applyEmbedImage, replaceFiles };
+module.exports = { reattachEmbedImage, reattachBuilt, applyEmbedImage, replaceFiles };

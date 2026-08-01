@@ -291,6 +291,22 @@ function buildChannelPickerView(sessionId) {
 // ── Launch ────────────────────────────────────────────────────────────────────
 
 /**
+ * The giveaway's banner, drawn fresh.
+ *
+ * Exported because the entry-count edit re-uploads it rather than pointing the
+ * embed at the file already on the message — a signed CDN link copied out of a
+ * live embed is not something Discord matches back to its attachment, and the
+ * banner ended up drawn twice. One definition, so the picture on the edit is
+ * the picture that was posted.
+ */
+function buildBanner({ amount, winners }) {
+  return new AttachmentBuilder(generateGiveawayBannerImage({
+    amountLabel: `${Number(amount).toLocaleString()} COINS EACH`,
+    subLabel: `${winners} WINNER${winners !== 1 ? 'S' : ''} • HIT ENTER BELOW`,
+  }), { name: `coinsgiveaway_${Date.now()}.png` });
+}
+
+/**
  * Posts a coins giveaway and registers it.
  *
  * Split out from launchGiveaway so the web control panel can start one through
@@ -332,15 +348,11 @@ async function postGiveaway(guild, hostId, data) {
   const endTimestamp = Math.floor(endTime / 1000);
   const reqLines    = requirementsLines(data);
 
-  const imageName  = `coinsgiveaway_${Date.now()}.png`;
-  const attachment = new AttachmentBuilder(generateGiveawayBannerImage({
-    amountLabel: `${amount.toLocaleString()} COINS EACH`,
-    subLabel: `${winners} WINNER${winners !== 1 ? 'S' : ''} • HIT ENTER BELOW`,
-  }), { name: imageName });
+  const attachment = buildBanner({ amount, winners });
 
   const embed = new EmbedBuilder()
     .setColor(GOLD)
-    .setImage(`attachment://${imageName}`)
+    .setImage(`attachment://${attachment.name}`)
     .setDescription(
       `✨ Click **Enter** below for a shot at **${amount.toLocaleString()} coins**!\n\n` +
       `👤 **Hosted by:** <@${hostId}>\n` +
@@ -968,6 +980,7 @@ module.exports = {
 // Exposed for the web control panel, which ends and rerolls giveaways through
 // exactly the same code path the slash command uses rather than a parallel one.
 module.exports.postGiveaway     = postGiveaway;
+module.exports.buildBanner      = buildBanner;
 module.exports.endCoinsGiveaway = endCoinsGiveaway;
 module.exports.performReroll    = performReroll;
 module.exports.getActive        = getActive;
