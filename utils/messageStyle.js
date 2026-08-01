@@ -98,13 +98,21 @@ const social = (key, name, color, blurb) => ({
     tokens: ['{author}', '{handle}', '{title}', '{text}', '{url}', '{platform}'],
     titleLabel: 'Heading',
     bodyLabel: 'Body',
-    bodyHint: 'Leave {url} in somewhere — it is what makes the card followable.',
+    bodyHint: 'Leave {url} in somewhere — it is what makes the card followable. Add {text} if you want the post\'s own words under it.',
     defaults: {
       enabled: true, color,
       title: `{author} on ${name}`,
-      body: '**[{title}]({url})**\n\n{text}',
+      // The post's title, and nothing else. A caption arrives as whatever the
+      // poster wrote — a YouTube description is a wall of channel links and
+      // disclaimers, an Instagram one is thirty hashtags — and pasting that
+      // under the headline buries the one line anyone reads. {text} is still
+      // a token, so a server that wants the caption can put it back.
+      body: '**[{title}]({url})**',
       footer: `${name} • {handle}`,
-      thumbnail: true, timestamp: true,
+      // Off, so the post's picture goes across the bottom of the card instead
+      // of into the little square in the corner. A video thumbnail or a photo
+      // post *is* the post; shrinking it to a corner tile makes it decoration.
+      thumbnail: false, timestamp: true,
     },
   },
 });
