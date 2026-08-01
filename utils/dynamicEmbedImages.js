@@ -21,6 +21,7 @@ const { generateRiskGuideImage } = require('./riskGuideVisual');
 const { generateNewsfeedGuideImage } = require('./newsfeedGuideVisual');
 const { generateTradingViewBannerImage } = require('./tradingViewVisual');
 const { generateWhopBannerImage } = require('./whopVisual');
+const { generatePrizeGiveawayBannerImage } = require('./prizeGiveawayVisual');
 const { memoizeRender } = require('./renderCache');
 const { copyForDynamicKey } = require('./bannerCopy');
 
@@ -29,7 +30,7 @@ const { copyForDynamicKey } = require('./bannerCopy');
 // sent or previewed. They're memoised, and warm() renders them once at boot so
 // no interaction ever pays for the first one either.
 //
-// The two banners are the exception: `takesCopy` marks them as accepting the
+// The banners are the exception: `takesCopy` marks them as accepting the
 // per-guild wording edited in Studio, so they get a slightly larger cache to
 // hold a few guilds' variants side by side.
 const DYNAMIC_IMAGES = {
@@ -40,6 +41,7 @@ const DYNAMIC_IMAGES = {
   newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: memoizeRender(generateNewsfeedGuideImage,   { name: 'newsfeedGuide',    max: 1 }) },
   tradingViewBanner: { filename: 'tradingview_banner.png', takesCopy: true, generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 8 }) },
   whopBanner:        { filename: 'whop_banner.png',        takesCopy: true, generate: memoizeRender(generateWhopBannerImage,        { name: 'whopBanner',        max: 8 }) },
+  prizeGiveawayBanner: { filename: 'prize_giveaway_banner.png', takesCopy: true, generate: memoizeRender(generatePrizeGiveawayBannerImage, { name: 'prizeGiveawayBanner', max: 8 }) },
 };
 
 /**

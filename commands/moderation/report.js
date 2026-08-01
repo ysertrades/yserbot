@@ -7,6 +7,7 @@ const {
   MessageFlags,
 } = require('discord.js');
 const { readJson } = require('../../utils/jsonStorage');
+const reports = require('../../utils/reports');
 
 const REASON_OPTIONS = [
   { value: 'spam',          label: '📨 Spam' },
@@ -142,7 +143,21 @@ module.exports = {
       );
 
       const content = reportRole ? `<@&${reportRole}>` : undefined;
-      await reportCh.send({ content, embeds: [embed], components: [actionRow] });
+      const posted = await reportCh.send({ content, embeds: [embed], components: [actionRow] });
+
+      // Recorded as well as posted. The message used to be the only copy,
+      // which meant the queue could only be read by scrolling this channel.
+      reports.create({
+        guildId: interaction.guild.id,
+        channelId: reportChId,
+        messageId: posted?.id || null,
+        reporterId: interaction.user.id,
+        reporterTag: interaction.user.tag,
+        targetId: session.targetUserId,
+        targetTag: targetUser?.tag || session.targetUserId,
+        reason: REASON_LABELS[session.reason] || session.reason,
+        link: session.link || '',
+      });
 
       sessions.delete(ownerId);
       return interaction.update({

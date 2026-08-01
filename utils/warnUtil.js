@@ -1,6 +1,7 @@
 'use strict';
 
 const { readJson, writeJson } = require('./jsonStorage');
+const { appendCase, warningsFor } = require('./modActions');
 const { sendModLog, dmUser } = require('./modLog');
 
 /**
@@ -13,14 +14,13 @@ const { sendModLog, dmUser } = require('./modLog');
  * synthetic `{ id: client.user.id, tag: 'Auto-Mod' }` for automated warns.
  */
 async function issueWarning(guild, moderator, targetUser, member, reason) {
-  const cases      = readJson('cases.json', {});
-  const guildCases = cases[guild.id] || [];
-  const caseId     = guildCases.length + 1;
-  guildCases.push({ id: caseId, type: 'warn', userId: targetUser.id, userTag: targetUser.tag, moderatorId: moderator.id, moderatorTag: moderator.tag, reason, timestamp: Date.now() });
-  cases[guild.id] = guildCases;
-  writeJson('cases.json', cases);
-
-  const warnCount = guildCases.filter(c => c.type === 'warn' && c.userId === targetUser.id).length;
+  // Numbered and written in one step by modActions, so two warnings issued
+  // close together cannot be handed the same case id.
+  const { id: caseId } = appendCase(guild.id, {
+    type: 'warn', userId: targetUser.id, userTag: targetUser.tag,
+    moderatorId: moderator.id, moderatorTag: moderator.tag, reason,
+  });
+  const warnCount = warningsFor(guild.id, targetUser.id).length;
 
   await dmUser(targetUser, 'warn', guild, reason, { caseId });
   await sendModLog(guild, 'warn', targetUser, moderator, reason, { caseId });

@@ -11,6 +11,7 @@ const {
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
 const { parseDuration } = require('../../utils/duration');
+const { isDynamicImage, dynamicAttachmentRef, collectDynamicAttachments } = require('../../utils/dynamicEmbedImages');
 
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
@@ -326,7 +327,16 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     .setFooter({ text: `Ends at | ${dateStr(endTime)}` })
     .setTimestamp(endTime);
 
-  if (imageUrl) embed.setImage(imageUrl);
+  // A generated banner is not a URL — it has to be drawn, attached, and then
+  // referenced as attachment://. Anything else is treated as an ordinary link.
+  const files = [];
+  if (isDynamicImage(imageUrl)) {
+    const ref = dynamicAttachmentRef(imageUrl);
+    const drawn = collectDynamicAttachments({ embeds: [{ image: imageUrl }] }, guildId);
+    if (ref && drawn.length) { embed.setImage(ref); files.push(...drawn); }
+  } else if (imageUrl) {
+    embed.setImage(imageUrl);
+  }
   const thumb = guild.iconURL({ dynamic: true }) || hostAvatarUrl;
   if (thumb) embed.setThumbnail(thumb);
 
@@ -335,7 +345,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     new ButtonBuilder().setCustomId('giveaway_participants').setLabel('Participants').setStyle(ButtonStyle.Secondary).setEmoji('🏅'),
   );
 
-  const msg = await channel.send({ content, embeds: [embed], components: [row], allowedMentions: mentionOpts });
+  const msg = await channel.send({ content, embeds: [embed], components: [row], files, allowedMentions: mentionOpts });
 
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   if (!global.giveawayMeta)     global.giveawayMeta     = new Map();

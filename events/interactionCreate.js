@@ -142,59 +142,67 @@ async function handleReportAction(interaction, targetUserId, reportChannelId) {
 }
 
 async function executeReportAction(interaction, action, targetUserId, reportChannelId, reportMsgId) {
-  const { sendModLog, dmUser } = require('../utils/modLog');
-  const { readJson: rj, writeJson: wj } = require('../utils/jsonStorage');
+  const modActions = require('../utils/modActions');
+  const reports    = require('../utils/reports');
 
-  let label = '';
   try {
-    const targetUser = await interaction.client.users.fetch(targetUserId);
-    const member     = interaction.guild.members.cache.get(targetUserId);
-    const reason     = `Report action by ${interaction.user.tag}`;
-    const cases      = rj('cases.json', {});
-    const gCases     = cases[interaction.guild.id] || [];
-    const caseId     = gCases.length + 1;
+    const record = reports.findByMessage(interaction.guild.id, reportMsgId);
 
-    if (action === 'warn') {
-      gCases.push({ id: caseId, type: 'warn', userId: targetUserId, userTag: targetUser.tag, moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason, timestamp: Date.now() });
-      cases[interaction.guild.id] = gCases; wj('cases.json', cases);
-      await dmUser(targetUser, 'warn', interaction.guild, reason, { caseId });
-      await sendModLog(interaction.guild, 'warn', targetUser, interaction.user, reason, { caseId });
-      label = 'warned';
-    } else if (action === 'kick' && member) {
-      gCases.push({ id: caseId, type: 'kick', userId: targetUserId, userTag: targetUser.tag, moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason, timestamp: Date.now() });
-      cases[interaction.guild.id] = gCases; wj('cases.json', cases);
-      await dmUser(targetUser, 'kick', interaction.guild, reason, { caseId });
-      await member.kick(reason);
-      await sendModLog(interaction.guild, 'kick', targetUser, interaction.user, reason, { caseId });
-      label = 'kicked';
-    } else if (action === 'ban') {
-      gCases.push({ id: caseId, type: 'ban', userId: targetUserId, userTag: targetUser.tag, moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason, timestamp: Date.now() });
-      cases[interaction.guild.id] = gCases; wj('cases.json', cases);
-      await dmUser(targetUser, 'ban', interaction.guild, reason, {});
-      await interaction.guild.members.ban(targetUserId, { reason });
-      await sendModLog(interaction.guild, 'ban', targetUser, interaction.user, reason, { caseId });
-      label = 'banned';
+    if (action === 'dismiss') {
+      if (record) reports.update(record.id, { status: 'dismissed', handledBy: interaction.user.tag, handledAt: Date.now(), action: 'dismiss' });
+      await markReportCard(interaction.guild, reportChannelId, reportMsgId, `✅ Dismissed by ${interaction.user.tag}`, 0x95a5a6);
+      return interaction.update({
+        embeds: [new EmbedBuilder().setColor(0x95a5a6).setTitle('✅ Dismissed').setDescription('Report dismissed.')],
+        components: [],
+      });
     }
 
-    try {
-      const reportCh  = interaction.guild.channels.cache.get(reportChannelId);
-      if (reportCh) {
-        const reportMsg = await reportCh.messages.fetch(reportMsgId);
-        const updEmbed  = EmbedBuilder.from(reportMsg.embeds[0])
-          .setColor(action === 'dismiss' ? 0x95a5a6 : 0x2ecc71)
-          .setFooter({ text: `✅ Handled by ${interaction.user.tag} — ${action === 'dismiss' ? 'Dismissed' : label.charAt(0).toUpperCase() + label.slice(1)}` });
-        await reportMsg.edit({ embeds: [updEmbed], components: [] });
-      }
-    } catch {}
+    const targetUser = await interaction.client.users.fetch(targetUserId);
+    const member     = interaction.guild.members.cache.get(targetUserId);
+
+    // The case, the DM and the mod-log line all live in utils/modActions, so
+    // this does exactly what /warn and the panel do.
+    const result = await modActions.apply({
+      guild: interaction.guild,
+      moderator: { id: interaction.user.id, tag: interaction.user.tag },
+      targetUser, member, action,
+      reason: `Report action by ${interaction.user.tag}`,
+    });
+
+    if (!result.ok) {
+      return interaction.update({
+        embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('❌ Could not finish')
+          .setDescription(result.error === 'not_in_server'
+            ? 'That member is not in the server any more.'
+            : `Discord refused it: ${result.detail || result.error}`)],
+        components: [],
+      });
+    }
+
+    if (record) reports.update(record.id, { status: 'actioned', handledBy: interaction.user.tag, handledAt: Date.now(), action });
+    await markReportCard(interaction.guild, reportChannelId, reportMsgId,
+      `✅ Handled by ${interaction.user.tag} — ${result.label}`, 0x2ecc71);
 
     return interaction.update({
-      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Action Taken').setDescription(action === 'dismiss' ? 'Report dismissed.' : `<@${targetUserId}> has been **${label}**.`)],
+      embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Action Taken')
+        .setDescription(`<@${targetUserId}> has been **${result.label}**.`)],
       components: [],
     });
   } catch (err) {
     console.error('[REPORT ACTION]', err);
     return interaction.reply({ content: '❌ Failed to execute action.', flags: EPHEMERAL_FLAG });
   }
+}
+
+/** Strikes the original report card so the channel shows it as dealt with. */
+async function markReportCard(guild, channelId, messageId, footer, colour) {
+  try {
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel) return;
+    const message = await channel.messages.fetch(messageId);
+    const updated = EmbedBuilder.from(message.embeds[0]).setColor(colour).setFooter({ text: footer });
+    await message.edit({ embeds: [updated], components: [] });
+  } catch { /* the card may have been deleted; the action itself still stands */ }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────

@@ -3,10 +3,10 @@
 /**
  * bannerCopy.js
  *
- * The wording on the TradingView and Whop banners, saved per guild.
+ * The wording on the editable banners, saved per guild.
  *
- * These two images are the only dynamic embed images that take arguments —
- * the rest are fixed art. The Studio screen edits that wording, and this is
+ * These are the only dynamic embed images that take arguments — the rest are
+ * fixed art. The Studio screen edits that wording, and this is
  * where the result lives so that the banner an embed actually sends matches
  * the one Studio previewed. Before this existed Studio was preview-only:
  * dynamicEmbedImages called the generators with no arguments at all, so every
@@ -21,6 +21,7 @@
 const { readJson, writeJson } = require('./jsonStorage');
 const { TV_DEFAULTS } = require('./tradingViewVisual');
 const { WHOP_DEFAULTS } = require('./whopVisual');
+const { PRIZE_DEFAULTS } = require('./prizeGiveawayVisual');
 
 const FILE = 'banner_copy.json';
 
@@ -38,6 +39,7 @@ const LIMITS = { pill: 16, heading: 28, subtitle: 44, tagline: 130 };
 const BANNERS = {
   tradingview: { label: 'TradingView indicator', dynamicKey: 'tradingViewBanner', defaults: TV_DEFAULTS },
   whop:        { label: 'Whop membership',       dynamicKey: 'whopBanner',        defaults: WHOP_DEFAULTS },
+  prize:       { label: 'Prize giveaway',        dynamicKey: 'prizeGiveawayBanner', defaults: PRIZE_DEFAULTS },
 };
 
 const byDynamicKey = new Map(Object.entries(BANNERS).map(([key, b]) => [b.dynamicKey, key]));

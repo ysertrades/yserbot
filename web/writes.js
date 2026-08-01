@@ -35,6 +35,7 @@ const features = require('./features');
 const tickets = require('./tickets');
 const casinoPanel = require('./casino');
 const links = require('./links');
+const moderationPanel = require('./moderation');
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -421,6 +422,29 @@ Object.assign(OPS, {
   async settings(guildId, body, ctx) {
     const r = settings.save(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`, 'settings');
+    return r;
+  },
+
+  /* -- reports and warnings ---------------------------------------------- */
+  async report(guildId, body, ctx) {
+    const r = await moderationPanel.act(guildId, body, ctx);
+    if (!r.ok) return r;
+    await announce(ctx.client, guildId, ctx.session, r.action === 'dismiss'
+      ? `🚨 Report about <@${r.targetId}> dismissed`
+      : `🚨 Report about <@${r.targetId}> — **${r.label}** · case #${r.caseId}`, 'moderation');
+    return r;
+  },
+  async warnclear(guildId, body, ctx) {
+    const r = moderationPanel.clearWarnings(guildId, body, ctx);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `⚠️ Cleared **${r.removed}** warning${r.removed === 1 ? '' : 's'} for <@${r.userId}>`, 'moderation');
+    }
+    return r;
+  },
+  async warnsettings(guildId, body, ctx) {
+    const r = moderationPanel.saveWarnSettings(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚠️ **Warnings** — ${r.changed.join('; ')}`, 'moderation');
     return r;
   },
 

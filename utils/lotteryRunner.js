@@ -50,6 +50,10 @@ async function runTick(client) {
   for (const guildId of Object.keys(config)) {
     const settings = config[guildId]?.lotterySettings;
     if (!settings?.channelId) continue;
+    // Paused from the control panel. Entries already in the pool stay exactly
+    // where they are — pausing skips the draw, it does not cancel it, so
+    // resuming picks up with everyone who had already entered.
+    if (settings.paused) continue;
 
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
