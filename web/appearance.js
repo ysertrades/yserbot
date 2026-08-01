@@ -37,6 +37,15 @@ const SAMPLE = {
   channel: '#ticket-0004',
   role: '@Verified',
   target: '@someone',
+  // The social cards. Without these every line of a YouTube or TikTok preview
+  // has nothing but empty tokens in it, so every line is dropped and the
+  // preview shows a bare colour bar — which is not what gets sent at all.
+  author: 'YSER Trades',
+  handle: '@ysertrades',
+  title: 'How I plan my week',
+  text: 'The full breakdown, start to finish.',
+  url: 'https://youtu.be/example',
+  platform: 'YouTube',
 };
 
 /** What one entry looks like once a guild's changes are folded in. */
