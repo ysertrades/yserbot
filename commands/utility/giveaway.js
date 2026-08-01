@@ -37,6 +37,28 @@ function removeActiveGiveaway(msgId) {
   writeJson(ACTIVE_FILE, all);
 }
 
+/**
+ * Takes ownership of a giveaway so it can only be ended once.
+ *
+ * Three things can decide a giveaway is over at the same moment: its own
+ * timer, the End now button in the panel, and /giveaway end. Without a claim
+ * they all read the same entrants, all draw their own winners, and all write
+ * their own finished record — which is two winners announced for one prize.
+ *
+ * The active record is the claim. Removing it is the first thing that happens,
+ * before any await, so within this single-threaded process exactly one caller
+ * can come away with `true`.
+ *
+ * @returns {boolean} whether this caller is the one that gets to end it
+ */
+function claimGiveaway(msgId) {
+  const all = readJson(ACTIVE_FILE, {});
+  if (!all[msgId]) return false;
+  delete all[msgId];
+  writeJson(ACTIVE_FILE, all);
+  return true;
+}
+
 function getActiveGiveaway(msgId) {
   return readJson(ACTIVE_FILE, {})[msgId] ?? null;
 }
@@ -445,6 +467,9 @@ async function dmWinners(client, guild, winnerIds, prize, hostId, { rerolled = f
 
 async function endGiveaway(message, meta) {
   const { prize, winnersCount, imageUrl, hostId, guildId, bonusRoleId, createdAt } = meta;
+  // Claimed before anything else is read, so a timer firing at the same
+  // moment somebody presses End does not draw a second set of winners.
+  if (!claimGiveaway(message.id)) return;
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   const entrants = global.giveawayEntrants.get(message.id);
 

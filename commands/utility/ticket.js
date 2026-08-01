@@ -64,6 +64,10 @@ async function sendTempReply(interaction, embed) {
 
 // ── Main command ──────────────────────────────────────────────────────────
 module.exports = {
+  // Exported so web/tickets.js can present the same defaults rather than
+  // keeping a second copy of them.
+  DEFAULT,
+
   data: new SlashCommandBuilder()
     .setName('ticket').setDescription('Ticket system')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

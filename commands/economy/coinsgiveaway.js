@@ -55,6 +55,21 @@ function getActive(msgId) {
   return readJson(ACTIVE_FILE, {})[msgId] ?? null;
 }
 
+/**
+ * Takes ownership so a coins giveaway can only pay out once.
+ *
+ * More important here than for a prize giveaway: this one credits the winners
+ * itself, so two concurrent endings would pay twice out of nothing. Removing
+ * the active record is the claim, and it happens before any await.
+ */
+function claimActive(msgId) {
+  const all = readJson(ACTIVE_FILE, {});
+  if (!all[msgId]) return false;
+  delete all[msgId];
+  writeJson(ACTIVE_FILE, all);
+  return true;
+}
+
 function persistEntry(msgId, entrants) {
   const all = readJson(ACTIVE_FILE, {});
   if (!all[msgId]) return;
@@ -441,6 +456,7 @@ async function dmWinners(client, guild, winnerIds, amount, { rerolled = false } 
 // object so callers (e.g. earlyEndGiveaway) can report back when the
 // in-channel edit couldn't happen.
 async function endCoinsGiveaway(message, meta) {
+  if (!claimActive(message.id)) return { displayed: false, winnerIds: [], totalPaid: 0, shortId: null, alreadyEnded: true };
   const { amount, winnersCount, hostId, guildId, bonusRoleId, createdAt } = meta;
   if (!global.coinsGiveawayEntrants) global.coinsGiveawayEntrants = new Map();
   const entrants = global.coinsGiveawayEntrants.get(message.id);

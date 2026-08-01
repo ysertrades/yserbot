@@ -25,14 +25,11 @@ const ticketCmd = () => require('../commands/utility/ticket.js');
 
 const TOPIC_PREFIX = 'ticket-owner:';
 
-// Mirrors DEFAULT in commands/utility/ticket.js. Kept in the same shape so the
-// panel and the command always read one another's writes.
-const DEFAULTS = {
-  inactivityEnabled: true,
-  inactivityTime: 30,
-  inactivityMessage: 'This ticket has been inactive for {time}. Click below if you still need help.',
-  transcriptEnabled: false,
-};
+// The command's own defaults rather than a second copy of them. Two tables
+// spelling out the same wording is how the panel and the bot drift apart, and
+// they already had: the Settings screen offered the same stored field under a
+// different name, in a different unit, describing a thing it does not do.
+const { DEFAULT: DEFAULTS } = require('../commands/utility/ticket');
 
 const FIELDS = [
   { key: 'inactivityEnabled', type: 'bool', label: 'Nudge quiet tickets' },
