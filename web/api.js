@@ -17,14 +17,17 @@ const { readJson } = require('../utils/jsonStorage');
 const { getLeaderboard } = require('../utils/economyManager');
 const {
   getAutoModSettings, getModLogSettings, getNewsFeedSettings, getEconCalSettings,
-  getModLogChannel,
+  getModLogChannel, PANEL_LOG_CATEGORIES: LOG_CATEGORIES, getPanelLogSettings: panelLogSettings,
 } = require('../utils/modConfig');
 const { listSources } = require('../utils/newsFeed');
+const { allBannerCopy } = require('../utils/bannerCopy');
+const { IMPACT_LEVELS, CURRENCIES } = require('../utils/economicCalendar');
 const { stats: renderStats } = require('../utils/renderCache');
 const composer = require('./composer');
 const giveaways = require('./giveaways');
 const settings = require('./settings');
 const features = require('./features');
+const tickets = require('./tickets');
 
 /** Guilds this session may open, as the picker needs them. */
 function me(session, client) {
@@ -120,8 +123,23 @@ async function guildOverview(guildId, client) {
       enabled: !!econcal.enabled,
       channelId: econcal.channelId ?? null,
       channel: channelName(econcal.channelId),
+      // The role pinged 15 minutes before a release — never on the release.
+      roleId: econcal.roleId ?? null,
+      role: (econcal.roleId && guild.roles.cache.get(econcal.roleId)?.name) || null,
       impact: econcal.impactFilter || [],
       currencies: econcal.currencyFilter || [],
+      // The vocabularies come from the calendar itself so the panel offers
+      // exactly what /econcal does — Holiday included.
+      impactLevels: IMPACT_LEVELS,
+      currencyCodes: CURRENCIES,
+      weekly: {
+        enabled: !!econcal.weeklyPost?.enabled,
+        weekday: econcal.weeklyPost?.weekday ?? 1,
+        hour: econcal.weeklyPost?.hour ?? 0,
+        minute: econcal.weeklyPost?.minute ?? 0,
+        offsetMinutes: econcal.weeklyPost?.offsetMinutes ?? 0,
+      },
+      // Kept for anything still reading the old flat flag.
       weeklyPost: !!econcal.weeklyPost?.enabled,
     },
     automod: {
@@ -153,9 +171,17 @@ async function guildOverview(guildId, client) {
     // overview call, so switching between sections never waits on the network.
     composer: composer.list(guildId),
     composerMeta: composer.meta(),
+    // What Studio has saved, so opening it shows the wording the embeds are
+    // actually sending rather than the factory defaults.
+    banners: allBannerCopy(guildId),
+    panelLog: {
+      categories: Object.entries(LOG_CATEGORIES).map(([key, c]) => ({ key, label: c.label })),
+      values: panelLogSettings(guildId),
+    },
     giveaways: giveawayState,
     settings: settings.read(guildId, guild),
     features: features.read(guildId, guild),
+    tickets: tickets.read(guildId, guild),
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,

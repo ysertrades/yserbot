@@ -15,6 +15,10 @@
  */
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
+const { parseDuration } = require('../utils/duration');
+
+// A month, matching what the panel already allowed in minutes.
+const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const giveawayCmd = () => require('../commands/utility/giveaway.js');
 const coinsCmd = () => require('../commands/economy/coinsgiveaway.js');
@@ -47,7 +51,10 @@ function list(guildId) {
     active.push({
       kind: 'prize', messageId, channelId: d.channelId,
       title: d.prize, winners: d.winnersCount ?? d.winners ?? 1,
-      endsAt: d.endsAt ?? null, hostId: d.hostId ?? null,
+      // Both stores call this endTime; reading `endsAt` here meant the field
+      // was always undefined, so the panel never had an end time to count down
+      // to and the countdown simply never rendered.
+      endsAt: d.endTime ?? d.endsAt ?? null, hostId: d.hostId ?? null,
       entrants: entrantCount(global.giveawayEntrants, messageId, d.entrants),
     });
   }
@@ -57,7 +64,10 @@ function list(guildId) {
       kind: 'coins', messageId, channelId: d.channelId,
       title: `${Number(d.amount || 0).toLocaleString()} coins`,
       amount: d.amount ?? 0, winners: d.winnersCount ?? 1,
-      endsAt: d.endsAt ?? null, hostId: d.hostId ?? null,
+      // Both stores call this endTime; reading `endsAt` here meant the field
+      // was always undefined, so the panel never had an end time to count down
+      // to and the countdown simply never rendered.
+      endsAt: d.endTime ?? d.endsAt ?? null, hostId: d.hostId ?? null,
       entrants: entrantCount(global.coinsGiveawayEntrants, messageId, d.entrants),
     });
   }
@@ -126,6 +136,32 @@ async function reroll(guildId, body, { guild }) {
 }
 
 /**
+ * Removes a finished giveaway from the panel's history.
+ *
+ * Deliberately only touches the ended record — the announcement message that
+ * was already posted in the channel stays exactly where it is. Deleting the
+ * record makes a reroll impossible from then on, which is the whole point of
+ * offering it beside reroll rather than instead of it.
+ */
+function remove(guildId, body) {
+  const shortId = String(body.shortId || '').trim().toLowerCase();
+  if (!shortId || !/^[\w-]{1,40}$/.test(shortId)) return { error: 'bad_id' };
+  const kind = body.kind === 'coins' ? 'coins' : 'prize';
+
+  const file = kind === 'coins' ? COINS_ENDED : PRIZE_ENDED;
+  const all = readJson(file, {});
+  const entry = all[guildId]?.[shortId];
+  if (!entry) return { error: 'unknown_giveaway' };
+
+  delete all[guildId][shortId];
+  if (Object.keys(all[guildId]).length === 0) delete all[guildId];
+  writeJson(file, all);
+
+  const title = kind === 'coins' ? `${Number(entry.amount || 0).toLocaleString()} coins` : (entry.prize || 'Giveaway');
+  return { ok: true, shortId, kind, title };
+}
+
+/**
  * Starts a coins giveaway.
  *
  * Goes through coinsgiveaway.js's own postGiveaway, so the message, the entry
@@ -149,8 +185,13 @@ async function create(guildId, body, { guild, session, client }) {
   const winners = Number(body.winners);
   if (!Number.isInteger(winners) || winners < 1 || winners > 50) return { error: 'bad_winners' };
 
-  const minutes = Number(body.minutes);
-  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60 * 24 * 30) return { error: 'bad_duration' };
+  // The same 10s/10m/10h/10d the slash commands take, so a duration typed here
+  // means what it would mean in Discord. `minutes` is still accepted because
+  // that is what the panel used to send.
+  const durationMs = body.duration !== undefined
+    ? parseDuration(body.duration)
+    : (Number.isInteger(Number(body.minutes)) ? Number(body.minutes) * 60000 : null);
+  if (!durationMs || durationMs < 10_000 || durationMs > MAX_DURATION_MS) return { error: 'bad_duration' };
 
   const channel = guild.channels.cache.get(String(body.channelId || ''));
   if (!channel?.isTextBased?.()) return { error: 'bad_channel' };
@@ -171,7 +212,7 @@ async function create(guildId, body, { guild, session, client }) {
   }
 
   const shared = {
-    winners, durationMs: minutes * 60000, mention,
+    winners, durationMs, mention,
     channelId: channel.id, guildId,
     requiredRoleId: body.requiredRoleId || null,
     bonusRoleId: body.bonusRoleId || null,
@@ -199,4 +240,4 @@ async function create(guildId, body, { guild, session, client }) {
   }
 }
 
-module.exports = { list, create, endNow, reroll };
+module.exports = { list, create, endNow, reroll, remove };

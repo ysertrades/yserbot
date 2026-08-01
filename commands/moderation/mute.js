@@ -4,12 +4,7 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { sendModLog, dmUser } = require('../../utils/modLog');
-
-function parseDuration(str) {
-  const match = str.match(/^(\d+)([smhd])$/i);
-  if (!match) return null;
-  return parseInt(match[1]) * { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2].toLowerCase()];
-}
+const { parseDuration } = require('../../utils/duration');
 
 module.exports = {
   data: new SlashCommandBuilder()

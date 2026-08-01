@@ -132,18 +132,15 @@ html[data-state="login"]   .view[data-view="login"],
 html[data-state="setup"]   .view[data-view="setup"],
 html[data-state="panel"]   .view[data-view="panel"] { display: flex; }
 
+/* The active section marks itself, rather than the stylesheet listing every
+   section name and pairing it with the matching html[data-section] value.
+   That list was hand-maintained, and CSS cannot compare two attribute values
+   against each other — so adding a section and forgetting the line here left
+   it rendering into a container that was permanently display:none, with
+   nothing to show for it. showSection() sets data-active; nothing to keep in
+   step. */
 .section { display: none; flex-direction: column; gap: 0.85rem; }
-html[data-section="overview"]   .section[data-section="overview"],
-html[data-section="composer"]   .section[data-section="composer"],
-html[data-section="studio"]     .section[data-section="studio"],
-html[data-section="giveaways"]  .section[data-section="giveaways"],
-html[data-section="feeds"]      .section[data-section="feeds"],
-html[data-section="shop"]       .section[data-section="shop"],
-html[data-section="economy"]    .section[data-section="economy"],
-html[data-section="automation"] .section[data-section="automation"],
-html[data-section="engagement"] .section[data-section="engagement"],
-html[data-section="moderation"] .section[data-section="moderation"],
-html[data-section="settings"]   .section[data-section="settings"] { display: flex; }
+.section[data-active] { display: flex; }
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
 @media (min-width: 46rem) { .grid { grid-template-columns: 1fr 1fr; } }
@@ -378,6 +375,24 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .gaw .kind.prize { color: var(--accent); }
 .gaw .idtag { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); flex: none; }
 
+/* A finished giveaway opens its own sheet, so the whole card is the control.
+   The chevron is the affordance; the lift on press is the feedback. */
+.gaw.tappable {
+  position: relative; width: 100%; text-align: left; cursor: pointer;
+  color: inherit; font: inherit;
+  padding-right: 2rem;
+  transition: border-color var(--fast) var(--ease), transform var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.gaw.tappable:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); background: var(--raised); }
+.gaw.tappable:active { transform: scale(0.985); }
+.gaw .chev {
+  position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-size: 1.2rem; line-height: 1;
+  transition: transform var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.gaw.tappable:hover .chev { color: var(--accent); transform: translateY(-50%) translateX(2px); }
+.v.mono { font-family: var(--mono); font-size: 0.8rem; }
+
 /* A read-out block sitting above a form in the same panel needs a divider,
    or the last control of one reads as the first control of the other. */
 .rows + .form {
@@ -388,6 +403,23 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 
 /* ── chip multi-select ───────────────────────────────────────────────── */
 .chipset { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+/* Duration presets. Typing "10m" is the point; these are just the shortcuts
+   for the values anyone actually reaches for. */
+.field .chipset { margin-top: 0.4rem; }
+.chip {
+  font: inherit; font-family: var(--mono); font-size: 0.72rem;
+  padding: 0.22rem 0.5rem; border-radius: 999px; cursor: pointer;
+  background: var(--sunken); color: var(--muted);
+  border: 1px solid var(--rule);
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.chip:hover { color: var(--ink); border-color: var(--accent); }
+.chip:active { transform: scale(0.94); }
+
+/* The duration echo doubles as the error: it says what was understood, or
+   says it wasn't. */
+.field .count.bad { color: var(--warn); }
 .chip-toggle {
   font: inherit; font-size: 0.8rem;
   background: var(--sunken); border: 1px solid var(--rule); border-radius: 999px;
@@ -533,6 +565,99 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 /* The preview swaps images; cross-fading hides the swap. */
 .stage-frame img { transition: opacity var(--mid) var(--ease); }
 .stage-busy { transition: opacity var(--fast) var(--ease); }
+
+/* ── the sheet ─────────────────────────────────────────────────────────────
+   One overlay, reused by the giveaway detail and the embed preview.
+
+   The point of it is focus: the page behind is blurred and dimmed rather than
+   hidden, so you keep your bearings without the panel underneath competing
+   for attention. It rises from the bottom because on a phone that is where
+   your thumb already is. */
+.sheet-wrap { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
+.sheet-wrap[hidden] { display: none; }
+
+.sheet-scrim {
+  position: absolute; inset: 0;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  animation: scrimIn var(--mid) var(--ease) both;
+}
+
+.sheet {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(86vh, 780px);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  padding: 0.5rem 1.05rem calc(1.05rem + env(safe-area-inset-bottom));
+  box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+  animation: sheetUp var(--slow) var(--ease) both;
+}
+/* Wider viewports have room to float it rather than dock it to the edge. */
+@media (min-width: 620px) {
+  .sheet-wrap { align-items: center; }
+  .sheet { border-radius: 18px; border-bottom: 1px solid var(--rule); animation-name: sheetPop; }
+  .sheet-grip { display: none; }
+}
+
+.sheet-grip { width: 36px; height: 4px; border-radius: 999px; background: var(--rule); margin: 0.15rem auto 0.5rem; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
+.sheet-head h2 { margin: 0; font-size: 1rem; }
+.sheet-x {
+  flex: none; width: 32px; height: 32px; line-height: 1;
+  font-size: 1.3rem; border-radius: 9px; cursor: pointer;
+  background: var(--raised); color: var(--soft); border: 1px solid var(--rule);
+}
+.sheet-x:hover { color: var(--ink); }
+
+.sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 0.7rem; }
+.sheet-body > * + * { margin-top: 0.7rem; }
+.sheet .actions { margin-top: 0.85rem; }
+.sheet .actions:empty { display: none; }
+
+/* The rows inside the sheet stagger in behind it, so it reads as one movement
+   arriving rather than a finished block appearing. */
+.sheet-body > * { animation: sheetRow var(--mid) var(--ease) both; }
+.sheet-body > *:nth-child(1) { animation-delay: 90ms; }
+.sheet-body > *:nth-child(2) { animation-delay: 130ms; }
+.sheet-body > *:nth-child(3) { animation-delay: 170ms; }
+.sheet-body > *:nth-child(n+4) { animation-delay: 210ms; }
+
+@keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheetUp { from { transform: translateY(14%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes sheetPop { from { transform: scale(0.97) translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes sheetRow { from { transform: translateY(7px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* A faithful-enough Discord embed: the coloured spine is the part that makes
+   it read as an embed at a glance, so that is what this leans on. */
+.demb {
+  background: #2B2D31; border-radius: 4px;
+  border-left: 4px solid var(--accent);
+  padding: 0.65rem 0.85rem; color: #DBDEE1;
+  font-family: var(--sans); font-size: 0.85rem; line-height: 1.4;
+}
+.demb .t { font-weight: 600; color: #F2F3F5; margin: 0 0 0.25rem; }
+.demb .d { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.demb .a { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: #B5BAC1; margin: 0 0 0.3rem; }
+.demb .f { display: flex; flex-wrap: wrap; gap: 0.55rem 1.1rem; margin: 0.5rem 0 0; }
+.demb .f > div { min-width: 8rem; flex: 1 1 8rem; }
+.demb .f b { display: block; font-size: 0.78rem; color: #F2F3F5; }
+.demb .f span { font-size: 0.8rem; }
+.demb img.big { display: block; width: 100%; border-radius: 4px; margin-top: 0.5rem; }
+.demb .ft { font-size: 0.72rem; color: #949BA4; margin: 0.5rem 0 0; }
+.demb-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; }
+.demb-btns span {
+  font-size: 0.78rem; padding: 0.32rem 0.7rem; border-radius: 4px;
+  background: #4E5058; color: #fff; font-family: var(--sans);
+}
+.demb-btns span.Primary { background: #5865F2; }
+.demb-btns span.Success { background: #248046; }
+.demb-btns span.Danger  { background: #DA373C; }
+.demb-btns span.link::after { content: ' ↗'; opacity: 0.8; }
 
 /* All of it is decoration. Anyone who has asked their device to stop moving
    things gets a panel that simply appears. */
