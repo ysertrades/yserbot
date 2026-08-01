@@ -88,7 +88,7 @@ const PLATFORMS = {
     handleHint: '@username',
     verb: 'posted on TikTok',
     profileUrl: h => `https://www.tiktok.com/@${h.replace(/^@/, '')}`,
-    bridgePath: h => `/tiktok/user/@${h.replace(/^@/, '')}`,
+    bridgePaths: h => [`/tiktok/user/@${h.replace(/^@/, '')}`, `/tiktok/user/${h.replace(/^@/, '')}`],
   },
   instagram: {
     key: 'instagram',
@@ -101,7 +101,7 @@ const PLATFORMS = {
     handleHint: '@username',
     verb: 'posted on Instagram',
     profileUrl: h => `https://www.instagram.com/${h.replace(/^@/, '')}/`,
-    bridgePath: h => `/instagram/user/${h.replace(/^@/, '')}`,
+    bridgePaths: h => [`/instagram/user/${h.replace(/^@/, '')}`, `/picuki/profile/${h.replace(/^@/, '')}`],
   },
   twitter: {
     key: 'twitter',
@@ -114,11 +114,12 @@ const PLATFORMS = {
     handleHint: '@username',
     verb: 'posted on X',
     profileUrl: h => `https://x.com/${h.replace(/^@/, '')}`,
-    // /twitter/… rather than /x/…, which is what newer RSSHub calls it. The
-    // old path is kept as a redirect on the new builds and is the only path on
-    // the older ones, so pointing at it works against both — and fetch follows
-    // the redirect without being asked.
-    bridgePath: h => `/twitter/user/${h.replace(/^@/, '')}`,
+    // /x/… first. This used to be /twitter/… on the assumption that the old
+    // name was kept as a redirect — it is not. RSSHub renamed the route and
+    // the old one is a flat 404, which is exactly what came back in the wild.
+    // The old path stays second for anyone pointing at an older self-hosted
+    // build, where /x/ is the one that does not exist.
+    bridgePaths: h => [`/x/user/${h.replace(/^@/, '')}`, `/twitter/user/${h.replace(/^@/, '')}`],
   },
 };
 
@@ -166,6 +167,9 @@ function normaliseAccount(raw, index) {
     lastCheckedAt: Number(raw?.lastCheckedAt) || 0,
     lastPostedAt: Number(raw?.lastPostedAt) || 0,
     lastError: raw?.lastError ? String(raw.lastError).slice(0, 200) : null,
+    // Which of the candidate paths last worked, so the next check starts
+    // there rather than walking the list again.
+    feedPath: raw?.feedPath ? String(raw.feedPath).slice(0, 200) : null,
     // Consecutive failures, which is what the runner's back-off counts.
     failures: Number(raw?.failures) || 0,
     posts: Number(raw?.posts) || 0,
@@ -206,23 +210,47 @@ function patchAccount(guildId, accountId, patch) {
 /* ─── where an account's feed lives ──────────────────────────────────────── */
 
 /**
- * The address to poll, in order of preference:
- *   1. whatever the account was told to use,
- *   2. the platform's own feed if it has one,
- *   3. the bridge.
+ * Every address worth trying for one account, best first.
+ *
+ * A list rather than one address because a bridge's routes get renamed and
+ * the old name is not always kept. RSSHub moved X from /twitter/user to
+ * /x/user, and the old path became a flat 404 — every watched X account went
+ * quiet and the panel could only report the 404, which said nothing about
+ * why. Trying both means a rename costs one wasted request instead of the
+ * whole feature, and the working one is remembered afterwards.
+ *
+ * Order:
+ *   1. whatever the account was told to use, alone — an explicit address is
+ *      an instruction, not a suggestion, and guessing past it would be wrong;
+ *   2. the one that worked last time, if there is one;
+ *   3. the platform's own feed, or the bridge's candidates.
  */
-function feedUrlFor(account, settings) {
-  if (account.feedUrl) return account.feedUrl;
+function feedUrlsFor(account, settings) {
+  if (account.feedUrl) return [account.feedUrl];
   const platform = PLATFORMS[account.platform];
-  if (!platform) return null;
+  if (!platform) return [];
 
   if (platform.direct) {
-    return platform.feedUrl(account.handle, { channelId: account.channelId });
+    const url = platform.feedUrl(account.handle, { channelId: account.channelId });
+    return url ? [url] : [];
   }
 
   const base = String(settings.bridgeUrl || DEFAULTS.bridgeUrl).replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(base)) return null;
-  return `${base}${platform.bridgePath(account.handle)}`;
+  if (!/^https?:\/\//i.test(base)) return [];
+
+  const paths = platform.bridgePaths(account.handle);
+  // The remembered one first. It is still followed by the rest, so a bridge
+  // that changes again recovers on its own rather than sticking to a path
+  // that has stopped working.
+  const ordered = account.feedPath && paths.includes(account.feedPath)
+    ? [account.feedPath, ...paths.filter(x => x !== account.feedPath)]
+    : paths;
+  return ordered.map(path => `${base}${path}`);
+}
+
+/** The address that will be tried first — what the panel shows. */
+function feedUrlFor(account, settings) {
+  return feedUrlsFor(account, settings)[0] || null;
 }
 
 /* ─── fetching ───────────────────────────────────────────────────────────── */
@@ -457,13 +485,56 @@ async function fetchAccount(account, settings) {
     if (!resolvedChannelId) throw new Error('Could not find that YouTube channel');
   }
 
-  const url = feedUrlFor({ ...account, channelId: resolvedChannelId }, settings);
-  if (!url) throw new Error('No feed address for that account');
+  const urls = feedUrlsFor({ ...account, channelId: resolvedChannelId }, settings);
+  if (!urls.length) throw new Error('No feed address for that account');
 
-  const xml = await getText(url);
-  const items = parseFeed(xml);
-  if (!items.length) throw new Error('The feed came back empty');
-  return { items, url, channelId: resolvedChannelId };
+  const tried = [];
+  for (const url of urls) {
+    try {
+      const items = parseFeed(await getText(url));
+      if (!items.length) { tried.push({ url, why: 'came back empty' }); continue; }
+      return {
+        items, url, channelId: resolvedChannelId,
+        // Which one worked, so the next check goes straight there.
+        feedPath: account.feedUrl ? null : new URL(url).pathname,
+        tried,
+      };
+    } catch (err) {
+      tried.push({ url, why: err.message || String(err) });
+    }
+  }
+
+  const error = new Error(explain(platform, tried));
+  error.tried = tried;
+  throw error;
+}
+
+/**
+ * What to say when nothing worked.
+ *
+ * "HTTP 404" is true and useless. Every one of these failures has a different
+ * thing to do about it, and the panel has room for a sentence.
+ */
+function explain(platform, tried) {
+  const codes = tried.map(t => t.why);
+  const all = code => codes.length > 0 && codes.every(c => c.includes(code));
+
+  if (platform.direct) {
+    return `Could not read that channel — ${codes[0] || 'no reply'}.`;
+  }
+  if (all('404')) {
+    return `The helper service has no ${platform.label} route at the address tried. It has probably been renamed — a different helper, or a feed address of your own, will fix it.`;
+  }
+  if (all('403') || all('401')) {
+    return `The helper service refused this server. Its ${platform.label} route needs a logged-in account, which the free shared one does not have — running your own is the fix.`;
+  }
+  if (all('429')) {
+    return 'The helper service is rate-limiting us. The free one is shared by everybody; checking less often, or running your own, is the fix.';
+  }
+  if (all('came back empty')) {
+    return `The helper service answered but had no ${platform.label} posts in it. Check the account name.`;
+  }
+  return `Could not read it — ${codes.join('; ')}`;
 }
 
 /* ─── filtering ──────────────────────────────────────────────────────────── */
@@ -502,6 +573,6 @@ function newItems(items, account, maxPerCheck) {
 module.exports = {
   FILE, PLATFORMS, PLATFORM_KEYS, DEFAULTS, LIMITS,
   getSettings, setSettings, patchAccount, normaliseAccount,
-  feedUrlFor, fetchAccount, parseFeed, resolveYouTubeChannelId, checkBridge,
+  feedUrlFor, feedUrlsFor, fetchAccount, parseFeed, explain, resolveYouTubeChannelId, checkBridge,
   matches, newItems, htmlToText, clamp,
 };

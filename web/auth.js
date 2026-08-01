@@ -374,6 +374,19 @@ function refreshed(session) {
  * a header instead. Same token, same signature check — only the transport
  * differs.
  */
+/**
+ * A session from a bare token, for the one caller that cannot send a header.
+ *
+ * Same verification and same freshness check as a bearer header — this only
+ * changes where the string was carried, not how much it is believed.
+ */
+function sessionForToken(token) {
+  const c = config();
+  if (!c.secret || typeof token !== 'string' || !token) return null;
+  const session = verify(token.trim(), c.secret);
+  return session && embedLinkCurrent(session) ? session : null;
+}
+
 function sessionFor(req) {
   const c = config();
   if (!c.secret) return null;
@@ -426,7 +439,7 @@ module.exports = {
   parkHandoff, collectHandoff, refreshed, adoptable,
   mintEmbedLink, revokeEmbedLinks,
   authorizeUrl, completeLogin,
-  sessionFor, canAccessGuild,
+  sessionFor, sessionForToken, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,
   SESSION_COOKIE, STATE_COOKIE, SESSION_TTL_MS, STATE_TTL_MS,
 };

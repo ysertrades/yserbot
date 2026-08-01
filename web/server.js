@@ -24,6 +24,7 @@ const path = require('node:path');
 const auth    = require('./auth');
 const api     = require('./api');
 const preview = require('./preview');
+const live    = require('./live');
 const { generateAppIcon } = require('../utils/appIconVisual');
 const { generateSocialMark, MARK_KEYS } = require('../utils/socialMarks');
 const { memoizeRender } = require('../utils/renderCache');
@@ -292,7 +293,14 @@ async function route(req, res, client) {
     const missing = auth.missingConfig();
     if (missing.length) return json(res, 503, { error: 'setup_incomplete', missing });
 
-    const session = auth.sessionFor(req);
+    // EventSource cannot set request headers, so where the panel runs on a
+    // bearer token rather than a cookie — inside somebody else's iframe,
+    // where the cookie is blocked outright — the stream has no way to
+    // present it. That one route accepts the same signed token on the query
+    // string instead. It is checked by exactly the same code; nothing is
+    // trusted that would not be trusted in a header.
+    const session = auth.sessionFor(req)
+      || (/^\/api\/guild\/\d{5,25}\/stream$/.test(p) ? auth.sessionForToken(url.searchParams.get('t')) : null);
     if (!session) return json(res, 401, { error: 'not_authenticated' });
 
     // The CSRF token rides along with identity so the page always has a fresh
@@ -370,6 +378,19 @@ async function route(req, res, client) {
         'content-disposition': `inline; filename="${out.filename}"`,
         'x-render-cached': String(out.cached),
       });
+    }
+
+    /* -- the live stream --------------------------------------------------
+       Kept above the general guild route because it answers with an open
+       connection rather than a document, and none of the machinery below
+       applies to it. */
+    const streamMatch = /^\/api\/guild\/(\d{5,25})\/stream$/.exec(p);
+    if (streamMatch) {
+      const guildId = streamMatch[1];
+      if (!auth.canAccessGuild(session, guildId, client)) return json(res, 403, { error: 'forbidden' });
+      if (req.method !== 'GET') return json(res, 405, { error: 'use_get' });
+      live.subscribe(guildId, res, req, client);
+      return undefined;
     }
 
     /* -- guild reads and writes ------------------------------------------- */

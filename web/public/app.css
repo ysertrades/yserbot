@@ -724,6 +724,26 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb-btns span.Danger  { background: #DA373C; }
 .demb-btns span.link::after { content: ' ↗'; opacity: 0.8; }
 
+/* The live dot. Lit when the panel is being pushed changes, dimmed while the
+   connection is coming back — which is the only difference between "nothing
+   has happened" and "nothing is arriving". */
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--off); margin-left: 0.15rem;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.live-dot.on {
+  background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .live-dot.on { animation: livePulse 2.4s ease-in-out infinite; }
+}
+@keyframes livePulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--good) 8%, transparent); }
+}
+
 /* Social ─────────────────────────────────────────────────────────────────
    The spine down each account card is its platform's colour, so the list
    reads as four platforms rather than as one undifferentiated list. */

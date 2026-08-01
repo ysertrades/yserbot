@@ -56,6 +56,9 @@ function list(guildId) {
       // was always undefined, so the panel never had an end time to count down
       // to and the countdown simply never rendered.
       endsAt: d.endTime ?? d.endsAt ?? null, hostId: d.hostId ?? null,
+      // When it began, so the progress bar can show how far through it is
+      // rather than how long the page has been open.
+      startedAt: d.createdAt ?? null,
       entrants: entrantCount(global.giveawayEntrants, messageId, d.entrants),
     });
   }
@@ -69,6 +72,7 @@ function list(guildId) {
       // was always undefined, so the panel never had an end time to count down
       // to and the countdown simply never rendered.
       endsAt: d.endTime ?? d.endsAt ?? null, hostId: d.hostId ?? null,
+      startedAt: d.createdAt ?? null,
       entrants: entrantCount(global.coinsGiveawayEntrants, messageId, d.entrants),
     });
   }
