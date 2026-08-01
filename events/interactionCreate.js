@@ -202,7 +202,10 @@ async function executeReportAction(interaction, action, targetUserId, reportChan
       `✅ Handled by ${interaction.user.tag} — ${result.label}`, 0x2ecc71);
 
     return interaction.update({
-      embeds: [memberAction({ user: targetUser, member, action, reason: 'reported' })],
+      embeds: [memberAction({
+        guild: interaction.guild, user: targetUser, member, action, reason: 'reported',
+        tokens: { duration: '1 hour' },
+      })],
       components: [],
     });
   } catch (err) {

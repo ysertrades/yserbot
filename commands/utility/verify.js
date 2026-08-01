@@ -8,6 +8,7 @@ const {
   MessageFlags,
 } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
+const messageStyle = require('../../utils/messageStyle');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 // ── Memory-sequence verification game ──────────────────────────────────────
@@ -284,14 +285,23 @@ module.exports = {
         } catch { /* missing permissions / role hierarchy — surface as unset below */ }
       }
       const copy = panelCopy(session.guildId);
-      const embed = new EmbedBuilder()
-        .setColor(0x2ecc71)
-        .setTitle('✅ Verified!')
-        .setDescription(copy.welcome
+      // The colour, heading and footer come from the panel; the sentence in
+      // the middle stays the Welcome line in the verification settings, so
+      // there is one place to write it rather than two that can disagree.
+      const embed = messageStyle.build(session.guildId, 'verify.success', {
+        tokens: {
+          user: `<@${interaction.user.id}>`,
+          server: interaction.guild.name,
+          role: settings.role ? `<@&${settings.role}>` : '',
+        },
+      }) ?? new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Verified!');
+      try {
+        embed.setDescription(copy.welcome
           ? copy.welcome.replace(/\{server\}/g, interaction.guild.name).replace(/\{user\}/g, `<@${interaction.user.id}>`)
           : roleGranted
             ? `Nice memory! You've been verified and given <@&${settings.role}>. Welcome!`
             : 'Nice memory! You\'re verified, but the role couldn\'t be granted automatically — let staff know.');
+      } catch {}
       return interaction.update({ embeds: [embed], components: [] });
     }
 

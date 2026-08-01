@@ -32,6 +32,7 @@ const casino = require('./casino');
 const economyPanel = require('./economy');
 const links = require('./links');
 const moderation = require('./moderation');
+const appearance = require('./appearance');
 
 /** Guilds this session may open, as the picker needs them. */
 function me(session, client) {
@@ -190,6 +191,7 @@ async function guildOverview(guildId, client) {
     economy: economyPanel.read(guildId),
     links: links.read(guildId, guild),
     mod: moderation.read(guildId, guild),
+    appearance: appearance.read(guildId),
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,

@@ -97,7 +97,13 @@ module.exports = {
     } else if (sub === 'user') {
       const user      = interaction.options.getUser('user');
       const amount    = interaction.options.getInteger('number');
-      const statusMsg = await interaction.reply({ embeds: [memberAction({ user, action: 'purge', note: `Clearing up to ${amount} of their messages…` })], fetchReply: true });
+      const statusMsg = await interaction.reply({
+        embeds: [memberAction({
+          guild: interaction.guild, user, action: 'purge',
+          tokens: { count: `${amount} of their message${amount === 1 ? '' : 's'}` },
+        })],
+        fetchReply: true,
+      });
 
       try {
         let deleted = 0, oldDeleted = 0, lastId = null;
@@ -119,7 +125,12 @@ module.exports = {
           if (old.length > 0)    { const n = await deleteOld(old); deleted += n; oldDeleted += n; }
         }
         const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
-        await interaction.editReply({ embeds: [memberAction({ user, action: 'purged', note: `**Deleted:** ${deleted} message${deleted === 1 ? '' : 's'}${note}` })] });
+        await interaction.editReply({
+          embeds: [memberAction({
+            guild: interaction.guild, user, action: 'purged',
+            tokens: { count: `${deleted} message${deleted === 1 ? '' : 's'}${note}` },
+          })],
+        });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
         await logPurge(interaction.guild, interaction.user, interaction.member, channel, deleted, user);
       } catch {

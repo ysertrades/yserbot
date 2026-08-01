@@ -8,6 +8,7 @@ const {
 } = require('discord.js');
 const { readJson } = require('../../utils/jsonStorage');
 const reports = require('../../utils/reports');
+const messageStyle = require('../../utils/messageStyle');
 
 const REASON_OPTIONS = [
   { value: 'spam',          label: '📨 Spam' },
@@ -161,11 +162,13 @@ module.exports = {
 
       sessions.delete(ownerId);
       return interaction.update({
-        embeds: [new EmbedBuilder()
-          .setColor(0x2ecc71)
-          .setTitle('✅ Report Submitted')
-          .setDescription(`Your report against <@${session.targetUserId}> has been sent to the moderation team.\n\nThank you for helping keep the server safe.`)
-          .setTimestamp()],
+        embeds: [messageStyle.build(interaction.guild.id, 'report.submitted', {
+          tokens: {
+            user: interaction.user.username,
+            server: interaction.guild.name,
+            target: `<@${session.targetUserId}>`,
+          },
+        })],
         components: [],
       });
     }

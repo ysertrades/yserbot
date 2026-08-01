@@ -37,6 +37,7 @@ const casinoPanel = require('./casino');
 const links = require('./links');
 const moderationPanel = require('./moderation');
 const economyPanel = require('./economy');
+const appearance = require('./appearance');
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -420,6 +421,24 @@ Object.assign(OPS, {
     }
     return r;
   },
+  /* -- the wording and colour of the bot's own messages ------------------- */
+  async appearance(guildId, body, ctx) {
+    const r = appearance.save(guildId, body);
+    if (r.ok && !r.unchanged) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🎨 **${r.label}** — ${r.changed.join(', ')} changed`, 'appearance');
+    }
+    return r;
+  },
+  async appearancereset(guildId, body, ctx) {
+    const r = appearance.reset(guildId, body);
+    if (r.ok && !r.unchanged) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🎨 **${r.label}** put back to the shipped wording`, 'appearance');
+    }
+    return r;
+  },
+
   async settings(guildId, body, ctx) {
     const r = settings.save(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`, 'settings');

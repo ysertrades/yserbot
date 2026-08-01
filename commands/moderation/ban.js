@@ -36,7 +36,7 @@ module.exports = {
     await sendModLog(interaction.guild, 'ban', user, interaction.user, reason, { caseId });
 
     return interaction.reply({
-      embeds: [memberAction({ user, member, action: 'ban', reason })],
+      embeds: [memberAction({ guild: interaction.guild, user, member, action: 'ban', reason })],
     });
   },
 };
