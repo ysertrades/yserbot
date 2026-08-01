@@ -18,6 +18,7 @@ function isUnknownInteractionError(err) {
 
 // ── Cmd permission helper ─────────────────────────────────────────────────────
 const { MOD_COMMANDS, ADMIN_COMMANDS, PUBLIC_COMMANDS } = require('../commands/system/cmd');
+const { keepAttachmentRefs } = require('../utils/embedAttachments');
 
 function checkCmdPermission(interaction) {
   if (!interaction.inGuild()) return true;
@@ -301,6 +302,11 @@ module.exports = {
             const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
             const desc = (upd.data.description || '').replace(/📊 \*\*Entries:\*\* \d+ participants?/, `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`);
             upd.setDescription(desc);
+            // Reading the embed back gives resolved CDN links, which leaves the
+            // banner unclaimed — Discord then shows it above the embed as well
+            // as inside it. Putting the attachment:// references back keeps it
+            // in one place.
+            keepAttachmentRefs(interaction.message, upd);
             await interaction.message.edit({ embeds: [upd] }).catch(() => {});
           } catch {}
           // Persist the new entry so it survives future restarts

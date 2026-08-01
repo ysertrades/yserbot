@@ -12,6 +12,7 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
 const { parseDuration } = require('../../utils/duration');
 const { isDynamicImage, dynamicAttachmentRef, collectDynamicAttachments } = require('../../utils/dynamicEmbedImages');
+const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
@@ -463,8 +464,8 @@ async function endGiveaway(message, meta) {
       .setDescription('No participants entered the giveaway.')
       .setFooter({ text: 'Better luck next time!' })
       .setTimestamp();
-    if (imageUrl) embed.setImage(imageUrl);
-    await message.edit({ embeds: [embed], components: [disabledRow] });
+    const endFiles = applyEmbedImage(embed, imageUrl, guildId);
+    await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles(endFiles) });
     removeActiveGiveaway(message.id);
     global.giveawayEntrants.delete(message.id);
     global.giveawayMeta?.delete(message.id);
@@ -564,8 +565,8 @@ async function performReroll(guild, shortId) {
       )
       .setFooter({ text: `Rerolled 🎲 • ID: ${shortId}` })
       .setTimestamp();
-    if (data.imageUrl) updEmbed.setImage(data.imageUrl);
-    await origMsg.edit({ embeds: [updEmbed] }).catch(() => {});
+    const rerollFiles = applyEmbedImage(updEmbed, data.imageUrl, data.guildId);
+    await origMsg.edit({ embeds: [updEmbed], ...replaceFiles(rerollFiles) }).catch(() => {});
   } catch { /* original message may be gone — the reroll itself still succeeded */ }
 
   // DM the NEW winner(s) — every reroll notifies whoever actually won this time.

@@ -40,7 +40,7 @@ const CATCHES = [
 module.exports = buildGatherCommand({
   action: 'fish',
   commandName: 'fish',
-  description: 'Cast a line and see what you reel in (10 casts per session, 2 hour cooldown)',
+  description: 'Cast a line and see what you reel in',
   table: CATCHES,
   generateImage: generateFishImage,
   imagePrefix: 'fish',

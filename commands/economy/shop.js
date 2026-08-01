@@ -316,12 +316,12 @@ module.exports = {
 
     if (id === 'shop_buy_select') {
       const payload = purchaseItem(userId, guildId, itemId);
-      return interaction.update({ content: null, embeds: payload.embeds, files: payload.files || [], components: [] });
+      return interaction.update({ content: null, embeds: payload.embeds, files: payload.files || [], components: [], attachments: [] });
     }
 
     if (id === 'shop_use_select') {
       const payload = useItem(userId, guildId, itemId);
-      return interaction.update({ content: null, embeds: payload.embeds, files: payload.files || [], components: [] });
+      return interaction.update({ content: null, embeds: payload.embeds, files: payload.files || [], components: [], attachments: [] });
     }
   },
 };

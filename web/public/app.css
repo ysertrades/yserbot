@@ -419,6 +419,19 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .queue-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; }
 .queue-head h2 { margin-bottom: 0.5rem; }
 
+/* An activity card sits inside the Activities panel, so it drops the outer
+   panel's fill — a box drawn on a box reads as a mistake. A switched-off
+   activity keeps all its fields readable but stops competing for attention
+   with the ones that are running. */
+.econ-card {
+  background: none;
+  border-color: color-mix(in srgb, var(--rule) 70%, transparent);
+  padding: 0.95rem 1rem 1.05rem;
+}
+.econ-card h2 { margin-bottom: 0; }
+.econ-card.off { opacity: 0.62; }
+.econ-card.off h2 { color: var(--off); }
+
 /* Each finding on its own line with its own weight — a shortened link and a
    two-day-old account are different sizes of problem and should not read as
    the same sentence. */

@@ -4,10 +4,8 @@ const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, MessageFlags } = r
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { getEffect } = require('../../utils/effectsManager');
 const { generateWorkResultImage, generateWorkCooldownImage } = require('../../utils/workVisual');
-
-const WORK_COOLDOWN = 60 * 60 * 1000;
-const MIN_EARNINGS  = 50;
-const MAX_EARNINGS  = 200;
+const { activity, scalePayout, boostNote } = require('../../utils/economySettings');
+const { refuseIfOff } = require('../../utils/economyGate');
 
 const TASKS = [
   { emoji: '💻', text: 'coded a Discord bot from scratch' },
@@ -23,11 +21,15 @@ const TASKS = [
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('work')
-    .setDescription('Work and earn coins (1 hour cooldown)'),
+    .setDescription('Work a shift and earn coins'),
 
   async execute(interaction) {
-    const userId = interaction.user.id;
-    const cd     = checkCooldown(userId, 'work', WORK_COOLDOWN, interaction.guild?.id);
+    if (await refuseIfOff(interaction, 'work')) return;
+
+    const userId  = interaction.user.id;
+    const guildId = interaction.guild?.id;
+    const cfg     = activity(guildId, 'work');
+    const cd      = checkCooldown(userId, 'work', cfg.cooldownMs, guildId);
 
     if (cd > 0) {
       const hours   = Math.floor(cd / 3600000);
@@ -41,22 +43,27 @@ module.exports = {
       return interaction.reply({ embeds: [embed], files: [attachment], flags: MessageFlags.Ephemeral });
     }
 
-    let earnings = Math.floor(Math.random() * (MAX_EARNINGS - MIN_EARNINGS + 1)) + MIN_EARNINGS;
-    const boost  = getEffect(userId, interaction.guild?.id, 'coin_boost');
+    const span = Math.max(0, cfg.max - cfg.min);
+    let earnings = Math.floor(Math.random() * (span + 1)) + cfg.min;
+    const boost  = getEffect(userId, guildId, 'coin_boost');
     if (boost) earnings = Math.floor(earnings * (boost.multiplier || 1.5));
+    // The server's own multiplier — and its boost hour, if one is running —
+    // applied last, so it lifts whatever the member's own perks already gave.
+    earnings = scalePayout(guildId, earnings);
 
     const task = TASKS[Math.floor(Math.random() * TASKS.length)];
     addCoins(userId, earnings);
     setCooldown(userId, 'work');
 
-    const nextTs = Math.floor((Date.now() + WORK_COOLDOWN) / 1000);
+    const nextTs = Math.floor((Date.now() + cfg.cooldownMs) / 1000);
     const imageName  = `work_result_${Date.now()}.png`;
     const attachment = new AttachmentBuilder(generateWorkResultImage({
       taskEmoji: task.emoji, task: task.text, earnings, boostActive: Boolean(boost),
     }), { name: imageName });
+    const hour = boostNote(guildId);
     const embed = new EmbedBuilder()
       .setImage(`attachment://${imageName}`)
-      .setDescription(`💰 Balance: **${getBalance(userId).toLocaleString()}** coins · Next shift <t:${nextTs}:R>`);
+      .setDescription(`💰 Balance: **${getBalance(userId).toLocaleString()}** coins · Next shift <t:${nextTs}:R>${hour ? `\n${hour}` : ''}`);
 
     return interaction.reply({ embeds: [embed], files: [attachment] });
   },

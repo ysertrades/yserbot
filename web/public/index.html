@@ -278,6 +278,29 @@
 
     <!-- ── Economy ─────────────────────────────────────────────────────── -->
     <div class="section" data-section="economy">
+      <!-- The two dials that move everything, before the eight that move one
+           thing each. -->
+      <div class="panel" id="payout-card">
+        <div class="queue-head">
+          <h2>Payouts</h2>
+          <span class="pill" id="boost-state" hidden></span>
+        </div>
+        <p class="muted">One multiplier over the whole economy — every shift, catch, answer and daily claim. Boost hour lifts it again between the hours you pick, on its own, every day.</p>
+        <form id="form-econ-global" class="form"></form>
+      </div>
+
+      <div class="panel">
+        <h2>Activities</h2>
+        <p class="muted">Every earning command in the bot. Switch one off and it tells members it is closed rather than quietly failing.</p>
+        <div class="grid" id="econ-activities"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Jobs board</h2>
+        <p class="muted">Which careers are hiring. Pay and shift length below are what a member sees after the scales above — close one and it disappears from the hub.</p>
+        <form id="form-econ-jobs" class="form"></form>
+      </div>
+
       <div class="grid">
         <article class="panel">
           <h2>Adjust coins</h2>
@@ -321,8 +344,14 @@
         </article>
         <article class="panel">
           <h2>Verification</h2>
+          <p class="muted">The memory challenge new members solve to get in. <code>{server}</code> in the opening line becomes your server's name; <code>{user}</code> in the welcome becomes a mention.</p>
           <form id="form-verify" class="form"></form>
         </article>
+      </div>
+      <div class="panel">
+        <h2>Post the verification panel</h2>
+        <p class="muted">Sends the message members press to start. Editing the wording above does not change a panel already posted — post it again and delete the old one.</p>
+        <form id="form-verifypanel" class="form"></form>
       </div>
       <div class="panel">
         <h2>Level reward roles</h2>
@@ -365,18 +394,10 @@
         </article>
       </div>
 
-      <div class="grid">
-        <article class="panel">
-          <h2>Members with warnings</h2>
-          <p class="muted">Tap someone to see their record and clear it.</p>
-          <div class="rows" id="warned-list"></div>
-        </article>
-
-        <article class="panel">
-          <h2>Case log <span class="tag" id="case-total"></span></h2>
-          <p class="muted">The last thirty actions taken on this server, wherever they were taken from.</p>
-          <div class="rows" id="case-log"></div>
-        </article>
+      <div class="panel">
+        <h2>Members with warnings <span class="tag" id="case-total"></span></h2>
+        <p class="muted">Everyone carrying a warning, most first. Clearing removes their warnings; kicks and bans stay on record.</p>
+        <div class="rows" id="warned-list"></div>
       </div>
 
       <div class="grid">

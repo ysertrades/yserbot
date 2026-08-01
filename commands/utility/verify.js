@@ -19,8 +19,56 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 // real person.
 
 const EMOJI_POOL   = ['🍎', '🍋', '🍇', '🍊', '🍒', '🥝', '🍉', '🍑'];
-const SEQUENCE_LEN = 4;
 const SESSION_TTL  = 3 * 60 * 1000;
+
+/**
+ * The panel's wording, with the shipped defaults filled in.
+ *
+ * Everything here is editable from the control panel; a server that never
+ * touches it gets exactly what it got before. Kept as one function so the
+ * posted panel and the panel the web page previews cannot drift apart.
+ */
+const PANEL_DEFAULTS = {
+  title: '🔐  Server Verification',
+  intro: 'Welcome to {server}! Complete a quick memory challenge below to verify you\'re a real person and unlock the rest of the server.',
+  rulesText: 'Please follow the server rules and be respectful to all members.',
+  buttonLabel: 'Start Verification',
+  sequenceLength: 4,
+  welcome: '',
+};
+
+function panelCopy(guildId) {
+  const s = getVerifySettings(guildId);
+  const pick = (key) => {
+    const v = s[key];
+    return typeof v === 'string' && v.trim() ? v : PANEL_DEFAULTS[key];
+  };
+  const len = Number(s.sequenceLength);
+  return {
+    title: pick('title'),
+    intro: pick('intro'),
+    rulesText: pick('rulesText'),
+    buttonLabel: pick('buttonLabel'),
+    // Clamped rather than trusted: the grid is eight emoji and a sequence
+    // longer than the pool could never be completed.
+    sequenceLength: Number.isInteger(len) && len >= 2 && len <= 6 ? len : PANEL_DEFAULTS.sequenceLength,
+    welcome: typeof s.welcome === 'string' ? s.welcome.trim() : '',
+  };
+}
+
+/** The message members press to start. Exported so the web panel can post it. */
+function buildVerifyPanel(guild) {
+  const copy = panelCopy(guild.id);
+  const embed = new EmbedBuilder()
+    .setColor(0x5865F2)
+    .setTitle(copy.title)
+    .setDescription(`${copy.intro.replace(/\{server\}/g, `**${guild.name}**`)}\n\n**📜 Server Rules**\n\n${copy.rulesText}`)
+    .setFooter({ text: `Click ${copy.buttonLabel} to begin` });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('verify_start').setLabel(copy.buttonLabel).setEmoji('🧠').setStyle(ButtonStyle.Success),
+  );
+  return { embeds: [embed], components: [row] };
+}
 
 if (!global.verifySessions) global.verifySessions = new Map();
 
@@ -35,7 +83,7 @@ function shuffle(arr) {
 
 function newChallengeSession(userId, guildId) {
   const shuffledPool = shuffle(EMOJI_POOL);
-  const sequence = shuffledPool.slice(0, SEQUENCE_LEN);
+  const sequence = shuffledPool.slice(0, panelCopy(guildId).sequenceLength);
   const grid     = shuffle(shuffledPool); // every pool emoji appears exactly once
 
   const sessionId = `${userId}-${Date.now()}`;
@@ -96,6 +144,10 @@ function getVerifySettings(guildId) {
 }
 
 module.exports = {
+  buildVerifyPanel,
+  panelCopy,
+  PANEL_DEFAULTS,
+
   data: new SlashCommandBuilder()
     .setName('verify').setDescription('Member verification system')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
@@ -112,22 +164,7 @@ module.exports = {
 
     if (sub === 'setup') {
       const channel = interaction.options.getChannel('channel');
-      const settings = getVerifySettings(guildId);
-      const rulesText = settings.rulesText || 'Please follow the server rules and be respectful to all members.';
-
-      const embed = new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle('🔐  Server Verification')
-        .setDescription(
-          `Welcome to **${interaction.guild.name}**! Complete a quick memory challenge below to verify you're a real person and unlock the rest of the server.\n\n` +
-          `**📜 Server Rules**\n\n${rulesText}`,
-        )
-        .setFooter({ text: 'Click Start Verification to begin' });
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('verify_start').setLabel('Start Verification').setEmoji('🧠').setStyle(ButtonStyle.Success),
-      );
-
-      await channel.send({ embeds: [embed], components: [row] });
+      await channel.send(buildVerifyPanel(interaction.guild));
       return sendTempReply(interaction, { embeds: [createServerEmbed('success', { title: '✅ Verification Panel Posted', description: `Panel sent to ${channel}.` }, interaction.guild)] });
     }
 
@@ -160,12 +197,14 @@ module.exports = {
 
     if (sub === 'viewsettings') {
       const vs = getVerifySettings(guildId);
+      const copy = panelCopy(guildId);
       return interaction.reply({
         embeds: [createServerEmbed('info', {
           title: '🔐 Verification Settings',
           fields: [
             { name: 'Role',      value: vs.role ? `<@&${vs.role}>` : 'Not set', inline: true },
             { name: 'Rules Set', value: vs.rulesText ? '✅ Yes' : '❌ Not set (using default)', inline: true },
+            { name: 'Challenge', value: `${copy.sequenceLength} emoji to memorise`, inline: true },
           ],
         }, interaction.guild)],
         flags: MessageFlags.Ephemeral,
@@ -244,12 +283,15 @@ module.exports = {
           if (role) { await member.roles.add(role); roleGranted = true; }
         } catch { /* missing permissions / role hierarchy — surface as unset below */ }
       }
+      const copy = panelCopy(session.guildId);
       const embed = new EmbedBuilder()
         .setColor(0x2ecc71)
         .setTitle('✅ Verified!')
-        .setDescription(roleGranted
-          ? `Nice memory! You've been verified and given <@&${settings.role}>. Welcome!`
-          : 'Nice memory! You\'re verified, but the role couldn\'t be granted automatically — let staff know.');
+        .setDescription(copy.welcome
+          ? copy.welcome.replace(/\{server\}/g, interaction.guild.name).replace(/\{user\}/g, `<@${interaction.user.id}>`)
+          : roleGranted
+            ? `Nice memory! You've been verified and given <@&${settings.role}>. Welcome!`
+            : 'Nice memory! You\'re verified, but the role couldn\'t be granted automatically — let staff know.');
       return interaction.update({ embeds: [embed], components: [] });
     }
 

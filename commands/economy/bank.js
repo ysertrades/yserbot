@@ -11,10 +11,10 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { filterNonBotIds } = require('../../utils/discordHelpers');
 const { fetchAvatarPng } = require('../../utils/avatarUtil');
 const { generateBankCardImage, generateLeaderboardImage } = require('../../utils/bankVisual');
+const { activity } = require('../../utils/economySettings');
+const { refuseIfOff } = require('../../utils/economyGate');
 
-const BANK_FILE     = 'bank.json';
-const INTEREST_RATE = 0.02;                 // 2% per period
-const PERIOD_MS     = 12 * 60 * 60 * 1000; // 12 hours
+const BANK_FILE = 'bank.json';
 
 const fmt = n => Number(n).toLocaleString();
 
@@ -29,11 +29,20 @@ function saveBank(userId, bankData) {
   writeJson(BANK_FILE, data);
 }
 
-function calcInterest(bankData) {
-  if (bankData.balance <= 0) return { interest: 0, periods: 0 };
-  const periods  = Math.floor((Date.now() - bankData.lastInterest) / PERIOD_MS);
-  const interest = Math.floor(bankData.balance * INTEREST_RATE * periods);
-  return { interest, periods };
+/**
+ * Interest owed, and how many whole periods it covers.
+ *
+ * The period length is returned alongside because callers advance
+ * lastInterest by it — reading the setting twice would let a change between
+ * the two reads move the clock by a different amount than it paid for.
+ */
+function calcInterest(bankData, guildId) {
+  const cfg = activity(guildId, 'bank');
+  const periodMs = Math.max(1, cfg.periodHours) * 3600000;
+  if (bankData.balance <= 0) return { interest: 0, periods: 0, periodMs };
+  const periods  = Math.floor((Date.now() - bankData.lastInterest) / periodMs);
+  const interest = Math.floor(bankData.balance * (cfg.interestPercent / 100) * periods);
+  return { interest, periods, periodMs };
 }
 
 function errorEmbed(title, desc) {
@@ -50,7 +59,7 @@ async function buildBankPanel(member, ownerId) {
   const userId    = member.id;
   const bankData  = getBank(userId);
   const wallet    = getBalance(userId);
-  const { interest } = calcInterest(bankData);
+  const { interest } = calcInterest(bankData, member.guild?.id);
   const avatarPng = await fetchAvatarPng(avatarUrlFor(member));
 
   const imageName  = `bank_${Date.now()}.png`;
@@ -113,6 +122,7 @@ module.exports = {
     .setDescription('View your bank account, deposit, withdraw, and earn interest'),
 
   async execute(interaction) {
+    if (await refuseIfOff(interaction, 'bank')) return;
     const payload = await buildBankPanel(interaction.member, interaction.user.id);
     await interaction.reply(payload);
   },
@@ -130,17 +140,19 @@ module.exports = {
 
     if (action === 'collect') {
       const bankData = getBank(userId);
-      const { interest, periods } = calcInterest(bankData);
+      const { interest, periods, periodMs } = calcInterest(bankData, interaction.guild?.id);
       if (interest <= 0) {
-        const nextTs = Math.floor((bankData.lastInterest + PERIOD_MS) / 1000);
+        const nextTs = Math.floor((bankData.lastInterest + periodMs) / 1000);
         return interaction.reply({ embeds: [errorEmbed('No Interest Yet', `Next interest period: <t:${nextTs}:R>`)], flags: MessageFlags.Ephemeral });
       }
-      bankData.lastInterest += periods * PERIOD_MS;
+      bankData.lastInterest += periods * periodMs;
       bankData.balance      += interest;
       saveBank(userId, bankData);
 
       const payload = await buildBankPanel(interaction.member, ownerId);
-      return interaction.update(payload);
+      // attachments: [] — the panel this replaces already carries a bank
+      // card, and Discord keeps old attachments on an edit unless told not to.
+      return interaction.update({ ...payload, attachments: [] });
     }
 
     if (action === 'checkbalance') {
@@ -195,7 +207,7 @@ module.exports = {
     }
 
     const payload = await buildBankPanel(interaction.member, ownerId);
-    return interaction.update(payload);
+    return interaction.update({ ...payload, attachments: [] });
   },
 
   async handleUserSelect(interaction) {
@@ -216,6 +228,6 @@ module.exports = {
       avatarPng, username: member?.displayName ?? target.username, wallet, bank: bankData.balance, viewingOther: true,
     }), { name: imageName });
 
-    return interaction.editReply({ content: null, embeds: [new EmbedBuilder().setImage(`attachment://${imageName}`)], files: [attachment], components: [] });
+    return interaction.editReply({ content: null, embeds: [new EmbedBuilder().setImage(`attachment://${imageName}`)], files: [attachment], components: [], attachments: [] });
   },
 };

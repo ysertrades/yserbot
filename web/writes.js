@@ -36,6 +36,7 @@ const tickets = require('./tickets');
 const casinoPanel = require('./casino');
 const links = require('./links');
 const moderationPanel = require('./moderation');
+const economyPanel = require('./economy');
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -542,6 +543,43 @@ Object.assign(OPS, {
       ? `🎨 **${BANNERS[key].label}** banner — ${custom.join(', ')} changed`
       : `🎨 **${BANNERS[key].label}** banner reset to its default wording`, 'studio');
     return { ok: true, template: key, copy: saved };
+  },
+
+  /* -- economy ----------------------------------------------------------- */
+  async economy(guildId, body, ctx) {
+    const r = economyPanel.saveActivity(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🪙 **${r.label}** — ${r.changed.join('; ')}`, 'features');
+    return r;
+  },
+  async economyjobs(guildId, body, ctx) {
+    const r = economyPanel.saveJobs(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🏢 **Jobs** — ${r.changed.join('; ')}`, 'features');
+    return r;
+  },
+  async economyglobal(guildId, body, ctx) {
+    const r = economyPanel.saveGlobal(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📈 **Economy** — ${r.changed.join('; ')}`, 'features');
+    return r;
+  },
+
+  /* -- verification ------------------------------------------------------ */
+  //
+  // Posting the panel from here rather than only from /verify setup: the
+  // wording is edited on this screen, and having to go back to Discord to make
+  // the edit visible is exactly the round trip the panel exists to remove.
+  async verifypanel(guildId, body, ctx) {
+    const channelId = String(body.channelId || '');
+    const channel = ctx.guild?.channels?.cache?.get(channelId);
+    if (!channel?.isTextBased?.()) return { error: 'bad_channel' };
+
+    const { buildVerifyPanel } = require('../commands/utility/verify');
+    try {
+      await channel.send(buildVerifyPanel(ctx.guild));
+    } catch (err) {
+      return { error: 'send_failed', detail: err.message };
+    }
+    await announce(ctx.client, guildId, ctx.session, `🔐 Posted the verification panel to #${channel.name}`, 'features');
+    return { ok: true, channelName: channel.name };
   },
 
   /* -- the remaining feature surfaces ------------------------------------ */
