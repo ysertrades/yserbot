@@ -83,6 +83,7 @@
       <button type="button" data-goto="studio">Studio</button>
       <button type="button" data-goto="giveaways">Giveaways</button>
       <button type="button" data-goto="feeds">Feeds</button>
+      <button type="button" data-goto="social">Social</button>
       <button type="button" data-goto="economy">Economy</button>
       <button type="button" data-goto="automation">Automation</button>
       <button type="button" data-goto="engagement">Engagement</button>
@@ -176,6 +177,30 @@
         </aside>
         <div id="appearance-body" class="composer-body"></div>
       </div>
+    </div>
+
+    <!-- ── Social ──────────────────────────────────────────────────────────
+         Accounts on YouTube, TikTok, Instagram and X, relayed into a channel
+         as they post. The cards themselves are styled on Appearance. -->
+    <div class="section" data-section="social">
+      <div class="grid">
+        <article class="panel">
+          <h2>Where posts land <span class="pill" id="social-state"></span></h2>
+          <div id="form-social"></div>
+        </article>
+        <article class="panel">
+          <h2>How it reaches them</h2>
+          <div id="form-social-bridge"></div>
+        </article>
+      </div>
+
+      <article class="panel">
+        <div class="queue-head">
+          <h2>Watched accounts</h2>
+          <button type="button" class="btn small" id="social-new">Watch an account</button>
+        </div>
+        <div id="social-accounts" class="items"></div>
+      </article>
     </div>
 
     <!-- ── Giveaways ───────────────────────────────────────────────────── -->
