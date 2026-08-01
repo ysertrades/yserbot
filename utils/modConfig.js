@@ -98,6 +98,41 @@ function setEconCalSettings(guildId, patch) {
   return config[guildId].econCalSettings;
 }
 
+/**
+ * Which kinds of control-panel action get written to the mod log.
+ *
+ * Defaults to on for everything: the log is what makes handing the panel out
+ * safe, so silence has to be chosen deliberately rather than arrived at.
+ * Coin movements are deliberately absent — an economy change that leaves no
+ * trace is the one thing worth keeping unconditional.
+ */
+const PANEL_LOG_CATEGORIES = {
+  feeds:      { label: 'News feed and calendar' },
+  moderation: { label: 'Moderation and filters' },
+  shop:       { label: 'Shop items' },
+  composer:   { label: 'Messages, buttons and posting' },
+  giveaways:  { label: 'Giveaways and lottery' },
+  settings:   { label: 'Server settings' },
+  features:   { label: 'Feature settings and levelling' },
+  studio:     { label: 'Studio banner wording' },
+  tickets:    { label: 'Tickets' },
+  automation: { label: 'Schedules and auto-replies' },
+};
+
+function getPanelLogSettings(guildId) {
+  const stored = readJson('config.json', {})[guildId]?.panelLogSettings || {};
+  const out = {};
+  for (const key of Object.keys(PANEL_LOG_CATEGORIES)) out[key] = stored[key] !== false;
+  return out;
+}
+
+function setPanelLogSettings(guildId, next) {
+  const config = getGuildConfig(guildId);
+  config[guildId].panelLogSettings = next;
+  writeJson('config.json', config);
+  return next;
+}
+
 function getModLogChannel(guild) {
   const config    = readJson('config.json', {});
   const channelId = config[guild.id]?.logsChannel;
@@ -122,4 +157,5 @@ module.exports = {
   getNewsFeedSettings, setNewsFeedSettings,
   getEconCalSettings, setEconCalSettings,
   getModLogChannel, isAutoModExempt,
+  PANEL_LOG_CATEGORIES, getPanelLogSettings, setPanelLogSettings,
 };

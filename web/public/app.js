@@ -117,6 +117,7 @@ if (urlToken) {
 
 const state = {
   csrf: null, token: urlToken || recall(), guildId: null, guilds: [], overview: null,
+  me: null,                             // who is signed in, for {user} previews
   templates: [], tpl: null, copy: {},   // Studio
   tplName: null, draft: null,           // Composer
   gawBump: null,                        // redraw the giveaway preview on demand
@@ -202,6 +203,65 @@ async function post(op, body) {
   toast('Saved — logged to your mod channel.', 'good');
   if (data.overview) { state.overview = data.overview; renderOverview(); }
   return data;
+}
+
+/* ── the sheet ─────────────────────────────────────────────────────────────
+   A single overlay shared by the giveaway detail and the embed preview.
+
+   Focus is moved into it and restored on close, and Escape / the scrim / the
+   close button all dismiss it — a modal that traps you is worse than no modal.
+   `onClose` is how a caller cleans up after itself (revoking an object URL,
+   say) no matter which of those three routes was taken. */
+
+let sheetReturnFocus = null;
+let sheetOnClose = null;
+
+function closeSheet() {
+  const wrap = $('#sheet');
+  if (wrap.hidden) return;
+  wrap.hidden = true;
+  $('#sheet-body').replaceChildren();
+  $('#sheet-actions').replaceChildren();
+  const after = sheetOnClose;
+  sheetOnClose = null;
+  try { sheetReturnFocus?.focus?.(); } catch { /* the element may be gone */ }
+  sheetReturnFocus = null;
+  after?.();
+}
+
+/**
+ * @param {string} title
+ * @param {Node[]} body    rows to show
+ * @param {Node[]} actions buttons for the footer
+ * @param {Function} [onClose]
+ */
+function openSheet(title, body, actions = [], onClose = null) {
+  const wrap = $('#sheet');
+  sheetReturnFocus = document.activeElement;
+  sheetOnClose = onClose;
+  $('#sheet-title').textContent = title;
+  $('#sheet-body').replaceChildren(...body);
+  $('#sheet-actions').replaceChildren(...actions);
+  wrap.hidden = false;
+  // The close button is the one control guaranteed to exist, so it is the
+  // safe place to land focus.
+  $('#sheet-close').focus();
+}
+
+function initSheet() {
+  $('#sheet-close').addEventListener('click', closeSheet);
+  $('#sheet-scrim').addEventListener('click', closeSheet);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet();
+  });
+}
+
+/** A labelled row for sheet bodies, matching the panel's own row styling. */
+function sheetRow(label, value) {
+  const r = el('div', 'row');
+  r.append(el('span', 'k', label));
+  r.append(value instanceof Node ? value : el('span', 'v', String(value)));
+  return r;
 }
 
 /* ── the lattice ───────────────────────────────────────────────────────── */
@@ -403,6 +463,8 @@ function renderOverview() {
   renderComposer();
   renderGiveaways();
   renderSettings();
+  renderPanelLog();
+  renderTickets();
   renderGroupForm('#form-casino', 'casino');
   renderGroupForm('#form-lottery', 'lottery');
   renderGroupForm('#form-cards', 'cards');
@@ -465,6 +527,72 @@ function textField(label, value, onInput, { placeholder = '' } = {}) {
   return l;
 }
 
+/* ── durations ─────────────────────────────────────────────────────────────
+   The same 10s/10m/10h/10d the slash commands take. Mirrored here rather than
+   fetched so the field can validate as you type; utils/duration.js is the
+   authority and rejects anything this lets through. */
+
+const DURATION_UNIT_MS = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+const UNIT_NAME = { s: 'second', m: 'minute', h: 'hour', d: 'day' };
+
+function parseDurationMs(str) {
+  const m = String(str ?? '').trim().match(/^(\d+)([smhd])$/i);
+  if (!m) return null;
+  const ms = parseInt(m[1], 10) * DURATION_UNIT_MS[m[2].toLowerCase()];
+  return ms > 0 ? ms : null;
+}
+
+function humanDuration(str) {
+  const m = String(str ?? '').trim().match(/^(\d+)([smhd])$/i);
+  if (!m) return str;
+  const n = parseInt(m[1], 10);
+  return `${n} ${UNIT_NAME[m[2].toLowerCase()]}${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * A duration input that says what it understood, so a typo is visible before
+ * the giveaway is launched rather than after the server rejects it.
+ */
+function durationField(label, value, onInput) {
+  const l = el('label', 'field');
+  const head = el('div', 'field-head');
+  const echo = el('span', 'count');
+  head.append(el('span', null, label), echo);
+  l.append(head);
+
+  const input = el('input');
+  input.type = 'text';
+  input.value = value ?? '';
+  input.placeholder = '30s · 10m · 6h · 2d';
+  input.setAttribute('inputmode', 'text');
+  input.autocapitalize = 'none';
+  input.spellcheck = false;
+
+  const sync = () => {
+    const ok = parseDurationMs(input.value);
+    echo.textContent = ok ? humanDuration(input.value) : 'use 10s / 10m / 10h / 10d';
+    echo.className = `count${ok ? '' : ' bad'}`;
+  };
+  sync();
+  input.addEventListener('input', () => {
+    // Units are lower case; typing "10M" should still work.
+    input.value = input.value.toLowerCase();
+    sync();
+    onInput(input.value);
+  });
+
+  l.append(input);
+  const chips = el('div', 'chipset');
+  for (const preset of ['30s', '10m', '1h', '6h', '1d', '7d']) {
+    const c = el('button', 'chip', preset);
+    c.type = 'button';
+    c.addEventListener('click', () => { input.value = preset; sync(); onInput(preset); });
+    chips.append(c);
+  }
+  l.append(chips);
+  return l;
+}
+
 function actions(onSave) {
   const wrap = el('div', 'actions');
   const save = el('button', 'btn primary small', 'Save changes');
@@ -496,19 +624,52 @@ function renderFeedForms() {
     enabled: d.econcal.enabled,
     impactFilter: d.econcal.impact.slice(),
     currencyFilter: d.econcal.currencies.slice(),
+    weeklyPost: { ...d.econcal.weekly },
   };
+  const wp = ec.weeklyPost;
+
+  // Everything /econcal can set, in the order the command's own panel walks
+  // through it — where it goes, who gets pinged, what is included, and when
+  // the week-ahead summary posts.
+  const weeklyRows = [
+    select('Day', String(wp.weekday), WEEKDAY_OPTIONS, v => { wp.weekday = Number(v); }),
+    textField('Time (24h, HH:MM)', `${String(wp.hour).padStart(2, '0')}:${String(wp.minute).padStart(2, '0')}`, v => {
+      const m = v.match(/^(\d{1,2}):(\d{2})$/);
+      if (!m) return;
+      wp.hour = Math.min(23, Number(m[1]));
+      wp.minute = Math.min(59, Number(m[2]));
+    }),
+    select('Timezone', String(wp.offsetMinutes), UTC_OFFSET_OPTIONS, v => { wp.offsetMinutes = Number(v); }),
+  ];
+  const weeklyWrap = el('div', 'subfields');
+  weeklyWrap.append(...weeklyRows);
+  weeklyWrap.hidden = !wp.enabled;
+
   $('#form-econcal').replaceChildren(
     toggle('Calendar running', ec.enabled, v => { ec.enabled = v; }),
-    textField('Impact (high, medium, low — blank for all)', ec.impactFilter.join(', '),
-      v => { ec.impactFilter = v.split(',').map(s => s.trim()).filter(Boolean); },
-      { placeholder: 'high' }),
-    textField('Currencies (blank for all)', ec.currencyFilter.join(', '),
-      v => { ec.currencyFilter = v.split(',').map(s => s.trim()).filter(Boolean); },
-      { placeholder: 'USD, EUR' }),
     pickOne('Channel', 'channel', d.econcal.channelId, v => { ec.channelId = v; }),
+    pickOne('Ping this role on reminders', 'role', d.econcal.roleId, v => { ec.roleId = v; },
+      { blank: 'No ping' }),
+    pickValues('Impact levels', d.econcal.impactLevels || [], ec.impactFilter,
+      v => { ec.impactFilter = v; }, { allNote: 'Nothing picked — every impact level is sent.' }),
+    pickValues('Currencies', d.econcal.currencyCodes || [], ec.currencyFilter,
+      v => { ec.currencyFilter = v; }, { allNote: 'Nothing picked — every currency is sent.' }),
+    el('h2', null, 'Weekly summary'),
+    toggle('Post the week ahead', wp.enabled, v => { wp.enabled = v; weeklyWrap.hidden = !v; }),
+    weeklyWrap,
     actions(() => post('econcal', ec)),
   );
 }
+
+const WEEKDAY_OPTIONS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  .map((label, i) => ({ value: String(i), label }));
+
+// -12:00 to +14:00 in whole hours, which covers every real UTC offset the
+// scheduler accepts.
+const UTC_OFFSET_OPTIONS = Array.from({ length: 27 }, (_, i) => {
+  const hours = i - 12;
+  return { value: String(hours * 60), label: `UTC${hours >= 0 ? '+' : ''}${hours}` };
+});
 
 function renderModerationForm() {
   const d = state.overview;
@@ -617,6 +778,46 @@ function pickMany(label, kind, values, onChange) {
     box.append(b);
   }
   wrap.append(box);
+  return wrap;
+}
+
+/**
+ * Multi-select over a fixed vocabulary — impact levels, currency codes.
+ *
+ * Same chips as the role and channel pickers, so "pick several from a list"
+ * looks the same everywhere. Nothing selected means everything, which is what
+ * an empty filter means to the calendar, so the field says so rather than
+ * leaving it to be inferred from a blank row.
+ */
+function pickValues(label, options, values, onChange, { allNote = 'Nothing picked — everything is sent.' } = {}) {
+  const chosen = new Set(values || []);
+  const wrap = el('div', 'field');
+  const head = el('div', 'field-head');
+  const note = el('span', 'count');
+  head.append(el('span', null, label), note);
+  wrap.append(head);
+
+  const sync = () => { note.textContent = chosen.size ? `${chosen.size} picked` : 'all'; };
+
+  const box = el('div', 'chipset');
+  for (const o of options) {
+    const value = typeof o === 'string' ? o : o.value;
+    const text = typeof o === 'string' ? o : o.label;
+    const b = el('button', 'chip-toggle', text);
+    b.type = 'button';
+    if (chosen.has(value)) b.setAttribute('aria-pressed', 'true');
+    b.addEventListener('click', () => {
+      if (chosen.has(value)) { chosen.delete(value); b.removeAttribute('aria-pressed'); }
+      else { chosen.add(value); b.setAttribute('aria-pressed', 'true'); }
+      sync();
+      // Ordered by the vocabulary so what is sent matches what is stored.
+      onChange(options.map(x => (typeof x === 'string' ? x : x.value)).filter(v => chosen.has(v)));
+    });
+    box.append(b);
+  }
+  sync();
+  wrap.append(box);
+  wrap.append(el('p', 'hint', allNote));
   return wrap;
 }
 
@@ -766,7 +967,14 @@ function renderComposer() {
     saveBtn.disabled = false;
     if (res?.ok) { state.tplName = draft.name; state.draft = null; renderComposer(); }
   });
-  saveRow.append(addEmbed, saveBtn);
+
+  // Sits beside Save because that is where you are when you want to check your
+  // work — and it previews the draft in hand, saved or not.
+  const previewBtn = el('button', 'btn small', 'Preview');
+  previewBtn.type = 'button';
+  previewBtn.addEventListener('click', () => openEmbedPreview(draft));
+
+  saveRow.append(addEmbed, previewBtn, saveBtn);
 
   if (!state.draft?.isNew && list.some(t => t.name === draft.name)) {
     const del = el('button', 'btn small danger', 'Delete message');
@@ -968,7 +1176,10 @@ function renderGiveaways() {
   const endedWrap = $('#gaw-ended');
   if (!g.ended.length) endedWrap.replaceChildren(el('p', 'muted', 'Nothing finished yet.'));
   else endedWrap.replaceChildren(...g.ended.map(x => {
-    const d = el('div', 'gaw');
+    // A button rather than a div with a click handler, so it is reachable by
+    // keyboard and announces itself as something that does something.
+    const d = el('button', 'gaw tappable');
+    d.type = 'button';
     const top = el('div', 'gaw-top');
     top.append(
       el('span', `kind ${x.kind}`, x.kind === 'coins' ? 'COINS' : 'PRIZE'),
@@ -977,22 +1188,164 @@ function renderGiveaways() {
     );
     d.append(top);
     d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
-    if (x.kind === 'coins') {
-      const act = el('div', 'actions');
-      const rr = el('button', 'btn small', 'Reroll');
-      rr.type = 'button';
-      rr.title = 'Draw new winners and pay them';
-      rr.addEventListener('click', async () => {
-        if (!confirm('Draw new winners? They get paid again.')) return;
-        rr.disabled = true;
-        await post('giveawayreroll', { shortId: x.shortId, kind: 'coins' });
-        rr.disabled = false;
-      });
-      act.append(rr);
-      d.append(act);
-    }
+    d.append(el('span', 'chev', '›'));
+    d.addEventListener('click', () => openEndedGiveaway(x));
     return d;
   }));
+}
+
+/**
+ * The detail sheet for a finished giveaway.
+ *
+ * Reroll and delete both live here rather than as buttons on the card: they
+ * are the two destructive-ish things you can do to a finished giveaway, and
+ * putting them behind a deliberate tap keeps them off a list you scroll past.
+ */
+function openEndedGiveaway(x) {
+  const body = [
+    sheetRow('Kind', x.kind === 'coins' ? 'Coins giveaway' : 'Prize giveaway'),
+    sheetRow('Prize', x.title || 'Giveaway'),
+    sheetRow('Entered', num(x.entrants)),
+    sheetRow('Winners', String(x.winners)),
+    sheetRow('ID', el('span', 'v mono', x.shortId)),
+  ];
+  if (x.endedAt) body.push(sheetRow('Ended', new Date(x.endedAt).toLocaleString()));
+  body.push(el('p', 'hint', 'Rerolling draws new winners. For a coins giveaway that pays them again, on top of what the first draw already paid out.'));
+
+  const reroll = el('button', 'btn primary', 'Reroll winners');
+  reroll.type = 'button';
+  reroll.addEventListener('click', async () => {
+    reroll.disabled = true;
+    reroll.textContent = 'Drawing…';
+    const out = await post('giveawayreroll', { shortId: x.shortId, kind: x.kind });
+    if (out) closeSheet();
+    else { reroll.disabled = false; reroll.textContent = 'Reroll winners'; }
+  });
+
+  const del = el('button', 'btn danger', 'Delete from panel');
+  del.type = 'button';
+  del.addEventListener('click', async () => {
+    // Two taps, because deleting the record is what makes a reroll impossible
+    // from then on — and the announcement in the channel stays either way.
+    if (del.dataset.armed !== '1') {
+      del.dataset.armed = '1';
+      del.textContent = 'Tap again to delete';
+      return;
+    }
+    del.disabled = true;
+    const out = await post('giveawaydelete', { shortId: x.shortId, kind: x.kind });
+    if (out) closeSheet();
+    else { del.disabled = false; del.dataset.armed = ''; del.textContent = 'Delete from panel'; }
+  });
+
+  openSheet(x.title || 'Giveaway', body, [reroll, del]);
+}
+
+/* ── previewing an embed ───────────────────────────────────────────────────
+   A rendering of the draft in hand, in the sheet, so the page behind blurs
+   away and the only thing left to look at is the message.
+
+   It is a likeness, not Discord: the colour spine, the type scale and the
+   field grid are what make an embed recognisable at a glance, and those are
+   what this reproduces. */
+
+/** The placeholders embed.js substitutes at send time, filled in as it would. */
+function fillPlaceholders(text) {
+  const g = state.overview?.guild;
+  return String(text ?? '')
+    .replace(/\{user\}/g, `@${state.me?.name || 'you'}`)
+    .replace(/\{username\}/g, state.me?.name || 'you')
+    .replace(/\{server\}/g, g?.name || 'this server')
+    .replace(/\{membercount\}/g, g ? num(g.members) : '0')
+    .replace(/\{channel\}/g, '#channel');
+}
+
+/**
+ * Fetches a generated image into an <img>.
+ *
+ * The blob URL is handed back so the sheet can revoke it on close — an
+ * object URL left behind pins the whole buffer in memory for the life of the
+ * page, and a preview is the last thing that should leak.
+ */
+async function loadDynamicPreview(img, key, revocables) {
+  try {
+    const url = `/api/preview-image/${encodeURIComponent(key)}${state.guildId ? `?g=${state.guildId}` : ''}`;
+    const res = await fetch(url, { credentials: 'same-origin', headers: authHeaders() });
+    if (!res.ok) throw new Error(String(res.status));
+    const objectUrl = URL.createObjectURL(await res.blob());
+    revocables.push(objectUrl);
+    img.src = objectUrl;
+    img.hidden = false;
+  } catch {
+    // The alternative is a broken-image icon, which reads as a bug rather
+    // than as art that could not be drawn right now.
+    img.replaceWith(el('p', 'hint', `Generated image “${key}” could not be drawn just now — it will still be attached when this is sent.`));
+  }
+}
+
+function openEmbedPreview(draft) {
+  const revocables = [];
+  const body = [];
+
+  const buttons = (state.overview?.composer || []).find(t => t.name === draft.name)?.buttons
+    || draft.buttons || [];
+
+  draft.embeds.forEach(e => {
+    const box = el('div', 'demb');
+    box.style.borderLeftColor = /^#[0-9a-f]{6}$/i.test(e.color || '') ? e.color : '#5865F2';
+
+    if (e.title) box.append(el('p', 't', fillPlaceholders(e.title)));
+    if (e.description) box.append(el('p', 'd', fillPlaceholders(e.description)));
+
+    if (e.fields?.length) {
+      const f = el('div', 'f');
+      for (const fd of e.fields) {
+        if (!fd.name && !fd.value) continue;
+        const cell = el('div');
+        // Inline fields sit side by side; block fields take the full width,
+        // which is the single most visible thing the inline switch does.
+        if (!fd.inline) cell.style.flexBasis = '100%';
+        cell.append(el('b', null, fillPlaceholders(fd.name || '​')));
+        cell.append(el('span', null, fillPlaceholders(fd.value || '')));
+        f.append(cell);
+      }
+      if (f.childElementCount) box.append(f);
+    }
+
+    if (e.image) {
+      const img = el('img');
+      img.className = 'big';
+      img.alt = '';
+      img.hidden = true;
+      box.append(img);
+      if (e.image.startsWith('dynamic:')) loadDynamicPreview(img, e.image.slice(8), revocables);
+      else { img.src = e.image; img.hidden = false; }
+    }
+
+    const footBits = [];
+    if (e.footer) footBits.push(fillPlaceholders(e.footer));
+    if (e.timestamp) footBits.push(new Date().toLocaleString());
+    if (footBits.length) box.append(el('p', 'ft', footBits.join(' • ')));
+
+    body.push(box);
+  });
+
+  if (buttons.length) {
+    const row = el('div', 'demb-btns');
+    for (const b of buttons) {
+      const chip = el('span', b.type === 'link' ? 'link' : (b.style || 'Primary'),
+        `${b.emoji ? `${b.emoji} ` : ''}${b.label || b.id}`);
+      row.append(chip);
+    }
+    body.push(row);
+  }
+
+  if (!body.length) body.push(el('p', 'muted', 'Nothing to show yet — add a title or description.'));
+  body.push(el('p', 'hint', 'A likeness of the message, not a screenshot of Discord. Placeholders are filled in the way they will be when it is sent.'));
+
+  openSheet(draft.name ? `Preview · ${draft.name}` : 'Preview', body, [], () => {
+    for (const url of revocables) URL.revokeObjectURL(url);
+  });
 }
 
 /* ── start a giveaway ──────────────────────────────────────────────────── */
@@ -1025,7 +1378,7 @@ function refreshGawPreview(draft, attempt = 0) {
 
 function renderGiveawayForm() {
   const form = $('#form-gaw');
-  const draft = { kind: 'coins', amount: 5000, prize: '', winners: 1, minutes: 60, channelId: '',
+  const draft = { kind: 'coins', amount: 5000, prize: '', winners: 1, duration: '1h', channelId: '',
                   mention: null, requiredRoleId: null, bonusRoleId: null, minAccountAgeDays: 0 };
 
   const bump = () => refreshGawPreview(draft);
@@ -1054,7 +1407,7 @@ function renderGiveawayForm() {
     amountField,
     prizeField,
     textField('Winners', '1', v => { draft.winners = Number(v); bump(); }),
-    textField('Runs for (minutes)', '60', v => { draft.minutes = Number(v); }),
+    durationField('Runs for', '1h', v => { draft.duration = v; }),
     pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Pick a channel' }),
     mentionPicker('Ping with the post', null, v => { draft.mention = v; }),
     pickOne('Only this role may enter', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone' }),
@@ -1062,7 +1415,9 @@ function renderGiveawayForm() {
     textField('Minimum account age (days)', '0', v => { draft.minAccountAgeDays = Number(v); }),
     actions(async () => {
       if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
-      if (!confirm(`Start a giveaway: ${num(draft.amount)} coins to ${draft.winners} winner(s), for ${draft.minutes} minutes?`)) return;
+      if (!parseDurationMs(draft.duration)) { toast('Duration must look like 30s, 10m, 6h or 2d.', 'bad'); return; }
+      const what = draft.kind === 'coins' ? `${num(draft.amount)} coins` : (draft.prize || 'a prize');
+      if (!confirm(`Start a giveaway: ${what} to ${draft.winners} winner(s), running for ${humanDuration(draft.duration)}?`)) return;
       await post('giveawaystart', draft);
     }),
   );
@@ -1156,6 +1511,130 @@ function renderSettings() {
 
   nodes.push(actions(() => post('settings', draft)));
   form.replaceChildren(...nodes);
+}
+
+/* ── tickets ───────────────────────────────────────────────────────────── */
+
+function renderTickets() {
+  const t = state.overview?.tickets;
+  if (!t) return;
+
+  /* -- the open list ---------------------------------------------------- */
+  const wrap = $('#ticket-open');
+  if (!t.open.length) {
+    wrap.replaceChildren(el('p', 'muted', 'No tickets are open right now.'));
+  } else {
+    wrap.replaceChildren(...t.open.map(tk => {
+      const d = el('div', 'gaw');
+      const top = el('div', 'gaw-top');
+      top.append(el('span', 'kind prize', 'OPEN'), el('span', 'nm', `#${tk.name}`));
+      d.append(top);
+
+      const bits = [];
+      if (tk.createdAt) bits.push(`opened ${relativeTime(tk.createdAt)}`);
+      d.append(el('p', 'hint', bits.join(' · ') || 'open'));
+      if (tk.ownerId) {
+        const line = el('div', 'row');
+        line.append(el('span', 'k', 'Opened by'), el('span', 'v mono', tk.ownerId));
+        d.append(line);
+      }
+
+      const act = el('div', 'actions');
+      const close = el('button', 'btn small danger', 'Close');
+      close.type = 'button';
+      close.addEventListener('click', () => openTicketSheet(tk));
+      act.append(close);
+      d.append(act);
+      return d;
+    }));
+  }
+
+  /* -- settings ---------------------------------------------------------- */
+  const draft = { ...t.values };
+  $('#form-tickets').replaceChildren(
+    pickOne('Support role', 'role', t.supportRoleId, v => { draft.supportRoleId = v; },
+      { blank: 'No support role' }),
+    ...t.fields.map(f => {
+      if (f.type === 'bool') return toggle(f.label, !!draft[f.key], v => { draft[f.key] = v; });
+      if (f.type === 'int') {
+        return textField(`${f.label} (${f.min}–${f.max})`, String(draft[f.key] ?? ''),
+          v => { draft[f.key] = Number(v); });
+      }
+      return areaField(f.label, draft[f.key] ?? '', v => { draft[f.key] = v; }, 3);
+    }),
+    el('p', 'hint', 'The nudge message can use {time}, which becomes how long the ticket has been quiet.'),
+    actions(() => post('tickets', draft)),
+  );
+
+  /* -- post the panel ----------------------------------------------------- */
+  const panel = { channelId: '' };
+  const postForm = $('#form-ticketpanel');
+  postForm.replaceChildren(
+    pickOne('Channel', 'channel', '', v => { panel.channelId = v; }, { blank: 'Pick a channel' }),
+    actions(async () => {
+      if (!panel.channelId) { toast('Pick a channel first.', 'bad'); return; }
+      await post('ticketpanel', panel);
+    }),
+  );
+}
+
+/** Closing deletes the channel, so it asks in the sheet rather than inline. */
+function openTicketSheet(tk) {
+  const body = [
+    sheetRow('Channel', `#${tk.name}`),
+    tk.ownerId ? sheetRow('Opened by', el('span', 'v mono', tk.ownerId)) : null,
+    tk.createdAt ? sheetRow('Opened', new Date(tk.createdAt).toLocaleString()) : null,
+    el('p', 'note', 'Closing deletes the channel and everything said in it. There is no archive — this cannot be undone.'),
+  ].filter(Boolean);
+
+  const close = el('button', 'btn danger', 'Close this ticket');
+  close.type = 'button';
+  close.addEventListener('click', async () => {
+    if (close.dataset.armed !== '1') {
+      close.dataset.armed = '1';
+      close.textContent = 'Tap again to delete the channel';
+      return;
+    }
+    close.disabled = true;
+    const out = await post('ticketclose', { channelId: tk.id });
+    if (out) closeSheet();
+    else { close.disabled = false; close.dataset.armed = ''; close.textContent = 'Close this ticket'; }
+  });
+
+  openSheet(`#${tk.name}`, body, [close]);
+}
+
+/** "3 hours ago", for anything with a timestamp and no room for a full date. */
+function relativeTime(ts) {
+  const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  const steps = [[60, 'second'], [60, 'minute'], [24, 'hour'], [7, 'day'], [4.35, 'week'], [12, 'month']];
+  let n = secs, unit = 'second';
+  for (const [size, name] of steps) {
+    if (n < size) { unit = name; break; }
+    n = n / size;
+    unit = name;
+  }
+  const rounded = Math.round(n);
+  return `${rounded} ${unit}${rounded === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * Which panel actions are announced in the mod log.
+ *
+ * Coins are missing from this list on purpose, and the copy says so — an
+ * economy change that leaves no trace is the one thing not worth making
+ * optional.
+ */
+function renderPanelLog() {
+  const pl = state.overview?.panelLog;
+  const form = $('#form-panellog');
+  if (!pl) { form.replaceChildren(); return; }
+
+  const draft = { ...pl.values };
+  form.replaceChildren(
+    ...pl.categories.map(c => toggle(c.label, draft[c.key] !== false, v => { draft[c.key] = v; })),
+    actions(() => post('panellog', draft)),
+  );
 }
 
 /**
@@ -1491,6 +1970,9 @@ async function loadPreview() {
   const seq = ++previewSeq;
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(state.copy)) if (v) params.set(k, v);
+  // Lets an empty form fall back to whatever this guild has saved, rather than
+  // to the factory defaults the embed is no longer sending.
+  if (state.guildId) params.set('g', state.guildId);
   const url = `/api/preview/${state.tpl.key}?${params}`;
 
   try {
@@ -1544,6 +2026,7 @@ function renderStudioFields() {
       input.setSelectionRange(caret, caret);
       state.copy[field] = input.value;
       sync();
+      markStudioDirty();
       requestPreview();
     });
     l.append(input);
@@ -1551,10 +2034,39 @@ function renderStudioFields() {
   }));
 }
 
-function selectTemplate(key) {
+/**
+ * What is currently saved for a banner, filled in with the defaults.
+ *
+ * Studio shows the effective wording — the words the embed would actually
+ * send — rather than the raw saved record, which only holds the fields that
+ * differ. Otherwise a banner with one customised line would open with the
+ * other three blank.
+ */
+function savedCopyFor(key) {
+  const saved = state.overview?.banners?.[key] || {};
+  const tpl = state.templates.find(t => t.key === key);
+  return { ...(tpl?.defaults || {}), ...saved };
+}
+
+/** Whether the form differs from what is saved, which is what the embed sends. */
+function studioDirty() {
+  if (!state.tpl) return false;
+  const saved = savedCopyFor(state.tpl.key);
+  return Object.keys(state.tpl.defaults).some(f => (state.copy[f] ?? '') !== (saved[f] ?? ''));
+}
+
+function markStudioDirty() {
+  const dirty = studioDirty();
+  $('#tpl-dirty').hidden = !dirty;
+  $('#tpl-save').disabled = !dirty;
+  $('#tpl-revert').disabled = !dirty;
+}
+
+function selectTemplate(key, copy) {
   state.tpl = state.templates.find(t => t.key === key) || state.templates[0];
-  state.copy = { ...state.tpl.defaults };
+  state.copy = copy ? { ...copy } : savedCopyFor(state.tpl.key);
   renderStudioFields();
+  markStudioDirty();
   loadPreview();
 }
 
@@ -1568,7 +2080,34 @@ async function initStudio() {
     return o;
   }));
   select.addEventListener('change', () => selectTemplate(select.value));
-  $('#tpl-reset').addEventListener('click', () => selectTemplate(state.tpl.key));
+
+  // Revert goes back to what is saved; reset goes back to the factory wording
+  // and needs saving to take effect, same as any other edit.
+  $('#tpl-revert').addEventListener('click', () => selectTemplate(state.tpl.key));
+  $('#tpl-reset').addEventListener('click', () => selectTemplate(state.tpl.key, state.tpl.defaults));
+
+  $('#tpl-save').addEventListener('click', async () => {
+    const btn = $('#tpl-save');
+    btn.disabled = true;
+    const previous = btn.textContent;
+    btn.textContent = 'Saving…';
+    try {
+      // Only the lines that differ from the defaults are sent, so a banner
+      // left alone stays on the default render the cache already holds.
+      const copy = {};
+      for (const [f, v] of Object.entries(state.copy)) {
+        if (v && v !== state.tpl.defaults[f]) copy[f] = v;
+      }
+      const out = await post('banner', { template: state.tpl.key, copy });
+      if (out && state.overview) {
+        state.overview.banners = { ...(state.overview.banners || {}), [state.tpl.key]: out.copy || {} };
+      }
+    } finally {
+      btn.textContent = previous;
+      markStudioDirty();
+    }
+  });
+
   selectTemplate(templates[0].key);
 }
 
@@ -1577,7 +2116,7 @@ async function initStudio() {
    and which section you are in once the nav has scrolled past. */
 
 const SECTION_NAMES = {
-  overview: 'Overview', composer: 'Composer', studio: 'Studio',
+  overview: 'Overview', composer: 'Composer', studio: 'Studio', tickets: 'Tickets',
   giveaways: 'Giveaways', feeds: 'Feeds', economy: 'Economy',
   automation: 'Automation', engagement: 'Engagement',
   moderation: 'Moderation', settings: 'Settings',
@@ -1629,21 +2168,35 @@ function dismissKeyboardOnOutsideTap() {
 
 /* ── boot ──────────────────────────────────────────────────────────────── */
 
+/**
+ * Shows one section and marks its nav button.
+ *
+ * The active section carries `data-active` and the stylesheet keys off that
+ * alone, so adding a section is a matter of adding markup and a nav button —
+ * there is no second list anywhere that has to be kept in step.
+ */
+function showSection(name) {
+  root.dataset.section = name;
+  for (const s of document.querySelectorAll('.section')) {
+    const active = s.dataset.section === name;
+    s.toggleAttribute('data-active', active);
+    // Restart the entrance animation for the section that just appeared.
+    // Reading offsetWidth between clearing and restoring it is what forces the
+    // browser to acknowledge the reset.
+    if (active) { s.style.animation = 'none'; void s.offsetWidth; s.style.animation = ''; }
+  }
+  for (const b of document.querySelectorAll('#sections button')) {
+    if (b.dataset.goto === name) b.setAttribute('aria-current', 'true');
+    else b.removeAttribute('aria-current');
+  }
+}
+
 function initSections() {
   for (const b of document.querySelectorAll('#sections button')) {
     b.addEventListener('click', () => {
-      root.dataset.section = b.dataset.goto;
-      // Restart the entrance animation for the section that just appeared.
-      // Reading offsetWidth between removing and re-adding the class is what
-      // forces the browser to acknowledge the reset.
-      const shown = document.querySelector(`.section[data-section="${b.dataset.goto}"]`);
-      if (shown) { shown.style.animation = 'none'; void shown.offsetWidth; shown.style.animation = ''; }
+      showSection(b.dataset.goto);
       if (b.dataset.goto === 'giveaways') state.gawBump?.();
       paintBar();
-      for (const other of document.querySelectorAll('#sections button')) {
-        other.toggleAttribute('aria-current', other === b);
-        if (other === b) other.setAttribute('aria-current', 'true');
-      }
       history.replaceState(null, '', `?g=${state.guildId}&s=${b.dataset.goto}`);
     });
   }
@@ -1655,6 +2208,9 @@ async function selectGuild(id) {
   renderGuildPicker();
   state.overview = await get(`/api/guild/${id}`);
   renderOverview();
+  // Banner wording is per guild, so Studio has to re-read it rather than keep
+  // showing the previous server's copy.
+  if (state.tpl) selectTemplate(state.tpl.key);
 }
 
 async function main() {
@@ -1689,8 +2245,10 @@ async function main() {
   state.csrf = me.csrf;
   if (me.token) { state.token = me.token; remember(me.token); }
   state.guilds = me.guilds;
+  state.me = me.user;
   renderIdentity(me.user);
   initSections();
+  initSheet();
   initEmbedLink();
   $('#tpl-new').addEventListener('click', () => {
     state.tplName = null;
@@ -1702,14 +2260,11 @@ async function main() {
 
   const params = new URLSearchParams(location.search);
   const wanted = params.get('g');
+  // Always through showSection, including for the default — it is what puts
+  // data-active on a section, and without it nothing would be visible at all.
   const section = params.get('s');
-  if (section && document.querySelector(`#sections button[data-goto="${section}"]`)) {
-    root.dataset.section = section;
-    for (const b of document.querySelectorAll('#sections button')) {
-      if (b.dataset.goto === section) b.setAttribute('aria-current', 'true');
-      else b.removeAttribute('aria-current');
-    }
-  }
+  const known = section && document.querySelector(`#sections button[data-goto="${section}"]`);
+  showSection(known ? section : (root.dataset.section || 'overview'));
 
   paintBar();
 

@@ -21,19 +21,30 @@ const {
   setAutoModSettings, setModLogSettings, setNewsFeedSettings, setEconCalSettings,
   getAutoModSettings, getNewsFeedSettings, getEconCalSettings,
   getModLogChannel,
+  PANEL_LOG_CATEGORIES: LOG_CATEGORIES,
+  getPanelLogSettings: panelLogSettings,
+  setPanelLogSettings,
 } = require('../utils/modConfig');
 const { listSources } = require('../utils/newsFeed');
+const { IMPACT_LEVELS, CURRENCIES } = require('../utils/economicCalendar');
+const { BANNERS, getBannerCopy, setBannerCopy, changedFields } = require('../utils/bannerCopy');
 const composer = require('./composer');
 const giveaways = require('./giveaways');
 const settings = require('./settings');
 const features = require('./features');
+const tickets = require('./tickets');
 
-const IMPACTS = ['high', 'medium', 'low'];
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /* ─── audit ──────────────────────────────────────────────────────────────── */
 
-async function announce(client, guildId, session, summary) {
+/**
+ * @param {string|null} category one of LOG_CATEGORIES, or null for
+ *   "always log this" — used by coin adjustments.
+ */
+async function announce(client, guildId, session, summary, category = null) {
   try {
+    if (category && panelLogSettings(guildId)[category] === false) return;
     const guild = client.guilds.cache.get(guildId);
     if (!guild) return;
     const channel = getModLogChannel(guild);
@@ -84,6 +95,41 @@ function channelIn(guild, id) {
   return { ok: true, value: id, name: ch.name };
 }
 
+/** A role id is only accepted if it names a real role in the guild. */
+function roleIn(guild, id) {
+  if (id === null || id === '') return { ok: true, value: null };
+  if (typeof id !== 'string' || !/^\d{5,25}$/.test(id)) return { ok: false };
+  const role = guild.roles.cache.get(id);
+  if (!role) return { ok: false };
+  return { ok: true, value: id, name: role.name };
+}
+
+/**
+ * Like list(), but preserves the vocabulary's own casing.
+ *
+ * list() lower-cases everything, which is right for keys the bot compares
+ * lower-cased and wrong for anything compared literally — an impact filter of
+ * "high" never matches an event whose impact is "High", so the feed silently
+ * goes quiet instead of narrowing.
+ */
+function canonList(body, key, vocabulary, max = 40) {
+  if (!Array.isArray(body[key])) return null;
+  const byLower = new Map(vocabulary.map(v => [v.toLowerCase(), v]));
+  const seen = new Set();
+  for (const raw of body[key].slice(0, max)) {
+    if (typeof raw !== 'string') continue;
+    const canon = byLower.get(raw.trim().toLowerCase());
+    if (canon) seen.add(canon);
+  }
+  // A list that had entries but matched nothing is a mistake, not a request to
+  // clear the filter — and "clear" would widen the feed rather than narrow it,
+  // which is the opposite of what was asked for. Clearing needs an empty list.
+  if (body[key].length > 0 && seen.size === 0) return null;
+  // Ordered by the vocabulary rather than by what arrived, so the stored value
+  // is stable and the "did this change" comparison stays honest.
+  return vocabulary.filter(v => seen.has(v));
+}
+
 /* ─── operations ─────────────────────────────────────────────────────────── */
 
 const OPS = {
@@ -130,7 +176,7 @@ const OPS = {
 
     if (notes.length === 0) return { unchanged: true };
     setNewsFeedSettings(guildId, patch);
-    await announce(client, guildId, session, `📰 **News feed** — ${notes.join('; ')}`);
+    await announce(client, guildId, session, `📰 **News feed** — ${notes.join('; ')}`, 'feeds');
     return { ok: true };
   },
 
@@ -155,8 +201,21 @@ const OPS = {
       }
     }
 
+    if ('roleId' in body) {
+      const role = roleIn(guild, body.roleId);
+      if (!role.ok) return { error: 'bad_role' };
+      if (role.value !== current.roleId) {
+        patch.roleId = role.value;
+        notes.push(role.value ? `reminder ping role set to <@&${role.value}>` : 'reminder ping role cleared');
+      }
+    }
+
     if ('impactFilter' in body) {
-      const next = list(body, 'impactFilter', IMPACTS);
+      // Stored in the calendar's own casing. filterEvents compares these
+      // straight against an event's `impact` ("High", "Holiday"), so a
+      // lower-cased list matches nothing and silently mutes the entire feed —
+      // which is what the panel used to write.
+      const next = canonList(body, 'impactFilter', IMPACT_LEVELS);
       if (next === null) return { error: 'bad_impact' };
       if (next.join() !== (current.impactFilter || []).join()) {
         patch.impactFilter = next;
@@ -165,18 +224,47 @@ const OPS = {
     }
 
     if ('currencyFilter' in body) {
-      // Currencies are free text upstream, so this only enforces the shape:
-      // three letters, which is what every code in the feed looks like.
-      const next = (list(body, 'currencyFilter', null, 25) || []).filter(c => /^[a-z]{3}$/.test(c));
+      const next = canonList(body, 'currencyFilter', CURRENCIES);
+      if (next === null) return { error: 'bad_currency' };
       if (next.join() !== (current.currencyFilter || []).join()) {
-        patch.currencyFilter = next.map(c => c.toUpperCase());
-        notes.push(next.length ? `currencies set to ${patch.currencyFilter.join(', ')}` : 'currency filter cleared');
+        patch.currencyFilter = next;
+        notes.push(next.length ? `currencies set to ${next.join(', ')}` : 'currency filter cleared');
+      }
+    }
+
+    if (body.weeklyPost && typeof body.weeklyPost === 'object') {
+      const wp = body.weeklyPost;
+      const next = { ...current.weeklyPost };
+      const wpNotes = [];
+
+      if (typeof wp.enabled === 'boolean' && wp.enabled !== next.enabled) {
+        next.enabled = wp.enabled;
+        wpNotes.push(wp.enabled ? 'on' : 'off');
+      }
+      for (const [key, min, max] of [['weekday', 0, 6], ['hour', 0, 23], ['minute', 0, 59]]) {
+        if (wp[key] === undefined) continue;
+        const n = Number(wp[key]);
+        if (!Number.isInteger(n) || n < min || n > max) return { error: 'bad_weekly' };
+        if (n !== next[key]) { next[key] = n; wpNotes.push(key); }
+      }
+      if (wp.offsetMinutes !== undefined) {
+        const n = Number(wp.offsetMinutes);
+        // Real UTC offsets run -12:00 to +14:00.
+        if (!Number.isInteger(n) || n < -720 || n > 840) return { error: 'bad_weekly' };
+        if (n !== next.offsetMinutes) { next.offsetMinutes = n; wpNotes.push('timezone'); }
+      }
+
+      if (wpNotes.length) {
+        patch.weeklyPost = next;
+        notes.push(`weekly summary ${next.enabled
+          ? `on · ${WEEKDAYS[next.weekday]} ${String(next.hour).padStart(2, '0')}:${String(next.minute).padStart(2, '0')} UTC${next.offsetMinutes >= 0 ? '+' : ''}${next.offsetMinutes / 60}`
+          : 'off'}`);
       }
     }
 
     if (notes.length === 0) return { unchanged: true };
     setEconCalSettings(guildId, patch);
-    await announce(client, guildId, session, `📅 **Economic calendar** — ${notes.join('; ')}`);
+    await announce(client, guildId, session, `📅 **Economic calendar** — ${notes.join('; ')}`, 'feeds');
     return { ok: true };
   },
 
@@ -222,7 +310,7 @@ const OPS = {
 
     if (notes.length === 0) return { unchanged: true };
     if (Object.keys(patch).length) setAutoModSettings(guildId, patch);
-    await announce(client, guildId, session, `🛡️ **Moderation** — ${notes.join('; ')}`);
+    await announce(client, guildId, session, `🛡️ **Moderation** — ${notes.join('; ')}`, 'moderation');
     return { ok: true };
   },
 
@@ -253,7 +341,7 @@ const OPS = {
     if (notes.length === 0) return { unchanged: true };
     all[guildId].items = items;
     writeJson('shop.json', all);
-    await announce(client, guildId, session, `🛒 **Shop** — \`${id}\`: ${notes.join('; ')}`);
+    await announce(client, guildId, session, `🛒 **Shop** — \`${id}\`: ${notes.join('; ')}`, 'shop');
     return { ok: true };
   },
 
@@ -266,75 +354,147 @@ const OPS = {
 Object.assign(OPS, {
   async template(guildId, body, ctx) {
     const r = composer.saveTemplate(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🧩 **Template** \`${r.name}\` ${r.isNew ? 'created' : 'updated'}`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🧩 **Template** \`${r.name}\` ${r.isNew ? 'created' : 'updated'}`, 'composer');
     return r;
   },
   async templatedelete(guildId, body, ctx) {
     const r = composer.deleteTemplate(guildId, body);
     if (r.ok) {
       const extra = r.removedButtons ? ` (and ${r.removedButtons} button${r.removedButtons === 1 ? '' : 's'})` : '';
-      await announce(ctx.client, guildId, ctx.session, `🗑️ **Template** \`${r.name}\` deleted${extra}`);
+      await announce(ctx.client, guildId, ctx.session, `🗑️ **Template** \`${r.name}\` deleted${extra}`, 'composer');
     }
     return r;
   },
   async button(guildId, body, ctx) {
     const r = composer.saveButton(guildId, body, ctx);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🔘 **Button** \`${r.id}\` ${r.isNew ? 'added' : 'updated'}`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🔘 **Button** \`${r.id}\` ${r.isNew ? 'added' : 'updated'}`, 'composer');
     return r;
   },
   async buttondelete(guildId, body, ctx) {
     const r = composer.deleteButton(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🔘 **Button** \`${r.id}\` removed`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🔘 **Button** \`${r.id}\` removed`, 'composer');
     return r;
   },
   async send(guildId, body, ctx) {
     const r = await composer.send(guildId, body, ctx);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📤 Sent **${body.name}** to <#${r.channelId}>`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📤 Sent **${body.name}** to <#${r.channelId}>`, 'composer');
     return r;
   },
   async updatepost(guildId, body, ctx) {
     const r = await composer.updatePost(guildId, body, ctx);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `♻️ Updated a posted **${r.templateName}** message`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `♻️ Updated a posted **${r.templateName}** message`, 'composer');
     return r;
   },
   async giveawaystart(guildId, body, ctx) {
     const r = await giveaways.create(guildId, body, ctx);
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session,
-        `🎟️ Started a **${r.label}** giveaway in #${r.channelName} — ${r.winners} winner${r.winners === 1 ? '' : 's'}, ends <t:${Math.floor(r.endsAt / 1000)}:R>`);
+        `🎟️ Started a **${r.label}** giveaway in #${r.channelName} — ${r.winners} winner${r.winners === 1 ? '' : 's'}, ends <t:${Math.floor(r.endsAt / 1000)}:R>`, 'giveaways');
     }
     return r;
   },
   async lotteryclear(guildId, body, ctx) {
     const r = features.clearLottery(guildId);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 Cleared today's lottery pool (${r.cleared} entrant${r.cleared === 1 ? '' : 's'})`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 Cleared today's lottery pool (${r.cleared} entrant${r.cleared === 1 ? '' : 's'})`, 'giveaways');
     return r;
   },
   async giveawayend(guildId, body, ctx) {
     const r = await giveaways.endNow(guildId, body, ctx);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎟️ Ended a ${r.kind} giveaway early`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎟️ Ended a ${r.kind} giveaway early`, 'giveaways');
     return r;
   },
   async giveawayreroll(guildId, body, ctx) {
     const r = await giveaways.reroll(guildId, body, ctx);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎲 Rerolled giveaway \`${r.shortId}\``);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎲 Rerolled giveaway \`${r.shortId}\``, 'giveaways');
+    return r;
+  },
+  async giveawaydelete(guildId, body, ctx) {
+    const r = giveaways.remove(guildId, body);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🗑️ Removed finished giveaway **${r.title}** (\`${r.shortId}\`) from the panel — it can no longer be rerolled`, 'giveaways');
+    }
     return r;
   },
   async settings(guildId, body, ctx) {
     const r = settings.save(guildId, body, ctx);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`, 'settings');
     return r;
+  },
+
+  /* -- tickets ----------------------------------------------------------- */
+  async tickets(guildId, body, ctx) {
+    const r = tickets.save(guildId, body, ctx.guild);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 **Tickets** — ${r.changed.join('; ')} updated`, 'tickets');
+    return r;
+  },
+  async ticketclose(guildId, body, ctx) {
+    const r = await tickets.close(guildId, body, ctx);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🎫 Closed ticket **#${r.name}**${r.ownerId ? ` (opened by <@${r.ownerId}>)` : ''}`, 'tickets');
+    }
+    return r;
+  },
+  async ticketpanel(guildId, body, ctx) {
+    const r = await tickets.postPanel(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 Posted the ticket panel to #${r.channelName}`, 'tickets');
+    return r;
+  },
+
+  /* -- what the panel writes to the mod log ------------------------------ */
+  //
+  // Turning a category off is itself always logged, whichever way it went —
+  // otherwise the log could be silenced without leaving any sign that it had
+  // been, which would defeat the point of having it.
+  async panellog(guildId, body, ctx) {
+    const current = panelLogSettings(guildId);
+    const next = { ...current };
+    const notes = [];
+
+    for (const key of Object.keys(LOG_CATEGORIES)) {
+      if (typeof body[key] !== 'boolean' || body[key] === current[key]) continue;
+      next[key] = body[key];
+      notes.push(`${LOG_CATEGORIES[key].label} ${body[key] ? 'on' : 'off'}`);
+    }
+    if (!notes.length) return { unchanged: true };
+
+    setPanelLogSettings(guildId, next);
+
+    await announce(ctx.client, guildId, ctx.session, `🧾 **Panel logging** — ${notes.join('; ')}`);
+    return { ok: true };
+  },
+
+  /* -- studio banner wording --------------------------------------------- */
+  //
+  // Studio used to be preview-only: it rendered an image and offered a
+  // download, and nothing it produced ever reached an embed. This is what
+  // makes the edit stick, so `dynamic:tradingViewBanner` in a template sends
+  // the wording that was typed here.
+  async banner(guildId, body, ctx) {
+    const key = String(body.template || '');
+    if (!BANNERS[key]) return { error: 'unknown_template' };
+
+    const before = getBannerCopy(guildId, key);
+    const saved = setBannerCopy(guildId, key, body.copy && typeof body.copy === 'object' ? body.copy : {});
+    if (JSON.stringify(before) === JSON.stringify(saved)) return { unchanged: true };
+
+    const custom = changedFields(key, saved);
+    await announce(ctx.client, guildId, ctx.session, custom.length
+      ? `🎨 **${BANNERS[key].label}** banner — ${custom.join(', ')} changed`
+      : `🎨 **${BANNERS[key].label}** banner reset to its default wording`, 'studio');
+    return { ok: true, template: key, copy: saved };
   },
 
   /* -- the remaining feature surfaces ------------------------------------ */
   async feature(guildId, body, ctx) {
     const r = features.saveGroup(guildId, String(body.group || ''), body, ctx.guild);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎛️ **${r.label}** — ${r.changed.join('; ')} updated`);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎛️ **${r.label}** — ${r.changed.join('; ')} updated`, 'features');
     return r;
   },
   async levels(guildId, body, ctx) {
     const r = features.saveLevels(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, '📈 **Levelling** settings updated');
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, '📈 **Levelling** settings updated', 'features');
     return r;
   },
   async levelrole(guildId, body, ctx) {
@@ -342,7 +502,7 @@ Object.assign(OPS, {
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session, r.removed
         ? `📈 Level ${r.removed} reward role removed`
-        : `📈 Level ${r.level} now grants <@&${r.roleId}>`);
+        : `📈 Level ${r.level} now grants <@&${r.roleId}>`, 'features');
     }
     return r;
   },
@@ -350,7 +510,7 @@ Object.assign(OPS, {
     const r = features.createSchedule(guildId, { ...body, createdBy: ctx.session.uid }, ctx.guild);
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session,
-        `🗓️ Scheduled **${r.embedName}** in #${r.channelName} — first run <t:${Math.floor(r.time / 1000)}:F>`);
+        `🗓️ Scheduled **${r.embedName}** in #${r.channelName} — first run <t:${Math.floor(r.time / 1000)}:F>`, 'automation');
     }
     return r;
   },
@@ -359,7 +519,7 @@ Object.assign(OPS, {
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session, r.removed
         ? `🗓️ Scheduled post \`${r.removed}\` deleted`
-        : `🗓️ Scheduled post \`${r.id}\` — ${r.changed.join(', ')} changed`);
+        : `🗓️ Scheduled post \`${r.id}\` — ${r.changed.join(', ')} changed`, 'automation');
     }
     return r;
   },
@@ -368,7 +528,7 @@ Object.assign(OPS, {
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session, r.removed
         ? `💬 Auto-reply \`${r.removed}\` removed`
-        : `💬 Auto-reply \`${r.key}\` ${r.isNew ? 'added' : 'updated'}`);
+        : `💬 Auto-reply \`${r.key}\` ${r.isNew ? 'added' : 'updated'}`, 'automation');
     }
     return r;
   },

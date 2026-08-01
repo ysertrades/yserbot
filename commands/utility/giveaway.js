@@ -10,6 +10,7 @@ const {
 } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
+const { parseDuration } = require('../../utils/duration');
 
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
@@ -97,12 +98,6 @@ function genId(guildId) {
     id = Array.from({ length: 5 }, () => ID_CHARS[randomInt(ID_CHARS.length)]).join('');
   } while (existing.includes(id));
   return id;
-}
-
-function parseDuration(str) {
-  const match = str.match(/^(\d+)([smhd])$/i);
-  if (!match) return null;
-  return parseInt(match[1]) * { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2].toLowerCase()];
 }
 
 function dateStr(ts) { return new Date(ts).toISOString().slice(0, 10); }

@@ -23,10 +23,8 @@ const { memoizeRender } = require('../utils/renderCache');
 const { generateTradingViewBannerImage, TV_DEFAULTS } = require('../utils/tradingViewVisual');
 const { generateWhopBannerImage, WHOP_DEFAULTS } = require('../utils/whopVisual');
 const { generateGiveawayBannerImage } = require('../utils/giveawayVisual');
-
-// Caps chosen from what the card can actually show: past these the renderer
-// starts shrinking type toward unreadable rather than laying out badly.
-const LIMITS = { pill: 16, heading: 28, subtitle: 44, tagline: 130 };
+const { LIMITS, normalise, getBannerCopy, copyForDynamicKey } = require('../utils/bannerCopy');
+const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
 
 const TEMPLATES = {
   tradingview: {
@@ -71,6 +69,30 @@ function renderGiveaway(params) {
   return { png, cached: false, filename: 'giveaway_preview.png' };
 }
 
+/**
+ * Any dynamic embed image, by its `dynamic:<key>` key.
+ *
+ * Studio only edits the two banners, but the composer's preview has to be able
+ * to show whichever generated image a template actually references — otherwise
+ * previewing an embed built on the economy showcase shows a gap where the
+ * artwork will be, which is worse than not offering a preview.
+ */
+function renderDynamicImage(key, guildId = null) {
+  const entry = DYNAMIC_IMAGES[key];
+  if (!entry) return null;
+
+  const args = entry.takesCopy ? [copyForDynamicKey(guildId, key)] : [];
+  const cached = entry.generate.peek(...args);
+  if (cached) return { png: cached, cached: true, filename: entry.filename };
+
+  const since = Date.now() - lastRenderAt;
+  if (since < MIN_GAP_MS) return { retryAfterMs: MIN_GAP_MS - since };
+
+  const png = entry.generate(...args);
+  lastRenderAt = Date.now();
+  return { png, cached: false, filename: entry.filename };
+}
+
 /** What the Studio screen needs to build its form. */
 function listTemplates() {
   return Object.entries(TEMPLATES).map(([key, t]) => ({
@@ -81,21 +103,17 @@ function listTemplates() {
 /**
  * Cleans copy coming off the form.
  *
- * The pixel font has no lower case — drawChar upper-cases anyway — and
- * silently skips any character it has no glyph for. Upper-casing here means
- * what the field shows is what the image will say.
+ * Deliberately the same normalise() the save path uses, rather than a second
+ * copy of the rules — if the two ever disagreed, Studio would preview one
+ * thing and Discord would send another.
  */
-function normaliseCopy(template, params) {
-  const out = {};
+function normaliseCopy(templateKey, template, params) {
+  const input = {};
   for (const field of Object.keys(template.defaults)) {
     const raw = params.get(field);
-    if (raw === null) continue;
-    const clean = raw.replace(/\s+/g, ' ').trim().toUpperCase().slice(0, LIMITS[field]);
-    // An emptied field falls back to the default rather than rendering a gap,
-    // so a half-filled form still produces a usable card.
-    if (clean) out[field] = clean;
+    if (raw !== null) input[field] = raw;
   }
-  return out;
+  return normalise(templateKey, input);
 }
 
 /* ─── pacing ─────────────────────────────────────────────────────────────── */
@@ -106,12 +124,17 @@ let lastRenderAt = 0;
 /**
  * @returns {{png: Buffer, cached: boolean} | {retryAfterMs: number}}
  */
-function render(key, params) {
+function render(key, params, guildId = null) {
   if (key === 'giveaway') return renderGiveaway(params);
   const template = TEMPLATES[key];
   if (!template) return null;
 
-  const copy = normaliseCopy(template, params);
+  // With no fields on the query string at all, show what is actually saved
+  // rather than the factory defaults — that is what the embed would send, so
+  // it is what opening Studio should display.
+  const copy = [...params.keys()].some(k => k in template.defaults)
+    ? normaliseCopy(key, template, params)
+    : getBannerCopy(guildId, key);
 
   // A cache hit costs nothing, so it is never paced — only a call that would
   // genuinely block the thread has to wait its turn, and it has to be
@@ -127,4 +150,4 @@ function render(key, params) {
   return { png, cached: false, filename: template.filename };
 }
 
-module.exports = { listTemplates, render, renderGiveaway, TEMPLATES, LIMITS };
+module.exports = { listTemplates, render, renderGiveaway, renderDynamicImage, TEMPLATES, LIMITS };

@@ -24,6 +24,14 @@ const path = require('node:path');
 const auth    = require('./auth');
 const api     = require('./api');
 const preview = require('./preview');
+const { generateAppIcon } = require('../utils/appIconVisual');
+const { memoizeRender } = require('../utils/renderCache');
+
+// 180 is what iOS asks for as an apple-touch-icon; 192 and 512 are the sizes
+// Android's manifest handling expects. Memoised because the icon never
+// changes at runtime, and drawing one blocks the same thread Discord uses.
+const ICON_SIZES = [180, 192, 512];
+const appIcon = memoizeRender(generateAppIcon, { name: 'appIcon', max: ICON_SIZES.length });
 const writes  = require('./writes');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -68,6 +76,9 @@ function csp() {
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self'",
     "connect-src 'self'",
+    // Covered by default-src, but stated outright: a blocked manifest fails
+    // silently — the install prompt just never appears, with nothing logged.
+    "manifest-src 'self'",
     "form-action 'self'",
     `frame-ancestors ${frameAncestors.length ? frameAncestors.join(' ') : "'none'"}`,
     "base-uri 'none'",
@@ -145,6 +156,8 @@ const TYPES = {
   '.js':   'text/javascript; charset=utf-8',
   '.svg':  'image/svg+xml',
   '.png':  'image/png',
+  // Served with its registered type or the install prompt never appears.
+  '.webmanifest': 'application/manifest+json',
 };
 
 function serveStatic(res, urlPath) {
@@ -171,6 +184,21 @@ async function route(req, res, client) {
 
   /* -- health: the only thing reachable without logging in ---------------- */
   if (p === '/healthz') return json(res, 200, { ok: true });
+
+  // Home-screen icons. Public on purpose: iOS and Android fetch these from
+  // outside any session — often before one exists — so putting them behind the
+  // auth gate would mean an installed app with a blank icon.
+  const iconMatch = /^\/icon-(\d{2,4})\.png$/.exec(p);
+  if (iconMatch) {
+    const size = Number(iconMatch[1]);
+    if (!ICON_SIZES.includes(size)) return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
+    return send(res, 200, appIcon(size), {
+      'content-type': 'image/png',
+      // Long-lived: the icon only changes when the brand does, and a stale one
+      // on a home screen is worse than a re-fetch.
+      'cache-control': 'public, max-age=604800',
+    });
+  }
 
   /* -- login ------------------------------------------------------------- */
   if (p === '/auth/login') {
@@ -284,9 +312,30 @@ async function route(req, res, client) {
     }
 
     /* -- banner previews -------------------------------------------------- */
+    // Generated embed art, by its dynamic:<key> key. Separate from the route
+    // below because those keys are camelCase and that one is deliberately not.
+    const dynamicMatch = /^\/api\/preview-image\/([A-Za-z]{1,40})$/.exec(p);
+    if (dynamicMatch) {
+      const forGuild = url.searchParams.get('g');
+      if (forGuild && !auth.canAccessGuild(session, forGuild, client)) return json(res, 403, { error: 'forbidden' });
+      const out = preview.renderDynamicImage(dynamicMatch[1], forGuild || null);
+      if (!out) return json(res, 404, { error: 'unknown_image' });
+      if (out.retryAfterMs) return json(res, 429, { error: 'too_fast', retryAfterMs: out.retryAfterMs });
+      return send(res, 200, out.png, {
+        'content-type': 'image/png',
+        'content-disposition': `inline; filename="${out.filename}"`,
+        'x-render-cached': String(out.cached),
+      });
+    }
+
     const previewMatch = /^\/api\/preview\/([a-z]+)$/.exec(p);
     if (previewMatch) {
-      const out = preview.render(previewMatch[1], url.searchParams);
+      // `g` lets a preview with no copy on the query string fall back to what
+      // that guild has saved. It is access-checked like any other guild read —
+      // a session may not preview a server it cannot open.
+      const forGuild = url.searchParams.get('g');
+      if (forGuild && !auth.canAccessGuild(session, forGuild, client)) return json(res, 403, { error: 'forbidden' });
+      const out = preview.render(previewMatch[1], url.searchParams, forGuild || null);
       if (!out) return json(res, 404, { error: 'unknown_template' });
       if (out.retryAfterMs) {
         // Deliberately not queued: a backlog of renders would block the bot

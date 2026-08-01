@@ -22,20 +22,38 @@ const { generateNewsfeedGuideImage } = require('./newsfeedGuideVisual');
 const { generateTradingViewBannerImage } = require('./tradingViewVisual');
 const { generateWhopBannerImage } = require('./whopVisual');
 const { memoizeRender } = require('./renderCache');
+const { copyForDynamicKey } = require('./bannerCopy');
 
-// Every one of these takes no arguments, so each call was redrawing a
-// byte-identical image — 875 ms of blocked event loop across the seven, every
-// time one was sent or previewed. They're memoised, and warm() renders them
-// once at boot so no interaction ever pays for the first one either.
+// Most of these take no arguments, so each call was redrawing a byte-identical
+// image — 875 ms of blocked event loop across the seven, every time one was
+// sent or previewed. They're memoised, and warm() renders them once at boot so
+// no interaction ever pays for the first one either.
+//
+// The two banners are the exception: `takesCopy` marks them as accepting the
+// per-guild wording edited in Studio, so they get a slightly larger cache to
+// hold a few guilds' variants side by side.
 const DYNAMIC_IMAGES = {
   economyShowcase: { filename: 'economy_showcase.png', generate: memoizeRender(generateEconomyShowcaseImage, { name: 'economyShowcase', max: 1 }) },
   reportGuide:      { filename: 'report_guide.png',     generate: memoizeRender(generateReportGuideImage,     { name: 'reportGuide',      max: 1 }) },
   nyseOpen:         { filename: 'nyse_open.png',        generate: memoizeRender(generateNyseOpenImage,        { name: 'nyseOpen',         max: 1 }) },
   riskGuide:        { filename: 'risk_guide.png',       generate: memoizeRender(generateRiskGuideImage,       { name: 'riskGuide',        max: 1 }) },
   newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: memoizeRender(generateNewsfeedGuideImage,   { name: 'newsfeedGuide',    max: 1 }) },
-  tradingViewBanner: { filename: 'tradingview_banner.png', generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 1 }) },
-  whopBanner:        { filename: 'whop_banner.png',        generate: memoizeRender(generateWhopBannerImage,        { name: 'whopBanner',        max: 1 }) },
+  tradingViewBanner: { filename: 'tradingview_banner.png', takesCopy: true, generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 8 }) },
+  whopBanner:        { filename: 'whop_banner.png',        takesCopy: true, generate: memoizeRender(generateWhopBannerImage,        { name: 'whopBanner',        max: 8 }) },
 };
+
+/**
+ * Renders one dynamic image, applying the guild's saved banner wording when
+ * the generator accepts it.
+ *
+ * The argument list has to stay byte-identical between warm() and the send
+ * path or the warm render is a cache miss and the first send pays for it
+ * anyway — hence the single helper rather than each caller deciding.
+ */
+function renderDynamic(key, entry, guildId) {
+  if (!entry.takesCopy) return entry.generate();
+  return entry.generate(copyForDynamicKey(guildId, key));
+}
 
 /**
  * Renders every template image once, yielding to the event loop between each
@@ -45,7 +63,10 @@ async function warm() {
   const started = Date.now();
   for (const [key, entry] of Object.entries(DYNAMIC_IMAGES)) {
     try {
-      entry.generate();
+      // No guild at boot, so the banners warm their default wording. A guild
+      // that has customised one pays a single render on first send and is
+      // cached from then on.
+      renderDynamic(key, entry, null);
     } catch (err) {
       // A broken generator must not stop the bot from starting — it just
       // means that one template pays for its render on first use, as before.
@@ -74,7 +95,12 @@ function dynamicAttachmentRef(value) {
 // One AttachmentBuilder per distinct dynamic image referenced anywhere in
 // the template (usually just one), so a multi-embed template referencing
 // the same dynamic image twice doesn't generate/attach it twice.
-function collectDynamicAttachments(template) {
+//
+// `guildId` is optional so any caller that has no guild in scope keeps the
+// previous behaviour — the default wording — rather than breaking. Every path
+// that sends a template into a guild passes it, which is what makes a Studio
+// edit show up in the embed.
+function collectDynamicAttachments(template, guildId = null) {
   const seen = new Set();
   const files = [];
   for (const e of template.embeds) {
@@ -83,7 +109,7 @@ function collectDynamicAttachments(template) {
     const entry = DYNAMIC_IMAGES[key];
     if (!entry || seen.has(key)) continue;
     seen.add(key);
-    files.push(new AttachmentBuilder(entry.generate(), { name: entry.filename }));
+    files.push(new AttachmentBuilder(renderDynamic(key, entry, guildId), { name: entry.filename }));
   }
   return files;
 }

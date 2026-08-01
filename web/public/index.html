@@ -7,6 +7,20 @@
 <meta name="robots" content="noindex, nofollow">
 <title>YSER FLOW — Control Panel</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Crect width='26' height='26' rx='7' fill='%2314181F'/%3E%3Cg stroke='%234C7DFF' stroke-width='2.4' stroke-linecap='round' fill='none'%3E%3Cpath d='M7 7.5 13 14.5M19 7.5 13 14.5'/%3E%3Cpath d='M13 17.8v2.7'/%3E%3C/g%3E%3C/svg%3E">
+
+<!-- Add to Home Screen. iOS ignores the manifest's icons entirely and only
+     reads apple-touch-icon, and it will not accept an SVG for it — hence the
+     drawn PNG. Both point at the same generated mark. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="YSER FLOW">
+<!-- black-translucent lets the page run under the status bar; the safe-area
+     insets in the stylesheet are what keep the header clear of the notch. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0B0D11">
+
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -76,6 +90,7 @@
       <button type="button" data-goto="economy">Economy</button>
       <button type="button" data-goto="automation">Automation</button>
       <button type="button" data-goto="engagement">Engagement</button>
+      <button type="button" data-goto="tickets">Tickets</button>
       <button type="button" data-goto="moderation">Moderation</button>
       <button type="button" data-goto="settings">Settings</button>
     </nav>
@@ -126,9 +141,12 @@
           </label>
           <div id="tpl-fields"></div>
           <div class="editor-foot">
-            <button type="button" class="btn small" id="tpl-reset">Reset to default</button>
+            <button type="button" class="btn primary small" id="tpl-save">Save to embeds</button>
+            <button type="button" class="btn small" id="tpl-revert">Revert</button>
+            <button type="button" class="btn small danger" id="tpl-reset">Reset to default</button>
           </div>
-          <p class="hint">The pixel font is uppercase only, so copy is shown the way it will render.</p>
+          <p class="hint" id="tpl-dirty" hidden>Unsaved — embeds still send the last saved wording.</p>
+          <p class="hint">Saving applies this wording wherever an embed uses this banner. The pixel font is uppercase only, so copy is shown the way it will render.</p>
         </div>
       </div>
     </div>
@@ -169,16 +187,44 @@
           <form id="form-gaw" class="form"></form>
         </div>
       </div>
-      <p class="hint">Prize giveaways (non-coin) are still created with <code>/giveaway</code> in Discord.</p>
+      <p class="hint">The banner preview above is for coins giveaways — a prize giveaway uses the image URL you give it, or none.</p>
     </div>
 
     <!-- ── Lottery lives in Economy ─────────────────────────────────────── -->
+
+    <!-- ── Tickets ─────────────────────────────────────────────────────── -->
+    <div class="section" data-section="tickets">
+      <div class="grid">
+        <article class="panel">
+          <h2>Open tickets</h2>
+          <p class="muted">Every ticket channel currently open. Closing one here deletes the channel, exactly as <code>/ticket close</code> does inside it.</p>
+          <div class="rows" id="ticket-open"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Ticket settings</h2>
+          <form id="form-tickets" class="form"></form>
+        </article>
+      </div>
+
+      <div class="panel">
+        <h2>Post the ticket panel</h2>
+        <p class="muted">Sends the “Create Ticket” message members press to open one. Posting it again makes a second panel — it does not move the first.</p>
+        <form id="form-ticketpanel" class="form"></form>
+      </div>
+    </div>
 
     <!-- ── Settings ────────────────────────────────────────────────────── -->
     <div class="section" data-section="settings">
       <div class="panel">
         <h2>Server settings</h2>
         <form id="form-settings" class="form"></form>
+      </div>
+
+      <div class="panel">
+        <h2>What the panel logs</h2>
+        <p class="muted">Every change made here is announced in your mod-log channel. Turn off the ones you do not want announced — coin changes are always logged and cannot be silenced.</p>
+        <form id="form-panellog" class="form"></form>
       </div>
 
       <div class="panel" id="embed-link-card">
@@ -280,6 +326,22 @@
 </main>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- One sheet, reused. Whatever opens it fills #sheet-body and #sheet-actions,
+     so the giveaway detail and the embed preview share the same entrance, the
+     same backdrop blur and the same dismissal rules. -->
+<div class="sheet-wrap" id="sheet" hidden>
+  <div class="sheet-scrim" id="sheet-scrim"></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="sheet-head">
+      <h2 id="sheet-title"></h2>
+      <button type="button" class="sheet-x" id="sheet-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+    <div class="actions" id="sheet-actions"></div>
+  </div>
+</div>
 
 <script src="/app.js"></script>
 </body>
