@@ -256,36 +256,47 @@ function initSheet() {
   });
 }
 
+/**
+ * Asks before doing something, without window.confirm.
+ *
+ * confirm() is unusable here. Inside Whop's app the panel runs in a native
+ * WKWebView, and a WKWebView only shows a JavaScript dialog if the host app
+ * implements the delegate for it — Whop's does not, so confirm() returns false
+ * the instant it is called. Every `if (!confirm(...)) return;` in this file was
+ * therefore a button that did nothing at all inside the embed, with no error
+ * and nothing in the console to explain it.
+ *
+ * This is the same sheet everything else uses, so it works wherever the panel
+ * renders at all.
+ *
+ * @returns {Promise<boolean>}
+ */
+function askConfirm({ title, message, confirmLabel = 'Confirm', danger = false }) {
+  return new Promise(resolve => {
+    let answered = false;
+    const done = value => { answered = true; resolve(value); };
+
+    const go = el('button', `btn ${danger ? 'danger' : 'primary'}`, confirmLabel);
+    go.type = 'button';
+    go.addEventListener('click', () => { done(true); closeSheet(); });
+
+    const cancel = el('button', 'btn', 'Cancel');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => { done(false); closeSheet(); });
+
+    // Dismissing by scrim, Escape or the close button is a "no" — and has to
+    // resolve, or the caller waits forever.
+    openSheet(title, [el('p', 'muted', message)], [go, cancel],
+      () => { if (!answered) resolve(false); });
+  });
+}
+
 /** A labelled row for sheet bodies, matching the panel's own row styling. */
 function sheetRow(label, value) {
   const r = el('div', 'row');
   r.append(el('span', 'k', label));
   r.append(value instanceof Node ? value : el('span', 'v', String(value)));
   return r;
-}
-
-/* ── the lattice ───────────────────────────────────────────────────────── */
-
-// Same construction as the banner watermark: the wordmark repeated on rows
-// that slide sideways, so the repeats fall on a diagonal rather than a grid.
-function drawWeave() {
-  const c = $('#weave');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = c.clientWidth, h = c.clientHeight;
-  if (!w || !h) return;
-  c.width = w * dpr; c.height = h * dpr;
-  const ctx = c.getContext('2d');
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-  ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
-  ctx.fillStyle = 'rgba(232,235,241,0.035)';
-  const text = 'YSER FLOW';
-  const pitch = ctx.measureText(text).width + 74;
-  for (let i = 0, y = -20; y < h + 20; y += 46, i++) {
-    const start = ((i * 43) % pitch) - pitch;
-    ctx.globalAlpha = i % 2 === 0 ? 1 : 0.72;
-    for (let x = start; x < w + pitch; x += pitch) ctx.fillText(text, x, y);
-  }
 }
 
 /* ── screens ───────────────────────────────────────────────────────────── */
@@ -593,14 +604,25 @@ function durationField(label, value, onInput) {
   return l;
 }
 
-function actions(onSave) {
+/**
+ * @param {Function} onSave
+ * @param {object}  [opts]
+ *   label — for forms that do something rather than save something. A
+ *   giveaway form is not saving settings, it is starting a giveaway, and
+ *   "Save changes" said the wrong thing about what the button would do.
+ */
+function actions(onSave, { label = 'Save changes', busyLabel = null } = {}) {
   const wrap = el('div', 'actions');
-  const save = el('button', 'btn primary small', 'Save changes');
+  const save = el('button', 'btn primary small', label);
   save.type = 'button';
   save.addEventListener('click', async () => {
     save.disabled = true;
-    await onSave();
-    save.disabled = false;
+    if (busyLabel) save.textContent = busyLabel;
+    try { await onSave(); }
+    finally {
+      save.disabled = false;
+      save.textContent = label;
+    }
   });
   wrap.append(save);
   return wrap;
@@ -980,7 +1002,11 @@ function renderComposer() {
     const del = el('button', 'btn small danger', 'Delete message');
     del.type = 'button';
     del.addEventListener('click', async () => {
-      if (!confirm(`Delete "${draft.name}" and its buttons?`)) return;
+      if (!await askConfirm({
+        title: 'Delete this message?',
+        message: `“${draft.name}” and every button attached to it will be removed. Messages already posted in your channels stay where they are.`,
+        confirmLabel: 'Delete it', danger: true,
+      })) return;
       const res = await post('templatedelete', { name: draft.name });
       if (res?.ok) { state.tplName = null; state.draft = null; renderComposer(); }
     });
@@ -1163,7 +1189,11 @@ function renderGiveaways() {
     const end = el('button', 'btn small danger', 'End now');
     end.type = 'button';
     end.addEventListener('click', async () => {
-      if (!confirm('End this giveaway and draw winners now?')) return;
+      if (!await askConfirm({
+        title: 'End it now?',
+        message: 'Winners are drawn immediately and announced, as if the timer had run out.',
+        confirmLabel: 'End and draw',
+      })) return;
       end.disabled = true;
       await post('giveawayend', { messageId: x.messageId, kind: x.kind });
       end.disabled = false;
@@ -1417,9 +1447,13 @@ function renderGiveawayForm() {
       if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
       if (!parseDurationMs(draft.duration)) { toast('Duration must look like 30s, 10m, 6h or 2d.', 'bad'); return; }
       const what = draft.kind === 'coins' ? `${num(draft.amount)} coins` : (draft.prize || 'a prize');
-      if (!confirm(`Start a giveaway: ${what} to ${draft.winners} winner(s), running for ${humanDuration(draft.duration)}?`)) return;
+      if (!await askConfirm({
+        title: 'Launch this giveaway?',
+        message: `${what} to ${draft.winners} winner${draft.winners === 1 ? '' : 's'}, running for ${humanDuration(draft.duration)}. It posts to the channel straight away.`,
+        confirmLabel: 'Launch it',
+      })) return;
       await post('giveawaystart', draft);
-    }),
+    }, { label: 'Launch giveaway', busyLabel: 'Launching…' }),
   );
 
   // Only draw it when that section is actually on screen. Rendering a preview
@@ -1470,7 +1504,11 @@ function renderLottery() {
   clear.type = 'button';
   clear.title = 'Clears entries without paying anyone. Drawing stays on its schedule.';
   clear.addEventListener('click', async () => {
-    if (!confirm("Clear today's lottery entries? Nobody is paid and tickets are not refunded.")) return;
+    if (!await askConfirm({
+      title: "Clear today's lottery?",
+      message: 'Every entry is discarded. Nobody is paid out and no tickets are refunded.',
+      confirmLabel: 'Clear the pool', danger: true,
+    })) return;
     await post('lotteryclear', {});
   });
   act.append(clear);
@@ -1574,7 +1612,7 @@ function renderTickets() {
     actions(async () => {
       if (!panel.channelId) { toast('Pick a channel first.', 'bad'); return; }
       await post('ticketpanel', panel);
-    }),
+    }, { label: 'Post the panel', busyLabel: 'Posting…' }),
   );
 }
 
@@ -1752,7 +1790,11 @@ function renderCoins() {
     actions(async () => {
       if (!draft.everyone && !draft.userId) { toast('Pick a member first.', 'bad'); return; }
       const who = draft.everyone ? 'every member' : 'that member';
-      if (!confirm(`${draft.mode === 'set' ? 'Set' : draft.mode === 'give' ? 'Give' : 'Take'} ${num(draft.amount)} coins — ${who}?`)) return;
+      if (!await askConfirm({
+        title: 'Change balances?',
+        message: `${draft.mode === 'set' ? 'Set to' : draft.mode === 'give' ? 'Give' : 'Take'} ${num(draft.amount)} coins — ${who}. Coin changes are always written to your mod log.`,
+        confirmLabel: 'Do it', danger: draft.mode !== 'give',
+      })) return;
       await post('coins', draft);
     }),
   );
@@ -1817,7 +1859,11 @@ function renderSchedules() {
     const del = el('button', 'btn small danger', 'Delete');
     del.type = 'button';
     del.addEventListener('click', async () => {
-      if (!confirm('Delete this scheduled post?')) return;
+      if (!await askConfirm({
+        title: 'Delete this schedule?',
+        message: 'It stops posting from now on. Anything it has already posted stays.',
+        confirmLabel: 'Delete it', danger: true,
+      })) return;
       await post('schedule', { id: s.id, remove: true });
     });
     act.append(save, del);
@@ -1876,7 +1922,11 @@ function renderAutoreplies() {
     const del = el('button', 'btn small danger', 'Remove');
     del.type = 'button';
     del.addEventListener('click', async () => {
-      if (!confirm(`Remove the auto-reply for "${r.trigger}"?`)) return;
+      if (!await askConfirm({
+        title: 'Remove this auto-reply?',
+        message: `The bot will stop replying to “${r.trigger}”.`,
+        confirmLabel: 'Remove it', danger: true,
+      })) return;
       await post('autoreply', { key: r.key, remove: true });
     });
     act.append(save, del);
@@ -2214,8 +2264,6 @@ async function selectGuild(id) {
 }
 
 async function main() {
-  drawWeave();
-  window.addEventListener('resize', drawWeave);
   watchScroll();
   dismissKeyboardOnOutsideTap();
 
