@@ -66,13 +66,27 @@ function keepAttachmentRefs(message, embed) {
  */
 function applyEmbedImage(embed, imageUrl, guildId = null) {
   if (!imageUrl) return [];
-  if (!isDynamicImage(imageUrl)) { embed.setImage(imageUrl); return []; }
+
+  // setImage validates, and throws rather than returning — on anything that is
+  // not a URL, which `dynamic:prizeGiveawayBanner` is not. Thrown out of a
+  // giveaway ending, that took the whole result down with it: the winners were
+  // drawn and written, the message was never updated, and the giveaway stayed
+  // listed as running. An image is decoration; nothing it does should be able
+  // to lose the thing it decorates.
+  const set = url => {
+    try { embed.setImage(url); return true; }
+    catch (err) {
+      console.error('[Embed] refusing an image Discord would not take:', url, err.message ?? err);
+      return false;
+    }
+  };
+
+  if (!isDynamicImage(imageUrl)) { set(imageUrl); return []; }
 
   const ref = dynamicAttachmentRef(imageUrl);
   const files = collectDynamicAttachments({ embeds: [{ image: imageUrl }] }, guildId);
   if (!ref || !files.length) return [];
-  embed.setImage(ref);
-  return files;
+  return set(ref) ? files : [];
 }
 
 /**
