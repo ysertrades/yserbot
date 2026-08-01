@@ -31,6 +31,15 @@ const WRITE_ERRORS = {
   min_above_max:   'The lowest value is above the highest.',
   bad_duration:    'Use a duration like 30s, 10m, 6h or 2d.',
   empty_window:    'Boost hour needs a start and an end that differ.',
+  bad_image:       'The image must be a link starting with https, or one of the generated banners.',
+  bad_thumbnail:   'The thumbnail must be a link starting with https — generated banners are too wide to use as one.',
+  bad_footerIcon:  'The footer icon must be a link starting with https.',
+  bad_authorIcon:  'The author icon must be a link starting with https.',
+  bad_titleUrl:    'The title link must start with https.',
+  bad_authorUrl:   'The author link must start with https.',
+  unknown_template: 'That template no longer exists.',
+  unknown_activity: 'That is not something the economy knows about.',
+  unknown_group:   'That settings group no longer exists.',
 };
 
 // Inside someone else's iframe the session cookie may never be sent — Safari

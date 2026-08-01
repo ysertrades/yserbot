@@ -96,7 +96,7 @@ async function restoreCoinsGiveaways(client) {
         amount: data.amount, winnersCount: data.winnersCount,
         hostId: data.hostId, guildId: data.guildId, bonusRoleId: data.bonusRoleId,
         createdAt: data.createdAt,
-      }),
+      }).catch(err => console.error(`[COINS GIVEAWAY ${msgId}] ending failed:`, err)),
       remaining,
     ));
   }
@@ -361,7 +361,8 @@ async function postGiveaway(guild, hostId, data) {
 
   if (timers.has(msg.id)) clearTimeout(timers.get(msg.id));
   timers.set(msg.id, setTimeout(
-    () => endCoinsGiveaway(msg, { amount, winnersCount: winners, hostId, guildId, bonusRoleId, createdAt }),
+    () => endCoinsGiveaway(msg, { amount, winnersCount: winners, hostId, guildId, bonusRoleId, createdAt })
+      .catch(err => console.error(`[COINS GIVEAWAY ${msg.id}] ending failed:`, err)),
     durationMs,
   ));
 

@@ -777,7 +777,11 @@ async function startCrash(interaction, s) {
     interaction,
   };
 
+  // The whole tick is wrapped: this runs every TICK_MS with nobody to reject
+  // to, and a throw halfway through used to leave the interval running against
+  // a session it could no longer advance.
   const interval = setInterval(async () => {
+   try {
     const cs = global.crashSessions.get(s.userId);
     if (!cs || cs.cashedOut || cs.crashed) {
       clearInterval(interval);
@@ -822,6 +826,11 @@ async function startCrash(interaction, s) {
         attachments: [],
       });
     } catch { clearInterval(interval); global.crashSessions.delete(cs.userId); }
+   } catch (err) {
+    console.error('[CRASH] tick failed:', err.message ?? err);
+    clearInterval(interval);
+    global.crashSessions.delete(s.userId);
+   }
   }, engine.TICK_MS);
 
   crashState.interval = interval;

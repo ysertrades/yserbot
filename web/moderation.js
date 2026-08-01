@@ -139,7 +139,7 @@ async function act(guildId, body, { client, session, guild }) {
     return { ok: true, action: 'dismiss', targetTag: record.targetTag, targetId: record.targetId };
   }
 
-  if (!modActions.ACTIONS[action]) return { error: 'bad_action' };
+  if (!Object.hasOwn(modActions.ACTIONS, action)) return { error: 'bad_action' };
 
   // Falling back to what the report recorded rather than refusing outright:
   // a deleted or unreachable account is exactly the case where a ban still

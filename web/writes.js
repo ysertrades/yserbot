@@ -532,7 +532,10 @@ Object.assign(OPS, {
   // the wording that was typed here.
   async banner(guildId, body, ctx) {
     const key = String(body.template || '');
-    if (!BANNERS[key]) return { error: 'unknown_template' };
+    // hasOwn, not a truthiness check: BANNERS['__proto__'] finds
+    // Object.prototype and reads as a real template, so the guard passes and
+    // the crash happens further down where there is nothing to catch it.
+    if (!Object.hasOwn(BANNERS, key)) return { error: 'unknown_template' };
 
     const before = getBannerCopy(guildId, key);
     const saved = setBannerCopy(guildId, key, body.copy && typeof body.copy === 'object' ? body.copy : {});

@@ -16,6 +16,18 @@ function isUnknownInteractionError(err) {
   return err?.code === 10062 || err?.rawError?.code === 10062;
 }
 
+// Why every dispatch below reads `return await handler(...)` rather than
+// `return handler(...)`:
+//
+// The handlers are async, so a bare `return` hands back a promise and the try
+// block exits before it settles. The catch underneath never runs — the
+// rejection sails past it to the caller, which is a bare
+// `event.execute(...)` in index.js with nothing attached. The result was that
+// every button, modal and select handler in this file had an error path that
+// could not fire: the user saw Discord's own "This interaction failed" and the
+// log got one line from the process-wide unhandledRejection hook, with no
+// indication of which button it was.
+
 // ── Cmd permission helper ─────────────────────────────────────────────────────
 const { MOD_COMMANDS, ADMIN_COMMANDS, PUBLIC_COMMANDS } = require('../commands/system/cmd');
 const { keepAttachmentRefs } = require('../utils/embedAttachments');
@@ -252,12 +264,12 @@ module.exports = {
 
         // Giveaway — setup panel buttons
         if (id.startsWith('gaw_setup:')) {
-          return client.commands.get('giveaway')?.handleSetupButton(interaction);
+          return await client.commands.get('giveaway')?.handleSetupButton(interaction);
         }
 
         // Giveaway — list view: delete-ended-giveaway confirm/back
         if (id.startsWith('gaw_list_delyes:') || id === 'gaw_list_delno') {
-          return client.commands.get('giveaway')?.handleListButton(interaction);
+          return await client.commands.get('giveaway')?.handleListButton(interaction);
         }
 
         // Giveaway — enter
@@ -288,12 +300,12 @@ module.exports = {
 
           const gawMeta = global.giveawayMeta?.get(interaction.message.id);
           if (gawMeta?.requiredRoleId && !interaction.member.roles.cache.has(gawMeta.requiredRoleId)) {
-            return interaction.reply({ content: `❌ You need the <@&${gawMeta.requiredRoleId}> role to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+            return await interaction.reply({ content: `❌ You need the <@&${gawMeta.requiredRoleId}> role to enter this giveaway.`, flags: EPHEMERAL_FLAG });
           }
           if (gawMeta?.minAccountAgeDays > 0) {
             const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86400000;
             if (ageDays < gawMeta.minAccountAgeDays) {
-              return interaction.reply({ content: `❌ Your account must be at least **${gawMeta.minAccountAgeDays} days** old to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+              return await interaction.reply({ content: `❌ Your account must be at least **${gawMeta.minAccountAgeDays} days** old to enter this giveaway.`, flags: EPHEMERAL_FLAG });
             }
           }
 
@@ -311,7 +323,7 @@ module.exports = {
           } catch {}
           // Persist the new entry so it survives future restarts
           client.commands.get('giveaway')?.persistGiveawayEntry?.(interaction.message.id, entrants);
-          return interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
+          return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 
         // Giveaway — participants (first page)
@@ -319,7 +331,7 @@ module.exports = {
           const giveawayMsgId = interaction.message.id;
           const { embed, totalPages, currentPage } = buildParticipantsEmbed(giveawayMsgId, 1);
           const row = buildParticipantsRow(giveawayMsgId, currentPage, totalPages);
-          return interaction.reply({ embeds: [embed], components: [row], flags: EPHEMERAL_FLAG });
+          return await interaction.reply({ embeds: [embed], components: [row], flags: EPHEMERAL_FLAG });
         }
 
         // Giveaway — prev/next page (updates in-place, no new message)
@@ -329,17 +341,17 @@ module.exports = {
           const newPage     = id.startsWith('gaw_p:') ? currentPage - 1 : currentPage + 1;
           const { embed, totalPages, currentPage: safePage } = buildParticipantsEmbed(giveawayMsgId, newPage);
           const row = buildParticipantsRow(giveawayMsgId, safePage, totalPages);
-          return interaction.update({ embeds: [embed], components: [row] });
+          return await interaction.update({ embeds: [embed], components: [row] });
         }
 
         // Coins giveaway — setup panel buttons
         if (id.startsWith('cg_setup:')) {
-          return client.commands.get('coinsgiveaway')?.handleSetupButton(interaction);
+          return await client.commands.get('coinsgiveaway')?.handleSetupButton(interaction);
         }
 
         // Coins giveaway — list view: delete-ended-giveaway confirm/back
         if (id.startsWith('cg_list_delyes:') || id === 'cg_list_delno') {
-          return client.commands.get('coinsgiveaway')?.handleListButton(interaction);
+          return await client.commands.get('coinsgiveaway')?.handleListButton(interaction);
         }
 
         // Coins giveaway — enter
@@ -370,12 +382,12 @@ module.exports = {
 
           const cgMeta = global.coinsGiveawayMeta?.get(interaction.message.id);
           if (cgMeta?.requiredRoleId && !interaction.member.roles.cache.has(cgMeta.requiredRoleId)) {
-            return interaction.reply({ content: `❌ You need the <@&${cgMeta.requiredRoleId}> role to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+            return await interaction.reply({ content: `❌ You need the <@&${cgMeta.requiredRoleId}> role to enter this giveaway.`, flags: EPHEMERAL_FLAG });
           }
           if (cgMeta?.minAccountAgeDays > 0) {
             const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86400000;
             if (ageDays < cgMeta.minAccountAgeDays) {
-              return interaction.reply({ content: `❌ Your account must be at least **${cgMeta.minAccountAgeDays} days** old to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+              return await interaction.reply({ content: `❌ Your account must be at least **${cgMeta.minAccountAgeDays} days** old to enter this giveaway.`, flags: EPHEMERAL_FLAG });
             }
           }
 
@@ -393,7 +405,7 @@ module.exports = {
             await interaction.message.edit({ embeds: [upd] }).catch(() => {});
           } catch {}
           client.commands.get('coinsgiveaway')?.persistEntry?.(interaction.message.id, entrants);
-          return interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
+          return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 
         // Coins giveaway — participants (first page)
@@ -401,7 +413,7 @@ module.exports = {
           const giveawayMsgId = interaction.message.id;
           const { embed, totalPages, currentPage } = buildCoinsParticipantsEmbed(giveawayMsgId, 1);
           const row = buildCoinsParticipantsRow(giveawayMsgId, currentPage, totalPages);
-          return interaction.reply({ embeds: [embed], components: [row], flags: EPHEMERAL_FLAG });
+          return await interaction.reply({ embeds: [embed], components: [row], flags: EPHEMERAL_FLAG });
         }
 
         // Coins giveaway — prev/next page (updates in-place, no new message)
@@ -411,63 +423,63 @@ module.exports = {
           const newPage     = id.startsWith('cg_p:') ? currentPage - 1 : currentPage + 1;
           const { embed, totalPages, currentPage: safePage } = buildCoinsParticipantsEmbed(giveawayMsgId, newPage);
           const row = buildCoinsParticipantsRow(giveawayMsgId, safePage, totalPages);
-          return interaction.update({ embeds: [embed], components: [row] });
+          return await interaction.update({ embeds: [embed], components: [row] });
         }
 
         // Ticket buttons
         if (id === 'create_ticket' || id === 'close_ticket' || id === 'ticket_still_here') {
-          return client.commands.get('ticket')?.handleButton(interaction, [], client);
+          return await client.commands.get('ticket')?.handleButton(interaction, [], client);
         }
 
         // Verification — memory-sequence challenge
         if (id === 'verify_start') {
-          return client.commands.get('verify')?.handleStart(interaction);
+          return await client.commands.get('verify')?.handleStart(interaction);
         }
         if (id.startsWith('verify_ready:')) {
-          return client.commands.get('verify')?.handleReady(interaction, id.slice('verify_ready:'.length));
+          return await client.commands.get('verify')?.handleReady(interaction, id.slice('verify_ready:'.length));
         }
         if (id.startsWith('verify_pick:')) {
           const [, sessionId, idxStr] = id.split(':');
-          return client.commands.get('verify')?.handlePick(interaction, sessionId, parseInt(idxStr, 10));
+          return await client.commands.get('verify')?.handlePick(interaction, sessionId, parseInt(idxStr, 10));
         }
         if (id.startsWith('verify_cancel:')) {
-          return client.commands.get('verify')?.handleCancel(interaction, id.slice('verify_cancel:'.length));
+          return await client.commands.get('verify')?.handleCancel(interaction, id.slice('verify_cancel:'.length));
         }
 
         // Poll
         if (id.startsWith('poll_vote_')) {
-          return client.commands.get('poll')?.handleButton(interaction, [], client);
+          return await client.commands.get('poll')?.handleButton(interaction, [], client);
         }
 
         // Embed editor + delete-selector + list-pager + preview-send buttons
         if (id.startsWith('embed_edit_') || id.startsWith('embed_del') || id.startsWith('embed_list:') || id.startsWith('embed_previewsend:')) {
-          return client.commands.get('embed')?.handleEmbedButton(interaction);
+          return await client.commands.get('embed')?.handleEmbedButton(interaction);
         }
 
         // Button editor + delete-selector buttons (be_* / btn_del*)
         if ((id.startsWith('be_') && !id.startsWith('be_modal_')) || id.startsWith('btn_del')) {
-          return client.commands.get('button')?.handleButtonEdit(interaction);
+          return await client.commands.get('button')?.handleButtonEdit(interaction);
         }
 
         // Schedule cancel-selector buttons
         if (id.startsWith('sch_del')) {
-          return client.commands.get('schedule')?.handleScheduleButton(interaction);
+          return await client.commands.get('schedule')?.handleScheduleButton(interaction);
         }
 
         // Shop settings panel — add/edit/remove/close buttons
         if (id.startsWith('shopset_')) {
-          return client.commands.get('shopsettings')?.handleButton(interaction);
+          return await client.commands.get('shopsettings')?.handleButton(interaction);
         }
 
         // Report — submission panel buttons (link/submit/cancel)
         if (id.startsWith('report_link:') || id.startsWith('report_submit:') || id.startsWith('report_cancel:')) {
-          return client.commands.get('report')?.handleButton(interaction);
+          return await client.commands.get('report')?.handleButton(interaction);
         }
 
         // Report — take action
         if (id.startsWith('rpt_action:')) {
           const [, targetUserId, reportChannelId] = id.split(':');
-          return handleReportAction(interaction, targetUserId, reportChannelId);
+          return await handleReportAction(interaction, targetUserId, reportChannelId);
         }
 
         // Report — execute action
@@ -475,11 +487,11 @@ module.exports = {
           const parts = id.split(':');
           if (id.startsWith('rpt_dismiss:')) {
             const [, reportChannelId, reportMsgId] = parts;
-            return executeReportAction(interaction, 'dismiss', null, reportChannelId, reportMsgId);
+            return await executeReportAction(interaction, 'dismiss', null, reportChannelId, reportMsgId);
           }
           const [, targetUserId, reportChannelId, reportMsgId] = parts;
           const action = id.startsWith('rpt_w:') ? 'warn' : id.startsWith('rpt_k:') ? 'kick' : 'ban';
-          return executeReportAction(interaction, action, targetUserId, reportChannelId, reportMsgId);
+          return await executeReportAction(interaction, action, targetUserId, reportChannelId, reportMsgId);
         }
 
         // Card grab
@@ -487,7 +499,7 @@ module.exports = {
           if (!global.cardDrops) global.cardDrops = new Map();
           const drop = global.cardDrops.get(interaction.message.id);
           if (!drop || drop.grabbed) {
-            return interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', flags: EPHEMERAL_FLAG });
+            return await interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', flags: EPHEMERAL_FLAG });
           }
           drop.grabbed = true;
           global.cardDrops.delete(interaction.message.id);
@@ -505,94 +517,94 @@ module.exports = {
               .setStyle(ButtonStyle.Success)
               .setDisabled(true),
           );
-          return interaction.update({ embeds: [claimedEmbed], files: claimedFiles, components: [disabled], attachments: [] });
+          return await interaction.update({ embeds: [claimedEmbed], files: claimedFiles, components: [disabled], attachments: [] });
         }
 
         // Restore — confirm
         if (id.startsWith('restore_confirm:')) {
           const [, guildId, userId] = id.split(':');
           if (interaction.user.id !== userId || interaction.guild.id !== guildId) {
-            return interaction.reply({ content: '❌ Only the admin who initiated this restore can confirm it.', flags: EPHEMERAL_FLAG });
+            return await interaction.reply({ content: '❌ Only the admin who initiated this restore can confirm it.', flags: EPHEMERAL_FLAG });
           }
-          return client.commands.get('restore')?.handleRestoreConfirm(interaction);
+          return await client.commands.get('restore')?.handleRestoreConfirm(interaction);
         }
 
         // Restore — cancel
         if (id.startsWith('restore_cancel:')) {
           const [, guildId, userId] = id.split(':');
           if (interaction.user.id !== userId || interaction.guild.id !== guildId) {
-            return interaction.reply({ content: '❌ Only the admin who initiated this restore can cancel it.', flags: EPHEMERAL_FLAG });
+            return await interaction.reply({ content: '❌ Only the admin who initiated this restore can cancel it.', flags: EPHEMERAL_FLAG });
           }
-          return client.commands.get('restore')?.handleRestoreCancel(interaction);
+          return await client.commands.get('restore')?.handleRestoreCancel(interaction);
         }
 
         // Auto-mod — panel toggles
         if (id.startsWith('automod_toggle:')) {
-          return client.commands.get('automod')?.handleToggle(interaction, id.slice('automod_toggle:'.length));
+          return await client.commands.get('automod')?.handleToggle(interaction, id.slice('automod_toggle:'.length));
         }
         if (id.startsWith('modlog_toggle:')) {
-          return client.commands.get('modlog')?.handleToggle(interaction, id.slice('modlog_toggle:'.length));
+          return await client.commands.get('modlog')?.handleToggle(interaction, id.slice('modlog_toggle:'.length));
         }
 
         // Economic calendar — panel buttons
         if (id.startsWith('econcal_panel:')) {
-          return client.commands.get('econcal')?.handlePanelButton(interaction, id.slice('econcal_panel:'.length));
+          return await client.commands.get('econcal')?.handlePanelButton(interaction, id.slice('econcal_panel:'.length));
         }
 
         // Trivia — answer buttons / close session
         if (id.startsWith('trivia_answer:')) {
-          return client.commands.get('trivia')?.handleAnswer(interaction);
+          return await client.commands.get('trivia')?.handleAnswer(interaction);
         }
         if (id.startsWith('trivia_close:')) {
-          return client.commands.get('trivia')?.handleClose(interaction);
+          return await client.commands.get('trivia')?.handleClose(interaction);
         }
 
         // Fishing / mining — continue-session or close-session buttons
         if (id.startsWith('gather_again:') || id.startsWith('gather_close:')) {
           const action = id.split(':')[1];
-          return client.commands.get(action)?.handleButton(interaction);
+          return await client.commands.get(action)?.handleButton(interaction);
         }
 
         // News feed panel — toggle/channel/sources/topics/close
         if (id.startsWith('nf:')) {
-          return client.commands.get('newsfeed')?.handleButton(interaction);
+          return await client.commands.get('newsfeed')?.handleButton(interaction);
         }
 
         // Shop panel — buy/inventory/use/close buttons
         if (id === 'shop_buy' || id === 'shop_inventory' || id === 'shop_use' || id.startsWith('shop_close:')) {
-          return client.commands.get('shop')?.handleButton(interaction);
+          return await client.commands.get('shop')?.handleButton(interaction);
         }
 
         // Bank panel — deposit/withdraw/collect/check-balance/leaderboard/close
         if (id.startsWith('bank_panel:')) {
-          return client.commands.get('bank')?.handleButton(interaction);
+          return await client.commands.get('bank')?.handleButton(interaction);
         }
         if (id.startsWith('bank_close:')) {
-          return client.commands.get('bank')?.handleClose(interaction);
+          return await client.commands.get('bank')?.handleClose(interaction);
         }
 
         // Auto-mod — link request flow
         if (id.startsWith('automod_link_request:')) {
-          return client.commands.get('automod')?.handleLinkRequestButton(interaction, id.slice('automod_link_request:'.length));
+          return await client.commands.get('automod')?.handleLinkRequestButton(interaction, id.slice('automod_link_request:'.length));
         }
         if (id.startsWith('automod_link_approve:')) {
-          return client.commands.get('automod')?.handleLinkApprove(interaction, id.slice('automod_link_approve:'.length));
+          return await client.commands.get('automod')?.handleLinkApprove(interaction, id.slice('automod_link_approve:'.length));
         }
         if (id.startsWith('automod_link_deny:')) {
-          return client.commands.get('automod')?.handleLinkDeny(interaction, id.slice('automod_link_deny:'.length));
+          return await client.commands.get('automod')?.handleLinkDeny(interaction, id.slice('automod_link_deny:'.length));
         }
 
         // Auto-mod — cooldowns list (manage/adjust/delete)
         if (id === 'automod_cd_back' || id.startsWith('automod_cd_delete:') || id.startsWith('automod_cd_delyes:')
           || id.startsWith('automod_cd_delno:') || id.startsWith('automod_cd_adjust:')) {
-          return client.commands.get('automod')?.handleCooldownButton(interaction);
+          return await client.commands.get('automod')?.handleCooldownButton(interaction);
         }
 
         // Auto-mod — requests list (manage/delete) — approve/deny reuse the
         // automod_link_approve:/automod_link_deny: routes above
         if (id === 'automod_req_back' || id.startsWith('automod_req_delete:') || id.startsWith('automod_req_delyes:')
           || id.startsWith('automod_req_delno:')) {
-          return client.commands.get('automod')?.handleRequestsButton(interaction);
+          return await client.commands.get('automod')?.handleRequestsButton(interaction);
         }
 
         // Casino — skip (handled by casinoInteraction.js)
@@ -611,7 +623,7 @@ module.exports = {
             const last   = buttonCooldowns.get(cdKey) || 0;
             const remain = (last + btnConfig.cooldown * 1000) - Date.now();
             if (remain > 0) {
-              return interaction.reply({ content: `⏳ Please wait **${Math.ceil(remain / 1000)}s** before using this button again.`, flags: EPHEMERAL_FLAG });
+              return await interaction.reply({ content: `⏳ Please wait **${Math.ceil(remain / 1000)}s** before using this button again.`, flags: EPHEMERAL_FLAG });
             }
           }
 
@@ -673,6 +685,7 @@ module.exports = {
         }
 
       } catch (err) {
+        if (isUnknownInteractionError(err)) return;
         console.error(`[BTN ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
@@ -688,64 +701,65 @@ module.exports = {
       try {
         // Giveaway setup modals
         if (id.startsWith('gaw_modal:')) {
-          return client.commands.get('giveaway')?.handleSetupModal(interaction);
+          return await client.commands.get('giveaway')?.handleSetupModal(interaction);
         }
 
         // Coins giveaway setup modals
         if (id.startsWith('cg_modal:')) {
-          return client.commands.get('coinsgiveaway')?.handleSetupModal(interaction);
+          return await client.commands.get('coinsgiveaway')?.handleSetupModal(interaction);
         }
 
         // Embed editor modals
         if (id.startsWith('embed_modal_')) {
-          return client.commands.get('embed')?.handleEmbedModal(interaction);
+          return await client.commands.get('embed')?.handleEmbedModal(interaction);
         }
 
         // Button editor modals
         if (id.startsWith('be_modal_')) {
-          return client.commands.get('button')?.handleButtonEditModal(interaction);
+          return await client.commands.get('button')?.handleButtonEditModal(interaction);
         }
 
         // Shop settings — add/edit item modals
         if (id.startsWith('shopset_')) {
-          return client.commands.get('shopsettings')?.handleModal(interaction);
+          return await client.commands.get('shopsettings')?.handleModal(interaction);
         }
 
         // Report — link modal
         if (id.startsWith('report_link_modal:')) {
-          return client.commands.get('report')?.handleModal(interaction);
+          return await client.commands.get('report')?.handleModal(interaction);
         }
 
         // Verification — rules text modal
         if (id === 'verify_rules_modal') {
-          return client.commands.get('verify')?.handleRulesModal(interaction);
+          return await client.commands.get('verify')?.handleRulesModal(interaction);
         }
 
         // Auto-mod — link request modal (link + reason)
         if (id.startsWith('automod_link_modal:')) {
-          return client.commands.get('automod')?.handleLinkModalSubmit(interaction, id.slice('automod_link_modal:'.length));
+          return await client.commands.get('automod')?.handleLinkModalSubmit(interaction, id.slice('automod_link_modal:'.length));
         }
 
         // Auto-mod — approval cooldown modal
         if (id.startsWith('automod_link_approve_modal:')) {
-          return client.commands.get('automod')?.handleLinkApproveModalSubmit(interaction, id.slice('automod_link_approve_modal:'.length));
+          return await client.commands.get('automod')?.handleLinkApproveModalSubmit(interaction, id.slice('automod_link_approve_modal:'.length));
         }
 
         // Auto-mod — cooldowns list: adjust modal
         if (id.startsWith('automod_cd_adjust_modal:')) {
-          return client.commands.get('automod')?.handleCooldownAdjustModalSubmit(interaction, id.slice('automod_cd_adjust_modal:'.length));
+          return await client.commands.get('automod')?.handleCooldownAdjustModalSubmit(interaction, id.slice('automod_cd_adjust_modal:'.length));
         }
 
         // Economic calendar — weekly post time/offset modal
         if (id === 'econcal_weekly_time_modal') {
-          return client.commands.get('econcal')?.handleWeeklyTimeModalSubmit(interaction);
+          return await client.commands.get('econcal')?.handleWeeklyTimeModalSubmit(interaction);
         }
 
         // Bank panel — deposit/withdraw amount modal
         if (id.startsWith('bank_amount_modal:')) {
-          return client.commands.get('bank')?.handleModal(interaction);
+          return await client.commands.get('bank')?.handleModal(interaction);
         }
       } catch (err) {
+        if (isUnknownInteractionError(err)) return;
         console.error(`[MODAL ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
@@ -759,39 +773,40 @@ module.exports = {
       try {
         // Delete / cancel selectors (+ embed field-removal selector)
         if (id === 'embed_delselect' || id.startsWith('embed_fieldsel_'))
-          return client.commands.get('embed')?.handleEmbedSelect(interaction);
+          return await client.commands.get('embed')?.handleEmbedSelect(interaction);
         if (id === 'btn_delselect')
-          return client.commands.get('button')?.handleButtonSelect(interaction);
+          return await client.commands.get('button')?.handleButtonSelect(interaction);
         if (id === 'sch_delselect')
-          return client.commands.get('schedule')?.handleScheduleSelect(interaction);
+          return await client.commands.get('schedule')?.handleScheduleSelect(interaction);
         if (id === 'gaw_list_delsel')
-          return client.commands.get('giveaway')?.handleListSelect(interaction);
+          return await client.commands.get('giveaway')?.handleListSelect(interaction);
         if (id === 'cg_list_delsel')
-          return client.commands.get('coinsgiveaway')?.handleListSelect(interaction);
+          return await client.commands.get('coinsgiveaway')?.handleListSelect(interaction);
         if (id === 'automod_cd_select')
-          return client.commands.get('automod')?.handleCooldownSelect(interaction);
+          return await client.commands.get('automod')?.handleCooldownSelect(interaction);
         if (id === 'automod_req_select')
-          return client.commands.get('automod')?.handleRequestsSelect(interaction);
+          return await client.commands.get('automod')?.handleRequestsSelect(interaction);
         if (id.startsWith('newsfeed_topics_select') || id.startsWith('nf_topics_select:'))
-          return client.commands.get('newsfeed')?.handleTopicsSelect(interaction);
+          return await client.commands.get('newsfeed')?.handleTopicsSelect(interaction);
         if (id === 'econcal_impact_select')
-          return client.commands.get('econcal')?.handleImpactSelect(interaction);
+          return await client.commands.get('econcal')?.handleImpactSelect(interaction);
         if (id === 'econcal_currency_select')
-          return client.commands.get('econcal')?.handleCurrencySelect(interaction);
+          return await client.commands.get('econcal')?.handleCurrencySelect(interaction);
         if (id === 'econcal_weekly_weekday_select')
-          return client.commands.get('econcal')?.handleWeekdaySelect(interaction);
+          return await client.commands.get('econcal')?.handleWeekdaySelect(interaction);
         if (id === 'shop_buy_select' || id === 'shop_use_select')
-          return client.commands.get('shop')?.handleSelect(interaction);
+          return await client.commands.get('shop')?.handleSelect(interaction);
         if (id.startsWith('report_reason_select:'))
-          return client.commands.get('report')?.handleReasonSelect(interaction);
+          return await client.commands.get('report')?.handleReasonSelect(interaction);
         if (id.startsWith('shopset_'))
-          return client.commands.get('shopsettings')?.handleSelect(interaction);
+          return await client.commands.get('shopsettings')?.handleSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
         const handler = client.commands.get(`sel_${system}`);
         if (handler?.handleSelect) await handler.handleSelect(interaction, args, client);
       } catch (err) {
+        if (isUnknownInteractionError(err)) return;
         console.error(`[SEL ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
@@ -804,10 +819,11 @@ module.exports = {
       const id = interaction.customId;
       try {
         if (id.startsWith('report_user_select:'))
-          return client.commands.get('report')?.handleUserSelect(interaction);
+          return await client.commands.get('report')?.handleUserSelect(interaction);
         if (id.startsWith('bank_checkbalance_select:'))
-          return client.commands.get('bank')?.handleUserSelect(interaction);
+          return await client.commands.get('bank')?.handleUserSelect(interaction);
       } catch (err) {
+        if (isUnknownInteractionError(err)) return;
         console.error(`[USER SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
@@ -820,12 +836,13 @@ module.exports = {
       const id = interaction.customId;
       try {
         if (id.startsWith('gaw_role_select:'))
-          return client.commands.get('giveaway')?.handleRoleSelect(interaction);
+          return await client.commands.get('giveaway')?.handleRoleSelect(interaction);
         if (id.startsWith('cg_role_select:'))
-          return client.commands.get('coinsgiveaway')?.handleRoleSelect(interaction);
+          return await client.commands.get('coinsgiveaway')?.handleRoleSelect(interaction);
         if (id === 'econcal_role_select')
-          return client.commands.get('econcal')?.handleRoleSelect(interaction);
+          return await client.commands.get('econcal')?.handleRoleSelect(interaction);
       } catch (err) {
+        if (isUnknownInteractionError(err)) return;
         console.error(`[ROLE SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
@@ -837,16 +854,17 @@ module.exports = {
       const id = interaction.customId;
       try {
         if (id.startsWith('gaw_channel_select:'))
-          return client.commands.get('giveaway')?.handleChannelSelect(interaction);
+          return await client.commands.get('giveaway')?.handleChannelSelect(interaction);
         if (id.startsWith('cg_channel_select:'))
-          return client.commands.get('coinsgiveaway')?.handleChannelSelect(interaction);
+          return await client.commands.get('coinsgiveaway')?.handleChannelSelect(interaction);
         if (id.startsWith('nf_channel_select:'))
-          return client.commands.get('newsfeed')?.handleChannelSelect(interaction);
+          return await client.commands.get('newsfeed')?.handleChannelSelect(interaction);
         if (id === 'econcal_channel_select')
-          return client.commands.get('econcal')?.handleChannelSelect(interaction);
+          return await client.commands.get('econcal')?.handleChannelSelect(interaction);
         if (id.startsWith('econcal_postchannel_select:'))
-          return client.commands.get('econcal')?.handlePostChannelSelect(interaction);
+          return await client.commands.get('econcal')?.handlePostChannelSelect(interaction);
       } catch (err) {
+        if (isUnknownInteractionError(err)) return;
         console.error(`[CHANNEL SELECT ERROR] ${id}:`, err);
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});

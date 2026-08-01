@@ -219,7 +219,7 @@ async function create(guildId, body, { guild, session, client }) {
   if (kind === 'prize' && body.imageUrl) {
     const raw = String(body.imageUrl).trim();
     if (raw.startsWith('dynamic:')) {
-      if (!DYNAMIC_IMAGES[raw.slice(8)]) return { error: 'bad_image' };
+      if (!Object.hasOwn(DYNAMIC_IMAGES, raw.slice(8))) return { error: 'bad_image' };
       imageUrl = raw;
     } else if (/^https:\/\/\S+$/i.test(raw) && raw.length <= 500) {
       imageUrl = raw;

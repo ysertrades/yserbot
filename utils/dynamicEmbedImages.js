@@ -90,8 +90,12 @@ function dynamicImageKey(value) {
 }
 
 function dynamicAttachmentRef(value) {
-  const entry = DYNAMIC_IMAGES[dynamicImageKey(value)];
-  return entry ? `attachment://${entry.filename}` : null;
+  const key = dynamicImageKey(value);
+  // hasOwn: `dynamic:__proto__` would otherwise find Object.prototype, read as
+  // a real entry, and produce `attachment://undefined` — an embed pointing at
+  // a file that does not exist.
+  if (!Object.hasOwn(DYNAMIC_IMAGES, key)) return null;
+  return `attachment://${DYNAMIC_IMAGES[key].filename}`;
 }
 
 // One AttachmentBuilder per distinct dynamic image referenced anywhere in
@@ -108,8 +112,8 @@ function collectDynamicAttachments(template, guildId = null) {
   for (const e of template.embeds) {
     if (!isDynamicImage(e.image)) continue;
     const key = dynamicImageKey(e.image);
+    if (!Object.hasOwn(DYNAMIC_IMAGES, key) || seen.has(key)) continue;
     const entry = DYNAMIC_IMAGES[key];
-    if (!entry || seen.has(key)) continue;
     seen.add(key);
     files.push(new AttachmentBuilder(renderDynamic(key, entry, guildId), { name: entry.filename }));
   }

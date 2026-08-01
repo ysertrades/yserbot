@@ -79,12 +79,15 @@ async function restoreGiveaways(client) {
 
     const remaining = Math.max(data.endTime - now, 0);
     if (giveawayTimers.has(msgId)) clearTimeout(giveawayTimers.get(msgId));
+    // A timer callback has no caller to reject to, so an unguarded one becomes
+    // an anonymous line from the process-wide unhandledRejection hook and a
+    // giveaway that silently never ends.
     giveawayTimers.set(msgId, setTimeout(
       () => endGiveaway(msg, {
         prize: data.prize, winnersCount: data.winnersCount, imageUrl: data.imageUrl,
         hostId: data.hostId, guildId: data.guildId, bonusRoleId: data.bonusRoleId,
         createdAt: data.createdAt,
-      }),
+      }).catch(err => console.error(`[GIVEAWAY ${msgId}] ending failed:`, err)),
       remaining,
     ));
   }
@@ -361,7 +364,8 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
 
   if (giveawayTimers.has(msg.id)) clearTimeout(giveawayTimers.get(msg.id));
   giveawayTimers.set(msg.id, setTimeout(
-    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId, guildId, bonusRoleId, createdAt }),
+    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId, guildId, bonusRoleId, createdAt })
+      .catch(err => console.error(`[GIVEAWAY ${msg.id}] ending failed:`, err)),
     durationMs,
   ));
 

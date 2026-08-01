@@ -3,6 +3,10 @@ const { computeNextRun } = require('./scheduler');
 
 const CHECK_INTERVAL_MS = 5000;
 
+// A schedule pointing at a channel or a template that no longer exists can
+// never fire, so it is deleted. Everything else is treated as bad luck.
+const PERMANENT_FAILURES = new Set(['channel-missing', 'template-missing']);
+
 // Starts the background loop that fires due schedules. Safe to call once
 // after the client is ready (needs client.guilds.cache populated).
 function startScheduleRunner(client) {
@@ -31,10 +35,18 @@ async function checkSchedules(client) {
                 return { ok: false, reason: 'send-error' };
             });
 
-            if (!result.ok) {
+            // Only a reason that cannot get better on its own deletes the
+            // schedule. A send that failed — a rate limit, a permission that
+            // came back, a template with one bad field — used to delete it too,
+            // so a scheduled post could quietly disappear and nothing said so.
+            // Those roll forward to the next occurrence and try again instead.
+            if (!result.ok && PERMANENT_FAILURES.has(result.reason)) {
                 console.warn(`[SCHEDULE ${id}] removed (${result.reason}) — guild ${guildId}`);
                 delete guildSchedules[id];
                 continue;
+            }
+            if (!result.ok) {
+                console.warn(`[SCHEDULE ${id}] send failed (${result.reason}) — will try again at its next run`);
             }
 
             const next = computeNextRun(schedule.time, schedule.frequency, now, schedule.offsetMinutes || 0);

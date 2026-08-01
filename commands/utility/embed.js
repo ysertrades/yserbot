@@ -120,22 +120,54 @@ function templateCharCount(template) {
 
 // ── Embed builders ─────────────────────────────────────────────────────────────
 
+/**
+ * Runs one builder call, and keeps going if it refuses.
+ *
+ * EmbedBuilder validates and *throws* — an icon URL that is not a URL, a title
+ * past 256 characters, a `dynamic:` marker where a link belongs. A template is
+ * stored data that several things later read: the preview, the send button,
+ * auto-replies, template-linked buttons and the schedule runner. One bad field
+ * saved once should cost you that field, not every one of those.
+ *
+ * Validating on the way in is still the first line — this is the floor under
+ * it, for the templates that were already saved and for whatever the next gap
+ * turns out to be.
+ */
+function safeSet(what, apply) {
+  try { apply(); }
+  catch (err) { console.error(`[Embed] dropped ${what}:`, err.message?.split('\n')[0] ?? err); }
+}
+
 function buildEmbedFromData(data, { placeholderOk = false, ctx = null } = {}) {
   const rp = (s) => (ctx ? resolvePlaceholders(s, ctx) : s);
   const e = new EmbedBuilder().setColor(parseColor(data.color) || 0x5865F2);
-  if (data.title)             e.setTitle(rp(data.title));
-  if (data.titleUrl && isValidUrl(data.titleUrl)) e.setURL(data.titleUrl);
-  if (data.description)       e.setDescription(rp(data.description));
-  if (data.footer)            e.setFooter({ text: rp(data.footer), iconURL: data.footerIcon || undefined });
-  if (data.authorName)        e.setAuthor({ name: rp(data.authorName), iconURL: data.authorIcon || undefined, url: data.authorUrl || undefined });
-  if (data.thumbnail)         e.setThumbnail(data.thumbnail);
+  if (data.title)             safeSet('the title', () => e.setTitle(rp(data.title).slice(0, 256)));
+  if (data.titleUrl && isValidUrl(data.titleUrl)) safeSet('the title link', () => e.setURL(data.titleUrl));
+  if (data.description)       safeSet('the description', () => e.setDescription(rp(data.description).slice(0, 4096)));
+  if (data.footer)            safeSet('the footer', () => e.setFooter({ text: rp(data.footer).slice(0, 2048), iconURL: isValidUrl(data.footerIcon) ? data.footerIcon : undefined }));
+  if (data.authorName)        safeSet('the author line', () => e.setAuthor({
+    name: rp(data.authorName).slice(0, 256),
+    iconURL: isValidUrl(data.authorIcon) ? data.authorIcon : undefined,
+    url: isValidUrl(data.authorUrl) ? data.authorUrl : undefined,
+  }));
+  // Thumbnails are a link only. A generated banner is 1000×400 and Discord
+  // draws a thumbnail as a small square, so `dynamic:` there is a mistake
+  // rather than an option — and collectDynamicAttachments never drew one, so
+  // it referenced a file that was never sent.
+  if (data.thumbnail && !isDynamicImage(data.thumbnail)) safeSet('the thumbnail', () => e.setThumbnail(data.thumbnail));
   if (isDynamicImage(data.image)) {
     const ref = dynamicAttachmentRef(data.image);
-    if (ref) e.setImage(ref);
+    if (ref) safeSet('the generated image', () => e.setImage(ref));
   } else if (data.image) {
-    e.setImage(data.image);
+    safeSet('the image', () => e.setImage(data.image));
   }
-  if (data.fields?.length)    e.addFields(data.fields.map(f => ({ name: rp(f.name).slice(0, 256), value: rp(f.value).slice(0, 1024), inline: !!f.inline })));
+  if (data.fields?.length) {
+    // One bad row must not cost the other twenty-four, so they go in one at a
+    // time rather than as a single addFields call.
+    for (const f of data.fields) {
+      safeSet('a field', () => e.addFields({ name: rp(f.name).slice(0, 256), value: rp(f.value).slice(0, 1024), inline: !!f.inline }));
+    }
+  }
   if (data.timestamp)         e.setTimestamp();
   // Discord requires at least one visible field — show placeholder in editor previews
   const hasContent = data.title || data.description || data.image || data.fields?.length || data.authorName;

@@ -197,7 +197,7 @@ function activity(guildId, key) {
 /** Whether a command should run at all. Unknown keys are allowed — a command
  *  this module has never heard of is not one it should be switching off. */
 function isEnabled(guildId, key) {
-  if (!ACTIVITIES[key]) return true;
+  if (!Object.hasOwn(ACTIVITIES, key)) return true;
   return activity(guildId, key).enabled !== false;
 }
 

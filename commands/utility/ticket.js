@@ -13,7 +13,11 @@ function startInactivityTimer(channel, guild, minutes, message) {
   const ms    = minutes * 60 * 1000;
   const entry = { channel, guild, minutes, message };
 
+  // Wrapped because a timer has no caller: anything that throws in here — a
+  // guild whose stored warning text is missing, a channel deleted since — would
+  // otherwise surface only as an anonymous unhandled rejection.
   entry.timerId = setTimeout(async () => {
+   try {
     ticketTimers.delete(channel.id);
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -24,9 +28,12 @@ function startInactivityTimer(channel, guild, minutes, message) {
     );
     const embed = createServerEmbed('warning', {
       title: '💤 Ticket Inactivity Warning',
-      description: message.replace('{time}', `${minutes} minute${minutes !== 1 ? 's' : ''}`),
+      description: String(message ?? '').replace('{time}', `${minutes} minute${minutes !== 1 ? 's' : ''}`),
     }, guild);
     await channel.send({ embeds: [embed], components: [row] }).catch(() => {});
+   } catch (err) {
+    console.error(`[TICKET ${channel.id}] inactivity warning failed:`, err.message ?? err);
+   }
   }, ms);
 
   ticketTimers.set(channel.id, entry);
