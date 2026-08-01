@@ -55,7 +55,7 @@ const byDynamicKey = new Map(Object.entries(BANNERS).map(([key, b]) => [b.dynami
  * the default instead of rendering a gap.
  */
 function normalise(templateKey, input = {}) {
-  const banner = BANNERS[templateKey];
+  const banner = Object.hasOwn(BANNERS, templateKey) ? BANNERS[templateKey] : null;
   if (!banner) return {};
   const out = {};
   for (const field of Object.keys(banner.defaults)) {
@@ -69,7 +69,7 @@ function normalise(templateKey, input = {}) {
 
 /** Saved copy for one banner, or {} when it has never been customised. */
 function getBannerCopy(guildId, templateKey) {
-  if (!guildId || !BANNERS[templateKey]) return {};
+  if (!guildId || !Object.hasOwn(BANNERS, templateKey)) return {};
   const stored = readJson(FILE, {})[guildId]?.[templateKey];
   return stored && typeof stored === 'object' ? { ...stored } : {};
 }
@@ -96,7 +96,7 @@ function allBannerCopy(guildId) {
  * rather than storing a row of blanks.
  */
 function setBannerCopy(guildId, templateKey, input) {
-  if (!BANNERS[templateKey]) return null;
+  if (!Object.hasOwn(BANNERS, templateKey)) return null;
   const clean = normalise(templateKey, input);
   const all = readJson(FILE, {});
   if (!all[guildId]) all[guildId] = {};
@@ -111,7 +111,7 @@ function setBannerCopy(guildId, templateKey, input) {
 
 /** Which fields differ from the defaults — used for the mod-log line. */
 function changedFields(templateKey, copy) {
-  const banner = BANNERS[templateKey];
+  const banner = Object.hasOwn(BANNERS, templateKey) ? BANNERS[templateKey] : null;
   if (!banner) return [];
   return Object.keys(banner.defaults).filter(f => (copy[f] || banner.defaults[f]) !== banner.defaults[f]);
 }

@@ -112,7 +112,8 @@ function coerce(field, incoming) {
 /** One activity's settings. */
 function saveActivity(guildId, body) {
   const key = String(body.activity || '');
-  const meta = ACTIVITIES[key];
+  // hasOwn — ACTIVITIES['__proto__'] is Object.prototype, truthy and useless.
+  const meta = Object.hasOwn(ACTIVITIES, key) ? ACTIVITIES[key] : null;
   if (!meta) return { error: 'unknown_activity' };
 
   const current = getSettings(guildId)[key];

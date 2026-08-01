@@ -81,7 +81,7 @@ function clearWarnings(guildId, userId) {
  *   reason, durationMs (timeout only)
  */
 async function apply({ guild, moderator, targetUser, member, action, reason, durationMs = 3600000 }) {
-  const meta = ACTIONS[action];
+  const meta = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : null;
   if (!meta) return { ok: false, error: 'bad_action' };
 
   const record = appendCase(guild.id, {

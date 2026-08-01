@@ -121,10 +121,22 @@ function sanitizeEmbed(input) {
   const color = String(input.color ?? '#5865F2').trim();
   if (!/^#?[0-9a-fA-F]{6}$/.test(color)) return { error: 'bad_color' };
 
-  for (const [field, value] of [['image', input.image], ['thumbnail', input.thumbnail]]) {
-    if (value && !validImageRef(String(value).trim())) return { error: `bad_${field}` };
-  }
-  for (const [field, value] of [['titleUrl', input.titleUrl], ['authorUrl', input.authorUrl]]) {
+  // Only the main image can be a generated banner. A thumbnail is drawn as a
+  // small square and the banners are 1000×400, and nothing ever attached one
+  // for a thumbnail anyway — so `dynamic:` there produced an embed pointing at
+  // a file that was never sent.
+  if (input.image && !validImageRef(String(input.image).trim())) return { error: 'bad_image' };
+
+  // Every remaining URL field, including the two icons — those were checked
+  // nowhere, went straight into setFooter/setAuthor, and those validate and
+  // throw. A template saved with a mistyped icon could not be sent at all.
+  for (const [field, value] of [
+    ['thumbnail', input.thumbnail],
+    ['titleUrl', input.titleUrl],
+    ['authorUrl', input.authorUrl],
+    ['footerIcon', input.footerIcon],
+    ['authorIcon', input.authorIcon],
+  ]) {
     if (value && !isHttpUrl(String(value).trim())) return { error: `bad_${field}` };
   }
 

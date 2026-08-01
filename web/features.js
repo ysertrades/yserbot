@@ -220,8 +220,11 @@ function coerce(field, incoming, guild) {
 /* ─── writing ────────────────────────────────────────────────────────────── */
 
 function saveGroup(guildId, name, body, guild) {
-  const group = GROUPS[name];
-  const confGroup = CONFIG_GROUPS[name];
+  // hasOwn rather than a truthiness check — GROUPS['__proto__'] is
+  // Object.prototype, which is truthy and has no fields, so it sailed past the
+  // guard and threw on the way to the store.
+  const group = Object.hasOwn(GROUPS, name) ? GROUPS[name] : null;
+  const confGroup = Object.hasOwn(CONFIG_GROUPS, name) ? CONFIG_GROUPS[name] : null;
   if (!group && !confGroup) return { error: 'unknown_group' };
 
   const fields = (group || confGroup).fields;
