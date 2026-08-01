@@ -3,7 +3,7 @@
 /**
  * web/features.js
  *
- * The rest of the bot's adjustable surface: casino limits, the lottery
+ * The rest of the bot's adjustable surface: the lottery
  * channel, card drops, levelling, verification, scheduled posts, auto-replies
  * and direct coin adjustments.
  *
@@ -33,14 +33,6 @@ const FREQUENCY_VALUES = FREQUENCIES.map(f => f.value);
 
 // file → the settings inside it, so one table covers several stores.
 const GROUPS = {
-  casino: {
-    file: 'casino-settings.json',
-    label: 'Casino',
-    fields: [
-      { key: 'minBet', label: 'Minimum bet', type: 'int', min: 1, max: 1e7, fallback: 10 },
-      { key: 'maxBet', label: 'Maximum bet', type: 'int', min: 1, max: 1e9, fallback: 500000 },
-    ],
-  },
   cards: {
     file: 'cards_config.json',
     label: 'Card drops',
@@ -223,8 +215,6 @@ function saveGroup(guildId, name, body, guild) {
       all[guildId][f.key] = r.value;
       changed.push(f.label);
     }
-    // Nonsense in either direction produces a casino nobody can play.
-    if (name === 'casino' && all[guildId].minBet > all[guildId].maxBet) return { error: 'min_above_max' };
     if (!changed.length) return { unchanged: true };
     writeJson(group.file, all);
     return { ok: true, changed, label: group.label };

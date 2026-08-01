@@ -85,6 +85,7 @@
       <button type="button" data-goto="economy">Economy</button>
       <button type="button" data-goto="automation">Automation</button>
       <button type="button" data-goto="engagement">Engagement</button>
+      <button type="button" data-goto="casino">Casino</button>
       <button type="button" data-goto="tickets">Tickets</button>
       <button type="button" data-goto="moderation">Moderation</button>
       <button type="button" data-goto="settings">Settings</button>
@@ -187,6 +188,30 @@
 
     <!-- ── Lottery lives in Economy ─────────────────────────────────────── -->
 
+    <!-- ── Casino ──────────────────────────────────────────────────────── -->
+    <div class="section" data-section="casino">
+      <div class="grid">
+        <article class="panel">
+          <h2>Table stakes</h2>
+          <form id="form-casino" class="form"></form>
+        </article>
+
+        <article class="panel">
+          <h2>Quick bet buttons</h2>
+          <p class="muted">The four amounts offered on every game's bet screen, beside All In. Anything outside the bet range still shows, greyed out.</p>
+          <form id="form-casino-presets" class="form"></form>
+        </article>
+      </div>
+
+      <div class="panel">
+        <h2>Games</h2>
+        <p class="muted">Switch a game off and it disappears from the casino menu. Anyone still holding an open menu gets told it is closed rather than being let in.</p>
+        <form id="form-casino-games" class="form"></form>
+      </div>
+
+      <p class="hint">Odds are not adjustable, and deliberately so — every game draws from an unweighted random source, and the casino says as much on its own menu.</p>
+    </div>
+
     <!-- ── Tickets ─────────────────────────────────────────────────────── -->
     <div class="section" data-section="tickets">
       <div class="grid">
@@ -257,10 +282,6 @@
         <article class="panel">
           <h2>Adjust coins</h2>
           <form id="form-coins" class="form"></form>
-        </article>
-        <article class="panel">
-          <h2>Casino limits</h2>
-          <form id="form-casino" class="form"></form>
         </article>
         <article class="panel">
           <h2>Lottery</h2>

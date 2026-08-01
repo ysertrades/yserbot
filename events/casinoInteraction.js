@@ -12,7 +12,8 @@ const {
 const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
 const { getEffect, getEffectiveMaxBet } = require('../utils/effectsManager');
 const { getSession, updateSession, tryLock, unlock } = require('../casino/sessions');
-const { getSettings } = require('../casino/settings');
+const { getSettings, isGameEnabled } = require('../casino/settings');
+const { gameHeading } = require('../casino/games');
 const { fetchAvatarPng } = require('../utils/avatarUtil');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const engine = require('../casino/engine');
@@ -178,7 +179,7 @@ async function handleButton(interaction) {
     if (!s) return expired(interaction);
     const { mainEmbed, mainRows } = require('../commands/economy/casino');
     updateSession(s.userId, { game: null, bjState: null, tradeState: null, raceState: null });
-    return interaction.update({ embeds: [mainEmbed(s.userId, s.guildId, s.lastResult)], components: mainRows(), attachments: [] });
+    return interaction.update({ embeds: [mainEmbed(s.userId, s.guildId, s.lastResult)], components: mainRows(s.guildId), attachments: [] });
   }
 
   if (type === 'again') {
@@ -221,6 +222,12 @@ async function handleButton(interaction) {
     const s = guardSession(interaction);
     if (!s) return expired(interaction);
     const game = parts[2];
+    // Checked here rather than only when building the menu: a casino message
+    // that was already on screen when a game was switched off still carries a
+    // working button for it.
+    if (!isGameEnabled(s.guildId, game)) {
+      return interaction.reply({ content: '❌ That game is switched off on this server.', flags: MessageFlags.Ephemeral });
+    }
     updateSession(s.userId, { game });
     if (game === 'horse' || game === 'turtle') {
       await interaction.deferUpdate();
@@ -497,19 +504,16 @@ async function showBetSelection(interaction, game) {
   const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
   const isVip    = maxBet > settings.maxBet;
 
-  const gameLabels = {
-    coinflip: '🎲 Coinflip', blackjack: '🃏 Blackjack', trading: '📈 Trading',
-    slots: '🎰 Slots', crash: '🛩️ Crash', horse: '🐎 Horse Race',
-    turtle: '🐢 Turtle Race', wheel: '🎰 Wheel', roulette: '🎡 Roulette', dice: '🎲 Dice',
-  };
-
   const embed = new EmbedBuilder()
     .setColor(0x1a1a2e)
-    .setTitle(gameLabels[game] || game)
+    .setTitle(gameHeading(game))
     .setDescription(`**Balance: ${fmt(bal)}** coins\nPick your bet, then play.`)
     .setFooter({ text: `YSER Flow Casino  •  Min: ${fmt(settings.minBet)}  ·  Max: ${fmt(maxBet)}${isVip ? ' 👑' : ''}` });
 
-  const PRESETS = [25, 100, 250, 500];
+  // Set per server in the control panel. A preset outside the bet range still
+  // renders, disabled, so the row keeps its shape and it is obvious why it
+  // cannot be pressed.
+  const PRESETS = settings.presets;
   const allIn   = Math.min(bal, maxBet);
 
   const presetBtns = PRESETS.map(amt => {
@@ -607,7 +611,7 @@ async function showCoinflipChoice(interaction, s) {
   const chart = new AttachmentBuilder(engine.renderCoinflipPng('heads', 'heads'), { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(0xf1c40f)
-    .setTitle('🎲 Coinflip')
+    .setTitle('🪙 Coinflip')
     .setDescription('The coin spins in the air… pick your side!')
     .setImage(`attachment://${chartName}`)
     .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
@@ -626,7 +630,7 @@ async function resolveCoinflip(interaction, s, choice) {
   const spinChart = new AttachmentBuilder(engine.renderCoinflipPng(choice, spinResult), { name: spinName });
   const spinEmbed = new EmbedBuilder()
     .setColor(0x3498db)
-    .setTitle('🎲 Coinflip — Flipping...')
+    .setTitle('🪙 Coinflip — Flipping...')
     .setDescription('🌀 The coin is in the air...')
     .setImage(`attachment://${spinName}`)
     .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
@@ -646,7 +650,7 @@ async function resolveCoinflip(interaction, s, choice) {
   const chart = new AttachmentBuilder(engine.renderCoinflipPng(choice, result.result), { name: chartName });
   const embed = new EmbedBuilder()
     .setColor(result.won ? 0x2ecc71 : 0xe74c3c)
-    .setTitle(`🎲 Coinflip — ${result.won ? 'You Win! 🎉' : 'You Lose!'}`)
+    .setTitle(`🪙 Coinflip — ${result.won ? 'You Win! 🎉' : 'You Lose!'}`)
     .setDescription(
       `> The coin landed on **${result.result.toUpperCase()}**\n> You chose **${choice.toUpperCase()}**`,
     )

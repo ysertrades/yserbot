@@ -476,7 +476,7 @@ function renderOverview() {
   renderSettings();
   renderPanelLog();
   renderTickets();
-  renderGroupForm('#form-casino', 'casino');
+  renderCasino();
   renderGroupForm('#form-lottery', 'lottery');
   renderGroupForm('#form-cards', 'cards');
   renderGroupForm('#form-verify', 'verify');
@@ -1551,6 +1551,76 @@ function renderSettings() {
   form.replaceChildren(...nodes);
 }
 
+/* ── casino ────────────────────────────────────────────────────────────────
+   Three forms rather than one, because they are three different decisions:
+   what a bet may be, what the shortcut buttons offer, and which games exist.
+   Saving one should not make you re-confirm the other two. */
+
+function renderCasino() {
+  const c = state.overview?.casino;
+  if (!c) return;
+
+  /* -- table stakes ------------------------------------------------------ */
+  const stakes = { ...c.values };
+  const stakeNote = el('p', 'hint', '');
+  const syncStakeNote = () => {
+    const bad = Number(stakes.minBet) >= Number(stakes.maxBet);
+    stakeNote.textContent = bad
+      ? 'Minimum must be below maximum, or nobody can place a bet at all.'
+      : `Bets between ${num(stakes.minBet)} and ${num(stakes.maxBet)} coins.${Number(stakes.cooldownSeconds) > 0 ? ` ${stakes.cooldownSeconds}s between games.` : ' No cooldown between games.'}`;
+    stakeNote.className = `hint${bad ? ' bad' : ''}`;
+  };
+
+  $('#form-casino').replaceChildren(
+    ...c.fields.map(f => textField(`${f.label}${f.key === 'cooldownSeconds' ? ' — 0 for none' : ''}`,
+      String(stakes[f.key] ?? ''), v => { stakes[f.key] = Number(v); syncStakeNote(); })),
+    stakeNote,
+    actions(() => post('casino', stakes)),
+  );
+  syncStakeNote();
+
+  /* -- quick bets -------------------------------------------------------- */
+  const presets = c.presets.slice();
+  const presetForm = $('#form-casino-presets');
+  const presetNote = el('p', 'hint', '');
+  const syncPresetNote = () => {
+    // Sorted and de-duplicated server-side, so say so rather than letting the
+    // saved order come back looking like the field was ignored.
+    const clean = [...new Set(presets.filter(n => n > 0))].sort((a, b) => a - b);
+    presetNote.textContent = clean.length < presets.length
+      ? `Duplicates and blanks are dropped — this will save as ${clean.join(' / ')} topped up from the defaults.`
+      : `Buttons will read ${clean.join(' / ')}, lowest first.`;
+  };
+
+  presetForm.replaceChildren(
+    ...presets.map((value, i) => textField(`Button ${i + 1}`, String(value), v => {
+      presets[i] = Number(v);
+      syncPresetNote();
+    })),
+    presetNote,
+    actions(() => post('casino', { presets })),
+  );
+  syncPresetNote();
+
+  /* -- games ------------------------------------------------------------- */
+  const games = Object.fromEntries(c.games.map(g => [g.key, g.enabled]));
+  const gamesNote = el('p', 'hint', '');
+  const syncGamesNote = () => {
+    const on = Object.values(games).filter(Boolean).length;
+    gamesNote.textContent = on === 0
+      ? 'Every game is off — the casino menu will say it is closed.'
+      : `${on} of ${c.games.length} games open.`;
+    gamesNote.className = `hint${on === 0 ? ' bad' : ''}`;
+  };
+
+  $('#form-casino-games').replaceChildren(
+    ...c.games.map(g => toggle(g.label, g.enabled, v => { games[g.key] = v; syncGamesNote(); })),
+    gamesNote,
+    actions(() => post('casino', { games })),
+  );
+  syncGamesNote();
+}
+
 /* ── tickets ───────────────────────────────────────────────────────────── */
 
 function renderTickets() {
@@ -2166,7 +2236,8 @@ async function initStudio() {
    and which section you are in once the nav has scrolled past. */
 
 const SECTION_NAMES = {
-  overview: 'Overview', composer: 'Composer', studio: 'Studio', tickets: 'Tickets',
+  overview: 'Overview', composer: 'Composer', studio: 'Studio',
+  casino: 'Casino', tickets: 'Tickets',
   giveaways: 'Giveaways', feeds: 'Feeds', economy: 'Economy',
   automation: 'Automation', engagement: 'Engagement',
   moderation: 'Moderation', settings: 'Settings',
