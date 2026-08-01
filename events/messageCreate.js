@@ -5,6 +5,7 @@ const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createServerEmbed } = require('../utils/embedBuilder');
 const { pickRandomCard, buildDropEmbed, buildClaimedEmbed } = require('../utils/cardsManager');
 const { memberAction } = require('../utils/modEmbed');
+const { isOn } = require('../utils/messageStyle');
 
 if (!global.cardDrops)         global.cardDrops         = new Map();
 if (!global.cardMessageCounts) global.cardMessageCounts = new Map(); // key: "guildId:channelId"
@@ -87,17 +88,25 @@ async function handleLeveling(message) {
       if (role) { try { await message.member.roles.add(role); } catch {} }
     }
 
-    try {
-      // Announced in whatever channel they were talking in, so it is kept to
-      // the one fact that is news. The running totals are in /rank.
-      const embed = memberAction({
-        user: message.author,
-        member: message.member,
-        action: 'levelup',
-        note: `**Level ${guildData.users[userId].level}** 🎉`,
-      });
-      await message.channel.send({ embeds: [embed] });
-    } catch {}
+    // Announced in whatever channel they were talking in, so it is kept to the
+    // one fact that is news. The running totals are in /rank. A server that
+    // would rather not have it at all can switch it off in Appearance.
+    if (isOn(message.guild.id, 'member.levelup')) {
+      try {
+        const embed = memberAction({
+          guild: message.guild,
+          user: message.author,
+          member: message.member,
+          action: 'levelup',
+          tokens: {
+            level: guildData.users[userId].level,
+            xp: guildData.users[userId].totalXp,
+            messages: guildData.users[userId].messages,
+          },
+        });
+        await message.channel.send({ embeds: [embed] });
+      } catch {}
+    }
   }
 
   levels[message.guild.id] = guildData;

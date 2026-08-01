@@ -1,30 +1,33 @@
 'use strict';
 
-const { EmbedBuilder } = require('discord.js');
 const { readJson } = require('./jsonStorage');
+const messageStyle = require('./messageStyle');
+const { colorFor } = require('./modEmbed');
 
-const ACTION_COLOR = {
-  ban:    0xe74c3c,
-  kick:   0xe67e22,
-  mute:   0xf39c12,
-  warn:   0xf1c40f,
-  unmute: 0x2ecc71,
-  unban:  0x2ecc71,
-};
 const ACTION_ICON = {
   ban:    '🔨', kick:   '👢', mute:   '🔇',
   warn:   '⚠️',  unmute: '🔊', unban:  '🔓',
 };
-const USER_MSG = {
-  ban:    'You have been **banned** from the server.',
-  kick:   'You have been **kicked** from the server.',
-  mute:   'You have been **timed out** in the server.',
-  warn:   'You have received a **warning** in the server.',
-  unmute: 'Your **timeout** has been lifted.',
-  unban:  'You have been **unbanned** from the server.',
+
+// How an action reads inside a sentence — "You have been **banned** in …".
+// Kept apart from the icons because the two are used in different places, and
+// a server can now reword the sentence around them from the panel.
+const ACTION_WORD = {
+  ban: 'banned', kick: 'kicked', mute: 'timed out',
+  warn: 'warned', unmute: 'un-muted', unban: 'unbanned',
 };
 
-/** Send to the guild's configured mod-log channel. */
+const BLANK = '​';
+
+/**
+ * Send to the guild's configured mod-log channel.
+ *
+ * The layout is fixed on purpose — User, Moderator, Reason, in that order,
+ * every time — because this is the record, and a record you have to read
+ * differently each time is not much of one. What a server can change, from
+ * the panel's Appearance screen, is the heading, the footer, the thumbnail
+ * and the timestamp.
+ */
 async function sendModLog(guild, action, targetUser, moderator, reason, extra = {}) {
   const config = readJson('config.json', {});
   const channelId = config[guild.id]?.logsChannel;
@@ -32,37 +35,58 @@ async function sendModLog(guild, action, targetUser, moderator, reason, extra = 
   const channel = guild.channels.cache.get(channelId);
   if (!channel) return;
 
-  const embed = new EmbedBuilder()
-    .setColor(ACTION_COLOR[action] ?? 0x95a5a6)
-    .setAuthor({ name: `${ACTION_ICON[action] ?? '📋'} ${action.toUpperCase()}` })
-    .addFields(
-      { name: 'User',      value: `<@${targetUser.id}> \`${targetUser.tag}\``, inline: true },
-      { name: 'Moderator', value: `<@${moderator.id}>`,                        inline: true },
-      { name: '\u200b',    value: '\u200b',                                    inline: true },
-      { name: 'Reason',    value: reason,                                      inline: false },
-    )
-    .setTimestamp();
+  const fields = [
+    { name: 'User',      value: `<@${targetUser.id}> \`${targetUser.tag}\``, inline: true },
+    { name: 'Moderator', value: `<@${moderator.id}>`,                        inline: true },
+    { name: BLANK,       value: BLANK,                                       inline: true },
+    { name: 'Reason',    value: reason,                                      inline: false },
+  ];
+  if (extra.duration) fields.push({ name: 'Duration', value: extra.duration, inline: true });
 
-  if (extra.duration) embed.addFields({ name: 'Duration', value: extra.duration, inline: true });
-  if (extra.caseId)   embed.setFooter({ text: `Case #${extra.caseId}` });
-  if (targetUser.displayAvatarURL) embed.setThumbnail(targetUser.displayAvatarURL());
+  const embed = messageStyle.build(guild.id, 'log.action', {
+    fields,
+    thumbnailURL: targetUser.displayAvatarURL ? targetUser.displayAvatarURL() : null,
+    tokens: {
+      action: `${ACTION_ICON[action] ?? '📋'} ${action}`,
+      server: guild.name,
+      user: targetUser.tag,
+      moderator: moderator.tag || moderator.id,
+      reason,
+      case: extra.caseId ?? '',
+      duration: extra.duration ?? '',
+    },
+  });
+  if (!embed) return;
+
+  // The colour follows the action's own card, so one change in the panel
+  // covers the card, this entry and the DM rather than leaving three separate
+  // colours to keep in step by hand.
+  try { embed.setColor(colorFor(guild.id, action)); } catch {}
 
   await channel.send({ embeds: [embed] }).catch(() => {});
 }
 
 /** DM the affected user a creative, informative embed. */
 async function dmUser(targetUser, action, guild, reason, extra = {}) {
-  const embed = new EmbedBuilder()
-    .setColor(ACTION_COLOR[action] ?? 0x95a5a6)
-    .setTitle(`${ACTION_ICON[action] ?? '📋'} Action taken in ${guild.name}`)
-    .setThumbnail(guild.iconURL({ dynamic: true }) ?? null)
-    .setDescription(USER_MSG[action] ?? 'A moderation action was taken against you.')
-    .addFields({ name: '📋 Reason', value: reason, inline: false })
-    .setTimestamp()
-    .setFooter({ text: 'If you believe this is a mistake, contact the server staff.' });
+  const fields = [{ name: '📋 Reason', value: reason, inline: false }];
+  if (extra.duration) fields.push({ name: '⏱️ Duration', value: extra.duration, inline: true });
+  if (extra.caseId)   fields.push({ name: '🗂️ Case',    value: `#${extra.caseId}`, inline: true });
 
-  if (extra.duration) embed.addFields({ name: '⏱️ Duration', value: extra.duration, inline: true });
-  if (extra.caseId)   embed.addFields({ name: '🗂️ Case',    value: `#${extra.caseId}`, inline: true });
+  const embed = messageStyle.build(guild.id, 'dm.action', {
+    fields,
+    thumbnailURL: guild.iconURL?.({ dynamic: true }) ?? null,
+    tokens: {
+      action: ACTION_WORD[action] ?? 'moderated',
+      server: guild.name,
+      user: targetUser.tag,
+      reason,
+      case: extra.caseId ?? '',
+      duration: extra.duration ?? '',
+    },
+  });
+  if (!embed) return;
+
+  try { embed.setColor(colorFor(guild.id, action)); } catch {}
 
   await targetUser.send({ embeds: [embed] }).catch(() => {});
 }

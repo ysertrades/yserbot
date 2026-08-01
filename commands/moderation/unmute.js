@@ -24,7 +24,7 @@ module.exports = {
     await sendModLog(interaction.guild, 'unmute', user, interaction.user, reason, {});
 
     return interaction.reply({
-      embeds: [memberAction({ user, member, action: 'unmute', reason })],
+      embeds: [memberAction({ guild: interaction.guild, user, member, action: 'unmute', reason })],
     });
   },
 };

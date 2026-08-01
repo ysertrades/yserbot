@@ -19,9 +19,10 @@ module.exports = {
 
     return interaction.reply({
       embeds: [memberAction({
+        guild: interaction.guild,
         user, member: interaction.guild.members.cache.get(user.id),
         action: 'warnclear',
-        note: `**Cleared:** ${before} warning${before !== 1 ? 's' : ''}`,
+        tokens: { count: `${before} warning${before !== 1 ? 's' : ''}` },
       })],
       flags: MessageFlags.Ephemeral,
     });

@@ -139,6 +139,7 @@ const state = {
   me: null,                             // who is signed in, for {user} previews
   templates: [], tpl: null, copy: {},   // Studio
   tplName: null, draft: null,           // Composer
+  styleKey: null,                       // Appearance — the message being edited
   gawBump: null,                        // redraw the giveaway preview on demand
 };
 
@@ -496,6 +497,7 @@ function renderOverview() {
   renderModerationForm();
   renderShop();
   renderComposer();
+  renderAppearance();
   renderGiveaways();
   renderSettings();
   renderPanelLog();
@@ -1404,6 +1406,324 @@ function openEmbedPreview(draft) {
   openSheet(draft.name ? `Preview · ${draft.name}` : 'Preview', body, [], () => {
     for (const url of revocables) URL.revokeObjectURL(url);
   });
+}
+
+/* ── appearance: the messages the bot sends on its own ─────────────────────
+   The Composer covers messages you write. This covers the other kind — the
+   warning card, the mod-log entry, the goodbye, the level-up — which used to
+   be hard-coded and needed a redeploy to change. */
+
+/**
+ * Token substitution, matching utils/messageStyle.js fill().
+ *
+ * There are deliberately two implementations. The server's is the one that
+ * actually sends, and the preview you see on load comes from it; this one
+ * exists so the preview keeps up while you type, which a round trip per
+ * keystroke could not. The rule is small enough to hold in both places: a
+ * token nobody supplied becomes nothing, and a line whose tokens *all* came
+ * back empty is dropped rather than left as a label for something absent.
+ */
+function fillTokens(text, values) {
+  if (!text) return '';
+  const kept = [];
+  for (const line of String(text).split('\n')) {
+    let sawToken = false;
+    let sawValue = false;
+    const filled = line.replace(/\{(\w+)\}/g, (whole, name) => {
+      sawToken = true;
+      const lower = name.toLowerCase();
+      const raw = Object.hasOwn(values, name) ? values[name]
+        : (name === name.toUpperCase() && Object.hasOwn(values, lower) ? String(values[lower]).toUpperCase() : '');
+      const value = raw === null || raw === undefined ? '' : String(raw);
+      if (value !== '') sawValue = true;
+      return value;
+    });
+    if (sawToken && !sawValue) continue;
+    kept.push(filled.replace(/[ \t]+$/, ''));
+  }
+  return kept.join('\n').trim();
+}
+
+/** Draws one message the way Discord will, from the values being edited. */
+function stylePreview(entry, values, sample) {
+  const box = el('div', 'demb');
+  box.style.borderLeftColor = /^#[0-9a-f]{6}$/i.test(values.color || '') ? values.color : '#5865F2';
+
+  const title = fillTokens(values.title, sample);
+  const body = fillTokens(values.body, sample);
+
+  if (entry.shape === 'action') {
+    // The compact card: avatar and the line together on one row. The avatar is
+    // drawn rather than fetched — a real one would be a request to Discord's
+    // CDN for a picture nobody is looking at, and it would show as broken
+    // anywhere the panel is opened without a route out.
+    const a = el('div', 'a lead');
+    a.append(el('span', 'av'), el('span', null, title || 'Update'));
+    box.append(a);
+    if (body) box.append(el('p', 'd', body));
+    return box;
+  }
+
+  if (title) box.append(el('p', 't', title));
+  if (body) box.append(el('p', 'd', body));
+
+  // The rows the bot fills in at send time. Shown greyed so it is clear the
+  // card will be taller than the parts on the left, without implying they can
+  // be edited here.
+  for (const f of entry.fixedFields || []) {
+    const fixed = el('div', 'f fixed');
+    const cell = el('div');
+    cell.style.flexBasis = '100%';
+    cell.append(el('b', null, f));
+    cell.append(el('span', null, 'added when it is sent'));
+    fixed.append(cell);
+    box.append(fixed);
+  }
+
+  const footer = fillTokens(values.footer, sample);
+  const bits = [];
+  if (footer) bits.push(footer);
+  if (values.timestamp) bits.push(new Date().toLocaleString());
+  if (bits.length) box.append(el('p', 'ft', bits.join(' • ')));
+
+  if (values.thumbnail) box.classList.add('has-thumb');
+  return box;
+}
+
+/** A colour picker and its hex box, kept in step with each other. */
+function colorField(label, value, onChange) {
+  const l = el('label', 'field');
+  l.append(el('span', null, label));
+  const row = el('div', 'color-row');
+
+  const swatch = el('input');
+  swatch.type = 'color';
+  swatch.value = /^#[0-9a-f]{6}$/i.test(value || '') ? value : '#5865F2';
+
+  const hex = el('input');
+  hex.type = 'text';
+  hex.value = swatch.value.toUpperCase();
+  hex.spellcheck = false;
+  hex.setAttribute('aria-label', `${label} hex code`);
+
+  swatch.addEventListener('input', () => {
+    hex.value = swatch.value.toUpperCase();
+    hex.classList.remove('bad');
+    onChange(hex.value);
+  });
+  hex.addEventListener('input', () => {
+    const v = hex.value.trim();
+    const full = v.startsWith('#') ? v : `#${v}`;
+    // Typing a hex goes character by character, so half of what is typed is
+    // never going to be valid. Marking it rather than rejecting it lets the
+    // field finish being typed into.
+    if (!/^#[0-9a-f]{6}$/i.test(full)) { hex.classList.add('bad'); return; }
+    hex.classList.remove('bad');
+    swatch.value = full;
+    onChange(full.toUpperCase());
+  });
+
+  row.append(swatch, hex);
+  l.append(row);
+  return l;
+}
+
+/**
+ * The {token} chips.
+ *
+ * Clicking one drops it into whichever box you were last typing in, at the
+ * cursor. Typing them by hand works too — this is so you do not have to
+ * remember which message understands which.
+ */
+function tokenChips(tokens, focusRef) {
+  const wrap = el('div', 'field');
+  const head = el('div', 'field-head');
+  head.append(el('span', null, 'Placeholders'), el('span', 'count', 'click to insert'));
+  wrap.append(head);
+
+  const box = el('div', 'chipset');
+  for (const t of tokens) {
+    const b = el('button', 'chip-toggle mono', t);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      const input = focusRef.el;
+      if (!input) return;
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? start;
+      input.value = input.value.slice(0, start) + t + input.value.slice(end);
+      input.setSelectionRange(start + t.length, start + t.length);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    });
+    box.append(b);
+  }
+  wrap.append(box);
+  return wrap;
+}
+
+/** Remembers the last box you typed in, so a chip knows where to go. */
+function trackFocus(node, focusRef) {
+  for (const input of node.querySelectorAll('input[type="text"], textarea')) {
+    input.addEventListener('focus', () => { focusRef.el = input; });
+  }
+  return node;
+}
+
+// Which rows the bot appends itself, per message. Named here rather than sent
+// from the server because they are a fact about the preview, not about the
+// stored style.
+const FIXED_FIELDS = {
+  'log.action': ['User', 'Moderator', 'Reason'],
+  'dm.action': ['📋 Reason'],
+  'member.leave': ['👥 Members Left', '⏳ Time in Server'],
+  'ticket.opened': ['Support Team'],
+};
+
+const PART_LABEL = {
+  enabled: 'Send this message',
+  thumbnail: 'Show a picture in the corner',
+  timestamp: 'Show the time',
+};
+
+function appearanceEntries() {
+  return (state.overview?.appearance?.groups || []).flatMap(g => g.entries);
+}
+
+function renderAppearanceIndex() {
+  const wrap = $('#appearance-index');
+  const groups = state.overview?.appearance?.groups || [];
+  if (!groups.length) { wrap.replaceChildren(el('p', 'muted', 'Nothing to style yet.')); return; }
+
+  const nodes = [];
+  for (const g of groups) {
+    nodes.push(el('p', 'index-group', g.name));
+    for (const e of g.entries) {
+      const b = el('button', 'tpl-entry');
+      b.type = 'button';
+      b.append(el('span', 'nm', e.label));
+      const meta = el('span', 'mt');
+      // A dot for "this server has changed it" and a slash for "switched off",
+      // so the list says what is different without opening anything.
+      meta.textContent = `${e.values.enabled === false ? '⃠' : ''}${e.changed ? '●' : ''}`;
+      meta.title = [e.changed ? 'changed from the shipped wording' : null,
+        e.values.enabled === false ? 'not being sent' : null].filter(Boolean).join(' · ');
+      b.append(meta);
+      if (e.key === state.styleKey) b.setAttribute('aria-current', 'true');
+      b.addEventListener('click', () => { state.styleKey = e.key; renderAppearance(); });
+      nodes.push(b);
+    }
+  }
+  wrap.replaceChildren(...nodes);
+}
+
+function renderAppearance() {
+  const data = state.overview?.appearance;
+  const body = $('#appearance-body');
+  if (!body) return;
+  if (!data) { body.replaceChildren(); return; }
+
+  const entries = appearanceEntries();
+  if (!entries.length) { body.replaceChildren(el('p', 'muted', 'Nothing to style yet.')); return; }
+  if (!entries.some(e => e.key === state.styleKey)) state.styleKey = entries[0].key;
+
+  const count = $('#appearance-count');
+  if (count) {
+    count.textContent = data.changedCount ? `${data.changedCount} changed` : 'all default';
+    count.classList.toggle('on', data.changedCount > 0);
+  }
+  renderAppearanceIndex();
+
+  const entry = entries.find(e => e.key === state.styleKey);
+  const values = { ...entry.values };
+  const sample = { ...(data.sample || {}), server: state.overview?.guild?.name || 'your server' };
+  const focusRef = { el: null };
+
+  const card = el('article', 'panel');
+  const head = el('div', 'queue-head');
+  head.append(el('h2', null, entry.label), el('span', 'tag', entry.key));
+  card.append(head, el('p', 'muted', entry.blurb));
+  if (entry.wordingNote) card.append(el('p', 'hint', entry.wordingNote));
+
+  const preview = el('div', 'style-preview');
+  const previewEntry = { ...entry, fixedFields: FIXED_FIELDS[entry.key] || [] };
+  const repaint = () => {
+    preview.replaceChildren(
+      values.enabled === false
+        ? el('p', 'muted', 'Switched off — this message is not sent at all.')
+        : stylePreview(previewEntry, values, sample),
+    );
+  };
+
+  const fields = el('div');
+  for (const part of entry.parts) {
+    if (part === 'enabled') {
+      fields.append(toggle(PART_LABEL.enabled, values.enabled !== false, v => { values.enabled = v; repaint(); }));
+    } else if (part === 'color') {
+      fields.append(colorField('Colour', values.color, v => { values.color = v; repaint(); }));
+    } else if (part === 'title') {
+      fields.append(textField(entry.shape === 'action' ? 'The line' : 'Title',
+        values.title, v => { values.title = v; repaint(); }));
+    } else if (part === 'body') {
+      fields.append(areaField(entry.bodyLabel || 'Body', values.body, v => { values.body = v; repaint(); }, 3));
+      if (entry.bodyHint) fields.append(el('p', 'hint', entry.bodyHint));
+    } else if (part === 'footer') {
+      fields.append(textField('Footer', values.footer, v => { values.footer = v; repaint(); }));
+    } else if (part === 'thumbnail' || part === 'timestamp') {
+      fields.append(toggle(PART_LABEL[part], !!values[part], v => { values[part] = v; repaint(); }));
+    }
+  }
+  card.append(trackFocus(fields, focusRef));
+  card.append(tokenChips(entry.tokens, focusRef));
+
+  const save = el('button', 'btn primary small', 'Save');
+  save.type = 'button';
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    save.textContent = 'Saving…';
+    try {
+      const payload = { key: entry.key };
+      for (const part of entry.parts) payload[part] = values[part];
+      const res = await post('appearance', payload);
+      if (res?.ok) {
+        state.overview = await get(`/api/guild/${state.guildId}`);
+        renderOverview();
+      }
+    } finally {
+      save.disabled = false;
+      save.textContent = 'Save';
+    }
+  });
+
+  const revert = el('button', 'btn small', 'Undo my edits');
+  revert.type = 'button';
+  revert.addEventListener('click', () => renderAppearance());
+
+  const reset = el('button', 'btn small danger', 'Back to default');
+  reset.type = 'button';
+  reset.disabled = !entry.changed;
+  reset.addEventListener('click', async () => {
+    if (!await askConfirm({
+      title: `Put "${entry.label}" back?`,
+      message: 'Your wording and colour for this one message are dropped and the shipped version comes back. Nothing else is touched.',
+      confirmLabel: 'Put it back',
+    })) return;
+    const res = await post('appearancereset', { key: entry.key });
+    if (res?.ok) {
+      state.overview = await get(`/api/guild/${state.guildId}`);
+      renderOverview();
+    }
+  });
+
+  const foot = el('div', 'actions');
+  foot.append(save, revert, reset);
+  card.append(foot);
+
+  const shown = el('article', 'panel');
+  shown.append(el('h2', null, 'How it will look'), preview,
+    el('p', 'hint', 'A likeness, not a screenshot. The names and numbers are stand-ins — the real ones go in when it is sent.'));
+
+  repaint();
+  body.replaceChildren(card, shown);
 }
 
 /* ── start a giveaway ──────────────────────────────────────────────────── */

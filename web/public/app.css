@@ -724,6 +724,51 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb-btns span.Danger  { background: #DA373C; }
 .demb-btns span.link::after { content: ' ↗'; opacity: 0.8; }
 
+/* Appearance ─────────────────────────────────────────────────────────────
+   The compact action card puts its line in the author slot so the avatar sits
+   beside it; `.lead` is that line being the message rather than a byline. */
+.demb .a.lead { font-size: 0.9rem; font-weight: 600; color: #F2F3F5; margin-bottom: 0.3rem; }
+.demb .a .av {
+  width: 1.4rem; height: 1.4rem; border-radius: 50%; flex: 0 0 auto;
+  background: linear-gradient(135deg, #5865F2, #949BA4);
+}
+.demb .f.fixed { opacity: 0.45; }
+.demb .f.fixed span { font-style: italic; }
+/* Where the corner picture goes, drawn as an outline so the space it takes is
+   visible without pretending to know which avatar will be in it. */
+.demb.has-thumb { position: relative; padding-right: 4.2rem; }
+.demb.has-thumb::after {
+  content: ''; position: absolute; top: 0.65rem; right: 0.85rem;
+  width: 2.8rem; height: 2.8rem; border-radius: 4px;
+  border: 1px dashed #4E5058; background: #313338;
+}
+
+/* Not capped and scrolling the way the Composer's list is: this one is
+   grouped, and a scroll box inside a column that already scrolls hides the
+   headings that make it navigable. */
+#appearance-index { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.7rem; }
+
+.style-preview { display: grid; gap: 0.6rem; }
+
+.color-row { display: flex; gap: 0.5rem; align-items: center; }
+.color-row input[type="color"] {
+  width: 2.6rem; height: 2.4rem; padding: 0; flex: 0 0 auto;
+  border: 1px solid var(--rule); border-radius: 8px; background: none; cursor: pointer;
+}
+.color-row input[type="text"] { flex: 1 1 auto; font-family: var(--mono, monospace); text-transform: uppercase; }
+.color-row input[type="text"].bad { border-color: var(--bad, #FF4757); }
+
+.chip-toggle.mono { font-family: var(--mono, monospace); font-size: 0.78rem; }
+
+/* The group headings down the message list. */
+.index-group {
+  margin: 0.9rem 0 0.3rem; padding: 0 0.2rem;
+  font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--dim); font-weight: 700;
+}
+.index-group:first-child { margin-top: 0; }
+.tag.on { background: var(--accent); color: #fff; }
+
 /* All of it is decoration. Anyone who has asked their device to stop moving
    things gets a panel that simply appears. */
 @media (prefers-reduced-motion: reduce) {

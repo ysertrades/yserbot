@@ -22,7 +22,7 @@ module.exports = {
       await sendModLog(interaction.guild, 'unban', user, interaction.user, reason, {});
 
       return interaction.reply({
-        embeds: [memberAction({ user, action: 'unban', reason })],
+        embeds: [memberAction({ guild: interaction.guild, user, action: 'unban', reason })],
       });
     } catch {
       return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Failed to unban. Make sure the ID is correct.' }, interaction.guild)] });

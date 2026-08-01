@@ -1,6 +1,6 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { readJson } = require('../utils/jsonStorage');
-const { createServerEmbed } = require('../utils/embedBuilder');
+const messageStyle = require('../utils/messageStyle');
 const { getModLogSettings } = require('../utils/modConfig');
 const { postCustomLog } = require('../utils/modLog');
 
@@ -36,14 +36,22 @@ module.exports = {
                     fields.push({ name: '⏳ Time in Server', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true });
                 }
 
-                const embed = createServerEmbed('leave', {
-                    title: '🍂 A Leaf Has Fallen',
-                    description,
-                    thumbnail: member.user.displayAvatarURL({ size: 256, dynamic: true }),
+                // The colour, heading and footer come from the panel; the
+                // sentence in the middle stays the Leave message on the
+                // Settings screen so there is only one place to write it.
+                const embed = messageStyle.build(member.guild.id, 'member.leave', {
                     fields,
-                    footer: `Farewell from ${member.guild.name} 🍂`,
-                }, member.guild);
-                try { await channel.send({ embeds: [embed] }); } catch {}
+                    thumbnailURL: member.user.displayAvatarURL({ size: 256, dynamic: true }),
+                    tokens: {
+                        user: member.user.tag,
+                        server: member.guild.name,
+                        members: member.guild.memberCount,
+                    },
+                });
+                if (embed) {
+                    try { embed.setDescription(description); } catch {}
+                    try { await channel.send({ embeds: [embed] }); } catch {}
+                }
             }
         }
     },

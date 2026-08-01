@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createEmbed } = require('../utils/embedBuilder');
+const messageStyle = require('../utils/messageStyle');
 const { addCoins } = require('../utils/economyManager');
 const { getModLogSettings } = require('../utils/modConfig');
 const { postCustomLog } = require('../utils/modLog');
@@ -74,7 +75,8 @@ module.exports = {
         const eligibleForBonus = !isReturning;
         if (eligibleForBonus) addCoins(member.id, WELCOME_BONUS);
 
-        if (guildConfig.welcomeChannel) {
+        const welcomeStyle = messageStyle.styleFor(member.guild.id, 'member.welcome');
+        if (guildConfig.welcomeChannel && welcomeStyle.enabled) {
             const channel = member.guild.channels.cache.get(guildConfig.welcomeChannel);
             if (channel) {
                 const avatarPng = await fetchAvatarPng(member.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true }));
@@ -86,9 +88,26 @@ module.exports = {
                     bonusText: eligibleForBonus ? `+${WELCOME_BONUS.toLocaleString()} Coins` : null,
                     isReturning,
                 });
-                const embed = createEmbed('welcome', { image: 'attachment://welcome.png' }).setTimestamp(null);
+                const embed = createEmbed('welcome', {
+                    image: 'attachment://welcome.png',
+                    color: welcomeStyle.color,
+                    timestamp: false,
+                });
                 const file = new AttachmentBuilder(image, { name: 'welcome.png' });
-                try { await channel.send({ content: `<@${member.id}>`, embeds: [embed], files: [file], allowedMentions: { users: [member.id] } }); } catch {}
+                // The line above the card, usually just their mention. Cleared
+                // in the panel means the card is posted on its own, with no
+                // ping — some servers want the welcome without the noise.
+                const content = messageStyle.fill(welcomeStyle.body, {
+                    user: `<@${member.id}>`,
+                    server: member.guild.name,
+                    members: member.guild.memberCount,
+                }) || undefined;
+                try {
+                    await channel.send({
+                        content, embeds: [embed], files: [file],
+                        allowedMentions: { users: content ? [member.id] : [] },
+                    });
+                } catch {}
             }
         }
     },

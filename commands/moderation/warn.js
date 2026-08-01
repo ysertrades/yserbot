@@ -28,14 +28,15 @@ module.exports = {
     // /warnings; repeating them here is what made this card three times the
     // height of the thing it was announcing.
     await interaction.reply({
-      embeds: [memberAction({ user, member, action: 'warn', reason })],
+      embeds: [memberAction({ guild: interaction.guild, user, member, action: 'warn', reason })],
     });
 
     if (autoPunish) {
       await interaction.followUp({
         embeds: [memberAction({
-          user, member, action: autoPunish.action,
+          guild: interaction.guild, user, member, action: autoPunish.action,
           reason: `reached ${autoPunish.threshold} warnings`,
+          tokens: { duration: 'the configured time' },
         })],
       });
     }

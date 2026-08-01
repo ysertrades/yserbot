@@ -41,7 +41,7 @@ module.exports = {
     return interaction.reply({
       // How long is the one extra fact that cannot be worked out from
       // anywhere else, so it rides on the same line as the reason.
-      embeds: [memberAction({ user, member, action: 'timeout', reason, note: `**For:** ${durationStr}` })],
+      embeds: [memberAction({ guild: interaction.guild, user, member, action: 'timeout', reason, tokens: { duration: durationStr } })],
     });
   },
 };

@@ -2,6 +2,7 @@
 
 const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { createServerEmbed, sendTempReply: sendTempEphemeralReply } = require('../../utils/embedBuilder');
+const messageStyle = require('../../utils/messageStyle');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 // ── Inactivity timer store ────────────────────────────────────────────────
@@ -247,11 +248,15 @@ module.exports = {
 
     await channel.send({
       content: supportRoleId ? `<@&${supportRoleId}>` : undefined,
-      embeds: [createServerEmbed('ticket', {
-        title: '🎫 Ticket Opened',
-        description: `Welcome ${interaction.user}! A support member will be with you shortly.\n\nDescribe your issue in detail below.`,
+      embeds: [messageStyle.build(guild.id, 'ticket.opened', {
         fields: supportRoleId ? [{ name: 'Support Team', value: `<@&${supportRoleId}>`, inline: false }] : [],
-      }, guild)],
+        tokens: {
+          user: `${interaction.user}`,
+          server: guild.name,
+          support: supportRoleId ? `<@&${supportRoleId}>` : '',
+          channel: `${channel}`,
+        },
+      })],
       components: [closeRow],
     });
 
