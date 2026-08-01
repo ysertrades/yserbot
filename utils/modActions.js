@@ -38,7 +38,13 @@ const ACTIONS = {
 function appendCase(guildId, entry) {
   const cases = readJson(FILE, {});
   const list = cases[guildId] || [];
-  const id = list.length + 1;
+  // One past the highest number ever handed out, not one past the length.
+  // Those are the same thing only while nothing is ever removed, and clearing
+  // a member's warnings used to remove them — so the next kick took a number
+  // that was already on an older case, and two rows in /cases claimed to be
+  // the same one. Clearing marks now rather than deletes, and this is the
+  // second lock on the same door.
+  const id = list.reduce((max, c) => Math.max(max, Number(c.id) || 0), 0) + 1;
   const record = { id, timestamp: Date.now(), ...entry };
   list.push(record);
   cases[guildId] = list;
@@ -50,8 +56,9 @@ function casesFor(guildId) {
   return readJson(FILE, {})[guildId] || [];
 }
 
+/** A member's warnings that still count — cleared ones are history, not strikes. */
 function warningsFor(guildId, userId) {
-  return casesFor(guildId).filter(c => c.type === 'warn' && c.userId === userId);
+  return casesFor(guildId).filter(c => c.type === 'warn' && c.userId === userId && !c.clearedAt);
 }
 
 /**
@@ -63,10 +70,18 @@ function warningsFor(guildId, userId) {
 function clearWarnings(guildId, userId) {
   const cases = readJson(FILE, {});
   const list = cases[guildId] || [];
-  const before = list.length;
-  cases[guildId] = list.filter(c => !(c.type === 'warn' && c.userId === userId));
-  writeJson(FILE, cases);
-  return before - cases[guildId].length;
+  let cleared = 0;
+  const now = Date.now();
+  for (const c of list) {
+    if (c.type !== 'warn' || c.userId !== userId || c.clearedAt) continue;
+    // Marked, not deleted. Forgiving a warning should stop it counting
+    // towards the next punishment, not erase that it happened — and deleting
+    // rows is what let a later case take a number that was already used.
+    c.clearedAt = now;
+    cleared++;
+  }
+  if (cleared) { cases[guildId] = list; writeJson(FILE, cases); }
+  return cleared;
 }
 
 /**

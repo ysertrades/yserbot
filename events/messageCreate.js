@@ -4,6 +4,7 @@ const { Events, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyl
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createServerEmbed } = require('../utils/embedBuilder');
 const { pickRandomCard, buildDropEmbed, buildClaimedEmbed } = require('../utils/cardsManager');
+const { memberAction } = require('../utils/modEmbed');
 
 if (!global.cardDrops)         global.cardDrops         = new Map();
 if (!global.cardMessageCounts) global.cardMessageCounts = new Map(); // key: "guildId:channelId"
@@ -87,14 +88,14 @@ async function handleLeveling(message) {
     }
 
     try {
-      const embed = createServerEmbed('success', {
-        title: '🎉 Level Up!',
-        description: `${message.author} reached **Level ${guildData.users[userId].level}**!`,
-        fields: [
-          { name: 'Total XP',  value: `${guildData.users[userId].totalXp}`, inline: true },
-          { name: 'Messages',  value: `${guildData.users[userId].messages}`, inline: true },
-        ],
-      }, message.guild);
+      // Announced in whatever channel they were talking in, so it is kept to
+      // the one fact that is news. The running totals are in /rank.
+      const embed = memberAction({
+        user: message.author,
+        member: message.member,
+        action: 'levelup',
+        note: `**Level ${guildData.users[userId].level}** 🎉`,
+      });
       await message.channel.send({ embeds: [embed] });
     } catch {}
   }

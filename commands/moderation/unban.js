@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { sendModLog } = require('../../utils/modLog');
+const { memberAction } = require('../../utils/modEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -21,11 +22,7 @@ module.exports = {
       await sendModLog(interaction.guild, 'unban', user, interaction.user, reason, {});
 
       return interaction.reply({
-        embeds: [createServerEmbed('success', {
-          title: '🔓 User Unbanned',
-          description: `<@${userId}> (\`${user.tag}\`) has been unbanned.`,
-          fields: [{ name: '📋 Reason', value: reason }],
-        }, interaction.guild)],
+        embeds: [memberAction({ user, action: 'unban', reason })],
       });
     } catch {
       return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Failed to unban. Make sure the ID is correct.' }, interaction.guild)] });

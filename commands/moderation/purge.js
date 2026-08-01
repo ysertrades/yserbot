@@ -1,9 +1,9 @@
 'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-const { createServerEmbed } = require('../../utils/embedBuilder');
 const { getModLogSettings } = require('../../utils/modConfig');
 const { postCustomLog, suppressDeleteLog } = require('../../utils/modLog');
+const { serverAction, memberAction } = require('../../utils/modEmbed');
 
 const DEL_DELAY  = 2000; // 2 seconds for clear messages
 const TWO_WEEKS  = 1209600000; // Discord's bulkDelete cutoff, in ms
@@ -58,7 +58,7 @@ module.exports = {
 
     if (sub === 'amount') {
       const amount    = interaction.options.getInteger('number');
-      const statusMsg = await interaction.reply({ embeds: [createServerEmbed('info', { title: '🧹 Clearing...', description: `Deleting **${amount}** messages.` }, interaction.guild)], fetchReply: true });
+      const statusMsg = await interaction.reply({ embeds: [serverAction({ guild: interaction.guild, title: `Clearing ${amount} messages…` })], fetchReply: true });
 
       try {
         // Paginate in batches of <=100 (Discord's fetch cap) rather than one
@@ -86,18 +86,18 @@ module.exports = {
         }
 
         const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
-        await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages.${note}` }, interaction.guild)] });
+        await interaction.editReply({ embeds: [serverAction({ guild: interaction.guild, title: `Deleted ${deleted} message${deleted === 1 ? '' : 's'}`, note: note.trim() || null, color: 0x2ECC71 })] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
         await logPurge(interaction.guild, interaction.user, interaction.member, channel, deleted);
       } catch {
-        await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
+        await interaction.editReply({ embeds: [serverAction({ guild: interaction.guild, title: 'Could not delete those messages', color: 0xE74C3C })] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
       }
 
     } else if (sub === 'user') {
       const user      = interaction.options.getUser('user');
       const amount    = interaction.options.getInteger('number');
-      const statusMsg = await interaction.reply({ embeds: [createServerEmbed('info', { title: '🧹 Clearing...', description: `Deleting up to **${amount}** messages from **${user.tag}**.` }, interaction.guild)], fetchReply: true });
+      const statusMsg = await interaction.reply({ embeds: [memberAction({ user, action: 'purge', note: `Clearing up to ${amount} of their messages…` })], fetchReply: true });
 
       try {
         let deleted = 0, oldDeleted = 0, lastId = null;
@@ -119,11 +119,11 @@ module.exports = {
           if (old.length > 0)    { const n = await deleteOld(old); deleted += n; oldDeleted += n; }
         }
         const note = oldDeleted > 0 ? ` (${oldDeleted} older than 14 days, deleted individually)` : '';
-        await interaction.editReply({ embeds: [createServerEmbed('success', { title: '✅ Cleared', description: `Deleted **${deleted}** messages from **${user.tag}**.${note}` }, interaction.guild)] });
+        await interaction.editReply({ embeds: [memberAction({ user, action: 'purged', note: `**Deleted:** ${deleted} message${deleted === 1 ? '' : 's'}${note}` })] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
         await logPurge(interaction.guild, interaction.user, interaction.member, channel, deleted, user);
       } catch {
-        await interaction.editReply({ embeds: [createServerEmbed('error', { title: '❌ Error', description: 'Failed to delete messages.' }, interaction.guild)] });
+        await interaction.editReply({ embeds: [serverAction({ guild: interaction.guild, title: 'Could not delete those messages', color: 0xE74C3C })] });
         setTimeout(() => interaction.deleteReply().catch(() => {}), DEL_DELAY);
       }
     }

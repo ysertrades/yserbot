@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { sendModLog, dmUser } = require('../../utils/modLog');
+const { memberAction } = require('../../utils/modEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -23,11 +24,7 @@ module.exports = {
     await sendModLog(interaction.guild, 'unmute', user, interaction.user, reason, {});
 
     return interaction.reply({
-      embeds: [createServerEmbed('success', {
-        title: '🔊 Timeout Removed',
-        description: `<@${user.id}>'s timeout has been removed.`,
-        fields: [{ name: '📋 Reason', value: reason }],
-      }, interaction.guild)],
+      embeds: [memberAction({ user, member, action: 'unmute', reason })],
     });
   },
 };

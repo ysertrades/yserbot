@@ -81,7 +81,10 @@ function read(guildId, guild) {
   // actually wants, rather than one lookup at a time through /warnings.
   const byUser = new Map();
   for (const c of cases) {
-    if (c.type !== 'warn') continue;
+    // A cleared warning stays in the log as history, but it is not a strike any
+    // more — it must not keep a member on this list after a moderator has
+    // forgiven them.
+    if (c.type !== 'warn' || c.clearedAt) continue;
     const seen = byUser.get(c.userId) || { userId: c.userId, tag: c.userTag, count: 0, last: 0 };
     seen.count++;
     seen.last = Math.max(seen.last, c.timestamp || 0);

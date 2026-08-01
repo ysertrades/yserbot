@@ -86,8 +86,12 @@ function decorateTitle(type, title) {
 
 function createEmbed(type, options = {}) {
     const embed = new EmbedBuilder()
-        .setColor(options.color || colors[type] || colors.info)
-        .setTimestamp();
+        .setColor(options.color || colors[type] || colors.info);
+
+    // Pass `timestamp: false` to leave it off. Discord already prints the time
+    // beside every message, so on a one-line confirmation the stamp is a whole
+    // extra row saying something the client said already.
+    if (options.timestamp !== false) embed.setTimestamp();
 
     if (options.title) embed.setTitle(decorateTitle(type, options.title));
     if (options.description) embed.setDescription(options.description);
@@ -107,13 +111,25 @@ function createEmbed(type, options = {}) {
     return embed;
 }
 
-// Guild-flavored variant: adds a consistent brand footer and a small
-// author tag (server icon + name) so every embed sent by the bot — not just
-// the ones that already set a thumbnail/author — carries the same polish.
+// Guild-flavored variant: adds a consistent brand footer and a small author
+// tag (server icon + name).
+//
+// It used to add them to everything, which is how a one-line "❌ Not Locked"
+// became a five-line card: an author row saying YSER Flow, the line itself,
+// then a footer repeating the server name and a timestamp Discord had already
+// printed beside the message. Four fifths of it was chrome.
+//
+// So the polish now goes on the things that are actually being read — a card
+// with fields, a picture, or chrome the caller asked for by name. A bare title
+// and a sentence is an acknowledgement, and an acknowledgement is two lines.
 function createServerEmbed(type, options = {}, guild) {
+  const isCard = !!(options.fields?.length || options.image || options.footer || options.author);
+  if (!isCard) return createEmbed(type, { ...options, timestamp: false });
+
   const footerText = options.footer || `${guild?.name || 'Server'} • YSER Flow`;
-const author = options.author || (guild ? { name: 'YSER Flow', iconURL: guild.iconURL?.({ dynamic: true }) || undefined } : undefined);
-return createEmbed(type, { ...options, footer: footerText, author});
+  const author = options.author
+    || (guild ? { name: 'YSER Flow', iconURL: guild.iconURL?.({ dynamic: true }) || undefined } : undefined);
+  return createEmbed(type, { ...options, footer: footerText, author });
 }
 
 const TEMP_REPLY_MS = 5000; // matches the "embed sent" confirmation delay this mirrors

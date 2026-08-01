@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { issueWarning } = require('../../utils/warnUtil');
+const { memberAction } = require('../../utils/modEmbed');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -20,27 +21,22 @@ module.exports = {
     if (member.roles.highest.position >= interaction.member.roles.highest.position)
       return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'You cannot warn this user.' }, interaction.guild)] });
 
-    const { caseId, warnCount, autoPunish } = await issueWarning(interaction.guild, interaction.user, user, member, reason);
+    const { autoPunish } = await issueWarning(interaction.guild, interaction.user, user, member, reason);
 
     // Public reply
+    // The case number and the running total live in the mod log and in
+    // /warnings; repeating them here is what made this card three times the
+    // height of the thing it was announcing.
     await interaction.reply({
-      embeds: [createServerEmbed('success', {
-        title: '⚠️ Warning Issued',
-        description: `<@${user.id}> has been warned.`,
-        fields: [
-          { name: '📋 Reason',       value: reason,            inline: false },
-          { name: '🗂️ Case',         value: `#${caseId}`,      inline: true  },
-          { name: '📊 Total Warns',  value: `${warnCount}`,    inline: true  },
-        ],
-      }, interaction.guild)],
+      embeds: [memberAction({ user, member, action: 'warn', reason })],
     });
 
     if (autoPunish) {
       await interaction.followUp({
-        embeds: [createServerEmbed('info', {
-          title: `🤖 Auto-Punishment: ${autoPunish.action.toUpperCase()}`,
-          description: `<@${user.id}> was automatically ${autoPunish.action}ed after reaching **${autoPunish.threshold}** warnings.`,
-        }, interaction.guild)],
+        embeds: [memberAction({
+          user, member, action: autoPunish.action,
+          reason: `reached ${autoPunish.threshold} warnings`,
+        })],
       });
     }
   },
