@@ -409,6 +409,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 /* The duration echo doubles as the error: it says what was understood, or
    says it wasn't. */
 .field .count.bad { color: var(--warn); }
+
+/* A hint that has turned into a warning — a range that cannot be bet in, a
+   casino with nothing switched on. */
+.hint.bad { color: var(--warn); }
 .chip-toggle {
   font: inherit; font-size: 0.8rem;
   background: var(--sunken); border: 1px solid var(--rule); border-radius: 999px;

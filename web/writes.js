@@ -33,6 +33,7 @@ const giveaways = require('./giveaways');
 const settings = require('./settings');
 const features = require('./features');
 const tickets = require('./tickets');
+const casinoPanel = require('./casino');
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -419,6 +420,13 @@ Object.assign(OPS, {
   async settings(guildId, body, ctx) {
     const r = settings.save(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`, 'settings');
+    return r;
+  },
+
+  /* -- casino ------------------------------------------------------------ */
+  async casino(guildId, body, ctx) {
+    const r = casinoPanel.save(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎰 **Casino** — ${r.changed.join('; ')}`, 'features');
     return r;
   },
 
