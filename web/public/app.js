@@ -21,6 +21,16 @@ const WRITE_ERRORS = {
   bad_csrf:        'Your session expired. Reload the page.',
   forbidden:       'You cannot change that server.',
   body_too_large:  'That is too much text.',
+  unknown_giveaway: 'That giveaway is no longer listed.',
+  channel_gone:    'The channel that giveaway was posted in is gone.',
+  message_deleted: 'The giveaway message was deleted, so there is nothing to end.',
+  end_failed:      'Could not end that giveaway.',
+  reroll_failed:   'Could not reroll that giveaway.',
+  launch_failed:   'Could not start that giveaway.',
+  all_jobs_closed: 'Leave at least one job hiring.',
+  min_above_max:   'The lowest value is above the highest.',
+  bad_duration:    'Use a duration like 30s, 10m, 6h or 2d.',
+  empty_window:    'Boost hour needs a start and an end that differ.',
 };
 
 // Inside someone else's iframe the session cookie may never be sent — Safari
@@ -196,7 +206,12 @@ async function post(op, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    toast(WRITE_ERRORS[data.error] || 'That change did not save.', 'bad');
+    // The detail is the reason the bot actually gave. "That change did not
+    // save" told you nothing about why, and the why was sitting right there in
+    // the response the whole time.
+    const known = WRITE_ERRORS[data.error];
+    const why = typeof data.detail === 'string' && data.detail.trim() ? data.detail.trim() : null;
+    toast([known || 'That change did not save.', why].filter(Boolean).join(' — '), 'bad');
     return null;
   }
   if (data.unchanged) { toast('Nothing to change.'); return data; }

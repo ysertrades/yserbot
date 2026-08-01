@@ -11,7 +11,6 @@ const {
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
 const { parseDuration } = require('../../utils/duration');
-const { isDynamicImage, dynamicAttachmentRef, collectDynamicAttachments } = require('../../utils/dynamicEmbedImages');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 
 const GOLD         = 0xFFD700;
@@ -330,14 +329,9 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
 
   // A generated banner is not a URL — it has to be drawn, attached, and then
   // referenced as attachment://. Anything else is treated as an ordinary link.
-  const files = [];
-  if (isDynamicImage(imageUrl)) {
-    const ref = dynamicAttachmentRef(imageUrl);
-    const drawn = collectDynamicAttachments({ embeds: [{ image: imageUrl }] }, guildId);
-    if (ref && drawn.length) { embed.setImage(ref); files.push(...drawn); }
-  } else if (imageUrl) {
-    embed.setImage(imageUrl);
-  }
+  // The same helper the end and reroll paths use, so a banner that posts is a
+  // banner that can be put back on the result.
+  const files = applyEmbedImage(embed, imageUrl, guildId);
   const thumb = guild.iconURL({ dynamic: true }) || hostAvatarUrl;
   if (thumb) embed.setThumbnail(thumb);
 
@@ -465,7 +459,11 @@ async function endGiveaway(message, meta) {
       .setFooter({ text: 'Better luck next time!' })
       .setTimestamp();
     const endFiles = applyEmbedImage(embed, imageUrl, guildId);
-    await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles(endFiles) });
+    try {
+      await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles(endFiles) });
+    } catch (err) {
+      console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);
+    }
     removeActiveGiveaway(message.id);
     global.giveawayEntrants.delete(message.id);
     global.giveawayMeta?.delete(message.id);
@@ -504,9 +502,19 @@ async function endGiveaway(message, meta) {
     )
     .setFooter({ text: `Congratulations! 🎉 • ID: ${shortId}` })
     .setTimestamp();
-  if (imageUrl) embed.setImage(imageUrl);
+  const endFiles = applyEmbedImage(embed, imageUrl, guildId);
 
-  await message.edit({ embeds: [embed], components: [disabledRow] });
+  // The edit is the only part of ending that can fail — a deleted message, a
+  // lost permission, an image Discord will not take. The draw has already
+  // happened and is already written down, so a failure here must not stop the
+  // giveaway from being marked finished: leaving it active meant it showed as
+  // running forever and every fresh attempt to end it drew a new set of
+  // winners and wrote another finished record.
+  try {
+    await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles(endFiles) });
+  } catch (err) {
+    console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);
+  }
   removeActiveGiveaway(message.id);
   global.giveawayEntrants.delete(message.id);
   global.giveawayMeta?.delete(message.id);
@@ -565,7 +573,10 @@ async function performReroll(guild, shortId) {
       )
       .setFooter({ text: `Rerolled 🎲 • ID: ${shortId}` })
       .setTimestamp();
-    const rerollFiles = applyEmbedImage(updEmbed, data.imageUrl, data.guildId);
+    // guildId, not data.guildId — the ended record never stored one, so the
+    // banner was being drawn with the factory wording rather than whatever
+    // this server typed into Studio.
+    const rerollFiles = applyEmbedImage(updEmbed, data.imageUrl, guildId);
     await origMsg.edit({ embeds: [updEmbed], ...replaceFiles(rerollFiles) }).catch(() => {});
   } catch { /* original message may be gone — the reroll itself still succeeded */ }
 
