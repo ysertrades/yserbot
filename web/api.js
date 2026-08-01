@@ -29,6 +29,7 @@ const settings = require('./settings');
 const features = require('./features');
 const tickets = require('./tickets');
 const casino = require('./casino');
+const links = require('./links');
 
 /** Guilds this session may open, as the picker needs them. */
 function me(session, client) {
@@ -184,6 +185,7 @@ async function guildOverview(guildId, client) {
     features: features.read(guildId, guild),
     tickets: tickets.read(guildId, guild),
     casino: casino.read(guildId),
+    links: links.read(guildId, guild),
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,

@@ -34,6 +34,7 @@ const settings = require('./settings');
 const features = require('./features');
 const tickets = require('./tickets');
 const casinoPanel = require('./casino');
+const links = require('./links');
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -420,6 +421,31 @@ Object.assign(OPS, {
   async settings(guildId, body, ctx) {
     const r = settings.save(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `⚙️ **Server settings** — ${r.changed.join('; ')} updated`, 'settings');
+    return r;
+  },
+
+  /* -- link approval requests -------------------------------------------- */
+  async linkrequest(guildId, body, ctx) {
+    const r = await links.decide(guildId, body, ctx);
+    if (!r.ok) return r;
+    const who = `<@${r.userId}>`;
+    if (r.action === 'approve') {
+      await announce(ctx.client, guildId, ctx.session,
+        `🔗 **Link approved** for ${who} — \`${r.link}\` · one link per ${r.cooldownLabel}`, 'moderation');
+    } else if (r.action === 'deny') {
+      await announce(ctx.client, guildId, ctx.session, `🔗 **Link denied** for ${who} — \`${r.link}\``, 'moderation');
+    } else {
+      await announce(ctx.client, guildId, ctx.session,
+        `🔗 Discarded a stale link request from ${who} without notifying them`, 'moderation');
+    }
+    return r;
+  },
+  async linkrevoke(guildId, body, ctx) {
+    const r = links.revoke(guildId, body, ctx);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🔗 Link permission revoked for <@${r.userId}> — they must ask again`, 'moderation');
+    }
     return r;
   },
 

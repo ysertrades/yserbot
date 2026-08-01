@@ -62,7 +62,34 @@ function getAllActiveRequests(guildId) {
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
+/**
+ * What this person has asked for before, so a card can say whether they are a
+ * regular or a first-timer. Counted from the same store, so it needs no extra
+ * bookkeeping and cannot drift out of step with the requests themselves.
+ */
+function getUserHistory(guildId, userId) {
+  const all = readJson(FILE, {});
+  let approved = 0, denied = 0, total = 0;
+  for (const r of Object.values(all)) {
+    if (r.guildId !== guildId || r.userId !== userId) continue;
+    total++;
+    if (r.status === 'approved') approved++;
+    else if (r.status === 'denied') denied++;
+  }
+  return { approved, denied, total };
+}
+
+/** Recently decided requests, newest first — the panel's history list. */
+function getDecidedRequests(guildId, limit = 20) {
+  const all = readJson(FILE, {});
+  return Object.values(all)
+    .filter(r => r.guildId === guildId && (r.status === 'approved' || r.status === 'denied'))
+    .sort((a, b) => (b.decidedAt || b.createdAt || 0) - (a.decidedAt || a.createdAt || 0))
+    .slice(0, limit);
+}
+
 module.exports = {
   createRequest, getRequest, updateRequest, deleteRequest,
-  findActiveRequest, getAllActiveRequests, extractLink, LINK_REGEX,
+  findActiveRequest, getAllActiveRequests, getUserHistory, getDecidedRequests,
+  extractLink, LINK_REGEX,
 };

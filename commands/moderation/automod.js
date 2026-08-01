@@ -15,8 +15,10 @@ const { issueWarning } = require('../../utils/warnUtil');
 const { postCustomLog, suppressDeleteLog } = require('../../utils/modLog');
 const {
   createRequest, getRequest, updateRequest, deleteRequest,
-  findActiveRequest, getAllActiveRequests, LINK_REGEX,
+  findActiveRequest, getAllActiveRequests, getUserHistory, LINK_REGEX,
 } = require('../../utils/linkRequests');
+const { analyse, humanAge, flagLines, severity } = require('../../utils/linkInsight');
+const linkDecisions = require('../../utils/linkDecisions');
 const { evaluate, consumeAllowed, lockAfterViolation, grantPermit, getRecord, clearRecord, getAllPermits } = require('../../utils/linkPermits');
 
 const FEATURES = [
@@ -349,21 +351,80 @@ async function handleLinkRequestButton(interaction, requestId) {
   return interaction.showModal(modal);
 }
 
-// Shared by the mod-log approval card and /automod requests' manage panel —
-// both need the exact same request details and Approve/Deny buttons.
-function buildRequestCardEmbed(request) {
-  return new EmbedBuilder()
-    .setColor(0xF39C12)
+/**
+ * The approval card.
+ *
+ * Shared by the mod-log post and /automod requests' manage panel. It used to
+ * be the link, a reason, and nothing else — which makes every request look
+ * identical, so a two-year regular sharing their own site reads the same as an
+ * account made this morning posting a shortener.
+ *
+ * It now leads with who is asking and what is being asked for, and carries a
+ * signals block drawn from things that cannot be talked around: the domain
+ * itself, how old the account is, how long they have been here, and how their
+ * previous requests went. The colour follows the worst signal, so a card that
+ * needs a careful read looks different across the channel from one that does
+ * not.
+ *
+ * @param {object} request
+ * @param {object} [guild] used for member/account age; the card degrades
+ *   gracefully without it.
+ */
+function buildRequestCardEmbed(request, guild) {
+  const member = guild?.members?.cache?.get(request.userId) || null;
+  const history = getUserHistory(request.guildId, request.userId);
+  const insight = analyse(request.link || request.originalContent, {
+    // Discord snowflakes carry their own creation time, so this needs no fetch.
+    accountCreatedAt: snowflakeTime(request.userId),
+    joinedAt: member?.joinedTimestamp,
+    history,
+  });
+
+  const COLOURS = { danger: 0xE74C3C, warn: 0xF39C12, clear: 0x5865F2 };
+  const seen = history.total > 1 ? `${history.total - 1} previous request${history.total - 1 === 1 ? '' : 's'} · ✅ ${history.approved} · ❌ ${history.denied}` : 'First request from this member';
+
+  const original = request.originalContent && request.originalContent !== request.link
+    ? (request.originalContent.length > 300 ? `${request.originalContent.slice(0, 300)}…` : request.originalContent)
+    : null;
+
+  const embed = new EmbedBuilder()
+    .setColor(COLOURS[severity(insight.flags)])
     .setTitle('🔗 Link Approval Request')
-    .addFields(
-      { name: 'User',             value: `<@${request.userId}> \`${request.userTag}\``, inline: true },
-      { name: 'Channel',          value: `<#${request.channelId}>`,                      inline: true },
-      { name: 'Link',             value: request.link || '*(none)*',                     inline: false },
-      { name: 'Reason',           value: request.reason || '*(none)*',                   inline: false },
-      { name: 'Original Message', value: request.originalContent ? (request.originalContent.length > 300 ? `${request.originalContent.slice(0, 300)}…` : request.originalContent) : '*(link only)*', inline: false },
+    .setDescription(
+      `<@${request.userId}> wants to post a link in <#${request.channelId}>.\n` +
+      `**\`${insight.domain || 'unreadable address'}\`**`,
     )
-    .setFooter({ text: `Request #${request.id} • Admins only` })
-    .setTimestamp();
+    .addFields(
+      {
+        name: '👤 Who is asking',
+        value: `\`${request.userTag}\`\nAccount ${humanAge(snowflakeTime(request.userId))} old${member?.joinedTimestamp ? ` · here ${humanAge(member.joinedTimestamp)}` : ''}\n${seen}`,
+        inline: true,
+      },
+      {
+        name: '🔎 Signals',
+        value: flagLines(insight.flags),
+        inline: true,
+      },
+      { name: '🌐 The link', value: `\`\`\`\n${(request.link || '(none)').slice(0, 400)}\n\`\`\``, inline: false },
+      { name: '💬 Their reason', value: request.reason ? request.reason.slice(0, 500) : '*(none given)*', inline: false },
+    );
+
+  if (original) embed.addFields({ name: '📝 The message it came from', value: original, inline: false });
+
+  return embed
+    .setFooter({ text: `Request #${request.id} • Approve grants one link per cooldown • Admins only` })
+    .setTimestamp(request.createdAt || Date.now());
+}
+
+/**
+ * When a Discord id was created.
+ *
+ * Every snowflake embeds its own timestamp, so account age needs no API call —
+ * which matters on a card built while a message is being handled.
+ */
+function snowflakeTime(id) {
+  try { return Number((BigInt(id) >> 22n) + 1420070400000n); }
+  catch { return NaN; }
 }
 
 function buildRequestCardRow(requestId) {
@@ -387,7 +448,7 @@ async function handleLinkModalSubmit(interaction, requestId) {
     return interaction.reply({ content: '⚠️ This server hasn\'t set up a mod-log channel yet, so your request can\'t be reviewed. Contact an admin about `/config logs`.', flags: MessageFlags.Ephemeral });
   }
 
-  await modLogChannel.send({ embeds: [buildRequestCardEmbed(updated)], components: [buildRequestCardRow(requestId)] }).catch(() => {});
+  await modLogChannel.send({ embeds: [buildRequestCardEmbed(updated, guild)], components: [buildRequestCardRow(requestId)] }).catch(() => {});
 
   return sendTempReply(interaction, {
     embeds: [createServerEmbed('success', { title: '📨 Request Sent', description: 'Your link request has been sent to the moderators for review. You\'ll be notified when it\'s handled.' }, interaction.guild)],
@@ -426,31 +487,21 @@ async function handleLinkApproveModalSubmit(interaction, requestId) {
     return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
   }
 
-  const raw   = interaction.fields.getTextInputValue('cooldown').trim();
-  const match = raw.match(/^(\d+)([smhd])$/i);
-  if (!match) {
-    return interaction.reply({ content: '❌ Invalid cooldown format. Use something like `30m`, `1h`, `24h`, or `7d`.', flags: MessageFlags.Ephemeral });
-  }
-  const cooldownMs = parseInt(match[1], 10) * { s: 1000, m: 60000, h: 3600000, d: 86400000 }[match[2].toLowerCase()];
+  const raw = interaction.fields.getTextInputValue('cooldown').trim();
 
-  updateRequest(requestId, { status: 'approved', cooldownLabel: raw });
-  grantPermit(request.guildId, request.userId, cooldownMs);
-
-  const targetChannel = interaction.guild.channels.cache.get(request.channelId);
-  if (targetChannel) {
-    // The reposted link is the actual approved content — it stays public
-    // and persistent, unlike the status notice below.
-    await targetChannel.send({ content: `🔗 **${request.userTag}** (link approved by ${interaction.user.tag}):\n${request.originalContent || request.link}` }).catch(() => {});
-    const user = await interaction.client.users.fetch(request.userId).catch(() => null);
-    if (user) {
-      await sendPrivateNotice(targetChannel, user, new EmbedBuilder()
-        .setColor(0x2ECC71)
-        .setTitle('✅ Link Request Approved')
-        .setDescription(`You can post **one more link every ${raw}**. Post another before the cooldown's up and this permission is revoked — you'd need to request approval again.`), [], 20_000);
+  // Granting the permit, reposting the link and telling the member all live in
+  // utils/linkDecisions so the panel does exactly the same thing.
+  const result = await linkDecisions.approve({
+    client: interaction.client, requestId, cooldown: raw, by: interaction.user.tag,
+  });
+  if (!result.ok) {
+    if (result.error === 'bad_cooldown') {
+      return interaction.reply({ content: '❌ Invalid cooldown format. Use something like `30m`, `1h`, `24h`, or `7d`.', flags: MessageFlags.Ephemeral });
     }
+    return interaction.reply({ content: `⌛ ${result.error === 'already_decided' ? `This request was already **${result.status}**.` : 'This request no longer exists.'}`, flags: MessageFlags.Ephemeral });
   }
 
-  const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: `✅ Approved by ${interaction.user.tag} • Cooldown: ${raw}` });
+  const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor(0x2ECC71).setFooter({ text: `✅ Approved by ${interaction.user.tag} • Cooldown: ${result.cooldownLabel}` });
   return interaction.update({ embeds: [updatedEmbed], components: [] });
 }
 
@@ -463,21 +514,9 @@ async function handleLinkDeny(interaction, requestId) {
   if (request.status === 'approved' || request.status === 'denied') {
     return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
   }
-  updateRequest(requestId, { status: 'denied' });
-
   const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0]).setColor(0xE74C3C).setFooter({ text: `❌ Denied by ${interaction.user.tag}` });
   await interaction.update({ embeds: [updatedEmbed], components: [] });
-
-  const targetChannel = interaction.guild.channels.cache.get(request.channelId);
-  if (targetChannel) {
-    const user = await interaction.client.users.fetch(request.userId).catch(() => null);
-    if (user) {
-      await sendPrivateNotice(targetChannel, user, new EmbedBuilder()
-        .setColor(0xE74C3C)
-        .setTitle('❌ Link Request Denied')
-        .setDescription(`Your link request was denied by ${interaction.user.tag}.`), [], 20_000);
-    }
-  }
+  await linkDecisions.deny({ client: interaction.client, requestId, by: interaction.user.tag });
 }
 
 // ── /automod cooldowns — list every active permit, with select-to-manage ───
@@ -671,7 +710,7 @@ function buildRequestsListPayload(guild) {
   return { embeds: [embed], components };
 }
 
-function buildRequestManagePayload(request) {
+function buildRequestManagePayload(request, guild) {
   if (request.status === 'pending_review') {
     const rows = [
       buildRequestCardRow(request.id),
@@ -680,7 +719,7 @@ function buildRequestManagePayload(request) {
         new ButtonBuilder().setCustomId('automod_req_back').setLabel('← Back').setStyle(ButtonStyle.Secondary),
       ),
     ];
-    return { embeds: [buildRequestCardEmbed(request)], components: rows };
+    return { embeds: [buildRequestCardEmbed(request, guild)], components: rows };
   }
 
   // status === 'pending' — they clicked "Request Approval" but haven't
@@ -704,7 +743,7 @@ async function handleRequestsSelect(interaction) {
   const requestId = interaction.values[0];
   const request    = getRequest(requestId);
   if (!request) return interaction.update(buildRequestsListPayload(interaction.guild));
-  return interaction.update(buildRequestManagePayload(request));
+  return interaction.update(buildRequestManagePayload(request, interaction.guild));
 }
 
 async function handleRequestsButton(interaction) {
@@ -738,7 +777,7 @@ async function handleRequestsButton(interaction) {
   if (id.startsWith('automod_req_delno:')) {
     const requestId = id.slice('automod_req_delno:'.length);
     const request   = getRequest(requestId);
-    return interaction.update(request ? buildRequestManagePayload(request) : buildRequestsListPayload(interaction.guild));
+    return interaction.update(request ? buildRequestManagePayload(request, interaction.guild) : buildRequestsListPayload(interaction.guild));
   }
 }
 
