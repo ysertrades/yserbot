@@ -381,6 +381,40 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 }
 .gaw.tappable:hover .chev { color: var(--accent); transform: translateY(-50%) translateX(2px); }
 .v.mono { font-family: var(--mono); font-size: 0.8rem; }
+.v.mono.wrap { overflow-wrap: anywhere; text-align: right; }
+
+/* ── link requests ─────────────────────────────────────────────────────────
+   The badge carries the worst thing found about a request, so a queue can be
+   triaged by colour before anything is read. */
+.gaw .kind.sev-danger { color: var(--bad, #E74C3C); }
+.gaw .kind.sev-warn   { color: var(--warn); }
+.gaw .kind.sev-clear  { color: var(--good); }
+.gaw .kind.sev-idle   { color: var(--muted); }
+
+.queue-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; }
+.queue-head h2 { margin-bottom: 0.5rem; }
+
+/* Each finding on its own line with its own weight — a shortened link and a
+   two-day-old account are different sizes of problem and should not read as
+   the same sentence. */
+.signals { display: flex; flex-direction: column; gap: 0.3rem; }
+.signal {
+  margin: 0; font-size: 0.84rem; line-height: 1.35;
+  padding: 0.38rem 0.55rem; border-radius: 8px;
+  border-left: 3px solid var(--rule); background: var(--sunken);
+}
+.signal.danger { border-left-color: #E74C3C; color: #F5B7B1; }
+.signal.warn   { border-left-color: var(--warn); color: #F3C99B; }
+.signal.note   { border-left-color: var(--off); color: var(--soft); }
+.signal.good   { border-left-color: var(--good); color: #A9DFC4; }
+
+/* What the member wrote, set apart so it never reads as the panel's own copy. */
+.quote {
+  border-left: 3px solid var(--accent);
+  background: var(--sunken); border-radius: 0 8px 8px 0;
+  padding: 0.5rem 0.7rem;
+}
+.quote p { margin: 0; font-size: 0.88rem; overflow-wrap: anywhere; }
 
 /* A read-out block sitting above a form in the same panel needs a divider,
    or the last control of one reads as the first control of the other. */

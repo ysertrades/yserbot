@@ -477,6 +477,7 @@ function renderOverview() {
   renderPanelLog();
   renderTickets();
   renderCasino();
+  renderLinkRequests();
   renderGroupForm('#form-lottery', 'lottery');
   renderGroupForm('#form-cards', 'cards');
   renderGroupForm('#form-verify', 'verify');
@@ -1549,6 +1550,172 @@ function renderSettings() {
 
   nodes.push(actions(() => post('settings', draft)));
   form.replaceChildren(...nodes);
+}
+
+/* ── link requests ─────────────────────────────────────────────────────────
+   The queue used to live only as cards in the mod-log channel, which means
+   noticing one requires being in Discord, on the right channel, at the time.
+
+   Each row leads with the domain rather than the member, because that is what
+   the decision is actually about, and carries the worst signal found so a row
+   that needs reading looks different from one that does not. */
+
+const SEVERITY_LABEL = { danger: 'CHECK', warn: 'LOOK', clear: 'CLEAR' };
+
+function renderLinkRequests() {
+  const l = state.overview?.links;
+  if (!l) return;
+
+  const stateLine = $('#link-filter-state');
+  stateLine.textContent = l.filterOn
+    ? 'Link filter is on'
+    : 'Link filter is off — nothing new will arrive here';
+  stateLine.className = `hint${l.filterOn ? '' : ' bad'}`;
+
+  const count = $('#link-count');
+  count.hidden = l.waiting.length === 0;
+  count.textContent = String(l.waiting.length);
+
+  /* -- waiting on a decision --------------------------------------------- */
+  const wrap = $('#link-waiting');
+  const rows = l.waiting.map(r => {
+    const d = el('button', 'gaw tappable');
+    d.type = 'button';
+    const top = el('div', 'gaw-top');
+    top.append(
+      el('span', `kind sev-${r.severity}`, SEVERITY_LABEL[r.severity] || 'LOOK'),
+      el('span', 'nm', r.domain || 'unreadable address'),
+    );
+    d.append(top);
+    d.append(el('p', 'hint', `${r.displayName} · in #${r.channel || 'a deleted channel'}${r.createdAt ? ` · ${relativeTime(r.createdAt)}` : ''}`));
+    if (r.flags.length) d.append(el('p', 'hint', r.flags[0].text));
+    d.append(el('span', 'chev', '›'));
+    d.addEventListener('click', () => openLinkRequest(r));
+    return d;
+  });
+
+  // An unfinished request still blocks that member from opening another one,
+  // so it has to be visible and clearable even though there is nothing to
+  // decide on it yet.
+  for (const r of l.unfinished) {
+    const d = el('div', 'gaw');
+    const top = el('div', 'gaw-top');
+    top.append(el('span', 'kind sev-idle', 'UNSENT'), el('span', 'nm', r.displayName));
+    d.append(top);
+    d.append(el('p', 'hint', 'Was told to ask but never filled the form in. This still blocks them from opening another request.'));
+    const act = el('div', 'actions');
+    const drop = el('button', 'btn small', 'Clear it');
+    drop.type = 'button';
+    drop.addEventListener('click', async () => {
+      drop.disabled = true;
+      await post('linkrequest', { requestId: r.id, action: 'discard' });
+    });
+    act.append(drop);
+    d.append(act);
+    rows.push(d);
+  }
+
+  wrap.replaceChildren(...(rows.length ? rows : [el('p', 'muted', 'Nothing waiting.')]));
+
+  /* -- standing permissions ---------------------------------------------- */
+  const permits = $('#link-permits');
+  permits.replaceChildren(...(l.permits.length ? l.permits.map(p => {
+    const r = el('div', 'row');
+    const label = p.state === 'locked'
+      ? `locked · ${readableWait(p.secondsLeft)}`
+      : p.state === 'waiting' ? `next link in ${readableWait(p.secondsLeft)}` : 'may post now';
+    r.append(el('span', 'k', p.displayName));
+    const right = el('span', 'v');
+    right.append(el('span', 'dim', label));
+    const revoke = el('button', 'btn small danger', 'Revoke');
+    revoke.type = 'button';
+    revoke.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: 'Revoke this permission?',
+        message: `${p.displayName} will need to ask again before posting another link.`,
+        confirmLabel: 'Revoke it', danger: true,
+      })) return;
+      revoke.disabled = true;
+      await post('linkrevoke', { userId: p.userId });
+    });
+    right.append(revoke);
+    r.append(right);
+    return r;
+  }) : [el('p', 'muted', 'Nobody has a standing permission.')]));
+
+  /* -- recently decided --------------------------------------------------- */
+  const recent = $('#link-recent');
+  recent.replaceChildren(...(l.recent.length ? l.recent.map(r => {
+    const row = el('div', 'row');
+    row.append(el('span', 'k', `${r.status === 'approved' ? '✅' : '❌'} ${r.domain || '—'}`));
+    row.append(el('span', 'v dim',
+      `${r.displayName}${r.decidedBy ? ` · by ${r.decidedBy}` : ''}${r.decidedAt ? ` · ${relativeTime(r.decidedAt)}` : ''}`));
+    return row;
+  }) : [el('p', 'muted', 'No decisions yet.')]));
+}
+
+function readableWait(seconds) {
+  if (!seconds || seconds < 0) return 'now';
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+}
+
+/**
+ * The full request, and the two decisions.
+ *
+ * Everything found about the link is laid out before the buttons, because the
+ * whole point is that approving should be a judgement rather than a reflex.
+ */
+function openLinkRequest(r) {
+  const body = [];
+
+  const flags = el('div', 'signals');
+  for (const f of (r.flags.length ? r.flags : [{ level: 'good', text: 'Nothing unusual about this one.' }])) {
+    flags.append(el('p', `signal ${f.level}`, f.text));
+  }
+  body.push(flags);
+
+  body.push(sheetRow('Link', el('span', 'v mono wrap', r.link || '—')));
+  body.push(sheetRow('Asked by', `${r.displayName} (${r.userTag})`));
+  body.push(sheetRow('Account age', r.accountAge));
+  if (r.memberAge) body.push(sheetRow('In this server', r.memberAge));
+  body.push(sheetRow('Past requests', r.history.total > 1
+    ? `${r.history.approved} approved · ${r.history.denied} denied`
+    : 'This is their first'));
+  body.push(sheetRow('Channel', r.channel ? `#${r.channel}` : 'deleted'));
+
+  if (r.reason) {
+    const q = el('div', 'quote');
+    q.append(el('p', null, r.reason));
+    body.push(el('span', 'k', 'Their reason'), q);
+  }
+
+  const cool = { value: '24h' };
+  body.push(durationField('Then they may post one link every', '24h', v => { cool.value = v; }));
+
+  const approve = el('button', 'btn primary', 'Approve and post it');
+  approve.type = 'button';
+  approve.addEventListener('click', async () => {
+    if (!parseDurationMs(cool.value)) { toast('Cooldown must look like 6h or 7d.', 'bad'); return; }
+    approve.disabled = true;
+    approve.textContent = 'Posting…';
+    const out = await post('linkrequest', { requestId: r.id, action: 'approve', cooldown: cool.value });
+    if (out) closeSheet();
+    else { approve.disabled = false; approve.textContent = 'Approve and post it'; }
+  });
+
+  const denyBtn = el('button', 'btn danger', 'Deny');
+  denyBtn.type = 'button';
+  denyBtn.addEventListener('click', async () => {
+    denyBtn.disabled = true;
+    const out = await post('linkrequest', { requestId: r.id, action: 'deny' });
+    if (out) closeSheet();
+    else denyBtn.disabled = false;
+  });
+
+  openSheet(r.domain || 'Link request', body, [approve, denyBtn]);
 }
 
 /* ── casino ────────────────────────────────────────────────────────────────

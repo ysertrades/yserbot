@@ -332,6 +332,28 @@
 
     <!-- ── Moderation ──────────────────────────────────────────────────── -->
     <div class="section" data-section="moderation">
+      <div class="panel" id="link-queue-card">
+        <div class="queue-head">
+          <h2>Link requests <span class="tag" id="link-count" hidden></span></h2>
+          <span class="hint" id="link-filter-state"></span>
+        </div>
+        <p class="muted">When the link filter removes someone's message they can ask for it back. Each request is checked against the address itself, how old the account is and how their previous requests went — tap one to see what was found.</p>
+        <div class="rows" id="link-waiting"></div>
+      </div>
+
+      <div class="grid">
+        <article class="panel">
+          <h2>Standing permissions</h2>
+          <p class="muted">Members who were approved and may post again on a cooldown.</p>
+          <div class="rows" id="link-permits"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Recently decided</h2>
+          <div class="rows" id="link-recent"></div>
+        </article>
+      </div>
+
       <div class="panel">
         <h2>Moderation</h2>
         <form id="form-moderation" class="form"></form>
