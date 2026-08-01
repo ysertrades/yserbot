@@ -23,6 +23,7 @@ const { fetchAvatarPng } = require('../../utils/avatarUtil');
 const { generateGiveawayBannerImage, generateGiveawayResultImage } = require('../../utils/giveawayVisual');
 const { randomInt } = require('node:crypto');
 const { parseDuration } = require('../../utils/duration');
+const { replaceFiles } = require('../../utils/embedAttachments');
 
 const GOLD          = 0xFFD700;
 const SETUP_EXPIRY  = 10 * 60 * 1000; // 10 min
@@ -525,7 +526,7 @@ async function endCoinsGiveaway(message, meta) {
       .setFooter({ text: `Congratulations! 🎉 • ID: ${shortId}` })
       .setTimestamp();
 
-    await message.edit({ embeds: [embed], files: [attachment], components: [disabledRow] });
+    await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles([attachment]) });
     displayed = true;
   } catch (err) {
     console.error('[COINS GIVEAWAY END] Could not display result (message likely deleted):', err.message ?? err);
@@ -635,7 +636,7 @@ async function performReroll(guild, shortId) {
       )
       .setFooter({ text: `Rerolled 🎲 • ID: ${shortId}` })
       .setTimestamp();
-    await origMsg.edit({ embeds: [updEmbed], files: [attachment] }).catch(() => {});
+    await origMsg.edit({ embeds: [updEmbed], ...replaceFiles([attachment]) }).catch(() => {});
   } catch { /* original message may be gone — the reroll itself still succeeded */ }
 
   await dmWinners(guild.client, guild, newWinners, data.amount, { rerolled: true });

@@ -445,7 +445,7 @@ function renderOverview() {
     tile(d.newsfeed.enabled ? 'LIVE' : 'OFF', 'News feed', d.newsfeed.enabled ? 'live' : 'idle'),
     tile(d.econcal.enabled ? 'LIVE' : 'OFF', 'Calendar', d.econcal.enabled ? 'live' : 'idle'),
     tile(num(d.counts.activeGiveaways), 'Giveaways', d.counts.activeGiveaways ? 'live' : 'idle'),
-    tile(num(d.counts.embedTemplates), 'Messages'),
+    tile(num(d.counts.embedTemplates), 'Templates'),
     tile(num(d.counts.shopItems), 'Shop items'),
     tile(num(d.counts.moderationCases), 'Mod cases'),
   );
@@ -482,6 +482,8 @@ function renderOverview() {
   renderGroupForm('#form-lottery', 'lottery');
   renderGroupForm('#form-cards', 'cards');
   renderGroupForm('#form-verify', 'verify');
+  renderVerifyPanel();
+  renderEconomy();
   renderCoins();
   renderSchedules();
   renderAutoreplies();
@@ -1542,6 +1544,149 @@ function renderLottery() {
   wrap.replaceChildren(...nodes);
 }
 
+/* ── economy ───────────────────────────────────────────────────────────────
+   Eight activity cards, a jobs board and the two dials above them. The cards
+   are built from the field descriptions the server sends rather than written
+   out here, so adding a setting to utils/economySettings.js puts it on screen
+   without touching this file. */
+
+const HOUR_LABEL = h => `${String(h).padStart(2, '0')}:00`;
+
+function econField(f, value, onChange) {
+  if (f.type === 'bool') return toggle(f.label, !!value, onChange);
+  if (f.type === 'duration') return durationField(f.label, value ?? '', onChange);
+  const range = f.min != null ? ` (${f.min}–${num(f.max)})` : '';
+  return textField(`${f.label}${range}`, value == null ? '' : String(value), v => onChange(Number(v)));
+}
+
+function renderEconomy() {
+  const e = state.overview?.economy;
+  if (!e) return;
+
+  /* -- the server-wide dials --------------------------------------------- */
+  const g = { multiplier: e.global.multiplier, boost: { ...e.global.boost } };
+  const boostPill = $('#boost-state');
+  if (boostPill) {
+    boostPill.hidden = !e.global.active;
+    boostPill.textContent = 'Boost hour running';
+    boostPill.className = 'pill on';
+  }
+
+  const gNote = el('p', 'hint', '');
+  const syncG = () => {
+    const wraps = g.boost.startHour > g.boost.endHour;
+    const empty = g.boost.startHour === g.boost.endHour;
+    if (g.boost.enabled && empty) {
+      gNote.textContent = 'Start and end are the same hour, so the window never opens. Pick two different hours.';
+      gNote.className = 'hint bad';
+      return;
+    }
+    const window = `${HOUR_LABEL(g.boost.startHour)}–${HOUR_LABEL(g.boost.endHour)}${wraps ? ' (over midnight)' : ''}`;
+    gNote.textContent = g.boost.enabled
+      ? `Everything pays ${g.multiplier}× normally, and ${Math.round(g.multiplier * g.boost.multiplier * 100) / 100}× between ${window}.`
+      : `Everything pays ${g.multiplier}× — 1 is the shipped economy.`;
+    gNote.className = 'hint';
+  };
+
+  const hourOptions = Array.from({ length: 24 }, (_, h) => ({ value: String(h), label: HOUR_LABEL(h) }));
+
+  $('#form-econ-global').replaceChildren(
+    textField('Payout multiplier (0.1–10)', String(g.multiplier), v => { g.multiplier = Number(v); syncG(); }),
+    toggle('Run a boost hour', g.boost.enabled, v => { g.boost.enabled = v; syncG(); }),
+    textField('Boost multiplier (1–10)', String(g.boost.multiplier), v => { g.boost.multiplier = Number(v); syncG(); }),
+    select('Starts at', String(g.boost.startHour), hourOptions, v => { g.boost.startHour = Number(v); syncG(); }),
+    select('Ends at', String(g.boost.endHour), hourOptions, v => { g.boost.endHour = Number(v); syncG(); }),
+    gNote,
+    actions(() => post('economyglobal', {
+      multiplier: g.multiplier,
+      // The hours mean the hours here, on this device — which is what someone
+      // typing "6pm" means. The offset travels with them so the bot can work
+      // out which UTC hour that actually is.
+      boost: { ...g.boost, offsetMinutes: -new Date().getTimezoneOffset() },
+    })),
+  );
+  syncG();
+
+  /* -- one card per activity --------------------------------------------- */
+  const wrap = $('#econ-activities');
+  wrap.replaceChildren(...e.activities.map(a => {
+    const draft = { activity: a.key };
+    const card = el('article', 'panel econ-card');
+    if (!a.enabled) card.classList.add('off');
+
+    const head = el('div', 'queue-head');
+    head.append(el('h2', null, `${a.emoji} ${a.label}`), el('span', 'tag', a.command));
+    card.append(head, el('p', 'muted', a.blurb));
+
+    const note = el('p', 'hint', '');
+    const values = { ...a.values };
+    const syncNote = () => {
+      // Only the pairs can be wrong on their own; everything else is bounded
+      // by the input itself.
+      const bad = ('min' in values && Number(values.min) > Number(values.max))
+        || ('rewardMin' in values && Number(values.rewardMin) > Number(values.rewardMax));
+      note.textContent = bad
+        ? 'The lowest payout is above the highest — nothing could be rolled between them.'
+        : values.enabled === false ? 'Members are told this command is closed.' : '';
+      note.className = `hint${bad ? ' bad' : ''}`;
+    };
+
+    for (const f of a.fields) {
+      card.append(econField(f, values[f.key], v => {
+        values[f.key] = v;
+        draft[f.key] = v;
+        if (f.key === 'enabled') card.classList.toggle('off', v === false);
+        syncNote();
+      }));
+    }
+    card.append(note, actions(() => post('economy', { ...draft, activity: a.key })));
+    syncNote();
+    return card;
+  }));
+
+  /* -- the jobs board ---------------------------------------------------- */
+  const jobs = Object.fromEntries(e.jobs.map(j => [j.id, j.open]));
+  const jobNote = el('p', 'hint', '');
+  const syncJobs = () => {
+    const open = Object.values(jobs).filter(Boolean).length;
+    jobNote.textContent = open === 0
+      ? 'At least one job has to stay open — use the switch on the Jobs card to close the command instead.'
+      : `${open} of ${e.jobs.length} hiring.`;
+    jobNote.className = `hint${open === 0 ? ' bad' : ''}`;
+  };
+
+  $('#form-econ-jobs').replaceChildren(
+    ...e.jobs.map(j => {
+      const t = toggle(`${j.label} · ${j.pay} · ${j.shift}`, j.open, v => { jobs[j.id] = v; syncJobs(); });
+      return t;
+    }),
+    jobNote,
+    actions(() => post('economyjobs', { jobs })),
+  );
+  syncJobs();
+}
+
+/* ── verification ──────────────────────────────────────────────────────── */
+
+function renderVerifyPanel() {
+  const draft = { channelId: state.overview?.features?.groups?.verify?.values?.channelId || null };
+  const form = $('#form-verifypanel');
+  if (!form) return;
+
+  form.replaceChildren(
+    pickOne('Channel', 'channel', draft.channelId, v => { draft.channelId = v; }),
+    actions(async () => {
+      if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
+      if (!await askConfirm({
+        title: 'Post the verification panel?',
+        message: 'Members in that channel will see it straight away. Posting again makes a second panel — it does not move the first.',
+        confirmLabel: 'Post it',
+      })) return;
+      await post('verifypanel', draft);
+    }, { label: 'Post it', busyLabel: 'Posting…' }),
+  );
+}
+
 /* ── settings ──────────────────────────────────────────────────────────── */
 
 function renderSettings() {
@@ -1641,15 +1786,9 @@ function renderModeration() {
     return r;
   }) : [el('p', 'muted', 'Nobody has a warning.')]));
 
-  /* -- the case log ------------------------------------------------------- */
-  $('#case-total').textContent = m.caseTotal ? `${num(m.caseTotal)} total` : '';
-  const log = $('#case-log');
-  log.replaceChildren(...(m.cases.length ? m.cases.map(c => {
-    const r = el('div', 'row');
-    r.append(el('span', 'k', `${c.icon} #${c.id} ${c.userName}`));
-    r.append(el('span', 'v dim', `${c.moderator}${c.at ? ` · ${relativeTime(c.at)}` : ''}`));
-    return r;
-  }) : [el('p', 'muted', 'Nothing logged yet.')]));
+  // The case log itself lives in Discord, where it belongs — this is just the
+  // running total, so the number is still visible without a second list.
+  $('#case-total').textContent = m.caseTotal ? `${num(m.caseTotal)} cases logged` : '';
 
   /* -- automatic punishment ---------------------------------------------- */
   const ws = { ...m.warnSettings };
@@ -2178,6 +2317,10 @@ function renderGroupForm(target, groupName) {
     if (f.type === 'channel') return pickOne(f.label, 'channel', v, x => { draft[f.key] = x; });
     if (f.type === 'role') return pickOne(f.label, 'role', v, x => { draft[f.key] = x; });
     if (f.type === 'text') return areaField(f.label, v, x => { draft[f.key] = x; }, 4);
+    // Without this a boolean field fell through to the number input below and
+    // rendered as an empty box — which is why the lottery pause never showed
+    // up as a switch.
+    if (f.type === 'bool') return toggle(f.label, !!v, x => { draft[f.key] = x; });
     return textField(`${f.label}${f.min != null ? ` (${f.min}–${f.max})` : ''}`,
       v == null ? '' : String(v), x => { draft[f.key] = Number(x); });
   });

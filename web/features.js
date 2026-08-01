@@ -58,9 +58,21 @@ const CONFIG_GROUPS = {
   verify: {
     label: 'Verification',
     fields: [
-      { key: 'roleId', path: ['verifySettings', 'roleId'], label: 'Role given on verify', type: 'role' },
-      { key: 'channelId', path: ['verifySettings', 'channelId'], label: 'Verify channel', type: 'channel' },
+      // ['verifySettings', 'role'] — NOT 'roleId'. commands/utility/verify.js
+      // reads settings.role, so the panel writing roleId meant picking a role
+      // here did nothing at all: the panel showed it set, and /verify still
+      // told members no role had been configured.
+      { key: 'role', path: ['verifySettings', 'role'], label: 'Role given on verify', type: 'role' },
+      { key: 'channelId', path: ['verifySettings', 'channelId'], label: 'Where the panel goes', type: 'channel' },
+      { key: 'title', path: ['verifySettings', 'title'], label: 'Panel heading', type: 'text', max: 200 },
+      { key: 'intro', path: ['verifySettings', 'intro'], label: 'Opening line', type: 'text', max: 1500 },
       { key: 'rulesText', path: ['verifySettings', 'rulesText'], label: 'Rules text', type: 'text', max: 3000 },
+      { key: 'buttonLabel', path: ['verifySettings', 'buttonLabel'], label: 'Button label', type: 'text', max: 60 },
+      // The memory challenge itself. Four of eight is the shipped difficulty;
+      // the range is what the grid can actually be built from — Discord allows
+      // five buttons a row and the answer view uses four rows at most.
+      { key: 'sequenceLength', path: ['verifySettings', 'sequenceLength'], label: 'Emoji to memorise', type: 'int', min: 2, max: 6, fallback: 4 },
+      { key: 'welcome', path: ['verifySettings', 'welcome'], label: 'Message after verifying', type: 'text', max: 1000 },
     ],
   },
 };
@@ -98,7 +110,7 @@ function read(guildId, guild) {
     out.groups[name] = {
       label: group.label,
       fields: group.fields.map(f => ({ ...f })),
-      values: Object.fromEntries(group.fields.map(f => [f.key, dig(conf, f.path) ?? null])),
+      values: Object.fromEntries(group.fields.map(f => [f.key, dig(conf, f.path) ?? f.fallback ?? null])),
     };
   }
 

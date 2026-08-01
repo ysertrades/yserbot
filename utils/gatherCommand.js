@@ -14,16 +14,21 @@ const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, ActionRowBuilder, 
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('./economyManager');
 const { getEffect } = require('./effectsManager');
 const { readJson, writeJson } = require('./jsonStorage');
+const { activity, scalePayout, boostNote } = require('./economySettings');
+const { refuseIfOff } = require('./economyGate');
+const { formatDuration } = require('./duration');
 
-const SESSION_USES = 10;
-const COOLDOWN_MS  = 2 * 60 * 60 * 1000;
 const SESSIONS_FILE = 'gatherSessions.json';
 const fmt = n => Number(n).toLocaleString();
 
-function getRemaining(userId, action) {
+function getRemaining(userId, action, sessionUses) {
   const sessions = readJson(SESSIONS_FILE, {});
   const val = sessions[`${userId}_${action}`];
-  return val === undefined ? SESSION_USES : val;
+  if (val === undefined) return sessionUses;
+  // A session that was opened when the limit was higher must not outlive a
+  // server lowering it — otherwise the old allowance quietly persists for
+  // everyone who was mid-session when the setting changed.
+  return Math.min(val, sessionUses);
 }
 
 function setRemaining(userId, action, remaining) {
@@ -56,7 +61,10 @@ function buildGatherCommand(cfg) {
 
   async function runGather(interaction, userId, isButton) {
     const guildId = interaction.guild?.id;
-    const cd = checkCooldown(userId, action, COOLDOWN_MS, guildId);
+    // Named econ rather than cfg: the enclosing buildGatherCommand(cfg) has a
+    // parameter by that name and shadowing it here would be a trap.
+    const econ = activity(guildId, action);
+    const cd = checkCooldown(userId, action, econ.cooldownMs, guildId);
 
     if (cd > 0) {
       const hours   = Math.floor(cd / 3600000);
@@ -69,11 +77,12 @@ function buildGatherCommand(cfg) {
       return interaction.reply({ embeds: [cooldownEmbed], flags: MessageFlags.Ephemeral });
     }
 
-    let remaining = getRemaining(userId, action);
+    let remaining = getRemaining(userId, action, econ.sessionUses);
     const item = rollFromTable(table);
     let reward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
     const boost = getEffect(userId, guildId, 'coin_boost');
     if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
+    reward = scalePayout(guildId, reward, econ.payScale);
     addCoins(userId, reward);
 
     remaining -= 1;
@@ -84,7 +93,7 @@ function buildGatherCommand(cfg) {
     const embed = new EmbedBuilder()
       .setColor(embedColor)
       .setTitle(embedTitle)
-      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}`)
+      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}${boostNote(guildId) ? `\n${boostNote(guildId)}` : ''}`)
       .setImage(`attachment://${imageName}`);
 
     const continueRow = new ActionRowBuilder().addComponents(
@@ -95,7 +104,7 @@ function buildGatherCommand(cfg) {
     let components = [];
     if (remaining > 0) {
       setRemaining(userId, action, remaining);
-      embed.setFooter({ text: `${remaining}/${SESSION_USES} ${sessionNoun} left this session` });
+      embed.setFooter({ text: `${remaining}/${econ.sessionUses} ${sessionNoun} left this session` });
       components = [continueRow];
     } else {
       const skip = getEffect(userId, guildId, 'cooldown_skip');
@@ -106,13 +115,13 @@ function buildGatherCommand(cfg) {
         // deliberately NOT called here: if a real cooldown was already
         // ticking before the skip started, it stays untouched in storage
         // and silently re-applies the instant the skip effect expires.
-        setRemaining(userId, action, SESSION_USES);
+        setRemaining(userId, action, econ.sessionUses);
         embed.setFooter({ text: `⏩ Cooldown Skip active — unlimited ${sessionNoun}!` });
         components = [continueRow];
       } else {
         clearRemaining(userId, action);
         setCooldown(userId, action);
-        embed.setFooter({ text: 'Session complete — come back in 2 hours' });
+        embed.setFooter({ text: `Session complete — come back in ${formatDuration(econ.cooldownMs) || '2h'}` });
       }
     }
 
@@ -128,6 +137,7 @@ function buildGatherCommand(cfg) {
     data: new SlashCommandBuilder().setName(commandName).setDescription(description),
 
     async execute(interaction) {
+      if (await refuseIfOff(interaction, action)) return;
       return runGather(interaction, interaction.user.id, false);
     },
 
@@ -148,6 +158,9 @@ function buildGatherCommand(cfg) {
       }
 
       if (prefix === 'gather_again') {
+        // Checked again here, not just on the slash command: a session left
+        // open in a channel outlives the setting being switched off.
+        if (await refuseIfOff(interaction, action)) return;
         return runGather(interaction, userId, true);
       }
     },

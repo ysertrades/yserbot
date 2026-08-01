@@ -6,13 +6,11 @@ const { getEffect } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { generateTriviaImage, CATEGORY_META } = require('../../utils/triviaVisual');
 const { QUESTIONS, CATEGORIES } = require('../../utils/triviaQuestions');
+const { activity, scalePayout, boostNote } = require('../../utils/economySettings');
+const { refuseIfOff } = require('../../utils/economyGate');
+const { formatDuration } = require('../../utils/duration');
 
-const COOLDOWN_MS           = 2 * 60 * 60 * 1000;
-const QUESTIONS_PER_SESSION = 6;
-const QUESTION_TIME_MS      = 15 * 1000;
 const REVEAL_DELAY_MS       = 2000;
-const REWARD_MIN            = 50;
-const REWARD_MAX            = 120;
 const REWARD_SCALE_STEP     = 0.2; // each correct answer so far bumps the next reward range up 20%
 const HISTORY_LIMIT         = 40; // how many recently-asked questions per user we avoid repeating — scaled up alongside the larger question bank
 const LETTERS = ['A', 'B', 'C', 'D'];
@@ -49,11 +47,11 @@ function pickQuestionForUser(userId) {
   return picked;
 }
 
-function computeReward(correctSoFar) {
+function computeReward(correctSoFar, econ) {
   const mult = 1 + correctSoFar * REWARD_SCALE_STEP;
-  const min = Math.round(REWARD_MIN * mult);
-  const max = Math.round(REWARD_MAX * mult);
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+  const min = Math.round(econ.rewardMin * mult);
+  const max = Math.round(econ.rewardMax * mult);
+  return Math.floor(Math.random() * (Math.max(0, max - min) + 1)) + min;
 }
 
 function buildRows(userId, disabledIndex = null, correctIndex = null) {
@@ -83,8 +81,8 @@ async function postQuestion(session) {
   const meta = CATEGORY_META[picked.cat];
   const embed = new EmbedBuilder()
     .setColor(meta.color)
-    .setTitle(`🧠 Trivia — Question ${session.index + 1}/${QUESTIONS_PER_SESSION}`)
-    .setDescription('Pick the correct answer below — you have 15 seconds.')
+    .setTitle(`🧠 Trivia — Question ${session.index + 1}/${session.econ.questions}`)
+    .setDescription(`Pick the correct answer below — you have ${session.econ.secondsPerQuestion} seconds.`)
     .setImage(`attachment://${imageName}`)
     .setFooter({ text: `Correct so far: ${session.correctCount} • Coins earned: ${fmt(session.totalCoins)}` });
 
@@ -97,7 +95,7 @@ async function postQuestion(session) {
       console.error('[TRIVIA TIMEOUT]', err);
       activeSessions.delete(session.userId);
     });
-  }, QUESTION_TIME_MS);
+  }, session.econ.secondsPerQuestion * 1000);
 }
 
 async function resolveAnswer(session, choice) {
@@ -108,9 +106,10 @@ async function resolveAnswer(session, choice) {
   let reward = 0;
 
   if (correct) {
-    reward = computeReward(session.correctCount);
+    reward = computeReward(session.correctCount, session.econ);
     const boost = getEffect(session.userId, session.guildId, 'coin_boost');
     if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
+    reward = scalePayout(session.guildId, reward);
     addCoins(session.userId, reward);
     session.correctCount++;
   }
@@ -118,7 +117,7 @@ async function resolveAnswer(session, choice) {
 
   const resultEmbed = new EmbedBuilder()
     .setColor(correct ? 0x2ecc71 : 0xe74c3c)
-    .setTitle(`🧠 Trivia — Question ${session.index + 1}/${QUESTIONS_PER_SESSION}`)
+    .setTitle(`🧠 Trivia — Question ${session.index + 1}/${session.econ.questions}`)
     .setDescription(
       correct
         ? `✅ **Correct!** +**${fmt(reward)}** coins`
@@ -128,16 +127,16 @@ async function resolveAnswer(session, choice) {
     );
 
   session.index++;
-  const isLast = session.index >= QUESTIONS_PER_SESSION;
+  const isLast = session.index >= session.econ.questions;
 
   if (isLast) {
     setCooldown(session.userId, 'trivia');
     activeSessions.delete(session.userId);
     resultEmbed.addFields({
       name: 'Session Summary',
-      value: `${session.correctCount}/${QUESTIONS_PER_SESSION} correct • **${fmt(session.totalCoins)}** coins earned\n💰 Balance: **${fmt(getBalance(session.userId))}** coins`,
+      value: `${session.correctCount}/${session.econ.questions} correct • **${fmt(session.totalCoins)}** coins earned\n💰 Balance: **${fmt(getBalance(session.userId))}** coins${boostNote(session.guildId) ? `\n${boostNote(session.guildId)}` : ''}`,
     });
-    resultEmbed.setFooter({ text: 'Session complete — come back in 2 hours' });
+    resultEmbed.setFooter({ text: `Session complete — come back in ${formatDuration(session.econ.cooldownMs) || '2h'}` });
     return session.interaction.editReply({ embeds: [resultEmbed], components: [], attachments: [] });
   }
 
@@ -154,11 +153,15 @@ async function resolveAnswer(session, choice) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('trivia')
-    .setDescription('Answer 6 trivia questions for coins (2 hour cooldown)'),
+    .setDescription('Answer a run of trivia questions for coins'),
 
   async execute(interaction) {
-    const userId = interaction.user.id;
-    const cd = checkCooldown(userId, 'trivia', COOLDOWN_MS, interaction.guild?.id);
+    if (await refuseIfOff(interaction, 'trivia')) return;
+
+    const userId  = interaction.user.id;
+    const guildId = interaction.guild?.id;
+    const econ    = activity(guildId, 'trivia');
+    const cd = checkCooldown(userId, 'trivia', econ.cooldownMs, guildId);
 
     if (cd > 0) {
       const hours   = Math.floor(cd / 3600000);
@@ -176,8 +179,11 @@ module.exports = {
       return interaction.reply({ content: '⚠️ You already have a trivia session in progress! Finish it or hit Close first.', flags: MessageFlags.Ephemeral });
     }
 
+    // The settings are snapshotted onto the session rather than read per
+    // question: changing "questions per run" mid-session would otherwise end
+    // somebody's run early, or extend it past the summary they already saw.
     const session = {
-      userId, guildId: interaction.guild?.id, interaction,
+      userId, guildId, interaction, econ,
       index: 0, correctCount: 0, totalCoins: 0, current: null, timer: null, awaitTimer: null,
     };
     activeSessions.set(userId, session);

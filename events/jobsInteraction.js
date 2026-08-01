@@ -14,6 +14,7 @@ const { EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, Button
 const { addCoins, getBalance, checkCooldown, setCooldown } = require('../utils/economyManager');
 const { getEffect } = require('../utils/effectsManager');
 const { JOB_ICONS, JOB_COLORS, generateJobCardImage } = require('../utils/jobsVisual');
+const { scalePayout, boostNote } = require('../utils/economySettings');
 
 module.exports = {
   name: 'interactionCreate',
@@ -47,18 +48,22 @@ module.exports = {
       return interaction.update({
         ...buildJobsPayload(interaction.user.id, interaction.guild?.id),
         components: buildJobsRows(interaction.user.id, interaction.guild?.id),
+        attachments: [],
       });
     }
 
     // ── Work a job ────────────────────────────────────────────────────────────
     if (type === 'work') {
-      const { JOBS } = require('../commands/economy/jobs');
+      const { jobsFor } = require('../commands/economy/jobs');
       const jobId  = parts[2];
-      const job    = JOBS.find(j => j.id === jobId);
-      if (!job) return interaction.reply({ content: '❌ Unknown job.', flags: MessageFlags.Ephemeral });
-
       const userId  = interaction.user.id;
       const guildId = interaction.guild?.id;
+      // jobsFor, not the raw table: a job the server has closed since this hub
+      // was opened is no longer a job, and the pay band here has to be the
+      // same scaled one the hub showed.
+      const job    = jobsFor(guildId).find(j => j.id === jobId);
+      if (!job) return interaction.reply({ content: '❌ That job is no longer open here.', flags: MessageFlags.Ephemeral });
+
       const icon    = JOB_ICONS[job.id];
       const jobColor = JOB_COLORS[job.id];
 
@@ -78,7 +83,10 @@ module.exports = {
           new ButtonBuilder().setCustomId(`job:list:${userId}`).setLabel('← Jobs').setStyle(ButtonStyle.Secondary),
           new ButtonBuilder().setCustomId(`job:close:${userId}`).setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
         );
-        return interaction.update({ embeds: [embed], files: [attachment], components: [backRow] });
+        // attachments: [] — without it Discord keeps the hub image already on
+        // this message and shows the new card underneath it rather than
+        // in place of it.
+        return interaction.update({ embeds: [embed], files: [attachment], components: [backRow], attachments: [] });
       }
 
       // ── Ready — calculate earnings ────────────────────────────────────────
@@ -94,6 +102,7 @@ module.exports = {
 
       const boost = getEffect(userId, guildId, 'coin_boost');
       if (boost) earnings = Math.floor(earnings * (boost.multiplier || 1.5));
+      earnings = scalePayout(guildId, earnings);
 
       addCoins(userId, earnings);
       setCooldown(userId, `job_${job.id}`);
@@ -114,14 +123,14 @@ module.exports = {
       }), { name: imageName });
       const embed = new EmbedBuilder()
         .setImage(`attachment://${imageName}`)
-        .setDescription(`💰 Balance: **${newBal.toLocaleString()}** coins · Next shift <t:${nextTs}:R>`);
+        .setDescription(`💰 Balance: **${newBal.toLocaleString()}** coins · Next shift <t:${nextTs}:R>${boostNote(guildId) ? `\n${boostNote(guildId)}` : ''}`);
 
       const afterRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`job:list:${userId}`).setLabel('💼 Back to Jobs').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`job:close:${userId}`).setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
       );
 
-      return interaction.update({ embeds: [embed], files: [attachment], components: [afterRow] });
+      return interaction.update({ embeds: [embed], files: [attachment], components: [afterRow], attachments: [] });
     }
   },
 };

@@ -4,15 +4,14 @@ const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'
 const { randomInt } = require('node:crypto');
 const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { hasEffect, setEffect } = require('../../utils/effectsManager');
+const { activity, payoutMultiplier } = require('../../utils/economySettings');
+const { refuseIfOff } = require('../../utils/economyGate');
+const { formatDuration } = require('../../utils/duration');
 
 // Secure randomness for the success/failure roll — outcomes that move coins
 // between users should never be derivable from a predictable PRNG.
 const _rand = () => randomInt(0, 1_000_000_000) / 1_000_000_000;
 
-const ROB_COOLDOWN  = 90 * 60 * 1000; // 1.5 hours
-const SUCCESS_RATE  = 0.55;
-const MIN_TARGET    = 200;
-const MAX_STEAL     = 2500;
 const fmt = n => Number(n).toLocaleString();
 
 const WIN_LINES = [
@@ -40,19 +39,24 @@ const LOSE_LINES = [
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('rob')
-    .setDescription('Attempt to rob another user\'s coins (55% success, 1.5h cooldown)')
+    .setDescription('Attempt to rob another user\'s coins')
     .addUserOption(o => o.setName('target').setDescription('Who to rob').setRequired(true)),
 
   async execute(interaction) {
-    const userId = interaction.user.id;
-    const target = interaction.options.getUser('target');
+    if (await refuseIfOff(interaction, 'rob')) return;
+
+    const userId  = interaction.user.id;
+    const guildId = interaction.guild?.id;
+    const cfg     = activity(guildId, 'rob');
+    const nextIn  = formatDuration(cfg.cooldownMs) || 'a while';
+    const target  = interaction.options.getUser('target');
 
     if (target.id === userId)
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ Nice Try').setDescription('You can\'t rob yourself.')], flags: MessageFlags.Ephemeral });
     if (target.bot)
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xFF4757).setTitle('❌ No Can Do').setDescription('Bots don\'t carry coins.')], flags: MessageFlags.Ephemeral });
 
-    const cd = checkCooldown(userId, 'rob', ROB_COOLDOWN);
+    const cd = checkCooldown(userId, 'rob', cfg.cooldownMs, guildId);
     if (cd > 0) {
       const ts = Math.floor((Date.now() + cd) / 1000);
       return interaction.reply({ embeds: [new EmbedBuilder()
@@ -68,22 +72,26 @@ module.exports = {
         .setColor(0x3498DB)
         .setTitle('🛡️  Bounced Right Off!')
         .setDescription(`<@${target.id}> has an active **Rob Shield**!\nYou fled empty-handed — and that wasted your cooldown.`)
-        .setFooter({ text: 'Next attempt in 1.5 hours' })] });
+        .setFooter({ text: `Next attempt in ${nextIn}` })] });
     }
 
     const targetBal = getBalance(target.id);
-    if (targetBal < MIN_TARGET)
+    if (targetBal < cfg.minTarget)
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0xFF4757)
         .setTitle('🪙  Not Worth the Risk')
         .setDescription(`<@${target.id}> only has **${fmt(targetBal)}** coins — not worth getting caught for.`)], flags: MessageFlags.Ephemeral });
 
     setCooldown(userId, 'rob');
-    const won = _rand() < SUCCESS_RATE;
+    const won = _rand() < cfg.successPercent / 100;
 
     if (won) {
       const pct    = 0.10 + _rand() * 0.20;
-      const stolen = Math.min(MAX_STEAL, Math.floor(targetBal * pct));
+      // The server multiplier lifts the ceiling, not the victim's loss: a 2×
+      // economy should not mean somebody can be robbed for twice as much of
+      // what they actually hold.
+      const cap    = Math.max(1, Math.floor(cfg.maxSteal * payoutMultiplier(guildId)));
+      const stolen = Math.min(cap, Math.floor(targetBal * pct));
       removeCoins(target.id, stolen);
       addCoins(userId, stolen);
       const line = WIN_LINES[randomInt(WIN_LINES.length)];
@@ -97,10 +105,10 @@ module.exports = {
           { name: '💸 Stolen',       value: `**${fmt(stolen)}** coins`,      inline: true },
           { name: '💰 Your Balance', value: `**${fmt(getBalance(userId))}** coins`, inline: true },
         )
-        .setFooter({ text: 'Next heist in 1.5 hours  •  Stay out of trouble' })
+        .setFooter({ text: `Next heist in ${nextIn}  •  Stay out of trouble` })
         .setTimestamp()] });
     } else {
-      const fine      = Math.min(1000, Math.floor(targetBal * 0.05));
+      const fine      = Math.min(cfg.fineCap, Math.floor(targetBal * (cfg.finePercent / 100)));
       const actualFine = Math.min(fine, getBalance(userId));
       if (actualFine > 0) removeCoins(userId, actualFine);
       const line = LOSE_LINES[randomInt(LOSE_LINES.length)];
@@ -114,7 +122,7 @@ module.exports = {
           { name: '💸 Fine Paid',    value: `**${fmt(actualFine)}** coins`,  inline: true },
           { name: '💰 Your Balance', value: `**${fmt(getBalance(userId))}** coins`, inline: true },
         )
-        .setFooter({ text: 'Next attempt in 1.5 hours  •  Better luck next time' })
+        .setFooter({ text: `Next attempt in ${nextIn}  •  Better luck next time` })
         .setTimestamp()] });
     }
   },

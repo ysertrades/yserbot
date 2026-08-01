@@ -435,7 +435,7 @@ async function handleButton(interaction) {
       new ButtonBuilder().setCustomId('cs:menu').setLabel('🏠 Menu').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('cs:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
     );
-    return interaction.editReply({ embeds: [pvpEmbed], components: [row], files: [file] });
+    return interaction.editReply({ embeds: [pvpEmbed], components: [row], files: [file], attachments: [] });
   }
 
   // ── Dice PvP — rematch (either duellist re-opens at the same stake) ──────
@@ -621,7 +621,7 @@ async function showCoinflipChoice(interaction, s) {
     new ButtonBuilder().setCustomId('cs:cf:tails').setLabel('🪙 Tails').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row], files: [chart] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [chart], attachments: [] });
 }
 
 async function resolveCoinflip(interaction, s, choice) {
@@ -636,7 +636,7 @@ async function resolveCoinflip(interaction, s, choice) {
     .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
     .setFooter({ text: 'YSER Flow Casino' });
 
-  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinChart] });
+  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinChart], attachments: [] });
   await wait(750);
 
   const result = engine.coinflip(choice);
@@ -661,7 +661,7 @@ async function resolveCoinflip(interaction, s, choice) {
     .setImage(`attachment://${chartName}`)
     .setFooter({ text: 'YSER Flow Casino' });
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chart] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chart], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -686,6 +686,10 @@ async function startSlots(interaction, s) {
         .setFooter({ text: 'YSER Flow Casino' })],
       components: [],
       files: [img.file],
+      // Each spin frame replaces the last. Without this every frame is kept
+      // and the finished message carries the whole animation as a pile of
+      // stray images.
+      attachments: [],
     });
   };
 
@@ -724,7 +728,7 @@ async function startSlots(interaction, s) {
   if (result.resultType === 'jackpot') embed.setDescription('🎊 **JACKPOT! You hit the big one!** 🎊');
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalImg.file] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalImg.file], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -759,7 +763,7 @@ async function startCrash(interaction, s) {
   // Initial render
   const initialMult = engine.tickMultiplier(0);
   const initialPayload = buildPayload(initialMult);
-  await interaction.editReply({ embeds: [initialPayload.embed], components: [cashOutRow()], files: [initialPayload.file] });
+  await interaction.editReply({ embeds: [initialPayload.embed], components: [cashOutRow()], files: [initialPayload.file], attachments: [] });
 
   // Store crash session
   const crashState = {
@@ -802,6 +806,7 @@ async function startCrash(interaction, s) {
           embeds: [payload.embed],
           components: [afterRow()],
           files: [payload.file],
+          attachments: [],
         });
       } catch {}
       return;
@@ -814,6 +819,7 @@ async function startCrash(interaction, s) {
         embeds: [payload.embed],
         components: [cashOutRow()],
         files: [payload.file],
+        attachments: [],
       });
     } catch { clearInterval(interval); global.crashSessions.delete(cs.userId); }
   }, engine.TICK_MS);
@@ -858,7 +864,7 @@ async function handleCrashCashOut(interaction) {
     )
     .setFooter({ text: 'YSER Flow Casino' });
 
-  await interaction.update({ embeds: [embed], components: [afterRow()], files: [file] });
+  await interaction.update({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -911,7 +917,7 @@ async function runRaceGame(interaction, s) {
     .setTitle(`${isHorse ? '🐎' : '🐢'} ${isHorse ? 'Horse' : 'Turtle'} Race — On your marks…`)
     .setImage(`attachment://${startImgName}`)
     .setFooter({ text: 'YSER Flow Casino' });
-  await interaction.editReply({ embeds: [startEmbed], components: [], files: [startFile] });
+  await interaction.editReply({ embeds: [startEmbed], components: [], files: [startFile], attachments: [] });
 
   await wait(1200);
 
@@ -947,7 +953,7 @@ async function runRaceGame(interaction, s) {
     .setFooter({ text: 'YSER Flow Casino' });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalFile] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalFile], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -984,7 +990,7 @@ async function renderInsurance(interaction, s, state) {
     new ButtonBuilder().setCustomId('cs:bj:insurance_yes').setLabel('🛡️ Take Insurance').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('cs:bj:insurance_no').setLabel('❌ No Thanks').setStyle(ButtonStyle.Secondary),
   );
-  await interaction.editReply({ embeds: [embed], components: [row], files: [file] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [file], attachments: [] });
 }
 
 async function renderBJ(interaction, s, state, initial = false) {
@@ -1044,7 +1050,7 @@ async function renderBJ(interaction, s, state, initial = false) {
   if (canSplitNow)  btns.push(new ButtonBuilder().setCustomId('cs:bj:split').setLabel('✂️ Split').setStyle(ButtonStyle.Primary));
   if (canSurrender) btns.push(new ButtonBuilder().setCustomId('cs:bj:surrender').setLabel('🏳️ Surrender').setStyle(ButtonStyle.Secondary));
 
-  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))], files: [file] });
+  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))], files: [file], attachments: [] });
 }
 
 async function handleBJ(interaction, s, action) {
@@ -1200,7 +1206,7 @@ async function finishBJ(interaction, s, state) {
   if (insuranceBet > 0) embed.addFields({ name: '🛡️ Insurance', value: insurancePayout > 0 ? `Won **${fmt(insurancePayout)}**` : 'Lost', inline: true });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1230,7 +1236,7 @@ async function startTrading(interaction, s) {
     new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
   );
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [row], files: [setupChart] });
+  await interaction.editReply({ embeds: [embed], components: [row], files: [setupChart], attachments: [] });
 }
 
 async function showRRChoice(interaction, s) {
@@ -1314,7 +1320,7 @@ async function resolveDiceVsBot(interaction, s) {
     )
     .setFooter({ text: 'YSER Flow Casino' });
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
 }
 
 async function showDicePvpChallenge(interaction, s) {
@@ -1429,7 +1435,7 @@ async function resolveRoulette(interaction, s) {
     .setFooter({ text: 'YSER Flow Casino  •  European Roulette  •  Cryptographically secure number selection' });
 
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [rlChart] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [rlChart], attachments: [] });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1541,5 +1547,5 @@ async function resolveTrading(interaction, s, direction, rr) {
     )
     .setFooter({ text: 'YSER Flow Casino' });
   unlock(s.userId);
-  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chartAttachment] });
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chartAttachment], attachments: [] });
 }
