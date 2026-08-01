@@ -3,6 +3,7 @@ const { startScheduleRunner } = require('../utils/scheduleRunner');
 const { startNewsFeedRunner } = require('../utils/newsFeed');
 const { startEconCalRunner } = require('../utils/econCalRunner');
 const { startLotteryRunner } = require('../utils/lotteryRunner');
+const { startSocialRunner } = require('../utils/socialRunner');
 const { seedDefaultContent } = require('../utils/contentSeed');
 const { restoreGiveaways } = require('../commands/utility/giveaway');
 const { restoreCoinsGiveaways } = require('../commands/economy/coinsgiveaway');
@@ -36,6 +37,7 @@ module.exports = {
         startNewsFeedRunner(client);
         startEconCalRunner(client);
         startLotteryRunner(client);
+        startSocialRunner(client);
         seedDefaultContent(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));
         await restoreCoinsGiveaways(client).catch(err => console.error('[COINS GIVEAWAY RESTORE]', err));

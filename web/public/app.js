@@ -140,6 +140,8 @@ const state = {
   templates: [], tpl: null, copy: {},   // Studio
   tplName: null, draft: null,           // Composer
   styleKey: null,                       // Appearance — the message being edited
+  socialDraft: null,                    // Social — the account being added
+  socialBridge: null, socialTests: {},   // Social — results of the two network buttons
   gawBump: null,                        // redraw the giveaway preview on demand
 };
 
@@ -207,7 +209,14 @@ async function get(path) {
   return res.json();
 }
 
-async function post(op, body) {
+/**
+ * @param {object} opts
+ *   quiet — no "Saved" toast. For the operations that read rather than write:
+ *           testing a feed and checking the bridge both go through this
+ *           endpoint, and telling somebody their change was saved when they
+ *           pressed Test is simply untrue.
+ */
+async function post(op, body, { quiet = false } = {}) {
   const res = await fetch(`/api/guild/${state.guildId}/${op}`, {
     method: 'POST',
     credentials: 'same-origin',
@@ -224,8 +233,8 @@ async function post(op, body) {
     toast([known || 'That change did not save.', why].filter(Boolean).join(' — '), 'bad');
     return null;
   }
-  if (data.unchanged) { toast('Nothing to change.'); return data; }
-  toast('Saved — logged to your mod channel.', 'good');
+  if (data.unchanged) { if (!quiet) toast('Nothing to change.'); return data; }
+  if (!quiet) toast('Saved — logged to your mod channel.', 'good');
   if (data.overview) { state.overview = data.overview; renderOverview(); }
   return data;
 }
@@ -498,6 +507,7 @@ function renderOverview() {
   renderShop();
   renderComposer();
   renderAppearance();
+  renderSocial();
   renderGiveaways();
   renderSettings();
   renderPanelLog();
@@ -1406,6 +1416,371 @@ function openEmbedPreview(draft) {
   openSheet(draft.name ? `Preview · ${draft.name}` : 'Preview', body, [], () => {
     for (const url of revocables) URL.revokeObjectURL(url);
   });
+}
+
+/* ── social ────────────────────────────────────────────────────────────────
+   Accounts on YouTube, TikTok, Instagram and X, relayed into a channel as
+   they post. The cards are styled on Appearance — this screen is only about
+   which accounts, where they land and how often they are checked. */
+
+const SOCIAL_ERRORS = {
+  bad_bridge: 'The bridge address must start with https.',
+  bad_interval: 'Check between every 2 minutes and every 6 hours.',
+  bad_batch: 'Post between 1 and 10 at a time.',
+  bad_platform: 'Pick one of the four platforms.',
+  bad_feed_url: 'A feed address must start with https.',
+  need_handle: 'Give it an account name, or a feed address.',
+  too_many_accounts: 'That is as many accounts as one server can watch.',
+  unknown_account: 'That account is no longer listed.',
+  bad_keywords: 'One of those words is too long.',
+  no_channel: 'Set a channel for it to post in first.',
+  fetch_failed: 'Could not read that feed.',
+  send_failed: 'Could not post to that channel.',
+  nothing_to_post: 'That feed has nothing in it right now.',
+};
+Object.assign(WRITE_ERRORS, SOCIAL_ERRORS);
+
+const ago = ms => {
+  if (!ms) return 'never';
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
+};
+
+/** What a bridge check came back with. */
+function bridgeResultNodes(res) {
+  return [
+    el('p', res.reason ? 'hint bad' : 'hint',
+      res.reason || `Reachable — answered ${res.status} in ${res.ms} ms.`),
+    el('p', 'hint mono', res.url || ''),
+  ];
+}
+
+/** The words box — comma separated, because that is how people write lists. */
+function wordsField(label, values, onChange, hint) {
+  const l = el('label', 'field');
+  l.append(el('span', null, label));
+  const input = el('input');
+  input.type = 'text';
+  input.value = (values || []).join(', ');
+  input.placeholder = 'clip, live, giveaway';
+  input.addEventListener('input', () => {
+    onChange(input.value.split(',').map(s => s.trim()).filter(Boolean));
+  });
+  l.append(input);
+  const wrap = el('div');
+  wrap.append(l);
+  if (hint) wrap.append(el('p', 'hint', hint));
+  return wrap;
+}
+
+function renderSocial() {
+  const d = state.overview?.social;
+  if (!d) return;
+
+  const statePill = $('#social-state');
+  if (statePill) {
+    const live = d.enabled && !!d.channelId;
+    statePill.textContent = d.enabled ? (d.channelId ? 'Watching' : 'No channel set') : 'Off';
+    // On when it is actually working, amber when it is switched on but cannot
+    // post anywhere, grey when it is off. A pill with no state class at all
+    // takes its colour from whatever it sits inside, which reads as neither.
+    statePill.className = `pill ${live ? 'on' : d.enabled ? 'wait' : 'off'}`;
+  }
+
+  /* -- where posts land --------------------------------------------------- */
+  const s = {
+    enabled: d.enabled, channelId: d.channelId, mentionRoleId: d.mentionRoleId,
+    showLinkPreview: d.showLinkPreview,
+  };
+  const landNote = el('p', 'hint', '');
+  const syncLand = () => {
+    landNote.textContent = !s.enabled
+      ? 'Nothing is being checked.'
+      : !s.channelId
+        ? 'Pick a channel — until then there is nowhere for a post to go.'
+        : `${d.accounts.filter(a => a.enabled).length} account${d.accounts.filter(a => a.enabled).length === 1 ? '' : 's'} being watched.`;
+    landNote.className = `hint${s.enabled && !s.channelId ? ' bad' : ''}`;
+  };
+
+  $('#form-social').replaceChildren(
+    toggle('Watch social accounts', s.enabled, v => { s.enabled = v; syncLand(); }),
+    pickOne('Channel', 'channel', s.channelId, v => { s.channelId = v; syncLand(); }),
+    pickOne('Ping this role', 'role', s.mentionRoleId, v => { s.mentionRoleId = v; }),
+    toggle('Also paste the link', s.showLinkPreview, v => { s.showLinkPreview = v; }),
+    el('p', 'hint', 'Pasting the link makes Discord draw its own card underneath ours, which is two cards for one post. Off unless you want that.'),
+    landNote,
+    actions(() => post('social', s)),
+  );
+  syncLand();
+
+  /* -- how it reaches them ------------------------------------------------ */
+  const b = { bridgeUrl: d.bridgeUrl, pollMinutes: d.pollMinutes, maxPerCheck: d.maxPerCheck };
+  const bridgeNote = el('p', 'hint', '');
+
+  // The result is kept in state rather than in this node. A successful write
+  // hands back a fresh overview and re-renders the whole screen, which would
+  // otherwise throw away the answer a moment after it arrived — the node this
+  // closure is holding would no longer be the one on the page.
+  const bridgeOut = el('div', 'social-test');
+  bridgeOut.hidden = !state.socialBridge;
+  if (state.socialBridge) bridgeOut.replaceChildren(...bridgeResultNodes(state.socialBridge));
+
+  const syncBridge = () => {
+    bridgeNote.textContent = d.bridgeAccounts === 0
+      ? 'Nothing here depends on the bridge right now — only YouTube is being watched, and YouTube publishes its own feed.'
+      : `${d.bridgeAccounts} of ${d.accounts.length} accounts go through the bridge. If they all go quiet at once, the bridge is why.`;
+    bridgeNote.className = 'hint';
+  };
+
+  // Its own button rather than part of Save: this reaches the network, and it
+  // is worth being able to ask "is the bridge up" without changing anything.
+  const checkBtn = el('button', 'btn small', 'Check the bridge');
+  checkBtn.type = 'button';
+  checkBtn.addEventListener('click', async () => {
+    checkBtn.disabled = true;
+    checkBtn.textContent = 'Asking…';
+    try {
+      state.socialBridge = await post('socialbridge', { bridgeUrl: b.bridgeUrl }, { quiet: true })
+        || { reason: 'Could not run the check.', url: b.bridgeUrl };
+      renderSocial();
+    } finally {
+      checkBtn.disabled = false;
+      checkBtn.textContent = 'Check the bridge';
+    }
+  });
+
+  const bridgeFoot = el('div', 'actions');
+  const saveBridge = el('button', 'btn primary small', 'Save changes');
+  saveBridge.type = 'button';
+  saveBridge.addEventListener('click', async () => {
+    saveBridge.disabled = true;
+    try { await post('social', b); } finally { saveBridge.disabled = false; }
+  });
+  bridgeFoot.append(saveBridge, checkBtn);
+
+  $('#form-social-bridge').replaceChildren(
+    el('p', 'muted', 'YouTube publishes a feed of its own, so it is read directly and needs nothing in between. TikTok, Instagram and X do not publish one, so those go through a bridge that reads the page and republishes it as a feed. The public bridge is shared by everybody and turns people away when it is busy — point this at your own if you run one.'),
+    textField('Bridge address', b.bridgeUrl, v => { b.bridgeUrl = v; }, { placeholder: d.defaultBridgeUrl }),
+    textField('Check every (minutes)', String(b.pollMinutes), v => { b.pollMinutes = Number(v); }),
+    textField('At most this many per check', String(b.maxPerCheck), v => { b.maxPerCheck = Number(v); }),
+    el('p', 'hint', 'The cap stops an account that has been quiet for a week filling the channel the moment it posts again.'),
+    bridgeNote,
+    bridgeFoot,
+    bridgeOut,
+  );
+  syncBridge();
+
+  /* -- the accounts ------------------------------------------------------- */
+  const wrap = $('#social-accounts');
+  const rows = [];
+
+  if (state.socialDraft) rows.push(socialAccountCard(state.socialDraft, d, true));
+  if (!d.accounts.length && !state.socialDraft) {
+    rows.push(el('p', 'muted', 'No accounts watched yet. Add one and its posts will land in your channel as they go out.'));
+  }
+  for (const a of d.accounts) rows.push(socialAccountCard(a, d, false));
+
+  // The cards are styled with every other message the bot sends, not here.
+  // Saying so with a button beats leaving someone to find it.
+  const toStyle = el('button', 'btn small', 'Style these cards on Appearance');
+  toStyle.type = 'button';
+  toStyle.addEventListener('click', () => {
+    state.styleKey = 'social.youtube';
+    showSection('appearance');
+    renderAppearance();
+    paintBar();
+  });
+  const styleRow = el('div', 'actions');
+  styleRow.append(toStyle);
+  rows.push(styleRow);
+
+  wrap.replaceChildren(...rows);
+}
+
+/** One account: what it is, where it posts, and what it last did. */
+function socialAccountCard(account, d, isNew) {
+  const platform = d.platforms.find(p => p.key === account.platform) || d.platforms[0];
+  const draft = { id: isNew ? '' : account.id, ...account };
+
+  const card = el('article', 'panel social-card');
+  card.style.borderLeftColor = platform.color;
+  if (!isNew && !account.enabled) card.classList.add('off');
+
+  const head = el('div', 'queue-head');
+  const name = el('h2', null, isNew ? 'New account' : `${account.platformEmoji} ${account.label || account.handle}`);
+  head.append(name);
+  if (!isNew) {
+    const tag = el('span', 'tag', account.platformLabel);
+    tag.style.color = platform.color;
+    head.append(tag);
+  }
+  card.append(head);
+
+  const fields = el('div');
+  fields.append(
+    select('Platform', draft.platform, d.platforms.map(p => ({ value: p.key, label: `${p.emoji} ${p.label}` })),
+      v => {
+        draft.platform = v;
+        // The hint under the handle box is per platform, so the card is
+        // redrawn rather than left describing the wrong one.
+        if (isNew) { state.socialDraft = { ...draft }; renderSocial(); }
+      }),
+    textField('Account name', draft.handle, v => { draft.handle = v; },
+      { placeholder: platform.handleHint }),
+    el('p', 'hint', platform.direct
+      ? 'YouTube is read directly — a handle, a UC… id or a channel URL all work.'
+      : `Read through the bridge. If ${platform.label} goes quiet, try a feed address of your own below.`),
+    textField('Show them as (optional)', draft.label || '', v => { draft.label = v; }),
+    textField('Feed address (optional)', draft.feedUrl || '', v => { draft.feedUrl = v; },
+      { placeholder: 'https://…  any RSS or Atom feed' }),
+    el('p', 'hint', 'Set this and the platform and bridge are ignored entirely — it is the way out when a bridge stops working.'),
+    pickOne('Post to (leave blank for the main channel)', 'channel', draft.postChannelId, v => { draft.postChannelId = v; }),
+    pickOne('Ping (leave blank for the main role)', 'role', draft.mentionRoleId, v => { draft.mentionRoleId = v; }),
+    wordsField('Only post if it mentions', draft.includeKeywords, v => { draft.includeKeywords = v; },
+      'Comma separated. Leave empty to post everything.'),
+    wordsField('Never post if it mentions', draft.excludeKeywords, v => { draft.excludeKeywords = v; },
+      'Checked first — a post matching both is skipped.'),
+    toggle('Watching', draft.enabled !== false, v => { draft.enabled = v; }),
+  );
+  card.append(fields);
+
+  /* status */
+  if (!isNew) {
+    const status = el('div', 'rows social-status');
+    status.append(
+      row('Last checked', ago(account.lastCheckedAt)),
+      row('Last posted', ago(account.lastPostedAt)),
+      row('Posted so far', num(account.posts)),
+    );
+    if (account.lastError) {
+      const errRow = row('Last error', account.lastError);
+      errRow.classList.add('bad');
+      status.append(errRow);
+    }
+    if (account.resolvedFeedUrl) {
+      const link = el('a', 'hint mono', account.resolvedFeedUrl);
+      link.href = account.resolvedFeedUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      status.append(link);
+    }
+    card.append(status);
+  }
+
+  // Same reason as the bridge result: kept in state so a re-render does not
+  // take the answer off the screen a moment after it appeared.
+  const out = el('div', 'social-out');
+  if (!isNew && state.socialTests?.[account.id]) {
+    out.append(socialTestResult(state.socialTests[account.id]));
+  }
+  card.append(out);
+
+  const foot = el('div', 'actions');
+  const save = el('button', 'btn primary small', isNew ? 'Start watching' : 'Save');
+  save.type = 'button';
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    try {
+      const res = await post('socialaccount', {
+        id: draft.id || undefined,
+        platform: draft.platform,
+        handle: draft.handle,
+        label: draft.label || '',
+        feedUrl: draft.feedUrl || '',
+        postChannelId: draft.postChannelId || null,
+        mentionRoleId: draft.mentionRoleId || null,
+        includeKeywords: draft.includeKeywords || [],
+        excludeKeywords: draft.excludeKeywords || [],
+        enabled: draft.enabled !== false,
+      });
+      if (res?.ok) {
+        state.socialDraft = null;
+        state.overview = await get(`/api/guild/${state.guildId}`);
+        renderOverview();
+      }
+    } finally { save.disabled = false; }
+  });
+  foot.append(save);
+
+  if (isNew) {
+    const cancel = el('button', 'btn small', 'Cancel');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => { state.socialDraft = null; renderSocial(); });
+    foot.append(cancel);
+  } else {
+    const test = el('button', 'btn small', 'Test');
+    test.type = 'button';
+    test.addEventListener('click', async () => {
+      test.disabled = true;
+      test.textContent = 'Reading…';
+      try {
+        const res = await post('socialtest', { id: account.id }, { quiet: true });
+        if (!state.socialTests) state.socialTests = {};
+        state.socialTests[account.id] = res?.ok
+          ? res
+          : { failed: true, detail: 'The check could not be run.' };
+        renderSocial();
+      } finally { test.disabled = false; test.textContent = 'Test'; }
+    });
+
+    const now = el('button', 'btn small', 'Post the latest');
+    now.type = 'button';
+    now.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: 'Post the latest one now?',
+        message: 'The newest post goes into the channel straight away. It does not skip anything — the next real check still posts whatever is new.',
+        confirmLabel: 'Post it',
+      })) return;
+      now.disabled = true;
+      try { await post('socialpost', { id: account.id }); }
+      finally { now.disabled = false; }
+    });
+
+    const del = el('button', 'btn small danger', 'Stop watching');
+    del.type = 'button';
+    del.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: `Stop watching ${account.label || account.handle}?`,
+        message: 'Its posts stop arriving. Nothing already in the channel is touched.',
+        confirmLabel: 'Stop watching',
+      })) return;
+      const res = await post('socialaccount', { id: account.id, remove: true });
+      if (res?.ok) {
+        state.overview = await get(`/api/guild/${state.guildId}`);
+        renderOverview();
+      }
+    });
+
+    foot.append(test, now, del);
+  }
+  card.append(foot);
+  return card;
+}
+
+/** What a Test came back with — the three newest, or the reason there are none. */
+function socialTestResult(res) {
+  const box = el('div', 'social-test');
+  if (res.failed) {
+    box.append(el('p', 'hint bad', `Could not read it: ${res.detail}`));
+    box.append(el('p', 'hint', `Asked: ${res.url || 'no address could be built'}`));
+    return box;
+  }
+
+  box.append(el('p', 'hint', `${res.found} post${res.found === 1 ? '' : 's'} in the feed · ${res.keptByFilters} would pass your filters`));
+  if (!res.baselineSet) {
+    box.append(el('p', 'hint', 'Nothing has been posted from this account yet — the first real check sets a baseline, and everything after that arrives. Use "Post the latest" if you want to see the card now.'));
+  }
+  const list = el('div', 'rows');
+  for (const item of res.sample) {
+    const r = row(new Date(item.published).toLocaleString(), item.title);
+    if (!item.keptByFilters) r.classList.add('dim');
+    list.append(r);
+  }
+  box.append(list);
+  return box;
 }
 
 /* ── appearance: the messages the bot sends on its own ─────────────────────
@@ -3213,6 +3588,14 @@ async function main() {
     state.tplName = null;
     state.draft = { ...newDraft(''), isNew: true };
     renderComposer();
+  });
+  $('#social-new').addEventListener('click', () => {
+    state.socialDraft = {
+      id: '', platform: 'youtube', handle: '', label: '', feedUrl: '',
+      postChannelId: null, mentionRoleId: null,
+      includeKeywords: [], excludeKeywords: [], enabled: true,
+    };
+    renderSocial();
   });
   root.dataset.state = 'panel';
   offerStorageAccess();

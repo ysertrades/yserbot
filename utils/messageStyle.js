@@ -73,6 +73,36 @@ const action = (label, blurb, color, done, extra = {}) => ({
   ...extra,
 });
 
+/**
+ * A card for one social platform.
+ *
+ * Four near-identical entries whose only real differences are the name and
+ * the brand colour, so they are generated rather than written out four times
+ * and then drifting apart. There is no on/off switch here: whether a platform
+ * posts at all is the Social screen's business — each watched account has its
+ * own switch there, and a second one here that meant something subtly
+ * different would only be confusing.
+ */
+const social = (key, name, color, emoji, blurb) => ({
+  [`social.${key}`]: {
+    group: 'Social',
+    label: name,
+    blurb,
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer', 'thumbnail', 'timestamp'],
+    tokens: ['{author}', '{handle}', '{title}', '{text}', '{url}', '{platform}'],
+    bodyLabel: 'Body',
+    bodyHint: 'Leave {url} in somewhere — it is what makes the card followable.',
+    defaults: {
+      enabled: true, color,
+      title: `${emoji} {author} on ${name}`,
+      body: '**[{title}]({url})**\n\n{text}',
+      footer: `${name} • {handle}`,
+      thumbnail: true, timestamp: true,
+    },
+  },
+});
+
 const CATALOGUE = {
   /* -- the cards a moderation action leaves in the channel ---------------- */
 
@@ -229,6 +259,17 @@ const CATALOGUE = {
       footer: '', thumbnail: false, timestamp: false,
     },
   },
+
+  /* -- social ------------------------------------------------------------- */
+
+  ...social('youtube', 'YouTube', '#FF0000', '▶️',
+    'Posted when a watched YouTube channel publishes. {title} is the video title.'),
+  ...social('tiktok', 'TikTok', '#FE2C55', '🎵',
+    'Posted when a watched TikTok account puts something out.'),
+  ...social('instagram', 'Instagram', '#E1306C', '📸',
+    'Posted when a watched Instagram account puts something out.'),
+  ...social('twitter', 'X', '#1D9BF0', '𝕏',
+    'Posted when a watched X account posts. X\'s own brand colour is black, which is a spine you cannot see on Discord\'s dark theme — this is the blue people still recognise. Change it if you would rather have the black.'),
 
   'report.submitted': {
     group: 'Reports',
@@ -412,6 +453,9 @@ const colorInt = hex => {
  *   fields       — extra fields appended after the body (the mod log's record)
  *   color        — overrides the stored colour (the mod log borrows the
  *                  action's, so one colour change covers card, log and DM)
+ *   at           — the moment the card is about, when that is not now: a
+ *                  social post carries when it was published, which is what
+ *                  makes "3 hours ago" under the card mean anything
  */
 function build(guildId, key, opts = {}) {
   const entry = CATALOGUE[key];
@@ -419,7 +463,7 @@ function build(guildId, key, opts = {}) {
   const style = styleFor(guildId, key);
   if (!style.enabled) return null;
 
-  const { tokens = {}, iconURL = null, thumbnailURL = null, fields = [], color = null } = opts;
+  const { tokens = {}, iconURL = null, thumbnailURL = null, fields = [], color = null, at = null } = opts;
   const title = fill(style.title, tokens).slice(0, 256);
   const body = fill(style.body, tokens).slice(0, 4096);
 
@@ -458,7 +502,7 @@ function build(guildId, key, opts = {}) {
   const footer = fill(style.footer, tokens).slice(0, 2048);
   if (footer) set(() => embed.setFooter({ text: footer }));
   if (style.thumbnail && thumbnailURL) set(() => embed.setThumbnail(thumbnailURL));
-  if (style.timestamp) set(() => embed.setTimestamp());
+  if (style.timestamp) set(() => embed.setTimestamp(at ?? undefined));
 
   return embed;
 }

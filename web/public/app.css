@@ -724,6 +724,24 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb-btns span.Danger  { background: #DA373C; }
 .demb-btns span.link::after { content: ' ↗'; opacity: 0.8; }
 
+/* Social ─────────────────────────────────────────────────────────────────
+   The spine down each account card is its platform's colour, so the list
+   reads as four platforms rather than as one undifferentiated list. */
+.social-card { border-left: 3px solid var(--accent); margin-bottom: 0.9rem; }
+.social-card.off { opacity: 0.55; }
+.social-card .tag { font-weight: 700; }
+.social-status { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid var(--rule); }
+.social-status .bad { color: var(--bad, #FF4757); }
+.social-status a.mono {
+  display: block; margin-top: 0.4rem; word-break: break-all;
+  font-family: var(--mono, monospace); font-size: 0.72rem; color: var(--dim);
+}
+.social-test {
+  margin-top: 0.7rem; padding: 0.6rem 0.75rem;
+  background: var(--sunken); border: 1px solid var(--rule); border-radius: 8px;
+}
+.social-test .row.dim { opacity: 0.45; }
+
 /* Appearance ─────────────────────────────────────────────────────────────
    The compact action card puts its line in the author slot so the avatar sits
    beside it; `.lead` is that line being the message rather than a byline. */
