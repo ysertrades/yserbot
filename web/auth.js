@@ -23,6 +23,7 @@
  */
 
 const crypto = require('node:crypto');
+const { readJson, writeJson } = require('../utils/jsonStorage');
 
 const API = 'https://discord.com/api/v10';
 const MANAGE_GUILD = 1n << 5n;
@@ -45,6 +46,11 @@ const SESSION_TTL_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
 // new token on every single request.
 const REFRESH_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 const STATE_TTL_MS   = 10 * 60 * 1000;      // 10 minutes to finish logging in
+
+// How long an embed link keeps working with nobody touching it. Expiry is not
+// really the control here — revocation is (see embedVersion below) — so this
+// is set long enough that it is never the reason someone gets logged out.
+const EMBED_LINK_TTL_MS = 5 * 365 * 24 * 60 * 60 * 1000;
 
 /* ─── config ─────────────────────────────────────────────────────────────── */
 
@@ -316,6 +322,42 @@ function adoptable(req) {
   return verify(token, c.secret) ? token : null;
 }
 
+/**
+ * Whop reloads whatever URL is pasted into its embed settings — it does not
+ * remember anything the page did on its own, and inside its app the
+ * iframe's WebView drops third-party cookies and localStorage outright with
+ * no way to unlock either one (that machinery only helps in a real browser).
+ * So nothing kept in the browser survives the app being closed there; the
+ * only thing that does is the URL itself, because Whop is the one holding
+ * onto it. An embed link is a normal session baked into that URL.
+ *
+ * Long-lived by design, which is why it carries its own revocation instead
+ * of relying on expiry: `ev` is a version number checked against
+ * embedVersion(uid) on every use, so regenerating a link invalidates every
+ * link minted before it without touching anything else the account can do.
+ */
+function mintEmbedLink(session) {
+  const { uid, name, avatar, guilds } = session;
+  return sign({ uid, name, avatar, guilds, ev: embedVersion(uid), exp: Date.now() + EMBED_LINK_TTL_MS }, config().secret);
+}
+
+function embedVersion(uid) {
+  const versions = readJson('panel_embed_links.json', {});
+  return versions[uid] || 1;
+}
+
+/** Invalidates every embed link minted for this account so far. */
+function revokeEmbedLinks(uid) {
+  const versions = readJson('panel_embed_links.json', {});
+  versions[uid] = (versions[uid] || 1) + 1;
+  writeJson('panel_embed_links.json', versions);
+}
+
+/** True for an ordinary session, and for an embed link that has not been revoked since. */
+function embedLinkCurrent(session) {
+  return session.ev == null || session.ev === embedVersion(session.uid);
+}
+
 function refreshed(session) {
   const remaining = session.exp - Date.now();
   if (remaining > SESSION_TTL_MS - REFRESH_AFTER_MS) return null;
@@ -339,9 +381,10 @@ function sessionFor(req) {
   const header = req.headers.authorization || '';
   if (header.startsWith('Bearer ')) {
     const fromHeader = verify(header.slice(7).trim(), c.secret);
-    if (fromHeader) return fromHeader;
+    if (fromHeader && embedLinkCurrent(fromHeader)) return fromHeader;
   }
-  return verify(parseCookies(req)[SESSION_COOKIE], c.secret);
+  const fromCookie = verify(parseCookies(req)[SESSION_COOKIE], c.secret);
+  return fromCookie && embedLinkCurrent(fromCookie) ? fromCookie : null;
 }
 
 /**
@@ -381,6 +424,7 @@ function csrfValid(session, token) {
 module.exports = {
   config, missingConfig, csrfFor, csrfValid, embeddable,
   parkHandoff, collectHandoff, refreshed, adoptable,
+  mintEmbedLink, revokeEmbedLinks,
   authorizeUrl, completeLogin,
   sessionFor, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,

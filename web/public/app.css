@@ -292,6 +292,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 }
 .form .actions { margin-top: 0.25rem; }
 
+.embed-link-row { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
+.embed-link-row input { flex: 1; min-width: 0; }
+#embed-link-card .actions { margin-top: 0.85rem; padding-top: 0; border-top: none; }
+
 /* A heading that follows content needs air above it; the first one in a panel
    already has the panel's padding. */
 * + h2 { margin-top: 1.25rem; }

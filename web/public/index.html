@@ -180,6 +180,20 @@
         <h2>Server settings</h2>
         <form id="form-settings" class="form"></form>
       </div>
+
+      <div class="panel" id="embed-link-card">
+        <h2>Embed in Whop</h2>
+        <p class="muted">Whop reloads whatever URL sits in its own embed field — it does not keep you signed in on its own. Get a link below and paste it into Whop as the embed address, and you will not have to sign in there again.</p>
+        <div class="embed-link-row" id="embed-link-row" hidden>
+          <input id="embed-link-value" type="text" readonly aria-label="Whop embed link">
+          <button class="btn" id="embed-link-copy" type="button">Copy</button>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="embed-link-get" type="button">Get my Whop link</button>
+          <button class="btn danger" id="embed-link-revoke" type="button" hidden>Replace it</button>
+        </div>
+        <p class="note soft" id="embed-link-note" hidden></p>
+      </div>
     </div>
 
     <!-- ── Feeds ───────────────────────────────────────────────────────── -->

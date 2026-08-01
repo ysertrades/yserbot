@@ -104,8 +104,19 @@ function offerStorageAccess() {
   $('#server').before(note);
 }
 
+// A token riding in the URL, from a Whop embed link. This is Whop's own
+// settings reloading the same URL every time the app opens, not anything the
+// browser remembered — so it takes priority over whatever storage did or
+// didn't manage to hold onto.
+const urlToken = new URLSearchParams(location.search).get('t');
+if (urlToken) {
+  const clean = new URL(location.href);
+  clean.searchParams.delete('t');
+  history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+}
+
 const state = {
-  csrf: null, token: recall(), guildId: null, guilds: [], overview: null,
+  csrf: null, token: urlToken || recall(), guildId: null, guilds: [], overview: null,
   templates: [], tpl: null, copy: {},   // Studio
   tplName: null, draft: null,           // Composer
   gawBump: null,                        // redraw the giveaway preview on demand
@@ -1147,6 +1158,70 @@ function renderSettings() {
   form.replaceChildren(...nodes);
 }
 
+/**
+ * The Whop embed link.
+ *
+ * Whop's app reloads whatever URL is sitting in its own embed field, not
+ * anything the page did on its own — so once the WebView it uses has closed,
+ * neither a cookie nor localStorage can be counted on to still be there.
+ * The URL itself is the only thing that survives, because Whop is the one
+ * holding onto it. Baking a long-lived, revocable session into that URL is
+ * what keeps the embed signed in across the app being closed and reopened.
+ */
+function initEmbedLink() {
+  const getBtn = $('#embed-link-get');
+  if (!getBtn || getBtn.dataset.wired) return;
+  getBtn.dataset.wired = '1';
+
+  const revokeBtn = $('#embed-link-revoke');
+  const row = $('#embed-link-row');
+  const input = $('#embed-link-value');
+  const note = $('#embed-link-note');
+
+  const showLink = url => {
+    input.value = url;
+    row.hidden = false;
+    revokeBtn.hidden = false;
+    note.hidden = false;
+    note.textContent = "Anyone with this link can act on your servers here, the same as your own Discord login — treat it like a password and only paste it into Whop's own embed settings.";
+  };
+
+  const mint = async () => {
+    const res = await fetch('/api/embed-link', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'x-csrf-token': state.csrf, ...authHeaders() },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.url) { toast('Could not get the link.', 'bad'); return; }
+    showLink(data.url);
+  };
+
+  getBtn.addEventListener('click', async () => {
+    getBtn.disabled = true;
+    getBtn.textContent = 'Getting your link…';
+    try { await mint(); }
+    finally { getBtn.disabled = false; getBtn.textContent = 'Get my Whop link'; }
+  });
+
+  revokeBtn.addEventListener('click', async () => {
+    revokeBtn.disabled = true;
+    try {
+      const res = await fetch('/api/embed-link', {
+        method: 'DELETE', credentials: 'same-origin',
+        headers: { 'x-csrf-token': state.csrf, ...authHeaders() },
+      });
+      if (!res.ok) { toast('Could not replace the link.', 'bad'); return; }
+      await mint();
+      toast('New link ready — update Whop with it.', 'good');
+    } finally { revokeBtn.disabled = false; }
+  });
+
+  $('#embed-link-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(input.value); toast('Copied.', 'good'); }
+    catch { input.select(); toast('Select and copy the link manually.'); }
+  });
+}
+
 /* ── feature groups ────────────────────────────────────────────────────────
    Casino, lottery, cards and verification are all "a handful of typed
    settings", so one renderer covers them from the field descriptions the
@@ -1616,6 +1691,7 @@ async function main() {
   state.guilds = me.guilds;
   renderIdentity(me.user);
   initSections();
+  initEmbedLink();
   $('#tpl-new').addEventListener('click', () => {
     state.tplName = null;
     state.draft = { ...newDraft(''), isNew: true };
