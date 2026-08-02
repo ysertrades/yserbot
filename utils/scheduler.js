@@ -33,11 +33,17 @@ function parseUtcOffset(input) {
     return null;
 }
 
-// Day-of-week check performed in the schedule's own timezone (offsetMinutes),
-// not the server's local time — a moment near midnight UTC can fall on a
-// different calendar day depending on the zone.
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Day-of-week checks are performed in the schedule's own timezone
+// (offsetMinutes), not the server's local time — a moment near midnight UTC
+// can fall on a different calendar day depending on the zone.
+function dayOfWeek(ts, offsetMinutes = 0) {
+    return new Date(ts + offsetMinutes * 60000).getUTCDay();
+}
+
 function isWeekend(ts, offsetMinutes = 0) {
-    const day = new Date(ts + offsetMinutes * 60000).getUTCDay();
+    const day = dayOfWeek(ts, offsetMinutes);
     return day === 0 || day === 6;
 }
 
@@ -46,6 +52,17 @@ function isWeekend(ts, offsetMinutes = 0) {
 function nextWeekdayTimestamp(ts, offsetMinutes = 0) {
     let t = ts;
     while (isWeekend(t, offsetMinutes)) t += 86400000;
+    return t;
+}
+
+// Pushes a timestamp forward until it lands on `day` (0 = Sunday … 6 =
+// Saturday) in the given timezone. A timestamp already on that day is
+// returned untouched, so the time of day that was typed is kept either way.
+// Bounded at seven steps: one week is enough to reach any weekday, and a
+// `day` outside 0–6 would otherwise loop forever.
+function nextDayOfWeekTimestamp(ts, day, offsetMinutes = 0) {
+    let t = ts;
+    for (let i = 0; i < 7 && dayOfWeek(t, offsetMinutes) !== day; i++) t += 86400000;
     return t;
 }
 
@@ -102,10 +119,18 @@ function parseScheduleTime(input, offsetMinutes = 0) {
 function computeNextRun(firedAt, frequency, now = Date.now(), offsetMinutes = 0) {
     if (frequency === 'once') return null;
     const DAY_MS = 86400000;
-    let next = firedAt + DAY_MS;
-    while (next <= now) next += DAY_MS;
+    // A weekly schedule steps a whole week at a time, which is what keeps it
+    // on the weekday it was set up for. Stepping daily and then hunting for
+    // the right day again would land on the same date but re-derive the day
+    // every run — a week is exactly seven days, so this cannot drift.
+    const step = frequency === 'weekly' ? 7 * DAY_MS : DAY_MS;
+    let next = firedAt + step;
+    while (next <= now) next += step;
     if (frequency === 'weekdays') next = nextWeekdayTimestamp(next, offsetMinutes);
     return next;
 }
 
-module.exports = { generateScheduleId, parseUtcOffset, parseScheduleTime, computeNextRun, nextWeekdayTimestamp, isWeekend };
+module.exports = {
+    generateScheduleId, parseUtcOffset, parseScheduleTime, computeNextRun,
+    nextWeekdayTimestamp, nextDayOfWeekTimestamp, isWeekend, dayOfWeek, DAY_NAMES,
+};
