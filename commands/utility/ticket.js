@@ -96,18 +96,15 @@ module.exports = {
 
     if (sub === 'setup') {
       const channel = interaction.options.getChannel('channel');
-      const embed   = createServerEmbed('ticket', {
-        title: 'Support Tickets',
-        description: 'Need help? Click the button below to open a private ticket and our team will assist you.',
-        fields: [
-          { name: 'Response Time',    value: 'Usually within a few hours', inline: true },
-          { name: 'What to Include',  value: 'Describe your issue clearly', inline: true },
-        ],
-      }, interaction.guild);
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('create_ticket').setLabel('Create Ticket').setStyle(ButtonStyle.Primary).setEmoji('🎫'),
-      );
-      await channel.send({ embeds: [embed], components: [row] });
+      // Both the card and its button come from the Appearance catalogue, so a
+      // server that has restyled either gets its own panel here rather than
+      // the wording this file happens to have been written with.
+      const embed = messageStyle.build(interaction.guild.id, 'ticket.panel', {
+        tokens: { server: interaction.guild.name },
+      });
+      const row = messageStyle.buildButtons(interaction.guild.id, 'ticket.panel',
+        { ButtonBuilder, ActionRowBuilder, ButtonStyle });
+      await channel.send({ embeds: embed ? [embed] : [], components: row ? [row] : [] });
       await sendTempReply(interaction, createServerEmbed('success', { title: 'Ticket Panel Created', description: `Panel sent to ${channel}.` }, interaction.guild));
 
     } else if (sub === 'supportrole') {
@@ -242,9 +239,8 @@ module.exports = {
       permissionOverwrites: overwrites,
     });
 
-    const closeRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('close_ticket').setLabel('Close Ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒'),
-    );
+    const closeRow = messageStyle.buildButtons(guild.id, 'ticket.opened',
+      { ButtonBuilder, ActionRowBuilder, ButtonStyle });
 
     await channel.send({
       content: supportRoleId ? `<@&${supportRoleId}>` : undefined,
@@ -257,7 +253,9 @@ module.exports = {
           channel: `${channel}`,
         },
       })],
-      components: [closeRow],
+      // Null when every button has been removed, and Discord rejects an
+      // empty row rather than ignoring it.
+      components: closeRow ? [closeRow] : [],
     });
 
     // Start inactivity timer

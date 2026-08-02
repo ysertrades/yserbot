@@ -246,18 +246,53 @@ const CATALOGUE = {
 
   /* -- the rest ------------------------------------------------------------ */
 
+  'ticket.panel': {
+    group: 'Tickets',
+    label: 'Ticket panel',
+    blurb: 'The message that sits in your ticket channel with the button members press to open one. Posted by /ticket setup.',
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer', 'buttons'],
+    tokens: [],
+    buttons: [
+      { id: 'create_ticket', label: 'Create Ticket', emoji: '🎫', style: 'Primary', does: 'Opens a private channel for the member' },
+    ],
+    defaults: {
+      enabled: true, color: '#00CEC9', title: '🎫 Support Tickets',
+      body: 'Need help? Press the button below to open a private ticket and our team will be with you.',
+      footer: 'Usually answered within a few hours',
+      thumbnail: false, timestamp: false,
+    },
+  },
+
   'ticket.opened': {
     group: 'Tickets',
     label: 'Ticket opened',
     blurb: 'The first message inside a new ticket channel. {support} is the support role, if one is set. It is always sent — a ticket with no opening message would look broken.',
     shape: 'card',
-    parts: ['color', 'title', 'body', 'footer', 'timestamp'],
+    parts: ['color', 'title', 'body', 'footer', 'timestamp', 'buttons'],
     tokens: ['{support}', '{channel}'],
+    buttons: [
+      { id: 'close_ticket', label: 'Close Ticket', emoji: '🔒', style: 'Danger', does: 'Closes the ticket and deletes the channel' },
+    ],
     defaults: {
       enabled: true, color: '#00CEC9', title: '🎫 Ticket Opened',
       body: 'Welcome {user}! A support member will be with you shortly.\n\nDescribe your issue in detail below.',
       footer: '', thumbnail: false, timestamp: true,
     },
+  },
+
+  'verify.panel': {
+    group: 'Verification',
+    label: 'Verification panel',
+    blurb: 'The message members press to start verifying. Posted by /verify setup, or from the Settings screen.',
+    shape: 'card',
+    parts: ['color', 'buttons'],
+    wordingNote: 'The heading, the opening line and the rules are on the Settings screen, so they stay in one place rather than being editable in two.',
+    tokens: [],
+    buttons: [
+      { id: 'verify_start', label: 'Start Verification', emoji: '🧠', style: 'Success', does: 'Begins the memory challenge' },
+    ],
+    defaults: { enabled: true, color: '#5865F2', title: '', body: '' },
   },
 
   'verify.success': {
@@ -278,8 +313,42 @@ const CATALOGUE = {
 
   ...social('youtube', 'YouTube', '#FF0000',
     'Posted when a watched YouTube channel publishes. {title} is the video title.'),
-  ...social('tiktok', 'TikTok', '#FE2C55',
-    'Posted when a watched TikTok account puts something out.'),
+
+  'report.form': {
+    group: 'Reports',
+    label: 'Report form',
+    blurb: 'The private form a member fills in when they run /report. Only they see it — the two dropdowns on it are Discord\'s own and cannot be restyled.',
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer', 'buttons'],
+    tokens: [],
+    buttons: [
+      { id: 'report_link', label: 'Add Link', emoji: '🔗', style: 'Secondary', does: 'Opens a box for a link to the message' },
+      { id: 'report_submit', label: 'Submit Report', emoji: '📤', style: 'Success', does: 'Sends it to your staff' },
+      { id: 'report_cancel', label: 'Cancel', emoji: '✖️', style: 'Secondary', does: 'Throws the draft away' },
+    ],
+    defaults: {
+      enabled: true, color: '#E74C3C', title: '🚨 File a Report',
+      body: 'Pick the member below, choose a reason, add a link to the message if you have one, then press Submit.',
+      footer: 'Only you can see this — nothing is sent until you press Submit',
+      thumbnail: false, timestamp: false,
+    },
+  },
+
+  'report.card': {
+    group: 'Reports',
+    label: 'Report card for staff',
+    blurb: 'What lands in your report channel when somebody files one. It keeps its Reported user, Reporter and Reason fields — those are the record.',
+    shape: 'card',
+    parts: ['color', 'title', 'footer', 'thumbnail', 'timestamp', 'buttons'],
+    tokens: ['{target}', '{reporter}', '{reason}'],
+    buttons: [
+      { id: 'rpt_action', label: 'Take Action', emoji: '⚡', style: 'Danger', does: 'Opens the warn, kick, ban and timeout buttons' },
+    ],
+    defaults: {
+      enabled: true, color: '#E74C3C', title: '🚨 New User Report',
+      body: '', footer: 'Report from {server}', thumbnail: true, timestamp: true,
+    },
+  },
 
   'report.submitted': {
     group: 'Reports',
@@ -303,6 +372,79 @@ function partsOf(key) {
   return entry.parts || SHAPES[entry.shape] || [];
 }
 
+/* ─── the buttons a message carries ──────────────────────────────────────── */
+
+/**
+ * Some of these messages are panels — they sit in a channel with a button
+ * under them that members press. The wording and the colour of the card were
+ * editable and the button was not, which is the wrong way round: the button
+ * is the part people read before they press, and "Create Ticket" in English
+ * on a server that speaks anything else was simply stuck that way.
+ *
+ * An entry declares the buttons it carries and what they say by default; a
+ * guild stores a patch of {label, emoji, style} per button. The custom id is
+ * never editable — it is what the bot routes the press on, so letting it be
+ * typed would be a way to build a button that does nothing.
+ *
+ * Link buttons are not offered. They need a URL rather than a custom id and
+ * none of these panels has one; the Composer is where a link button belongs.
+ */
+const BUTTON_STYLES = ['Primary', 'Secondary', 'Success', 'Danger'];
+
+const BUTTON_LIMITS = { label: 80, emoji: 60 };
+
+/** What an entry's buttons look like after a guild's changes. */
+function buttonsFor(guildId, key) {
+  const entry = CATALOGUE[key];
+  if (!entry?.buttons?.length) return [];
+  const stored = readJson(FILE, {})[guildId]?.[key]?.buttons || {};
+  return entry.buttons.map(b => {
+    const patch = stored[b.id] && typeof stored[b.id] === 'object' ? stored[b.id] : {};
+    const style = BUTTON_STYLES.includes(patch.style) ? patch.style : b.style;
+    return {
+      id: b.id,
+      // An empty label is allowed when there is an emoji to carry the button,
+      // which is how a compact panel is built — but not both empty, because
+      // Discord refuses a button with neither and the whole panel would fail
+      // to post over one blank field.
+      label: typeof patch.label === 'string' ? patch.label.slice(0, BUTTON_LIMITS.label) : b.label,
+      emoji: typeof patch.emoji === 'string' ? patch.emoji.slice(0, BUTTON_LIMITS.emoji) : (b.emoji || ''),
+      style,
+      // What it says on the tin, for the panel to explain each one.
+      does: b.does || '',
+    };
+  }).map(b => (b.label || b.emoji ? b : { ...b, label: b.id }));
+}
+
+/**
+ * Builds the row, ready to send.
+ *
+ * `customId` maps a declared id onto the real one, because several of these
+ * carry a session or a target on the end — `verify_cancel:abc123`. Returning
+ * null rather than an empty row matters: Discord rejects a row with no
+ * components, so a message with every button removed must send without one.
+ */
+function buildButtons(guildId, key, { customId = id => id, ButtonBuilder, ActionRowBuilder, ButtonStyle } = {}) {
+  const specs = buttonsFor(guildId, key);
+  if (!specs.length || !ButtonBuilder || !ActionRowBuilder) return null;
+  const row = new ActionRowBuilder();
+  for (const b of specs) {
+    try {
+      const btn = new ButtonBuilder()
+        .setCustomId(String(customId(b.id)))
+        .setStyle(ButtonStyle[b.style] ?? ButtonStyle.Secondary);
+      if (b.label) btn.setLabel(b.label);
+      if (b.emoji) {
+        // An emoji Discord will not parse throws, and losing the whole panel
+        // to one bad character in a web form is not a trade worth making.
+        try { btn.setEmoji(b.emoji); } catch { if (!b.label) btn.setLabel(b.id); }
+      }
+      row.addComponents(btn);
+    } catch { /* a button that will not build is left out rather than fatal */ }
+  }
+  return row.components.length ? row : null;
+}
+
 /* ─── storage ────────────────────────────────────────────────────────────── */
 
 const LIMITS = { title: 256, body: 4000, footer: 2048 };
@@ -321,9 +463,13 @@ function styleFor(guildId, key) {
       const value = stored[part];
       if (part === 'color') { if (isHex(value)) out.color = value.toUpperCase(); continue; }
       if (part === 'enabled' || part === 'thumbnail' || part === 'timestamp') { out[part] = !!value; continue; }
+      // Buttons are resolved by buttonsFor, which knows the entry's own
+      // declarations — the stored patch alone is meaningless without them.
+      if (part === 'buttons') continue;
       if (typeof value === 'string') out[part] = value.slice(0, LIMITS[part === 'body' ? 'body' : part] ?? 2048);
     }
   }
+  if (partsOf(key).includes('buttons')) out.buttons = buttonsFor(guildId, key);
   return out;
 }
 
@@ -358,6 +504,32 @@ function setStyle(guildId, key, patch) {
       next.color = full.toUpperCase();
     } else if (part === 'enabled' || part === 'thumbnail' || part === 'timestamp') {
       next[part] = !!value;
+    } else if (part === 'buttons') {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'bad_buttons' };
+      const declared = new Set((entry.buttons || []).map(b => b.id));
+      const patch = {};
+      for (const [id, raw] of Object.entries(value)) {
+        // Only ids this message actually carries. A stale tab, or somebody
+        // posting by hand, must not be able to store a button that nothing
+        // renders and nothing routes.
+        if (!declared.has(id) || !raw || typeof raw !== 'object') continue;
+        const one = {};
+        if (typeof raw.label === 'string') one.label = raw.label.trim().slice(0, BUTTON_LIMITS.label);
+        if (typeof raw.emoji === 'string') one.emoji = raw.emoji.trim().slice(0, BUTTON_LIMITS.emoji);
+        if (typeof raw.style === 'string') {
+          if (!BUTTON_STYLES.includes(raw.style)) return { error: 'bad_button_style' };
+          one.style = raw.style;
+        }
+        // Discord refuses a button with neither a label nor an emoji, and it
+        // refuses the whole message with it — so the panel would stop posting
+        // entirely over one field somebody cleared.
+        const declaredBtn = (entry.buttons || []).find(b => b.id === id);
+        const label = 'label' in one ? one.label : declaredBtn.label;
+        const emoji = 'emoji' in one ? one.emoji : (declaredBtn.emoji || '');
+        if (!label && !emoji) return { error: 'empty_button' };
+        if (Object.keys(one).length) patch[id] = one;
+      }
+      next.buttons = patch;
     } else {
       if (typeof value !== 'string') return { error: 'bad_style' };
       next[part] = value.slice(0, LIMITS[part === 'body' ? 'body' : part] ?? 2048);
@@ -374,7 +546,13 @@ function setStyle(guildId, key, patch) {
 
   const store = readJson(FILE, {});
   if (!store[guildId]) store[guildId] = {};
-  store[guildId][key] = { ...(store[guildId][key] || {}), ...next };
+  const before = store[guildId][key] || {};
+  store[guildId][key] = {
+    ...before, ...next,
+    // Merged per button rather than replaced, so saving one button's colour
+    // does not silently drop what was set on the one beside it.
+    ...(next.buttons ? { buttons: { ...(before.buttons || {}), ...next.buttons } } : {}),
+  };
   writeJson(FILE, store);
   return { ok: true, key, label: entry.label, style: styleFor(guildId, key) };
 }
@@ -547,6 +725,11 @@ function catalogue() {
     bodyLabel: entry.bodyLabel || 'Body',
     bodyHint: entry.bodyHint || null,
     wordingNote: entry.wordingNote || null,
+    // What each button is for, and the fixed id it routes on. The panel needs
+    // both: the id to save against, and the description so somebody renaming
+    // "Take Action" knows what pressing it will do.
+    buttons: (entry.buttons || []).map(b => ({ id: b.id, does: b.does || '', ...b })),
+    buttonStyles: BUTTON_STYLES,
     defaults: entry.defaults,
   }));
 }
@@ -555,4 +738,5 @@ module.exports = {
   CATALOGUE, FILE, LIMITS,
   catalogue, all, customised, styleFor, setStyle, resetStyle,
   build, fill, isOn, partsOf,
+  buttonsFor, buildButtons, BUTTON_STYLES, BUTTON_LIMITS,
 };

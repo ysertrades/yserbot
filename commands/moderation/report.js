@@ -31,29 +31,37 @@ function getSession(userId) {
   return sessions.get(userId);
 }
 
-function buildPanelEmbed(session) {
-  return new EmbedBuilder()
+function buildPanelEmbed(session, guild = null) {
+  // Wording and colour from the Appearance catalogue; the three fields stay
+  // here because they are the form's state, not copy — they change as it is
+  // filled in and there is nothing to edit about them.
+  const built = guild && messageStyle.build(guild.id, 'report.form', {
+    tokens: { server: guild.name },
+  });
+  return (built || new EmbedBuilder()
     .setColor(0xE74C3C)
     .setTitle('🚨 File a Report')
-    .setDescription('Pick the user below (type to search), choose a reason, optionally attach a message link, then press **Submit Report**.\n​')
+    .setDescription('Pick the user below (type to search), choose a reason, optionally attach a message link, then press **Submit Report**.\n​'))
     .addFields(
       { name: '👤 User',   value: session.targetUserId ? `<@${session.targetUserId}>` : '*Not selected*', inline: true },
       { name: '🏷️ Reason', value: session.reason ? REASON_LABELS[session.reason] : '*Not selected*',      inline: true },
       { name: '🔗 Link',   value: session.link || '*None*',                                                inline: true },
-    )
-    .setFooter({ text: 'Only you can see this — nothing is sent until you press Submit' });
+    );
 }
 
-function buildPanelRows(userId) {
+function buildPanelRows(userId, guild = null) {
   const userSelect = new UserSelectMenuBuilder().setCustomId(`report_user_select:${userId}`).setPlaceholder('Select a user to report…').setMinValues(1).setMaxValues(1);
   const reasonSelect = new StringSelectMenuBuilder().setCustomId(`report_reason_select:${userId}`).setPlaceholder('Select a reason…')
     .addOptions(REASON_OPTIONS.map(r => new StringSelectMenuOptionBuilder().setLabel(r.label).setValue(r.value)));
-  const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`report_link:${userId}`).setLabel('Add Link').setEmoji('🔗').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`report_submit:${userId}`).setLabel('Submit Report').setEmoji('📤').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`report_cancel:${userId}`).setLabel('Cancel').setEmoji('✖️').setStyle(ButtonStyle.Secondary),
-  );
-  return [new ActionRowBuilder().addComponents(userSelect), new ActionRowBuilder().addComponents(reasonSelect), buttons];
+  // Every custom id here carries the owner on the end, so a form left open in
+  // one channel cannot be driven by somebody else pressing in another.
+  const buttons = guild && messageStyle.buildButtons(guild.id, 'report.form', {
+    customId: id => `${id}:${userId}`,
+    ButtonBuilder, ActionRowBuilder, ButtonStyle,
+  });
+  const rows = [new ActionRowBuilder().addComponents(userSelect), new ActionRowBuilder().addComponents(reasonSelect)];
+  if (buttons) rows.push(buttons);
+  return rows;
 }
 
 module.exports = {
@@ -65,7 +73,7 @@ module.exports = {
     sessions.delete(userId);
     const session = getSession(userId);
     setTimeout(() => sessions.delete(userId), SESSION_TTL_MS);
-    await interaction.reply({ embeds: [buildPanelEmbed(session)], components: buildPanelRows(userId), flags: MessageFlags.Ephemeral });
+    await interaction.reply({ embeds: [buildPanelEmbed(session, interaction.guild)], components: buildPanelRows(userId, interaction.guild), flags: MessageFlags.Ephemeral });
   },
 
   async handleUserSelect(interaction) {
@@ -79,7 +87,7 @@ module.exports = {
 
     const session = getSession(ownerId);
     session.targetUserId = targetId;
-    return interaction.update({ embeds: [buildPanelEmbed(session)], components: buildPanelRows(ownerId) });
+    return interaction.update({ embeds: [buildPanelEmbed(session, interaction.guild)], components: buildPanelRows(ownerId, interaction.guild) });
   },
 
   async handleReasonSelect(interaction) {
@@ -88,7 +96,7 @@ module.exports = {
 
     const session = getSession(ownerId);
     session.reason = interaction.values[0];
-    return interaction.update({ embeds: [buildPanelEmbed(session)], components: buildPanelRows(ownerId) });
+    return interaction.update({ embeds: [buildPanelEmbed(session, interaction.guild)], components: buildPanelRows(ownerId, interaction.guild) });
   },
 
   async handleButton(interaction) {
@@ -125,26 +133,32 @@ module.exports = {
 
       const targetUser = await interaction.client.users.fetch(session.targetUserId).catch(() => null);
 
-      const embed = new EmbedBuilder()
-        .setColor(0xe74c3c)
-        .setTitle('🚨 New User Report')
-        .setThumbnail(targetUser?.displayAvatarURL({ dynamic: true }) ?? null)
-        .addFields(
+      // The three fields are the record and stay put; everything around them
+      // is the catalogue's. The picture is the reported member's avatar, which
+      // the thumbnail switch decides whether to show.
+      const embed = messageStyle.build(interaction.guild.id, 'report.card', {
+        thumbnailURL: targetUser?.displayAvatarURL({ dynamic: true }) ?? null,
+        tokens: {
+          server: interaction.guild.name,
+          target: `<@${session.targetUserId}>`,
+          reporter: `<@${interaction.user.id}>`,
+          reason: REASON_LABELS[session.reason] || session.reason,
+        },
+        fields: [
           { name: '👤 Reported User', value: `<@${session.targetUserId}>${targetUser ? ` \`${targetUser.tag}\`` : ''}`, inline: true },
           { name: '📝 Reporter',      value: `<@${interaction.user.id}>`,                                              inline: true },
           { name: '​',           value: '​',                                                                 inline: true },
           { name: '🏷️ Reason',        value: REASON_LABELS[session.reason] || session.reason,                         inline: false },
-        )
-        .setTimestamp()
-        .setFooter({ text: `Report from ${interaction.guild.name}` });
-      if (session.link) embed.addFields({ name: '🔗 Message Link', value: session.link, inline: false });
-
-      const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`rpt_action:${session.targetUserId}:${reportChId}`).setLabel('⚡ Take Action').setStyle(ButtonStyle.Danger),
-      );
+          ...(session.link ? [{ name: '🔗 Message Link', value: session.link, inline: false }] : []),
+        ],
+      });
+      const actionRow = messageStyle.buildButtons(interaction.guild.id, 'report.card', {
+        customId: () => `rpt_action:${session.targetUserId}:${reportChId}`,
+        ButtonBuilder, ActionRowBuilder, ButtonStyle,
+      });
 
       const content = reportRole ? `<@&${reportRole}>` : undefined;
-      const posted = await reportCh.send({ content, embeds: [embed], components: [actionRow] });
+      const posted = await reportCh.send({ content, embeds: [embed], components: actionRow ? [actionRow] : [] });
 
       // Recorded as well as posted. The message used to be the only copy,
       // which meant the queue could only be read by scrolling this channel.
@@ -181,6 +195,6 @@ module.exports = {
     const session = getSession(ownerId);
     const link = interaction.fields.getTextInputValue('link').trim();
     session.link = link || undefined;
-    return interaction.update({ embeds: [buildPanelEmbed(session)], components: buildPanelRows(ownerId) });
+    return interaction.update({ embeds: [buildPanelEmbed(session, interaction.guild)], components: buildPanelRows(ownerId, interaction.guild) });
   },
 };
