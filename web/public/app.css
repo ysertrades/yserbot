@@ -736,7 +736,15 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb .f > div { min-width: 8rem; flex: 1 1 8rem; }
 .demb .f b { display: block; font-size: 0.78rem; color: #F2F3F5; }
 .demb .f span { font-size: 0.8rem; }
-.demb img.big { display: block; width: 100%; border-radius: 4px; margin-top: 0.5rem; }
+/* Capped, the way Discord caps one: it scales a large picture down to fit the
+   message rather than letting it run the height of the screen, and a preview
+   that does not do the same is not showing you the message. object-fit keeps
+   a tall or square picture in proportion inside the cap instead of squashing
+   it, and left-aligns it the way the client does. */
+.demb img.big {
+  display: block; width: 100%; max-height: 20rem; object-fit: contain;
+  object-position: left top; border-radius: 4px; margin-top: 0.5rem;
+}
 .demb .ft { font-size: 0.72rem; color: #949BA4; margin: 0.5rem 0 0; }
 .demb-btns { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.45rem; }
 .demb-btns span {
@@ -835,6 +843,30 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
   flex: 0 0 auto; width: 2.8rem; height: 2.8rem; border-radius: 4px;
   border: 1px dashed #4E5058; background: #313338;
 }
+/* The Composer's preview shows the real picture rather than a placeholder,
+   because there it is an address somebody typed and whether it resolves is
+   most of what they are checking. */
+.demb-thumb-img { flex: 0 0 auto; width: 5rem; height: 5rem; object-fit: cover; border-radius: 4px; }
+
+/* The author row, and the little round icon that can sit in it or the footer.
+   Neither was drawn at all before, so a template with an author line previewed
+   as one that did not have one. */
+.demb-auth { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #F2F3F5; margin: 0 0 0.3rem; font-weight: 600; }
+.demb .ft { display: flex; align-items: center; gap: 0.4rem; }
+.demb-auth-ic { width: 1.25rem; height: 1.25rem; border-radius: 50%; object-fit: cover; flex: none; }
+
+/* Plain writing outside the embed — Discord draws it in the ordinary message
+   type, not the embed's, which is the whole reason for wanting it. */
+.demb-say {
+  margin: 0 0 0.4rem; color: #DBDEE1; font-family: var(--sans);
+  font-size: 0.9rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* The message under the embed is a separate message, and the preview says so
+   by drawing it as one rather than as more of the same card. */
+.demb-second { margin-top: 0.55rem; padding-top: 0.55rem; border-top: 1px dashed var(--rule); }
+.demb-second .hint { margin: 0 0 0.35rem; }
+.demb-second .demb-say { margin-bottom: 0.4rem; }
+.demb-second img.big { display: block; width: 100%; border-radius: 4px; }
 
 /* Not capped and scrolling the way the Composer's list is: this one is
    grouped, and a scroll box inside a column that already scrolls hides the

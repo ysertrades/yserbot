@@ -952,6 +952,7 @@ function newDraft(name = '') {
   return {
     name,
     embeds: [{ title: '', description: '', color: '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false }],
+    around: { above: '', below: '', picture: '' },
     buttons: [], posts: [],
   };
 }
@@ -970,6 +971,9 @@ function renderComposer() {
 
   // Everything below edits this local copy; nothing is written until Save.
   const draft = state.draft || JSON.parse(JSON.stringify(tpl));
+  // Stored as null when nothing is set, so the editor always has one to bind
+  // to rather than each field having to cope with it being absent.
+  draft.around = draft.around || { above: '', below: '', picture: '' };
   state.draft = draft;
 
   const parts = [];
@@ -1041,12 +1045,24 @@ function renderComposer() {
     renderComposer();
   });
 
+  /* -- what goes around the embeds ------------------------------------- */
+  // Folded away, because most messages are just their embed and this would
+  // otherwise be three empty boxes on every one of them.
+  const a = draft.around;
+  head.append(disclosure('composer:around', 'Text and picture around it', [
+    el('p', 'muted', 'Plain writing outside the embed — a line of context over the top, a note or a picture under it.'),
+    areaField('Above the embed', a.above, v => { a.above = v; }, 2),
+    areaField('Below the embed', a.below, v => { a.below = v; }, 2),
+    textField('Picture under it (URL)', a.picture, v => { a.picture = v; }),
+    el('p', 'hint', 'Discord always draws a message as text, then embed, then buttons — there is no room after the embed for words. So anything below is sent as a second message right underneath, and updating the post rewrites both.'),
+  ]));
+
   const saveRow = el('div', 'actions');
   const saveBtn = el('button', 'btn primary small', 'Save message');
   saveBtn.type = 'button';
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true;
-    const res = await post('template', { name: draft.name, embeds: draft.embeds });
+    const res = await post('template', { name: draft.name, embeds: draft.embeds, around: draft.around });
     saveBtn.disabled = false;
     if (res?.ok) { state.tplName = draft.name; state.draft = null; renderComposer(); }
   });
@@ -1386,6 +1402,20 @@ async function loadDynamicPreview(img, key, revocables) {
   }
 }
 
+/** A picture in the preview, only shown once it has actually loaded. */
+function previewPicture(url, className) {
+  const img = el('img');
+  img.className = className;
+  img.alt = '';
+  img.hidden = true;
+  img.addEventListener('load', () => { img.hidden = false; });
+  // A URL that does not resolve leaves nothing rather than a broken-image
+  // glyph, which reads as the preview being broken rather than the address.
+  img.addEventListener('error', () => { img.replaceWith(el('p', 'hint', 'That picture would not load.')); });
+  img.src = url;
+  return img;
+}
+
 function openEmbedPreview(draft) {
   const revocables = [];
   const body = [];
@@ -1393,10 +1423,22 @@ function openEmbedPreview(draft) {
   const buttons = (state.overview?.composer || []).find(t => t.name === draft.name)?.buttons
     || draft.buttons || [];
 
+  // The line over the top is part of the message, so it is part of the
+  // likeness — and seeing it above the box is the only way to tell it is
+  // going where you meant.
+  const around = draft.around || {};
+  if (around.above) body.push(el('p', 'demb-say', fillPlaceholders(around.above)));
+
   draft.embeds.forEach(e => {
     const box = el('div', 'demb');
     box.style.borderLeftColor = /^#[0-9a-f]{6}$/i.test(e.color || '') ? e.color : '#5865F2';
 
+    if (e.authorName) {
+      const author = el('p', 'demb-auth');
+      if (e.authorIcon) author.append(previewPicture(e.authorIcon, 'demb-auth-ic'));
+      author.append(el('span', null, fillPlaceholders(e.authorName)));
+      box.append(author);
+    }
     if (e.title) box.append(el('p', 't', fillPlaceholders(e.title)));
     if (e.description) box.append(el('p', 'd', fillPlaceholders(e.description)));
 
@@ -1415,20 +1457,38 @@ function openEmbedPreview(draft) {
       if (f.childElementCount) box.append(f);
     }
 
+    if (e.thumbnail) {
+      // Wrapped, so the square sits beside what came before it rather than
+      // on top of it — the same row the Appearance preview uses.
+      const row = el('div', 'demb-row');
+      const main = el('div', 'demb-main');
+      while (box.firstChild) main.append(box.firstChild);
+      row.append(main, previewPicture(e.thumbnail, 'demb-thumb-img'));
+      box.append(row);
+    }
+
     if (e.image) {
-      const img = el('img');
-      img.className = 'big';
-      img.alt = '';
-      img.hidden = true;
-      box.append(img);
-      if (e.image.startsWith('dynamic:')) loadDynamicPreview(img, e.image.slice(8), revocables);
-      else { img.src = e.image; img.hidden = false; }
+      if (e.image.startsWith('dynamic:')) {
+        const img = el('img');
+        img.className = 'big';
+        img.alt = '';
+        img.hidden = true;
+        box.append(img);
+        loadDynamicPreview(img, e.image.slice(8), revocables);
+      } else {
+        box.append(previewPicture(e.image, 'big'));
+      }
     }
 
     const footBits = [];
     if (e.footer) footBits.push(fillPlaceholders(e.footer));
     if (e.timestamp) footBits.push(new Date().toLocaleString());
-    if (footBits.length) box.append(el('p', 'ft', footBits.join(' • ')));
+    if (footBits.length) {
+      const ft = el('p', 'ft');
+      if (e.footerIcon) ft.append(previewPicture(e.footerIcon, 'demb-auth-ic'));
+      ft.append(el('span', null, footBits.join(' • ')));
+      box.append(ft);
+    }
 
     body.push(box);
   });
@@ -1443,6 +1503,14 @@ function openEmbedPreview(draft) {
     body.push(row);
   }
 
+  if (around.below || around.picture) {
+    const second = el('div', 'demb-second');
+    second.append(el('p', 'hint', 'Sent as a second message, right underneath'));
+    if (around.below) second.append(el('p', 'demb-say', fillPlaceholders(around.below)));
+    if (around.picture) second.append(previewPicture(around.picture, 'big'));
+    body.push(second);
+  }
+
   if (!body.length) body.push(el('p', 'muted', 'Nothing to show yet — add a title or description.'));
   body.push(el('p', 'hint', 'A likeness of the message, not a screenshot of Discord. Placeholders are filled in the way they will be when it is sent.'));
 
@@ -1452,7 +1520,7 @@ function openEmbedPreview(draft) {
 }
 
 /* ── social ────────────────────────────────────────────────────────────────
-   Accounts on YouTube, TikTok, Instagram and X, relayed into a channel as
+   Accounts on YouTube and TikTok, relayed into a channel as
    they post. The cards are styled on Appearance — this screen is only about
    which accounts, where they land and how often they are checked. */
 
@@ -1568,7 +1636,6 @@ function renderSocial() {
   /* -- where posts land --------------------------------------------------- */
   const s = {
     enabled: d.enabled, channelId: d.channelId, mentionRoleId: d.mentionRoleId,
-    showLinkPreview: d.showLinkPreview,
   };
   const landNote = el('p', 'hint', '');
   const syncLand = () => {
@@ -1596,7 +1663,7 @@ function renderSocial() {
      and all of it has a working default. */
   const b = {
     pollMinutes: d.pollMinutes, maxPerCheck: d.maxPerCheck,
-    bridgeUrl: d.bridgeUrl, showLinkPreview: d.showLinkPreview,
+    bridgeUrl: d.bridgeUrl,
   };
 
   const bridgeOut = el('div', 'social-test');
@@ -1622,10 +1689,8 @@ function renderSocial() {
   });
 
   const advanced = disclosure('social:advanced', 'Advanced', [
-    el('p', 'muted', 'YouTube hands out its posts directly, so it needs nothing here. TikTok, Instagram and X do not, so the bot reads those through a helper service. The one below is free and shared by everybody, which means it is sometimes busy — if those three go quiet, this is the first thing to check.'),
+    el('p', 'muted', 'YouTube hands out its posts directly, so it needs nothing here. TikTok does not, so the bot reads it through a helper service. The one below is free and shared by everybody and has since restricted itself to testing use — if TikTok goes quiet, this is the first thing to check, and running your own helper is the fix.'),
     textField('Helper service', b.bridgeUrl, v => { b.bridgeUrl = v; }, { placeholder: d.defaultBridgeUrl }),
-    toggle('Also paste the link under the card', b.showLinkPreview, v => { b.showLinkPreview = v; }),
-    el('p', 'hint', 'Discord draws its own preview from a pasted link, so this gives you two cards for one post.'),
     (() => { const row = el('div', 'actions'); row.append(checkBtn); return row; })(),
     bridgeOut,
   ]);

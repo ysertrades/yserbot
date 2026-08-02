@@ -148,12 +148,12 @@ async function postItem(guild, account, settings, raw) {
   const embed = buildPostEmbed(guild.id, account, item);
   if (!embed) return false;
 
-  const bits = [];
-  if (target.roleId) bits.push(`<@&${target.roleId}>`);
-  // Off by default: Discord unfurls a link in the message text into a second
-  // card under ours, and two cards for one post looks like a bug.
-  if (settings.showLinkPreview && item.link) bits.push(item.link);
-  const content = bits.join(' ') || undefined;
+  // The role ping, and nothing else. The link used to be pasted here as an
+  // option, which put a bare address above the card and had Discord unfurl it
+  // into a second card underneath — two cards for one post, and the raw URL
+  // sitting over the top of a card whose title is already that same link.
+  // The title is the way in; it does not need a second one above it.
+  const content = target.roleId ? `<@&${target.roleId}>` : undefined;
 
   await target.channel.send({
     content,

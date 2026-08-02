@@ -45,8 +45,9 @@ const LIMITS = {
 // Mirrors normalizeTemplate() in embed.js: older templates are a bare embed
 // object, newer ones are { embeds: [...] }.
 function normalize(raw) {
-  if (raw && Array.isArray(raw.embeds)) return raw;
+  if (raw && Array.isArray(raw.embeds)) return { around: null, ...raw };
   return {
+    around: null,
     embeds: [{
       title: raw?.title ?? null, description: raw?.description ?? null,
       color: raw?.color ?? '#5865F2', footer: raw?.footer ?? null,
@@ -74,6 +75,7 @@ function list(guildId) {
     return {
       name,
       embeds: t.embeds,
+      around: t.around || null,
       buttons: buttonsFor(guildId, name).map(b => ({
         id: b.id, label: b.label ?? '', style: b.style || 'Primary', type: b.type || 'custom',
         emoji: b.emoji ?? '', url: b.url ?? '', roleId: b.roleId ?? '',
@@ -106,6 +108,47 @@ const orNull = v => (v ? v : null);
 function isHttpUrl(v) {
   try { const u = new URL(v); return u.protocol === 'http:' || u.protocol === 'https:'; }
   catch { return false; }
+}
+
+/**
+ * The plain text and the picture that go around a template's embeds.
+ *
+ * An embed is a boxed, coloured thing with a spine down its side, and there
+ * are messages that want a sentence in ordinary type next to one — a line of
+ * context over the top, a note or a picture under it. Until now a template was
+ * its embeds and nothing else, and the only way to get a word outside the box
+ * was to type it into the send form, once, for that one send.
+ *
+ * ── Above and below are not symmetrical, and cannot be ───────────────────
+ *
+ * Discord draws a message as its text, then its embeds, then its buttons, in
+ * that order and no other. So "above" is simply the message's own text and
+ * costs nothing. "Below" cannot exist in the same message at all — there is
+ * no slot after the embed for words — so it is sent as a second message,
+ * immediately after, which is what it looks like in every channel where
+ * somebody has done this by hand.
+ *
+ * That is a real cost and worth being plain about: the pair is two messages,
+ * so updating rewrites both, and deleting the first leaves the second. The
+ * alternative was to offer only "above", which is not what a message needs
+ * half the time.
+ *
+ * The picture rides with the below text — one message, text then picture —
+ * because a picture on its own above an embed just looks like a mistake.
+ */
+function sanitizeAround(input) {
+  if (input === null || input === undefined) return { around: null };
+  if (typeof input !== 'object') return { error: 'bad_around' };
+
+  const above = clean(input.above, LIMITS.content) || null;
+  const below = clean(input.below, LIMITS.content) || null;
+  const picture = clean(input.picture, 500) || null;
+  if (picture && !isHttpUrl(picture)) return { error: 'bad_picture' };
+
+  // Nothing set is stored as nothing, not as three nulls — a template that
+  // has never used this should read exactly as it did before it existed.
+  if (!above && !below && !picture) return { around: null };
+  return { around: { above, below, picture } };
 }
 
 // An image field is either a real URL or one of our generated-image markers.
@@ -186,10 +229,13 @@ function saveTemplate(guildId, body) {
     embeds.push(result.embed);
   }
 
+  const around = sanitizeAround(body.around);
+  if (around.error) return around;
+
   const all = readJson('embeds.json', {});
   if (!all[guildId]) all[guildId] = {};
   const isNew = !all[guildId][name];
-  all[guildId][name] = { embeds };
+  all[guildId][name] = { embeds, ...(around.around ? { around: around.around } : {}) };
   writeJson('embeds.json', all);
   return { ok: true, isNew, name };
 }
@@ -285,10 +331,34 @@ function rememberPost(guildId, messageId, record) {
   writeJson(POSTS_FILE, all);
 }
 
+/**
+ * Sends the second message, when a template has anything to put under its
+ * embed. Returns its id, or null when there is nothing to send.
+ *
+ * A failure here is deliberately not a failure of the send: the embed is the
+ * message, the note under it is not, and losing the whole post because a
+ * picture URL had a typo would be the wrong trade. It is reported instead.
+ */
+async function sendBelow(channel, around) {
+  if (!around?.below && !around?.picture) return { id: null };
+  try {
+    const msg = await channel.send({
+      content: around.below || undefined,
+      // discord.js fetches a URL and uploads it, so the picture is a real
+      // attachment rather than a link Discord may or may not unfurl.
+      files: around.picture ? [around.picture] : undefined,
+      allowedMentions: { parse: [] },
+    });
+    return { id: msg.id };
+  } catch (err) {
+    console.error('[Panel] the note under the embed did not send:', err.message);
+    return { id: null, failed: err.message.slice(0, 140) };
+  }
+}
+
 async function send(guildId, body, { guild }) {
   const name = clean(body.name, 80);
   const channelId = clean(body.channelId, 25);
-  const content = clean(body.content, LIMITS.content) || null;
   if (!name) return { error: 'bad_template' };
 
   const channel = guild.channels.cache.get(channelId);
@@ -296,6 +366,12 @@ async function send(guildId, body, { guild }) {
 
   const payload = embedCommand().buildEmbedPayload(guild, name, { channel });
   if (!payload) return { error: 'unknown_template' };
+
+  // The template's own line above the embed, with the send form's text as an
+  // override — someone posting a template into two channels with a different
+  // opening line each time should not have to edit the template between them.
+  const around = normalize(readJson('embeds.json', {})[guildId]?.[name]).around;
+  const content = clean(body.content, LIMITS.content) || around?.above || null;
 
   let message;
   try {
@@ -312,8 +388,16 @@ async function send(guildId, body, { guild }) {
     return { error: 'send_failed', detail: err.message.slice(0, 140) };
   }
 
-  rememberPost(guildId, message.id, { channelId: channel.id, templateName: name, sentAt: Date.now(), content });
-  return { ok: true, messageId: message.id, channelId: channel.id, channelName: channel.name };
+  const below = await sendBelow(channel, around);
+
+  rememberPost(guildId, message.id, {
+    channelId: channel.id, templateName: name, sentAt: Date.now(), content,
+    belowId: below.id,
+  });
+  return {
+    ok: true, messageId: message.id, channelId: channel.id, channelName: channel.name,
+    ...(below.failed ? { belowFailed: below.failed } : {}),
+  };
 }
 
 /**
@@ -347,9 +431,15 @@ async function updatePost(guildId, body, { guild, client }) {
   const payload = embedCommand().buildEmbedPayload(guild, templateName, { channel });
   if (!payload) return { error: 'unknown_template' };
 
+  const around = normalize(readJson('embeds.json', {})[guildId]?.[templateName]).around;
+  // What this post was sent with wins over the template's own line: the send
+  // form can override it per post, and an update must not quietly replace a
+  // line somebody wrote for this one message.
+  const content = known?.content ?? around?.above ?? null;
+
   try {
     await message.edit({
-      content: known?.content ?? null,
+      content,
       embeds: payload.embeds,
       files: payload.files,
       components: payload.components.length ? payload.components : [],
@@ -360,8 +450,43 @@ async function updatePost(guildId, body, { guild, client }) {
     return { error: 'update_failed', detail: err.message.slice(0, 140) };
   }
 
+  // And the note under it. Four cases, and all four have to work: it was
+  // there and still is (edit), it was not and now is (send), it was and now
+  // is not (delete), it was never there (nothing).
+  const wantsBelow = !!(around?.below || around?.picture);
+
+  // Whether the one we sent before is still there. Resolved first and on its
+  // own, because "we remember an id" and "that message exists" are different
+  // questions — somebody can delete it in Discord, and then the remembered id
+  // is a fact about the past rather than something to edit.
+  let old = null;
+  if (known?.belowId) {
+    try { old = await channel.messages.fetch(known.belowId); } catch { old = null; }
+    if (old && old.author?.id !== client.user?.id) old = null;
+  }
+
+  let belowId = old ? old.id : null;
+  if (old && !wantsBelow) {
+    try { await old.delete(); } catch { /* already gone, which is the goal */ }
+    belowId = null;
+  } else if (old && around.picture) {
+    // An edit cannot change an attachment, so a message carrying a picture is
+    // replaced rather than edited — otherwise changing the picture would
+    // silently keep the old one.
+    try { await old.delete(); } catch { /* fall through and send anyway */ }
+    belowId = (await sendBelow(channel, around)).id;
+  } else if (old) {
+    try {
+      await old.edit({ content: around.below, files: [], allowedMentions: { parse: [] } });
+    } catch (err) {
+      console.error('[Panel] the note under the embed did not update:', err.message);
+    }
+  } else if (wantsBelow) {
+    belowId = (await sendBelow(channel, around)).id;
+  }
+
   rememberPost(guildId, messageId, {
-    channelId, templateName, sentAt: known?.sentAt || Date.now(), content: known?.content ?? null,
+    channelId, templateName, sentAt: known?.sentAt || Date.now(), content, belowId,
   });
   return { ok: true, messageId, templateName };
 }
