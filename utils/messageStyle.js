@@ -117,6 +117,39 @@ const social = (key, name, color, blurb) => ({
   },
 });
 
+/**
+ * The kinds of card the bot sends without a catalogue entry of its own.
+ *
+ * Most of what the bot says is a confirmation, a refusal or a notice — "Shop
+ * item added", "You cannot do that", "Feed started" — and there are a couple
+ * of hundred of them. Giving each its own entry would be a screen nobody
+ * could find anything on, and leaving them all fixed meant a server could
+ * restyle a warning card and not the two hundred messages around it.
+ *
+ * So they are grouped by the kind of thing they are, which is what they were
+ * already grouped by in the code, and the colour of each kind is one setting.
+ * Editing "Something went wrong" recolours every refusal the bot can give.
+ */
+const PALETTE_KINDS = [
+  { key: 'success',   label: 'Confirmations',        color: '#2ECC71', does: 'Anything that worked — saved, added, started' },
+  { key: 'error',     label: 'Something went wrong', color: '#FF4757', does: 'Refusals and failures' },
+  { key: 'info',      label: 'Notices',              color: '#5865F2', does: 'Neutral information and readouts' },
+  { key: 'warning',   label: 'Warnings',             color: '#FFA502', does: 'Careful-now messages' },
+  { key: 'giveaway',  label: 'Giveaways',            color: '#FFD700', does: 'Giveaway cards and results' },
+  { key: 'ticket',    label: 'Tickets',              color: '#00CEC9', does: 'Ticket chrome outside the two cards above' },
+  { key: 'economy',   label: 'Economy',              color: '#F59E0B', does: 'Coins, work, daily, transfers' },
+  { key: 'shop',      label: 'Shop',                 color: '#FF6B35', does: 'The shop and buying from it' },
+  { key: 'inventory', label: 'Inventory',            color: '#3B82F6', does: 'What a member owns' },
+  { key: 'casino',    label: 'Casino',               color: '#E11D48', does: 'Every game and its result' },
+  { key: 'userinfo',  label: 'Member cards',         color: '#A855F7', does: 'Rank, profile, who-is' },
+  { key: 'schedule',  label: 'Scheduled posts',      color: '#EC4899', does: 'The scheduler' },
+  { key: 'news',      label: 'News',                 color: '#1D9BF0', does: 'Market headlines and the calendar' },
+  { key: 'breaking',  label: 'Breaking news',        color: '#FF3B30', does: 'Headlines flagged urgent' },
+  { key: 'welcome',   label: 'Arrivals',             color: '#10B981', does: 'Chrome around the welcome card' },
+  { key: 'leave',     label: 'Departures',           color: '#F97316', does: 'Chrome around the goodbye card' },
+  { key: 'mod',       label: 'Moderation chrome',    color: '#EF4444', does: 'Moderation messages without a card of their own' },
+];
+
 const CATALOGUE = {
   /* -- the cards a moderation action leaves in the channel ---------------- */
 
@@ -314,6 +347,74 @@ const CATALOGUE = {
   ...social('youtube', 'YouTube', '#FF0000',
     'Posted when a watched YouTube channel publishes. {title} is the video title.'),
 
+  /* -- giveaways ----------------------------------------------------------- */
+
+  'giveaway.live': {
+    group: 'Giveaways',
+    label: 'Giveaway card',
+    blurb: 'The card that sits in the channel while a prize giveaway is running, with the Enter button under it. {entries} counts up on its own as people enter — leave it in and it stays live.',
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer', 'buttons'],
+    tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}'],
+    bodyHint: '{ends} becomes a countdown Discord keeps updating; {endsAt} is the plain date. {requirements} is whatever entry conditions were set, or nothing.',
+    buttons: [
+      { id: 'giveaway_enter', label: 'Enter', emoji: '🎟️', style: 'Secondary', does: 'Enters the member into the draw' },
+      { id: 'giveaway_participants', label: 'Participants', emoji: '🏅', style: 'Secondary', does: 'Shows who has entered so far' },
+    ],
+    defaults: {
+      enabled: true, color: '#FFD700', title: '🎟️  {prize}',
+      body: '✨ Click **Enter** below to participate!\n\n'
+        + '🏆 **Winners:** {winners}\n'
+        + '👤 **Hosted by:** {host}\n'
+        + '⏰ **Ends:** {ends}\n'
+        + '📊 **Entries:** {entries}{requirements}',
+      footer: 'Ends at | {endsAt}', thumbnail: true, timestamp: true,
+    },
+  },
+
+  'giveaway.ended': {
+    group: 'Giveaways',
+    label: 'Giveaway result',
+    blurb: 'Replaces the card above when the giveaway finishes and somebody has won.',
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer'],
+    tokens: ['{prize}', '{winners}', '{host}', '{entries}', '{id}'],
+    bodyHint: '{id} is the short code /giveaway reroll takes.',
+    defaults: {
+      enabled: true, color: '#FFD700', title: '🎟️  {prize} — Ended',
+      body: '🏆 **Winners:** {winners}\n\n👤 **Hosted by:** {host}\n📊 **Total entries:** {entries}\n\n🔁 To reroll, use `/giveaway reroll` or `g.reroll {id}`',
+      footer: 'Congratulations! 🎉 • ID: {id}', thumbnail: false, timestamp: true,
+    },
+  },
+
+  'giveaway.empty': {
+    group: 'Giveaways',
+    label: 'Giveaway with no entries',
+    blurb: 'Replaces the card when the giveaway finishes and nobody entered.',
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer'],
+    tokens: ['{prize}', '{host}', '{id}'],
+    defaults: {
+      enabled: true, color: '#E74C3C', title: '🎟️  {prize} — Ended',
+      body: 'No participants entered the giveaway.',
+      footer: 'Better luck next time!', thumbnail: false, timestamp: true,
+    },
+  },
+
+  'giveaway.won': {
+    group: 'Giveaways',
+    label: 'Message to the winner',
+    blurb: 'Sent privately to each winner. Turn it off and winners are only named in the channel.',
+    shape: 'card',
+    parts: ['enabled', 'color', 'title', 'body', 'footer', 'timestamp'],
+    tokens: ['{prize}', '{host}'],
+    defaults: {
+      enabled: true, color: '#FFD700', title: '🎉 You Won a Giveaway!',
+      body: 'You won **{prize}** in **{server}**!\nContact the host, {host}, to claim your prize.',
+      footer: '', thumbnail: false, timestamp: true,
+    },
+  },
+
   'report.form': {
     group: 'Reports',
     label: 'Report form',
@@ -363,6 +464,39 @@ const CATALOGUE = {
       footer: '', thumbnail: false, timestamp: true,
     },
   },
+
+  /* -- the look of everything without an entry of its own ----------------
+     Last on purpose: this is the catch-all, and a catch-all at the top of a
+     list is the first thing you read and the last thing you want. */
+
+  'base.palette': {
+    group: 'Everything else',
+    label: 'Colours',
+    blurb: 'The colour of every card the bot sends that is not listed separately below — every confirmation, refusal and notice, grouped by what kind of thing it is. Around two hundred messages take their colour from here.',
+    shape: 'card',
+    parts: ['palette'],
+    tokens: [],
+    palette: PALETTE_KINDS,
+    defaults: {
+      enabled: true, color: '#5865F2', title: '', body: '',
+      palette: Object.fromEntries(PALETTE_KINDS.map(k => [k.key, k.color])),
+    },
+  },
+
+  'base.chrome': {
+    group: 'Everything else',
+    label: 'Card footer and name',
+    blurb: 'The line along the bottom of the bot\'s larger cards, and the name at the top of them. Small cards — a one-line confirmation — carry neither, on purpose.',
+    shape: 'card',
+    parts: ['title', 'footer'],
+    titleLabel: 'Name at the top',
+    tokens: [],
+    defaults: {
+      enabled: true, color: '#5865F2',
+      title: 'YSER Flow', body: '',
+      footer: '{server} • YSER Flow',
+    },
+  },
 };
 
 /** The parts an entry actually shows, defaulting to everything its shape has. */
@@ -392,6 +526,24 @@ function partsOf(key) {
 const BUTTON_STYLES = ['Primary', 'Secondary', 'Success', 'Danger'];
 
 const BUTTON_LIMITS = { label: 80, emoji: 60 };
+
+/**
+ * A guild's colour for one kind, or the shipped one.
+ *
+ * Never throws and never returns nothing: this is called from the builder
+ * that every confirmation in the bot goes through, so a bad stored value has
+ * to fall back rather than take the message with it.
+ */
+function paletteFor(guildId) {
+  const entry = CATALOGUE['base.palette'];
+  const stored = readJson(FILE, {})[guildId]?.['base.palette']?.palette || {};
+  const out = {};
+  for (const kind of entry.palette) {
+    const v = stored[kind.key];
+    out[kind.key] = isHex(v) ? v.toUpperCase() : kind.color;
+  }
+  return out;
+}
 
 /** What an entry's buttons look like after a guild's changes. */
 function buttonsFor(guildId, key) {
@@ -470,11 +622,12 @@ function styleFor(guildId, key) {
       if (part === 'enabled' || part === 'thumbnail' || part === 'timestamp') { out[part] = !!value; continue; }
       // Buttons are resolved by buttonsFor, which knows the entry's own
       // declarations — the stored patch alone is meaningless without them.
-      if (part === 'buttons') continue;
+      if (part === 'buttons' || part === 'palette') continue;
       if (typeof value === 'string') out[part] = value.slice(0, LIMITS[part === 'body' ? 'body' : part] ?? 2048);
     }
   }
   if (partsOf(key).includes('buttons')) out.buttons = buttonsFor(guildId, key);
+  if (partsOf(key).includes('palette')) out.palette = paletteFor(guildId);
   return out;
 }
 
@@ -509,6 +662,19 @@ function setStyle(guildId, key, patch) {
       next.color = full.toUpperCase();
     } else if (part === 'enabled' || part === 'thumbnail' || part === 'timestamp') {
       next[part] = !!value;
+    } else if (part === 'palette') {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'bad_palette' };
+      const known = new Set((entry.palette || []).map(k => k.key));
+      const patch = {};
+      for (const [kind, hex] of Object.entries(value)) {
+        // Only kinds that exist. A stale tab must not be able to store a
+        // colour for something nothing reads.
+        if (!known.has(kind) || typeof hex !== 'string') continue;
+        const full = hex.trim().startsWith('#') ? hex.trim() : `#${hex.trim()}`;
+        if (!isHex(full)) return { error: 'bad_color' };
+        patch[kind] = full.toUpperCase();
+      }
+      next.palette = patch;
     } else if (part === 'buttons') {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'bad_buttons' };
       const declared = new Set((entry.buttons || []).map(b => b.id));
@@ -557,6 +723,7 @@ function setStyle(guildId, key, patch) {
     // Merged per button rather than replaced, so saving one button's colour
     // does not silently drop what was set on the one beside it.
     ...(next.buttons ? { buttons: { ...(before.buttons || {}), ...next.buttons } } : {}),
+    ...(next.palette ? { palette: { ...(before.palette || {}), ...next.palette } } : {}),
   };
   writeJson(FILE, store);
   return { ok: true, key, label: entry.label, style: styleFor(guildId, key) };
@@ -735,6 +902,7 @@ function catalogue() {
     // "Take Action" knows what pressing it will do.
     buttons: (entry.buttons || []).map(b => ({ id: b.id, does: b.does || '', ...b })),
     buttonStyles: BUTTON_STYLES,
+    palette: entry.palette || null,
     defaults: entry.defaults,
   }));
 }
@@ -744,4 +912,5 @@ module.exports = {
   catalogue, all, customised, styleFor, setStyle, resetStyle,
   build, fill, isOn, partsOf,
   buttonsFor, buildButtons, BUTTON_STYLES, BUTTON_LIMITS,
+  paletteFor, PALETTE_KINDS,
 };

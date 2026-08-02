@@ -2102,7 +2102,45 @@ const BUTTON_STYLE_LABEL = {
   Primary: 'Blurple', Secondary: 'Grey', Success: 'Green', Danger: 'Red',
 };
 
+/**
+ * The colour of each kind of card the bot sends without an entry of its own.
+ *
+ * A swatch each rather than a card each: there are seventeen, they differ only
+ * in colour, and a list of seventeen near-identical editors is a screen nobody
+ * can find anything on.
+ */
+function paletteEditors(entry, values, repaint) {
+  const wrap = el('div', 'palette');
+  values.palette = { ...(values.palette || {}) };
+  for (const kind of entry.palette || []) {
+    const row = el('div', 'palette-row');
+    const head = el('div', 'palette-head');
+    head.append(el('span', 'nm', kind.label));
+    if (kind.does) head.append(el('span', 'hint', kind.does));
+    row.append(head);
+    row.append(colorField('', values.palette[kind.key] || kind.color, v => {
+      values.palette[kind.key] = v;
+      repaint();
+    }));
+    wrap.append(row);
+  }
+  return wrap;
+}
+
 function stylePreview(entry, values, sample) {
+  // The palette has no one card to preview — it is the colour of two hundred
+  // of them. A row of spines is a truer likeness than an empty box.
+  if (entry.parts.includes('palette')) {
+    const wrap = el('div', 'palette-preview');
+    for (const kind of entry.palette || []) {
+      const chip = el('div', 'demb');
+      chip.style.borderLeftColor = values.palette?.[kind.key] || kind.color;
+      chip.append(el('p', 't', kind.label));
+      wrap.append(chip);
+    }
+    return wrap;
+  }
+
   const box = el('div', 'demb');
   box.style.borderLeftColor = /^#[0-9a-f]{6}$/i.test(values.color || '') ? values.color : '#5865F2';
 
@@ -2355,6 +2393,8 @@ function renderAppearance() {
       fields.append(toggle(PART_LABEL[part], !!values[part], v => { values[part] = v; repaint(); }));
     } else if (part === 'buttons') {
       fields.append(buttonEditors(entry, values, repaint));
+    } else if (part === 'palette') {
+      fields.append(paletteEditors(entry, values, repaint));
     }
   }
   card.append(trackFocus(fields, focusRef));
@@ -2370,6 +2410,7 @@ function renderAppearance() {
       for (const part of entry.parts) payload[part] = values[part];
       // Sent as a map keyed by id — the server matches those against the ids
       // the message actually declares, so a stale tab cannot invent one.
+      if (entry.parts.includes('palette')) payload.palette = values.palette;
       if (entry.parts.includes('buttons')) {
         payload.buttons = Object.fromEntries((values.buttons || []).map(b =>
           [b.id, { label: b.label, emoji: b.emoji, style: b.style }]));
