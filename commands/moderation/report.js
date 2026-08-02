@@ -31,31 +31,34 @@ function getSession(userId) {
   return sessions.get(userId);
 }
 
-function buildPanelEmbed(session, guild = null) {
+/**
+ * The form, as it currently stands.
+ *
+ * The guild is required rather than optional. It was optional, with a
+ * hand-built embed behind it for the null case — and that second copy of the
+ * heading is precisely the shape of bug that had the ticket panel ignoring
+ * every edit made to it. Nothing calls this without a guild; now nothing can.
+ */
+function buildPanelEmbed(session, guild) {
   // Wording and colour from the Appearance catalogue; the three fields stay
   // here because they are the form's state, not copy — they change as it is
   // filled in and there is nothing to edit about them.
-  const built = guild && messageStyle.build(guild.id, 'report.form', {
+  return messageStyle.build(guild.id, 'report.form', {
     tokens: { server: guild.name },
-  });
-  return (built || new EmbedBuilder()
-    .setColor(0xE74C3C)
-    .setTitle('🚨 File a Report')
-    .setDescription('Pick the user below (type to search), choose a reason, optionally attach a message link, then press **Submit Report**.\n​'))
-    .addFields(
+  }).addFields(
       { name: '👤 User',   value: session.targetUserId ? `<@${session.targetUserId}>` : '*Not selected*', inline: true },
       { name: '🏷️ Reason', value: session.reason ? REASON_LABELS[session.reason] : '*Not selected*',      inline: true },
       { name: '🔗 Link',   value: session.link || '*None*',                                                inline: true },
     );
 }
 
-function buildPanelRows(userId, guild = null) {
+function buildPanelRows(userId, guild) {
   const userSelect = new UserSelectMenuBuilder().setCustomId(`report_user_select:${userId}`).setPlaceholder('Select a user to report…').setMinValues(1).setMaxValues(1);
   const reasonSelect = new StringSelectMenuBuilder().setCustomId(`report_reason_select:${userId}`).setPlaceholder('Select a reason…')
     .addOptions(REASON_OPTIONS.map(r => new StringSelectMenuOptionBuilder().setLabel(r.label).setValue(r.value)));
   // Every custom id here carries the owner on the end, so a form left open in
   // one channel cannot be driven by somebody else pressing in another.
-  const buttons = guild && messageStyle.buildButtons(guild.id, 'report.form', {
+  const buttons = messageStyle.buildButtons(guild.id, 'report.form', {
     customId: id => `${id}:${userId}`,
     ButtonBuilder, ActionRowBuilder, ButtonStyle,
   });

@@ -403,6 +403,11 @@ function buttonsFor(guildId, key) {
     const style = BUTTON_STYLES.includes(patch.style) ? patch.style : b.style;
     return {
       id: b.id,
+      // Whether this guild has actually changed it. A second setting for the
+      // same button elsewhere can then defer to Appearance once Appearance
+      // has been used, without overriding a value somebody set years ago in
+      // the other place and never revisited.
+      edited: !!(stored[b.id] && Object.keys(stored[b.id]).length),
       // An empty label is allowed when there is an emoji to carry the button,
       // which is how a compact panel is built — but not both empty, because
       // Discord refuses a button with neither and the whole panel would fail

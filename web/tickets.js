@@ -17,9 +17,8 @@
  * with reality.
  */
 
-const { ChannelType, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ChannelType, PermissionFlagsBits } = require('discord.js');
 const { readJson, writeJson } = require('../utils/jsonStorage');
-const { createServerEmbed } = require('../utils/embedBuilder');
 
 const ticketCmd = () => require('../commands/utility/ticket.js');
 
@@ -160,8 +159,13 @@ async function close(guildId, body, { guild, session }) {
 /**
  * Posts the "open a ticket" panel into a channel.
  *
- * Built from the same createServerEmbed + create_ticket button the slash
- * command uses, so the message members see is identical however it was posted.
+ * Through the command's own builder, not a copy of it. This used to hold a
+ * second copy of the wording and the button, and once the panel became
+ * editable on the Appearance screen only the command's copy was taught to
+ * read it — so editing the card changed what /ticket setup sent and left
+ * this posting the shipped default. Required lazily for the same reason
+ * web/composer.js does it: the command files pull in a good deal of the bot
+ * and web/ is loaded before they have all settled.
  */
 async function postPanel(guildId, body, { guild }) {
   const channelId = String(body.channelId || '');
@@ -169,22 +173,10 @@ async function postPanel(guildId, body, { guild }) {
   const channel = guild.channels.cache.get(channelId);
   if (!channel?.isTextBased?.()) return { error: 'bad_channel' };
 
-  const embed = createServerEmbed('ticket', {
-    title: 'Support Tickets',
-    description: 'Need help? Click the button below to open a private ticket and our team will assist you.',
-    fields: [
-      { name: 'Response Time', value: 'Usually within a few hours', inline: true },
-      { name: 'What to Include', value: 'Describe your issue clearly', inline: true },
-    ],
-  }, guild);
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('create_ticket').setLabel('Create Ticket').setStyle(ButtonStyle.Primary).setEmoji('🎫'),
-  );
+  const { buildTicketPanel } = require('../commands/utility/ticket.js');
 
   try {
-    // Nothing in this embed should ever ping anyone.
-    await channel.send({ embeds: [embed], components: [row], allowedMentions: { parse: [] } });
+    await channel.send(buildTicketPanel(guild));
   } catch (err) {
     console.error('[Panel] posting the ticket panel failed:', err.message);
     return { error: 'post_failed', detail: err.message.slice(0, 140) };

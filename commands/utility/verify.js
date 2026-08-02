@@ -50,6 +50,10 @@ function panelCopy(guildId) {
     intro: pick('intro'),
     rulesText: pick('rulesText'),
     buttonLabel: pick('buttonLabel'),
+    // The raw stored one, empty when it was never set. The picked value above
+    // always has a default behind it, so it can never lose a comparison —
+    // which is exactly how the Appearance button's label came to be ignored.
+    buttonLabelSet: typeof s.buttonLabel === 'string' ? s.buttonLabel.trim() : '',
     // Clamped rather than trusted: the grid is eight emoji and a sequence
     // longer than the pool could never be completed.
     sequenceLength: Number.isInteger(len) && len >= 2 && len <= 6 ? len : PANEL_DEFAULTS.sequenceLength,
@@ -65,9 +69,13 @@ function buildVerifyPanel(guild) {
   // The colour and the button come from the Appearance catalogue.
   const style = messageStyle.styleFor(guild.id, 'verify.panel');
   const button = messageStyle.buttonsFor(guild.id, 'verify.panel')[0];
-  // A label set on the Settings screen still wins, because that field existed
-  // first and somebody may have set it there years ago.
-  const label = copy.buttonLabel || button?.label || 'Start Verification';
+  // Appearance owns the button now. The old Settings field is honoured only
+  // while the Appearance button is untouched, so a label somebody set there
+  // years ago keeps working — and the moment they edit the button on the
+  // screen that shows them the button, that wins.
+  const label = button?.edited
+    ? button.label
+    : (copy.buttonLabelSet || button?.label || PANEL_DEFAULTS.buttonLabel);
   const embed = new EmbedBuilder()
     .setTitle(copy.title)
     .setDescription(`${copy.intro.replace(/\{server\}/g, `**${guild.name}**`)}\n\n**📜 Server Rules**\n\n${copy.rulesText}`)
