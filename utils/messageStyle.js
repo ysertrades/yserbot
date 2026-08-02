@@ -150,6 +150,52 @@ const PALETTE_KINDS = [
   { key: 'mod',       label: 'Moderation chrome',    color: '#EF4444', does: 'Moderation messages without a card of their own' },
 ];
 
+/**
+ * How much an economic release is expected to move things.
+ *
+ * A palette rather than a colour per card, because the colour on a calendar
+ * card is the part you read before any of the words — and it has to mean the
+ * same thing on the reminder and on the release, or it means nothing at all.
+ */
+const IMPACT_KINDS = [
+  { key: 'High',    label: 'High impact',   color: '#EF4444', does: 'The ones that move markets — rate decisions, CPI, jobs' },
+  { key: 'Medium',  label: 'Medium impact', color: '#F59E0B', does: 'Worth watching, rarely violent' },
+  { key: 'Low',     label: 'Low impact',    color: '#95A5A6', does: 'Background data' },
+  { key: 'Holiday', label: 'Bank holiday',  color: '#8B5CF6', does: 'Market closures, not a release' },
+];
+
+/**
+ * The two news cards.
+ *
+ * Identical but for the heading and the colour, and the whole point is that
+ * the pair can be pulled apart — a server that wants breaking news to shout
+ * changes one of them and leaves the other alone.
+ */
+const news = (key, label, blurb, color, title) => ({
+  [`news.${key}`]: {
+    group: 'News',
+    label,
+    blurb,
+    shape: 'card',
+    parts: ['enabled', 'color', 'title', 'body', 'footer', 'thumbnail', 'timestamp'],
+    tokens: ['{headline}', '{text}', '{url}', '{source}', '{via}', '{readmore}', '{context}'],
+    titleLabel: 'Heading',
+    bodyHint: 'Keep {headline} and {url} together on one line — that is what makes the headline clickable, and an embed picture is not. '
+      + '{readmore} is the Watch/Read line for a story that points somewhere else and nothing when it does not; {via} is the site it came from.',
+    defaults: {
+      enabled: true, color,
+      title,
+      body: '[**{headline}**]({url})\n\n{text}\n\n{readmore}',
+      footer: '{source} • {context}',
+      // Off, so the story's picture runs across the card rather than shrinking
+      // into the corner tile — same reasoning as the social cards.
+      thumbnail: false,
+      // Headline age is obvious from post order, and these arrive in bursts.
+      timestamp: false,
+    },
+  },
+});
+
 const CATALOGUE = {
   /* -- the cards a moderation action leaves in the channel ---------------- */
 
@@ -347,6 +393,114 @@ const CATALOGUE = {
   ...social('youtube', 'YouTube', '#FF0000',
     'Posted when a watched YouTube channel publishes. {title} is the video title.'),
 
+  /* -- market news --------------------------------------------------------- */
+
+  ...news('headline', 'Market headline',
+    'Posted for every headline the news feed picks up. Switching it off leaves only the breaking ones running — where the feed posts, and whether it runs at all, stay on the Newsfeed screen.',
+    '#1D9BF0', '📰 {source}'),
+
+  ...news('breaking', 'Breaking headline',
+    'The same card for a headline the feed flags as breaking. It is a separate entry so urgent news can actually look urgent without touching the ordinary headlines around it.',
+    '#FF3B30', '🔴 BREAKING — {source}'),
+
+  /* -- the economic calendar ----------------------------------------------- */
+
+  'econ.reminder': {
+    group: 'Economic calendar',
+    label: 'Release reminder',
+    blurb: 'Posted a few minutes before a scheduled release, with the event card under it. Turn it off to announce releases as they land without the heads-up first.',
+    shape: 'card',
+    parts: ['enabled', 'title', 'body', 'footer', 'timestamp'],
+    wordingNote: 'The colour comes from Impact colours below, so a reminder reads the same as the release it is warning about.',
+    tokens: ['{event}', '{currency}', '{impact}', '{minutes}', '{time}', '{relative}', '{forecast}', '{previous}'],
+    bodyHint: '{time} is the clock time; {relative} is a countdown Discord keeps updating on its own.',
+    defaults: {
+      enabled: true, color: '#F59E0B',
+      title: '⏰ Releasing in {minutes} Minutes',
+      body: '{time} ({relative})',
+      footer: '{server} • Economic Calendar',
+      thumbnail: false, timestamp: false,
+    },
+  },
+
+  'econ.release': {
+    group: 'Economic calendar',
+    label: 'Release',
+    blurb: 'Posted the moment a release is due, with the event card under it.',
+    shape: 'card',
+    parts: ['enabled', 'title', 'body', 'footer', 'timestamp'],
+    wordingNote: 'The colour comes from Impact colours below.',
+    tokens: ['{event}', '{currency}', '{impact}', '{time}', '{forecast}', '{previous}'],
+    defaults: {
+      enabled: true, color: '#1D9BF0',
+      title: '📊 Releasing Now',
+      body: '{time}',
+      footer: '{server} • Economic Calendar',
+      thumbnail: false, timestamp: false,
+    },
+  },
+
+  'econ.summary': {
+    group: 'Economic calendar',
+    label: 'Calendar heading',
+    blurb: 'The heading above a posted calendar — the weekly auto-post, and the Today / Tomorrow / This Week posts from /econcal. Its colour is also the colour of the event cards underneath it.',
+    shape: 'card',
+    parts: ['color', 'title', 'footer', 'timestamp'],
+    tokens: ['{scope}', '{count}'],
+    bodyHint: '{scope} becomes Today\'s, Tomorrow\'s or This Week\'s; {count} is how many events are in the post.',
+    defaults: {
+      enabled: true, color: '#5865F2',
+      title: '📅 {scope} Economic Calendar',
+      body: '', footer: '', thumbnail: false, timestamp: false,
+    },
+  },
+
+  'econ.empty': {
+    group: 'Economic calendar',
+    label: 'Nothing scheduled',
+    blurb: 'Replaces the heading above when nothing matches your impact and currency filters, so a quiet week says so instead of posting a bare title.',
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer'],
+    tokens: ['{scope}', '{when}'],
+    bodyHint: '{when} reads as today, tomorrow or this week.',
+    defaults: {
+      enabled: true, color: '#5865F2',
+      title: '📅 {scope} Economic Calendar',
+      body: 'No matching events {when}.',
+      footer: '', thumbnail: false, timestamp: false,
+    },
+  },
+
+  'econ.day': {
+    group: 'Economic calendar',
+    label: 'Day divider',
+    blurb: 'The small line between days in a calendar post covering more than one, so a full week reads like a calendar rather than a stream of cards. Off runs the days together.',
+    shape: 'card',
+    parts: ['enabled', 'color', 'body'],
+    bodyLabel: 'Divider line',
+    tokens: ['{day}', '{date}'],
+    bodyHint: '{day} is the whole thing — "Monday, August 3". {date} is just the number.',
+    defaults: {
+      enabled: true, color: '#5865F2',
+      title: '', body: '**🗓️ {day}**',
+      footer: '', thumbnail: false, timestamp: false,
+    },
+  },
+
+  'econ.impact': {
+    group: 'Economic calendar',
+    label: 'Impact colours',
+    blurb: 'What a reminder and its release are coloured by — how much the event is expected to move things. This is the part of a calendar card people read before any of the words.',
+    shape: 'card',
+    parts: ['palette'],
+    tokens: [],
+    palette: IMPACT_KINDS,
+    defaults: {
+      enabled: true, color: '#5865F2', title: '', body: '',
+      palette: Object.fromEntries(IMPACT_KINDS.map(k => [k.key, k.color])),
+    },
+  },
+
   /* -- giveaways ----------------------------------------------------------- */
 
   'giveaway.live': {
@@ -533,10 +687,15 @@ const BUTTON_LIMITS = { label: 80, emoji: 60 };
  * Never throws and never returns nothing: this is called from the builder
  * that every confirmation in the bot goes through, so a bad stored value has
  * to fall back rather than take the message with it.
+ *
+ * `key` defaults to the catch-all palette, which is what nearly every caller
+ * wants. The calendar's impact colours are the other one — same storage, same
+ * validation, its own set of kinds.
  */
-function paletteFor(guildId) {
-  const entry = CATALOGUE['base.palette'];
-  const stored = readJson(FILE, {})[guildId]?.['base.palette']?.palette || {};
+function paletteFor(guildId, key = 'base.palette') {
+  const entry = CATALOGUE[key];
+  if (!entry?.palette) return {};
+  const stored = readJson(FILE, {})[guildId]?.[key]?.palette || {};
   const out = {};
   for (const kind of entry.palette) {
     const v = stored[kind.key];
@@ -627,7 +786,7 @@ function styleFor(guildId, key) {
     }
   }
   if (partsOf(key).includes('buttons')) out.buttons = buttonsFor(guildId, key);
-  if (partsOf(key).includes('palette')) out.palette = paletteFor(guildId);
+  if (partsOf(key).includes('palette')) out.palette = paletteFor(guildId, key);
   return out;
 }
 
@@ -762,6 +921,12 @@ function customised(guildId) {
  *
  * Line by line rather than whole-string so a two-line body keeps the half it
  * still has — the reason stays even when the duration is missing.
+ *
+ * Dropping a line leaves the blank lines that were around it, so a paragraph
+ * removed from the middle of a body used to leave a gap twice the size of the
+ * ones either side of it. Runs of blank lines are collapsed back to one at the
+ * end for that reason: the gap belongs to the paragraphs that survived, not to
+ * the one that went.
  */
 function fill(text, tokens = {}) {
   if (!text) return '';
@@ -793,7 +958,7 @@ function fill(text, tokens = {}) {
     kept.push(filled.replace(/[ \t]+$/, ''));
   }
 
-  return kept.join('\n').trim();
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 const colorInt = hex => {
@@ -912,5 +1077,5 @@ module.exports = {
   catalogue, all, customised, styleFor, setStyle, resetStyle,
   build, fill, isOn, partsOf,
   buttonsFor, buildButtons, BUTTON_STYLES, BUTTON_LIMITS,
-  paletteFor, PALETTE_KINDS,
+  paletteFor, PALETTE_KINDS, IMPACT_KINDS,
 };

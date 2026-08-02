@@ -40,10 +40,15 @@ function truncate(text, scale, maxWidth) {
  * @param {number} [opts.interestReady] - accrued interest ready to collect (own account only)
  * @param {number} [opts.nextInterestTs] - unix seconds of the next interest drop (own account only, used only for the caption)
  * @param {boolean} [opts.viewingOther] - true when this is "check another user's balance", not your own account
+ * @param {number} [opts.interestPercent] - the guild's configured interest rate per period (defaults to the shipped 2%)
+ * @param {number} [opts.periodHours] - the guild's configured period length in hours (defaults to the shipped 12h)
  * @returns {Buffer} PNG image data
  */
 function generateBankCardImage(opts) {
-  const { avatarPng, username, wallet, bank, interestReady = 0, viewingOther = false } = opts;
+  const {
+    avatarPng, username, wallet, bank, interestReady = 0, viewingOther = false,
+    interestPercent = 2, periodHours = 12,
+  } = opts;
   const W = 1000, H = 460;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
@@ -88,7 +93,7 @@ function generateBankCardImage(opts) {
     const statusY = chipY + chipH + 26;
     const statusText = interestReady > 0
       ? `+${interestReady.toLocaleString()} COINS INTEREST READY TO COLLECT`
-      : 'INTEREST ACCRUES 2% EVERY 12 HOURS';
+      : `INTEREST ACCRUES ${interestPercent}% EVERY ${periodHours} HOUR${periodHours === 1 ? '' : 'S'}`;
     drawText(png, statusText, contentLeft, statusY, 2, interestReady > 0 ? GOOD : DIM);
   }
 

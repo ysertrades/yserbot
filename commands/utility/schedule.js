@@ -8,13 +8,28 @@ const {
 } = require('discord.js');
 const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
-const { generateScheduleId, parseScheduleTime, parseUtcOffset, nextWeekdayTimestamp } = require('../../utils/scheduler');
+const {
+  generateScheduleId, parseScheduleTime, parseUtcOffset,
+  nextWeekdayTimestamp, nextDayOfWeekTimestamp, dayOfWeek, DAY_NAMES,
+} = require('../../utils/scheduler');
 
 const TEMP_MS = 5000;
 function tempDelete(interaction) { setTimeout(() => interaction.deleteReply().catch(() => {}), TEMP_MS); }
 
-const frequencyLabels = { once: 'Once', weekdays: 'Every Weekday (Mon–Fri)', everyday: 'Every Day' };
-const frequencyIcons  = { once: '📌', weekdays: '📅', everyday: '🔁' };
+const frequencyLabels = { once: 'Once', weekdays: 'Every Weekday (Mon–Fri)', everyday: 'Every Day', weekly: 'Every Week' };
+const frequencyIcons  = { once: '📌', weekdays: '📅', everyday: '🔁', weekly: '🗓️' };
+
+/**
+ * How a schedule's cadence reads.
+ *
+ * A weekly one names its day rather than saying "Every Week", because the day
+ * is the whole point of picking weekly and it is not otherwise visible
+ * anywhere — it lives in the run time, not in a field of its own.
+ */
+function cadenceLabel(frequency, time, offsetMinutes = 0) {
+  if (frequency === 'weekly' && time) return `Every ${DAY_NAMES[dayOfWeek(time, offsetMinutes)]}`;
+  return frequencyLabels[frequency] || frequency;
+}
 
 // ── Cancel selector (select menu) ──────────────────────────────────────────────
 
@@ -32,7 +47,7 @@ function buildCancelSelector(guildId, interaction) {
   const options = list.slice(0, 25).map(s =>
     new StringSelectMenuOptionBuilder()
       .setLabel(`${s.id} — ${s.embedName}`.slice(0, 100))
-      .setDescription(`${frequencyIcons[s.frequency]} ${frequencyLabels[s.frequency]}`)
+      .setDescription(`${frequencyIcons[s.frequency]} ${cadenceLabel(s.frequency, s.time, s.offsetMinutes)}`)
       .setValue(s.id),
   );
 
@@ -62,7 +77,14 @@ module.exports = {
       .addChannelOption(opt => opt.setName('channel').setDescription('Channel to send to').setRequired(true).addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement))
       .addStringOption(opt => opt.setName('time').setDescription('HH:mm, YYYY-MM-DD HH:mm, or relative like 30m/2h/1d').setRequired(true))
       .addStringOption(opt => opt.setName('frequency').setDescription('How often to repeat').setRequired(true)
-        .addChoices({ name: 'Once', value: 'once' }, { name: 'Every Weekday (Mon–Fri)', value: 'weekdays' }, { name: 'Every Day', value: 'everyday' }))
+        .addChoices(
+          { name: 'Once', value: 'once' },
+          { name: 'Every Weekday (Mon–Fri)', value: 'weekdays' },
+          { name: 'Every Day', value: 'everyday' },
+          { name: 'Every Week (pick a day below)', value: 'weekly' },
+        ))
+      .addIntegerOption(opt => opt.setName('day').setDescription('Which day, for a weekly schedule').setRequired(false)
+        .addChoices(...DAY_NAMES.map((name, value) => ({ name, value }))))
       .addStringOption(opt => opt.setName('mention').setDescription('Mention @everyone, @here, or a role ID').setRequired(false))
       .addStringOption(opt => opt.setName('timezone').setDescription('UTC offset, e.g. -4 or +5:30 (default: UTC)').setRequired(false)))
     .addSubcommand(sub => sub.setName('list').setDescription('List all scheduled embeds'))
@@ -89,6 +111,7 @@ module.exports = {
       const channel       = interaction.options.getChannel('channel');
       const timeInput     = interaction.options.getString('time');
       const frequency     = interaction.options.getString('frequency');
+      const day           = interaction.options.getInteger('day');
       const mention       = interaction.options.getString('mention') || null;
       const timezoneInput = interaction.options.getString('timezone');
 
@@ -106,6 +129,10 @@ module.exports = {
         return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Time', description: 'Use `HH:mm`, `YYYY-MM-DD HH:mm`, or relative like `30m`, `2h`, `1d`.' }, interaction.guild)] });
 
       if (frequency === 'weekdays') time = nextWeekdayTimestamp(time, offsetMinutes);
+      // A weekly schedule keeps whatever weekday its first run lands on, so
+      // the day is applied here rather than stored — picking Sunday moves the
+      // first run onto Sunday and every 7-day step after it stays there.
+      if (frequency === 'weekly' && day !== null) time = nextDayOfWeekTimestamp(time, day, offsetMinutes);
 
       const id = generateScheduleId(Object.keys(schedules[guildId]));
       schedules[guildId][id] = {
@@ -125,7 +152,7 @@ module.exports = {
           fields: [
             { name: '🆔 ID',        value: `\`${id}\``,                                                    inline: true  },
             { name: '📍 Channel',   value: `${channel}`,                                                    inline: true  },
-            { name: `${frequencyIcons[frequency]} Frequency`, value: frequencyLabels[frequency],            inline: true  },
+            { name: `${frequencyIcons[frequency]} Frequency`, value: cadenceLabel(frequency, time, offsetMinutes), inline: true  },
             { name: '🌐 Timezone',  value: tzLabel,                                                         inline: true  },
             { name: '⏰ Next Send', value: `<t:${Math.floor(time / 1000)}:F> (<t:${Math.floor(time / 1000)}:R>)`, inline: false },
           ],
@@ -143,7 +170,7 @@ module.exports = {
         title: 'Scheduled Embeds',
         description: `**${list.length}** schedule${list.length !== 1 ? 's' : ''} active.`,
         fields: shown.map(s => ({
-          name:  `\`${s.id}\`  •  ${frequencyIcons[s.frequency]} ${frequencyLabels[s.frequency]}`,
+          name:  `\`${s.id}\`  •  ${frequencyIcons[s.frequency]} ${cadenceLabel(s.frequency, s.time, s.offsetMinutes)}`,
           value: `📋 **${s.embedName}**\n📍 <#${s.channelId}>\n⏰ <t:${Math.floor(s.time / 1000)}:R>\n👤 <@${s.createdBy}>`,
           inline: false,
         })),

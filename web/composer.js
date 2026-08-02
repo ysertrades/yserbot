@@ -21,6 +21,7 @@
  */
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
+const { normaliseMention, mentionSend } = require('../utils/mentionTarget');
 const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
 
 // Required lazily: commands/utility/embed.js pulls in a good deal of the bot,
@@ -367,11 +368,24 @@ async function send(guildId, body, { guild }) {
   const payload = embedCommand().buildEmbedPayload(guild, name, { channel });
   if (!payload) return { error: 'unknown_template' };
 
+  // Who this post pings, if anyone. Nothing is the default and nothing is what
+  // every post did before this existed — a ping happens because it was picked
+  // on the send form, for that one send, and is never stored on the template.
+  const mention = normaliseMention(body.mention, guild);
+  if (mention === undefined) return { error: 'bad_mention' };
+  const ping = mentionSend(mention);
+
   // The template's own line above the embed, with the send form's text as an
   // override — someone posting a template into two channels with a different
   // opening line each time should not have to edit the template between them.
   const around = normalize(readJson('embeds.json', {})[guildId]?.[name]).around;
-  const content = clean(body.content, LIMITS.content) || around?.above || null;
+  const typed = clean(body.content, LIMITS.content) || around?.above || null;
+
+  // The ping goes on its own line above whatever the post already said, so it
+  // reads as an address rather than being spliced into the sentence. Trimmed
+  // from the end if the pair overruns, which keeps the ping — the part that
+  // was deliberately asked for — rather than failing the send outright.
+  const content = [ping.text, typed].filter(Boolean).join('\n').slice(0, LIMITS.content) || null;
 
   let message;
   try {
@@ -380,8 +394,10 @@ async function send(guildId, body, { guild }) {
       embeds: payload.embeds,
       files: payload.files,
       components: payload.components.length ? payload.components : undefined,
-      // The panel must never be a way to mass-ping a server by accident.
-      allowedMentions: { parse: [] },
+      // Only ever the one target that was picked. The panel must never be a
+      // way to mass-ping a server by accident, so an @everyone sitting in a
+      // template's own text stays inert no matter who posts it.
+      allowedMentions: ping.allowedMentions,
     });
   } catch (err) {
     console.error('[Panel] send failed:', err.message);
@@ -443,6 +459,11 @@ async function updatePost(guildId, body, { guild, client }) {
       embeds: payload.embeds,
       files: payload.files,
       components: payload.components.length ? payload.components : [],
+      // Never on an edit, even when the stored content starts with a ping.
+      // Discord does not re-notify for an edit and we should not try to make
+      // it: pushing a wording fix is not a reason to ring a whole role again.
+      // The ping text stays visible, which is what the post said when it was
+      // sent and what it should still look like.
       allowedMentions: { parse: [] },
     });
   } catch (err) {

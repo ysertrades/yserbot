@@ -15,6 +15,7 @@ const LOGIN_ERRORS = {
 
 const WRITE_ERRORS = {
   bad_channel:     'Pick a text channel that still exists.',
+  bad_mention:     'Pick a role that still exists, or @everyone / @here.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
   bad_color:       'Colour needs to be a 6-digit hex code.',
@@ -835,6 +836,22 @@ function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
 }
 
 /**
+ * Ping target: nothing, the two broadcast forms, or a role in this server.
+ *
+ * Up here with the other pickers rather than beside the one screen that first
+ * needed it — the Composer's send form uses it too, and a ping target is the
+ * same question wherever it is asked.
+ */
+function mentionPicker(label, value, onChange, { blank = 'No ping' } = {}) {
+  const current = value && value.startsWith('<@&') ? value.replace(/[^0-9]/g, '') : value;
+  return select(label, current || '', [
+    { value: '@everyone', label: '@everyone' },
+    { value: '@here', label: '@here' },
+    ...roleList().map(r => ({ value: r.id, label: `@${r.name}` })),
+  ], v => onChange(v || null), { blank });
+}
+
+/**
  * Multi-select as toggleable chips rather than a <select multiple>, which is
  * close to unusable on a phone — ctrl-click has no touch equivalent.
  */
@@ -1157,10 +1174,15 @@ function renderComposer() {
   if (saved) {
     const sendPanel = el('div', 'panel');
     sendPanel.append(el('h2', null, 'Send and update'));
-    const target = { name: draft.name, channelId: '', content: '' };
+    const target = { name: draft.name, channelId: '', content: '', mention: null };
     const channels = state.overview?.settings?.channels || [];
     sendPanel.append(
       select('Channel', '', channels.map(c => ({ value: c.id, label: `#${c.name}` })), v => { target.channelId = v; }, { blank: 'Pick a channel' }),
+      // Between the channel and the line above the embed, because it reads in
+      // the order the post is built: where it goes, who it is for, what it
+      // says. It belongs to this send rather than to the template, so it
+      // resets every time this form is drawn.
+      mentionPicker('Ping with the post', null, v => { target.mention = v; }),
       textField('Text above the embed (optional)', '', v => { target.content = v; }),
     );
     const sendRow = el('div', 'actions');
@@ -3460,17 +3482,17 @@ const freqOptions = () => (state.overview?.features?.frequencies || [])
 const freqLabel = value =>
   (state.overview?.features?.frequencies || []).find(f => f.value === value)?.label || value;
 
-const fmtTime = ts => (ts ? new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'not set');
+const dayOptions = () => state.overview?.features?.scheduleDays || [];
 
-/** Ping target: nothing, the two broadcast forms, or a role in this server. */
-function mentionPicker(label, value, onChange) {
-  const current = value && value.startsWith('<@&') ? value.replace(/[^0-9]/g, '') : value;
-  return select(label, current || '', [
-    { value: '@everyone', label: '@everyone' },
-    { value: '@here', label: '@here' },
-    ...roleList().map(r => ({ value: r.id, label: `@${r.name}` })),
-  ], v => onChange(v || null), { blank: 'No ping' });
-}
+// How a schedule's cadence reads in the list. A weekly one names its day —
+// "Every week (pick a day)" is the wording for the picker, not for a row
+// describing a schedule that already has one.
+const cadenceLabel = s => {
+  if (s.frequency !== 'weekly' || s.dayOfWeek === null || s.dayOfWeek === undefined) return freqLabel(s.frequency);
+  return `Every ${dayOptions().find(d => d.value === s.dayOfWeek)?.label || 'week'}`;
+};
+
+const fmtTime = ts => (ts ? new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'not set');
 
 function renderSchedules() {
   const list = $('#sched-list');
@@ -3482,15 +3504,22 @@ function renderSchedules() {
     const d = el('details', 'item');
     const sum = el('summary');
     sum.append(
-      el('span', 'bstyle secondary', freqLabel(s.frequency)),
+      el('span', 'bstyle secondary', cadenceLabel(s)),
       el('span', 'nm', s.embedName),
       el('span', 'pr', s.channelName ? `#${s.channelName}` : 'channel gone'),
     );
     const body = el('div', 'body');
+    // Only a weekly schedule has a day to pick, so the picker appears with it
+    // rather than sitting there greyed out on the other cadences.
+    const dayPick = select('Day of the week', s.dayOfWeek ?? '', dayOptions(),
+      v => { draft.dayOfWeek = v; }, { blank: 'Leave it on its current day' });
+    const syncDay = f => { dayPick.style.display = f === 'weekly' ? '' : 'none'; };
+    syncDay(s.frequency);
     body.append(
       select('Message to post', s.embedName, templateOptions(), v => { draft.embedName = v; }),
       pickOne('Channel', 'channel', s.channelId, v => { draft.channelId = v; }),
-      select('How often', s.frequency, freqOptions(), v => { draft.frequency = v; }),
+      select('How often', s.frequency, freqOptions(), v => { draft.frequency = v; syncDay(v); }),
+      dayPick,
       textField('Time (HH:MM, or "2h" from now)', '', v => { draft.time = v; draft.offsetMinutes = tzOffset(); },
         { placeholder: fmtTime(s.time) }),
       mentionPicker('Ping with the post', s.mention, v => { draft.mention = v; }),
@@ -3523,10 +3552,15 @@ function renderSchedules() {
   addSum.append(el('span', 'nm', '+ Schedule a post'));
   const nb = { embedName: '', channelId: '', frequency: 'everyday', time: '', mention: null, offsetMinutes: tzOffset() };
   const addBody = el('div', 'body');
+  const newDayPick = select('Day of the week', '', dayOptions(),
+    v => { nb.dayOfWeek = v; }, { blank: 'Whichever day the time lands on' });
+  const syncNewDay = f => { newDayPick.style.display = f === 'weekly' ? '' : 'none'; };
+  syncNewDay(nb.frequency);
   addBody.append(
     select('Message to post', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a message' }),
     pickOne('Channel', 'channel', '', v => { nb.channelId = v; }, { blank: 'Pick a channel' }),
-    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; }),
+    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; syncNewDay(v); }),
+    newDayPick,
     textField('Time', '', v => { nb.time = v; }, { placeholder: '09:30, or 2h from now' }),
     mentionPicker('Ping with the post', null, v => { nb.mention = v; }),
     el('p', 'hint', `Times are read in your timezone (UTC${tzOffset() >= 0 ? '+' : ''}${(tzOffset() / 60).toFixed(2).replace(/\.00$/, '')}).`),

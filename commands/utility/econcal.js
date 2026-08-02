@@ -273,9 +273,9 @@ module.exports = {
       else if (scope === 'tomorrow') scoped = filterEventsByDay(events, 1, settings.weeklyPost.offsetMinutes || 0);
       const filtered = filterEvents(scoped, { impactFilter: settings.impactFilter, currencyFilter: settings.currencyFilter });
 
-      const title = { today: "📅 Today's Economic Calendar", tomorrow: "📅 Tomorrow's Economic Calendar", week: "📅 This Week's Economic Calendar" }[scope];
-      const emptyText = { today: 'No matching events today.', tomorrow: 'No matching events tomorrow.', week: 'No matching events this week.' }[scope];
-      const batches = buildWeeklySummaryEmbeds(filtered, interaction.guild, title, emptyText);
+      // The heading and the "nothing scheduled" line are Appearance entries
+      // now, so the scope is passed rather than the finished wording.
+      const batches = buildWeeklySummaryEmbeds(filtered, interaction.guild, scope);
       for (const batch of batches) {
         await channel.send(batch);
       }

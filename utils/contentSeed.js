@@ -106,6 +106,24 @@ const NYSE_OPEN_TEMPLATE = {
   }],
 };
 
+const FUTURES_OPEN_TEMPLATE = {
+  embeds: [{
+    title: null,
+    description: null,
+    color: '#4C7DFF',
+    footer: null,
+    footerIcon: null,
+    thumbnail: null,
+    image: 'dynamic:futuresOpen',
+    fields: [],
+    titleUrl: null,
+    authorName: null,
+    authorIcon: null,
+    authorUrl: null,
+    timestamp: false,
+  }],
+};
+
 const RISK_GUIDE_TEMPLATE = {
   embeds: [{
     title: null,
@@ -182,6 +200,7 @@ const TEMPLATE_SEEDS = {
   'economy-showcase': ECONOMY_SHOWCASE_TEMPLATE,
   'report-guide':      REPORT_GUIDE_TEMPLATE,
   'nyse-open':         NYSE_OPEN_TEMPLATE,
+  'futures-open':      FUTURES_OPEN_TEMPLATE,
   'risk-guide':        RISK_GUIDE_TEMPLATE,
   'newsfeed-guide':    NEWSFEED_GUIDE_TEMPLATE,
   'tradingview-banner': TRADINGVIEW_BANNER_TEMPLATE,

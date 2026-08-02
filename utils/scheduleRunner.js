@@ -1,5 +1,6 @@
 const { readJson, writeJson } = require('./jsonStorage');
 const { computeNextRun } = require('./scheduler');
+const { mentionSend } = require('./mentionTarget');
 
 const CHECK_INTERVAL_MS = 5000;
 
@@ -75,25 +76,9 @@ async function fireSchedule(guild, schedule) {
         return { ok: false, reason: 'template-missing' };
     }
 
-    let content, mentionOpts;
-    const mention = schedule.mention;
-    if (mention === '@everyone') {
-        content = '@everyone'; mentionOpts = { parse: ['everyone'] };
-    } else if (mention === '@here') {
-        content = '@here'; mentionOpts = { parse: ['here'] };
-    } else if (mention) {
-        const roleMatch = mention.match(/^<@&(\d+)>$/) || mention.match(/^(\d+)$/);
-        const userMatch = mention.match(/^<@!?(\d+)>$/);
-        if (roleMatch) {
-            content = `<@&${roleMatch[1]}>`; mentionOpts = { roles: [roleMatch[1]] };
-        } else if (userMatch) {
-            content = `<@${userMatch[1]}>`; mentionOpts = { users: [userMatch[1]] };
-        } else {
-            content = mention; mentionOpts = { parse: [] };
-        }
-    }
+    const { text: content, allowedMentions } = mentionSend(schedule.mention);
 
-    await channel.send({ content, embeds: payload.embeds, files: payload.files, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions: mentionOpts });
+    await channel.send({ content: content ?? undefined, embeds: payload.embeds, files: payload.files, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions });
     return { ok: true };
 }
 

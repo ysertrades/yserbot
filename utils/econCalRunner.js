@@ -3,6 +3,7 @@
 const { AttachmentBuilder } = require('discord.js');
 const { readJson, writeJson } = require('./jsonStorage');
 const { createEmbed } = require('./embedBuilder');
+const messageStyle = require('./messageStyle');
 const { getWeekEvents, filterEvents } = require('./economicCalendar');
 const { generateEconEventCard } = require('./econEventVisual');
 
@@ -12,7 +13,23 @@ const STALE_MS           = 5 * 60 * 1000;      // reminders/releases more than t
 const WEEKLY_STALE_MS    = 6 * 60 * 60 * 1000; // weekly summary can catch up up to 6h late (a restart shouldn't eat it)
 const FIRED_KEY_TTL_MS   = 9 * 24 * 60 * 60 * 1000; // prune fired-keys older than ~9 days (past any event they could reference)
 
-const IMPACT_COLOR = { High: 0xEF4444, Medium: 0xF59E0B, Low: 0x95A5A6, Holiday: 0x8B5CF6 };
+/**
+ * The colour a reminder and its release are drawn in, by impact.
+ *
+ * Editable per guild from Appearance ("Impact colours"), falling back to the
+ * shipped values — which are exactly the constants this used to hold.
+ */
+function impactColor(guildId, impact) {
+  const palette = messageStyle.paletteFor(guildId, 'econ.impact');
+  return palette[impact] || palette.Low || '#95A5A6';
+}
+
+/** What the heading and the empty line call the span being posted. */
+const SCOPE_WORDS = {
+  today:    { scope: "Today's",     when: 'today' },
+  tomorrow: { scope: "Tomorrow's",  when: 'tomorrow' },
+  week:     { scope: "This Week's", when: 'this week' },
+};
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES   = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -35,12 +52,14 @@ function dayKeyOf(e) {
 // per-event card already shows its own day/time chip, so this exists purely
 // to make a full week scroll like an organized calendar instead of a flat
 // stream of cards.
-function buildDayHeaderEmbed(e) {
+function buildDayHeaderEmbed(e, guild) {
   const d = toDisplayDate(e.timestamp);
   const label = `${WEEKDAY_NAMES[d.getUTCDay()]}, ${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`;
-  const embed = createEmbed('info', { description: `**🗓️ ${label}**` });
-  embed.setTimestamp(null);
-  return embed;
+  // Null when the guild has turned dividers off — the caller then runs the
+  // days together rather than inserting a blank embed between them.
+  return messageStyle.build(guild.id, 'econ.day', {
+    tokens: { server: guild.name, day: label, date: String(d.getUTCDate()) },
+  });
 }
 
 function fmtEventTime(e) {
@@ -63,30 +82,44 @@ function buildEventCard(e, timeLabel) {
   return new AttachmentBuilder(buf, { name: imageName });
 }
 
-function buildReminderEmbed(e, offset, guild) {
-  const attachment = buildEventCard(e, `IN ${offset} MIN`);
+/** Tokens shared by the reminder and the release. */
+function eventTokens(e, guild) {
   const ts = Math.floor(e.timestamp / 1000);
-  const embed = createEmbed('warning', {
-    color: IMPACT_COLOR[e.impact] || 0x95A5A6,
-    title: `⏰ Releasing in ${offset} Minutes`,
-    description: `<t:${ts}:t> (<t:${ts}:R>)`,
-    footer: `${guild.name} • Economic Calendar`,
-    image: `attachment://${attachment.name}`,
-  }).setTimestamp(null);
+  return {
+    server: guild.name,
+    event: e.title, currency: e.currency, impact: e.impact,
+    // Discord's own timestamp markup, so the countdown stays live in the
+    // posted message rather than freezing at whatever it said when sent.
+    time: `<t:${ts}:t>`, relative: `<t:${ts}:R>`,
+    forecast: e.forecast || '', previous: e.previous || '',
+  };
+}
+
+/**
+ * Builds one card, or null when that kind is switched off.
+ *
+ * The embed is built before the picture, deliberately: drawing an event card
+ * is 60-210 ms of blocked thread, and a guild that has turned reminders off
+ * should not pay for one it is never going to send.
+ */
+function buildEventEmbed(key, e, guild, tokens, timeLabel) {
+  const embed = messageStyle.build(guild.id, key, {
+    color: impactColor(guild.id, e.impact),
+    tokens,
+  });
+  if (!embed) return null;
+  const attachment = buildEventCard(e, timeLabel);
+  try { embed.setImage(`attachment://${attachment.name}`); } catch { /* card still sends without it */ }
   return { embed, files: [attachment] };
 }
 
+function buildReminderEmbed(e, offset, guild) {
+  return buildEventEmbed('econ.reminder', e, guild,
+    { ...eventTokens(e, guild), minutes: offset }, `IN ${offset} MIN`);
+}
+
 function buildReleaseEmbed(e, guild) {
-  const attachment = buildEventCard(e, 'RELEASING NOW');
-  const ts = Math.floor(e.timestamp / 1000);
-  const embed = createEmbed('info', {
-    color: IMPACT_COLOR[e.impact] || 0x95A5A6,
-    title: '📊 Releasing Now',
-    description: `<t:${ts}:t>`,
-    footer: `${guild.name} • Economic Calendar`,
-    image: `attachment://${attachment.name}`,
-  }).setTimestamp(null);
-  return { embed, files: [attachment] };
+  return buildEventEmbed('econ.release', e, guild, eventTokens(e, guild), 'RELEASING NOW');
 }
 
 const MAX_EMBEDS_PER_MSG  = 9;  // Discord's real cap is 10 — leave headroom for a day-divider embed
@@ -100,20 +133,32 @@ const MAX_EVENTS_RENDERED = 30; // hard safety cap so a huge, unfiltered week ca
 // week reads like an organized calendar instead of a flat stream of cards
 // — single-day views skip it since every card already shares the same day.
 // Returns an array of ready-to-send message payloads ({ embeds, files }).
-function buildWeeklySummaryEmbeds(events, guild, title = '📅 This Week\'s Economic Calendar', emptyText = 'No matching events this week.') {
-  const headerEmbed = createEmbed('info', { title });
-  headerEmbed.setTimestamp(null);
+function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
+  const words = SCOPE_WORDS[scope] || SCOPE_WORDS.week;
+  const tokens = { server: guild.name, ...words, count: events.length };
 
+  // A calendar with nothing in it is its own card, rather than the heading
+  // with a sentence bolted underneath — the two say different things and a
+  // server should be able to word them differently.
   if (events.length === 0) {
-    headerEmbed.setDescription(emptyText);
-    return [{ embeds: [headerEmbed], files: [] }];
+    const empty = messageStyle.build(guild.id, 'econ.empty', { tokens });
+    return empty ? [{ embeds: [empty], files: [] }] : [];
   }
 
+  const headerEmbed = messageStyle.build(guild.id, 'econ.summary', { tokens });
+
+  // The event cards take the heading's colour, so recolouring the summary
+  // recolours the whole run rather than leaving the cards on a stock blue.
+  const cardColor = messageStyle.styleFor(guild.id, 'econ.summary').color;
+
   const capped  = events.slice(0, MAX_EVENTS_RENDERED);
-  const multiDay = new Set(capped.map(dayKeyOf)).size > 1;
+  // Checked once rather than per event: with dividers switched off there is
+  // no day boundary to leave room for, so the batches stay full-sized.
+  const dividersOn = messageStyle.isOn(guild.id, 'econ.day');
+  const multiDay = dividersOn && new Set(capped.map(dayKeyOf)).size > 1;
 
   const batches = [];
-  let curEmbeds = [headerEmbed];
+  let curEmbeds = headerEmbed ? [headerEmbed] : [];
   let curFiles  = [];
   let lastDayKey = null;
 
@@ -131,13 +176,14 @@ function buildWeeklySummaryEmbeds(events, guild, title = '📅 This Week\'s Econ
     if (curEmbeds.length + needed > MAX_EMBEDS_PER_MSG) flush();
 
     if (dayChanged) {
-      curEmbeds.push(buildDayHeaderEmbed(e));
+      const divider = buildDayHeaderEmbed(e, guild);
+      if (divider) curEmbeds.push(divider);
       lastDayKey = dayKey;
     }
 
     const attachment = buildEventCard(e, fmtEventTime(e));
     curFiles.push(attachment);
-    const embed = createEmbed('info', { image: `attachment://${attachment.name}` });
+    const embed = createEmbed('info', { color: cardColor, image: `attachment://${attachment.name}` });
     embed.setTimestamp(null);
     curEmbeds.push(embed);
   }
@@ -199,7 +245,12 @@ async function runTick(client) {
         guildChanged = true;
         if (now - target > STALE_MS) continue; // too late to be useful — mark fired, don't send
 
-        const { embed, files } = buildReminderEmbed(e, offset, guild);
+        // Null when reminders are switched off in Appearance. Still marked
+        // fired above, so switching them back on mid-week announces the
+        // releases still to come rather than the ones already gone.
+        const built = buildReminderEmbed(e, offset, guild);
+        if (!built) continue;
+        const { embed, files } = built;
         const content = settings.roleId ? `<@&${settings.roleId}>` : undefined;
         await channel.send({ content, embeds: [embed], files, allowedMentions: settings.roleId ? { roles: [settings.roleId] } : { parse: [] } }).catch(() => {});
       }
@@ -209,8 +260,10 @@ async function runTick(client) {
         firedSet.add(releaseKey);
         guildChanged = true;
         if (now - e.timestamp <= STALE_MS) {
-          const { embed, files } = buildReleaseEmbed(e, guild);
-          await channel.send({ embeds: [embed], files, allowedMentions: { parse: [] } }).catch(() => {});
+          const built = buildReleaseEmbed(e, guild);
+          if (built) {
+            await channel.send({ embeds: [built.embed], files: built.files, allowedMentions: { parse: [] } }).catch(() => {});
+          }
         }
       }
     }

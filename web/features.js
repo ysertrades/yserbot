@@ -18,18 +18,42 @@
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { getBalance, addCoins, setBalance } = require('../utils/economyManager');
-const { generateScheduleId, parseScheduleTime, nextWeekdayTimestamp } = require('../utils/scheduler');
+const {
+  generateScheduleId, parseScheduleTime,
+  nextWeekdayTimestamp, nextDayOfWeekTimestamp, dayOfWeek, DAY_NAMES,
+} = require('../utils/scheduler');
 const { todaysSlotUTC, REWARD: LOTTERY_REWARD } = require('../utils/lotteryRunner');
+const { normaliseMention } = require('../utils/mentionTarget');
 
-// Exactly what utils/scheduler.js implements. It special-cases 'once' and
-// 'weekdays' and treats everything else as daily — so offering 'weekly' would
-// have produced a schedule that silently fired every day.
+// Exactly what utils/scheduler.js implements — anything not listed here is
+// treated as daily by computeNextRun, so a value the runner does not know
+// would silently fire every day instead of on the cadence that was picked.
 const FREQUENCIES = [
   { value: 'once',     label: 'Once' },
   { value: 'everyday', label: 'Every day' },
   { value: 'weekdays', label: 'Weekdays (Mon–Fri)' },
+  { value: 'weekly',   label: 'Every week (pick a day)' },
 ];
 const FREQUENCY_VALUES = FREQUENCIES.map(f => f.value);
+
+// The weekday a weekly schedule lands on is not a stored field — it lives in
+// the run time, and the 7-day step keeps it there. The panel still needs the
+// names to offer the picker, and the current day back to show what is set.
+const DAY_OPTIONS = DAY_NAMES.map((label, value) => ({ value, label }));
+
+/**
+ * The chosen day for a weekly schedule, or null when none was picked.
+ *
+ * The empty string is checked for explicitly: a select left on its blank
+ * option posts '', and Number('') is 0 — which would read as "Sunday" and
+ * quietly move a schedule nobody asked to move.
+ */
+function weeklyDay(body, fallback = null) {
+  const raw = body.dayOfWeek;
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 6 ? n : fallback;
+}
 
 // file → the settings inside it, so one table covers several stores.
 const GROUPS = {
@@ -127,6 +151,9 @@ function read(guildId, guild) {
     channelId: s.channelId,
     channelName: guild.channels.cache.get(s.channelId)?.name || null,
     frequency: s.frequency,
+    // Derived, not stored — see DAY_OPTIONS above. Null for every cadence
+    // except weekly, where it is what the day picker shows as current.
+    dayOfWeek: s.frequency === 'weekly' && s.time ? dayOfWeek(s.time, s.offsetMinutes ?? 0) : null,
     mention: s.mention ?? null,
     time: s.time ?? null,
     offsetMinutes: s.offsetMinutes ?? 0,
@@ -180,6 +207,7 @@ function read(guildId, guild) {
   };
 
   out.frequencies = FREQUENCIES;
+  out.scheduleDays = DAY_OPTIONS;
   return out;
 }
 
@@ -316,30 +344,21 @@ function saveLevelRole(guildId, body, guild) {
 }
 
 /**
- * A mention is either nothing, one of the two broadcast forms, or a real role
- * in this guild. Returns undefined for anything else so the caller can refuse.
- */
-function normaliseMention(value, guild) {
-  if (!value) return null;
-  if (value === '@everyone' || value === '@here') return value;
-  const id = String(value).replace(/^<@&|>$/g, '');
-  if (guild.roles.cache.has(id)) return `<@&${id}>`;
-  return undefined;
-}
-
-/**
  * Turns a typed time plus the browser's UTC offset into an absolute run time.
  *
  * This is why scheduling can live on the web at all: the page knows the
  * viewer's offset, so "09:30" means the same instant it would have meant if
  * you had typed it into /schedule.
  */
-function resolveTime(input, offsetMinutes, frequency) {
+function resolveTime(input, offsetMinutes, frequency, day = null) {
   const offset = Number(offsetMinutes);
   if (!Number.isFinite(offset) || offset < -720 || offset > 840) return null;
   let t = parseScheduleTime(String(input || '').trim(), offset);
   if (!t) return null;
   if (frequency === 'weekdays') t = nextWeekdayTimestamp(t, offset);
+  // Weekly keeps whatever weekday its run time lands on, so the picked day is
+  // applied to that time rather than stored beside it.
+  if (frequency === 'weekly' && day !== null) t = nextDayOfWeekTimestamp(t, day, offset);
   return t;
 }
 
@@ -355,7 +374,7 @@ function createSchedule(guildId, body, guild) {
   const frequency = FREQUENCY_VALUES.includes(body.frequency) ? body.frequency : null;
   if (!frequency) return { error: 'bad_frequency' };
 
-  const time = resolveTime(body.time, body.offsetMinutes, frequency);
+  const time = resolveTime(body.time, body.offsetMinutes, frequency, weeklyDay(body));
   if (!time) return { error: 'bad_time' };
 
   const mention = normaliseMention(body.mention, guild);
@@ -409,11 +428,22 @@ function saveSchedule(guildId, body, guild) {
     if (m !== entry.mention) { entry.mention = m; changed.push('mention'); }
   }
   if (body.time) {
-    const t = resolveTime(body.time, body.offsetMinutes, entry.frequency);
+    const t = resolveTime(body.time, body.offsetMinutes, entry.frequency, weeklyDay(body));
     if (!t) return { error: 'bad_time' };
     entry.time = t;
     entry.offsetMinutes = Number(body.offsetMinutes) || 0;
     changed.push('time');
+  } else if (entry.frequency === 'weekly') {
+    // No new time typed, but the day may have moved — or the schedule may
+    // have only just become weekly. Shift the run time already stored onto
+    // the picked day rather than making somebody retype a time they were
+    // happy with.
+    const day = weeklyDay(body);
+    const offset = entry.offsetMinutes || 0;
+    if (day !== null && entry.time && dayOfWeek(entry.time, offset) !== day) {
+      entry.time = nextDayOfWeekTimestamp(entry.time, day, offset);
+      changed.push('day');
+    }
   }
   if (!changed.length) return { unchanged: true };
   all[guildId][id] = entry;
