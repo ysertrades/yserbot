@@ -46,6 +46,29 @@ const SAMPLE = {
   text: 'The full breakdown, start to finish.',
   url: 'https://youtu.be/example',
   platform: 'YouTube',
+  // The news cards. Same reasoning as the social ones above — every line of
+  // these is tokens, so without stand-ins the preview is a bare colour bar.
+  headline: 'Fed holds rates steady, signals two cuts this year',
+  source: 'Financial Juice',
+  via: 'reuters.com',
+  readmore: '🔗 **[Read on reuters.com](https://reuters.com)**',
+  context: 'Live Market News',
+  // The calendar. {time} and {relative} are Discord timestamp markup in a
+  // real card; the preview is drawn in the browser, which cannot render that
+  // — so the stand-ins are what those two would come out as.
+  event: 'Core CPI m/m',
+  currency: 'USD',
+  impact: 'High',
+  minutes: '15',
+  time: '8:30 AM',
+  relative: 'in 15 minutes',
+  forecast: '0.3%',
+  previous: '0.2%',
+  scope: "This Week's",
+  when: 'this week',
+  day: 'Monday, August 3',
+  date: '3',
+  count: '11',
 };
 
 /** What one entry looks like once a guild's changes are folded in. */

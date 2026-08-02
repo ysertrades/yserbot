@@ -7,7 +7,8 @@
 // headline going out.
 
 const { readJson, writeJson } = require('./jsonStorage');
-const { createEmbed, isValidUrl } = require('./embedBuilder');
+const { isValidUrl } = require('./embedBuilder');
+const messageStyle = require('./messageStyle');
 const { TOPICS, expandTopicKeywords } = require('./newsTopics');
 
 const FEED_URL          = 'https://www.financialjuice.com/feed.ashx';
@@ -239,12 +240,10 @@ const SOURCES = {
     emoji: '⚡',
     pollMs: POLL_INTERVAL_MS,
     fetch: fetchFeedItems,
-    brand: {
-      title: '📰 Financial Juice',
-      breakingTitle: '🔴 BREAKING — Financial Juice',
-      footer: 'Financial Juice • Live Market News',
-      videoFooter: 'Financial Juice • Live Video',
-    },
+    // The heading, footer and colour used to live here as a `brand` block.
+    // They are entries in the Appearance catalogue now (news.headline /
+    // news.breaking) so a server can change them, and `label` is what feeds
+    // the {source} token in both.
   },
 };
 
@@ -386,20 +385,35 @@ async function resolveYouTubeThumb(videoId) {
   return chosen;
 }
 
-async function buildNewsEmbed(item, source = SOURCES.financialjuice) {
-  const brand = source.brand;
+/**
+ * One headline, as the guild has styled it.
+ *
+ * The wording, the colour and the heading all come from the Appearance
+ * catalogue now rather than from the source's own `brand` block, so a server
+ * can make breaking news shout without this file knowing anything about it.
+ * Returns null when that kind of headline is switched off — the caller skips
+ * the send rather than posting an empty card.
+ */
+async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = null) {
   const isBreaking = BREAKING_PATTERN.test(item.title);
+  const key = isBreaking ? 'news.breaking' : 'news.headline';
 
   // When the item carries a video or an outbound source, that *is* the story
   // — the headline points straight at it; the Financial Juice article link on
   // those is only ever a stub of the same thing.
   const headlineUrl = item.video?.url || item.source?.url || item.link;
-  let description = headlineUrl ? `[**${item.title}**](${headlineUrl})` : `**${item.title}**`;
-  if (item.body && item.body !== item.title) description += `\n\n${item.body}`;
+
   // An embed image isn't clickable in Discord, so the banner alone gives no
-  // way through to the link — this line is what makes it followable.
-  if (item.video) description += `\n\n▶️ **[Watch on YouTube](${item.video.url})**`;
-  else if (item.source) description += `\n\n🔗 **[Read on ${item.source.host}](${item.source.url})**`;
+  // way through to the link — this line is what makes it followable. It is a
+  // whole composed line rather than separate tokens because a "Read on {via}"
+  // written out in the catalogue would still render its link markup on the
+  // headlines that have nowhere to point.
+  const readmore = item.video ? `▶️ **[Watch on YouTube](${item.video.url})**`
+    : item.source ? `🔗 **[Read on ${item.source.host}](${item.source.url})**`
+    : '';
+  const context = item.video ? 'Live Video'
+    : item.source ? `via ${item.source.host}`
+    : 'Live Market News';
 
   // Banner priority: the video's thumbnail, then the linked page's own share
   // image, then whatever picture the article itself carries — so a link that
@@ -407,19 +421,27 @@ async function buildNewsEmbed(item, source = SOURCES.financialjuice) {
   const pictureUrl = (item.video && await resolveYouTubeThumb(item.video.id))
     || (item.source && await resolveLinkBanner(item.source.url))
     || await resolveArticleImage(item, source);
+  const picture = isValidUrl(pictureUrl) ? pictureUrl : null;
 
-  const footer = item.video ? (brand.videoFooter || brand.footer)
-    : item.source ? `${source.label} • via ${item.source.host}`
-    : brand.footer;
-
-  const embed = createEmbed(isBreaking ? 'breaking' : 'news', {
-    title: isBreaking ? brand.breakingTitle : brand.title,
-    description,
-    footer,
-    image: isValidUrl(pictureUrl) ? pictureUrl : undefined,
-    ...(source.color && !isBreaking ? { color: source.color } : {}),
+  const embed = messageStyle.build(guildId, key, {
+    thumbnailURL: picture,
+    tokens: {
+      headline: item.title,
+      text: item.body && item.body !== item.title ? item.body : '',
+      url: headlineUrl || '',
+      source: source.label,
+      via: item.source?.host || '',
+      readmore, context,
+    },
   });
-  embed.setTimestamp(null); // headline age is already obvious from post order — no timestamp on these
+  if (!embed) return null;
+
+  // The picture belongs across the card unless the catalogue's thumbnail
+  // switch says otherwise — a chart or a video still is the story, not
+  // decoration in the corner.
+  if (picture && !messageStyle.styleFor(guildId, key).thumbnail) {
+    try { embed.setImage(picture); } catch { /* a URL Discord refuses is not worth the card */ }
+  }
   return embed;
 }
 
@@ -510,7 +532,11 @@ async function runTick(client) {
       if (toPost.length > 0) {
         const chronological = [...toPost].reverse().filter(item => matchesFilter(item, settings));
         for (const item of chronological) {
-          const embed = await buildNewsEmbed(item, source);
+          const embed = await buildNewsEmbed(item, source, guildId);
+          // Null means this kind of headline is switched off in Appearance.
+          // The cursor still advances below, so re-enabling it starts from the
+          // headlines after this one rather than replaying the backlog.
+          if (!embed) continue;
           await channel.send({ embeds: [embed] }).catch(() => {});
         }
       }
