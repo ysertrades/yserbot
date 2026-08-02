@@ -16,14 +16,14 @@
  * reuses the exact same skeleton (panel, pill, badge, title stack, time chip,
  * tagline) without reading as a recolored copy of the first. `drawCandleIcon`
  * + `generateFuturesOpenImage` is that second session: the CME Globex Sunday
- * reopen, told through a small candlestick read (two dim closed-week candles,
- * one bright candle catching a spark as the new week's first print starts)
+ * reopen, told through a small candlestick read (two dim candles from the week
+ * that just closed, one bright taller one for the new week's first print)
  * rather than a skyline.
  */
 
 const {
   PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, ringBlend, line,
-  fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
+  fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, fitScale, GLYPH_H,
 } = require('./pixelArt');
 
 const GOOD = [46, 204, 113, 255];
@@ -86,10 +86,11 @@ function vWickBlend(png, x, yTop, yBot, color, alpha, th = 2) {
 
 /**
  * Three candles instead of a skyline: two dim ones from the week that just
- * closed, and one bright, taller candle catching a spark off its high wick —
- * the new week's first print. Candles float at their own heights rather than
- * sharing a baseline, so the bounding box (and the centering on it) is
- * computed in both axes rather than just measured sideways like the skyline.
+ * closed, and one bright, taller candle — the new week's first print. Each is
+ * a plain body with a single straight wick through it. Candles float at their
+ * own heights rather than sharing a baseline, so the bounding box (and the
+ * centering on it) is computed in both axes rather than just measured
+ * sideways like the skyline.
  */
 function drawCandleIcon(png, cx, cy, size, color) {
   const candles = [
@@ -97,7 +98,6 @@ function drawCandleIcon(png, cx, cy, size, color) {
     { dx: -0.30, y: -0.02, w: 0.26, bodyH: 0.60, wick: 0.24, dim: true },
     { dx: 0.38, y: -0.44, w: 0.40, bodyH: 0.95, wick: 0.32, dim: false },
   ];
-  const openCandle = candles[candles.length - 1];
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const c of candles) {
@@ -106,7 +106,6 @@ function drawCandleIcon(png, cx, cy, size, color) {
     minY = Math.min(minY, c.y - c.bodyH / 2 - c.wick);
     maxY = Math.max(maxY, c.y + c.bodyH / 2 + c.wick);
   }
-  minY -= 0.22; // headroom for the spark above the bright candle's high wick
 
   const originX = cx - ((minX + maxX) / 2) * size;
   const originY = cy - ((minY + maxY) / 2) * size;
@@ -119,14 +118,6 @@ function drawCandleIcon(png, cx, cy, size, color) {
     vWickBlend(png, bx, top - c.wick * size, bottom + c.wick * size, color, alpha, 2);
     fillRoundedRectBlend(png, bx - bw / 2, top, bw, bh, 3, color, alpha);
   }
-
-  // The spark — a small cross sitting just above the bright candle's high
-  // wick, the same "something is happening right here" role the skyline's
-  // flag plays.
-  const sx = originX + openCandle.dx * size;
-  const sy = originY + (openCandle.y - openCandle.bodyH / 2 - openCandle.wick) * size - size * 0.09;
-  line(png, sx - size * 0.09, sy, sx + size * 0.09, sy, color, 2);
-  line(png, sx, sy - size * 0.09, sx, sy + size * 0.09, color, 2);
 }
 
 function drawBgBars(png, W, H, color) {
@@ -164,6 +155,10 @@ function generateMarketSessionImage(opts) {
   drawBgBars(png, W, H, accent);
   glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: accent, tintAlpha: 0.06, border: accent, borderAlpha: 0.4 });
 
+  // ── Content column, shared by everything right of the badge ──────────────
+  const contentLeft = 356, contentRight = W - 44, contentWidth = contentRight - contentLeft;
+  const contentCx = (contentLeft + contentRight) / 2;
+
   // ── Status pill, top-right ────────────────────────────────────────────────
   const pillW = 40 + textWidth(pillText, 2);
   const pillX = W - 44 - pillW, pillY = 40;
@@ -179,9 +174,15 @@ function generateMarketSessionImage(opts) {
   icon(png, bcx, bcy, 78, accent);
 
   // ── Session name + exchange subtitle ────────────────────────────────────────
-  const contentCx = (356 + (W - 44)) / 2;
-  drawTextCentered(png, sessionLabel.toUpperCase(), contentCx, 68, 6, WHITE);
-  drawTextCentered(png, exchangeName.toUpperCase(), contentCx, 68 + 6 * GLYPH_H + 16, 2, accent);
+  // The title shares a band with the status pill, so its room stops short of
+  // the pill rather than running underneath it — a long label steps down a
+  // scale at a time instead, which is what fitScale is for. A short one
+  // ("NYSE OPEN") never reaches the limit and keeps the full size.
+  const titleText = sessionLabel.toUpperCase();
+  const titleRoom = 2 * Math.min(contentCx - contentLeft, pillX - 14 - contentCx);
+  const titleScale = fitScale(titleText, titleRoom, 6, 3);
+  drawTextCentered(png, titleText, contentCx, 68, titleScale, WHITE);
+  drawTextCentered(png, exchangeName.toUpperCase(), contentCx, 68 + titleScale * GLYPH_H + 16, 2, accent);
 
   // ── Bold time chip ──────────────────────────────────────────────────────────
   const timeText = time.toUpperCase();
@@ -192,7 +193,6 @@ function generateMarketSessionImage(opts) {
 
   // ── Tagline banner — confined to the right content column so it never
   //    runs into the skyline badge on the left ────────────────────────────────
-  const contentLeft = 356, contentRight = W - 44, contentWidth = contentRight - contentLeft;
   for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 288, accent, 0.3);
   const lines = wrapText(tagline.toUpperCase(), 2, contentWidth);
   let ty = 310;
@@ -222,9 +222,17 @@ function generateFuturesOpenImage() {
     tagline: "The week's first candle is forming - trade the plan, not your emotions.",
     accent: BLUE,
     icon: drawCandleIcon,
-    pillText: 'OPENING',
+    // 'LIVE' rather than a longer word: the pill shares the title's band, and
+    // anything wider pushes "FUTURES OPEN" down a size to clear it. The
+    // headline is the part worth the room.
+    pillText: 'LIVE',
     pulse: true,
   });
 }
 
-module.exports = { generateMarketSessionImage, generateNyseOpenImage, generateFuturesOpenImage };
+// The icons are exported alongside the template because `icon` is a parameter
+// now — a future session poster picks one of these or supplies its own.
+module.exports = {
+  generateMarketSessionImage, generateNyseOpenImage, generateFuturesOpenImage,
+  drawSkylineIcon, drawCandleIcon,
+};
