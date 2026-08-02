@@ -64,10 +64,34 @@ async function sendTempReply(interaction, embed) {
 }
 
 // ── Main command ──────────────────────────────────────────────────────────
+/**
+ * The "open a ticket" panel, card and button together.
+ *
+ * Exported because the web panel posts this too, and it used to do it from
+ * its own copy of the wording — so restyling it on the Appearance screen
+ * changed what /ticket setup sent and not what the panel's own Post button
+ * sent. Two builders for one message is a bug waiting for somebody to edit
+ * one of them, which is exactly what happened. There is one now.
+ */
+function buildTicketPanel(guild) {
+  const embed = messageStyle.build(guild.id, 'ticket.panel', {
+    tokens: { server: guild.name },
+  });
+  const row = messageStyle.buildButtons(guild.id, 'ticket.panel',
+    { ButtonBuilder, ActionRowBuilder, ButtonStyle });
+  return {
+    embeds: embed ? [embed] : [],
+    components: row ? [row] : [],
+    // Nothing on this panel should ever ping anyone.
+    allowedMentions: { parse: [] },
+  };
+}
+
 module.exports = {
   // Exported so web/tickets.js can present the same defaults rather than
   // keeping a second copy of them.
   DEFAULT,
+  buildTicketPanel,
 
   data: new SlashCommandBuilder()
     .setName('ticket').setDescription('Ticket system')
@@ -96,15 +120,7 @@ module.exports = {
 
     if (sub === 'setup') {
       const channel = interaction.options.getChannel('channel');
-      // Both the card and its button come from the Appearance catalogue, so a
-      // server that has restyled either gets its own panel here rather than
-      // the wording this file happens to have been written with.
-      const embed = messageStyle.build(interaction.guild.id, 'ticket.panel', {
-        tokens: { server: interaction.guild.name },
-      });
-      const row = messageStyle.buildButtons(interaction.guild.id, 'ticket.panel',
-        { ButtonBuilder, ActionRowBuilder, ButtonStyle });
-      await channel.send({ embeds: embed ? [embed] : [], components: row ? [row] : [] });
+      await channel.send(buildTicketPanel(interaction.guild));
       await sendTempReply(interaction, createServerEmbed('success', { title: 'Ticket Panel Created', description: `Panel sent to ${channel}.` }, interaction.guild));
 
     } else if (sub === 'supportrole') {

@@ -67,7 +67,11 @@ const CONFIG_GROUPS = {
       { key: 'title', path: ['verifySettings', 'title'], label: 'Panel heading', type: 'text', max: 200 },
       { key: 'intro', path: ['verifySettings', 'intro'], label: 'Opening line', type: 'text', max: 1500 },
       { key: 'rulesText', path: ['verifySettings', 'rulesText'], label: 'Rules text', type: 'text', max: 3000 },
-      { key: 'buttonLabel', path: ['verifySettings', 'buttonLabel'], label: 'Button label', type: 'text', max: 60 },
+      // The button's label, emoji and colour are on the Appearance screen,
+      // beside a preview of the button itself. It was here as well, and the
+      // one here always won — so editing the button where you can see it did
+      // nothing. A value already saved here still applies until the button is
+      // edited on Appearance, so nobody's panel changes wording on its own.
       // The memory challenge itself. Four of eight is the shipped difficulty;
       // the range is what the grid can actually be built from — Discord allows
       // five buttons a row and the answer view uses four rows at most.
