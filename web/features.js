@@ -23,6 +23,7 @@ const {
   nextWeekdayTimestamp, nextDayOfWeekTimestamp, dayOfWeek, DAY_NAMES,
 } = require('../utils/scheduler');
 const { todaysSlotUTC, REWARD: LOTTERY_REWARD } = require('../utils/lotteryRunner');
+const { normaliseMention } = require('../utils/mentionTarget');
 
 // Exactly what utils/scheduler.js implements — anything not listed here is
 // treated as daily by computeNextRun, so a value the runner does not know
@@ -340,18 +341,6 @@ function saveLevelRole(guildId, body, guild) {
   all[guildId].roles[level] = body.roleId;
   writeJson('levels.json', all);
   return { ok: true, level, roleId: body.roleId };
-}
-
-/**
- * A mention is either nothing, one of the two broadcast forms, or a real role
- * in this guild. Returns undefined for anything else so the caller can refuse.
- */
-function normaliseMention(value, guild) {
-  if (!value) return null;
-  if (value === '@everyone' || value === '@here') return value;
-  const id = String(value).replace(/^<@&|>$/g, '');
-  if (guild.roles.cache.has(id)) return `<@&${id}>`;
-  return undefined;
 }
 
 /**

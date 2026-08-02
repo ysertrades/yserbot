@@ -15,6 +15,7 @@ const LOGIN_ERRORS = {
 
 const WRITE_ERRORS = {
   bad_channel:     'Pick a text channel that still exists.',
+  bad_mention:     'Pick a role that still exists, or @everyone / @here.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
   bad_color:       'Colour needs to be a 6-digit hex code.',
@@ -835,6 +836,22 @@ function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
 }
 
 /**
+ * Ping target: nothing, the two broadcast forms, or a role in this server.
+ *
+ * Up here with the other pickers rather than beside the one screen that first
+ * needed it — the Composer's send form uses it too, and a ping target is the
+ * same question wherever it is asked.
+ */
+function mentionPicker(label, value, onChange, { blank = 'No ping' } = {}) {
+  const current = value && value.startsWith('<@&') ? value.replace(/[^0-9]/g, '') : value;
+  return select(label, current || '', [
+    { value: '@everyone', label: '@everyone' },
+    { value: '@here', label: '@here' },
+    ...roleList().map(r => ({ value: r.id, label: `@${r.name}` })),
+  ], v => onChange(v || null), { blank });
+}
+
+/**
  * Multi-select as toggleable chips rather than a <select multiple>, which is
  * close to unusable on a phone — ctrl-click has no touch equivalent.
  */
@@ -1157,10 +1174,15 @@ function renderComposer() {
   if (saved) {
     const sendPanel = el('div', 'panel');
     sendPanel.append(el('h2', null, 'Send and update'));
-    const target = { name: draft.name, channelId: '', content: '' };
+    const target = { name: draft.name, channelId: '', content: '', mention: null };
     const channels = state.overview?.settings?.channels || [];
     sendPanel.append(
       select('Channel', '', channels.map(c => ({ value: c.id, label: `#${c.name}` })), v => { target.channelId = v; }, { blank: 'Pick a channel' }),
+      // Between the channel and the line above the embed, because it reads in
+      // the order the post is built: where it goes, who it is for, what it
+      // says. It belongs to this send rather than to the template, so it
+      // resets every time this form is drawn.
+      mentionPicker('Ping with the post', null, v => { target.mention = v; }),
       textField('Text above the embed (optional)', '', v => { target.content = v; }),
     );
     const sendRow = el('div', 'actions');
@@ -3471,16 +3493,6 @@ const cadenceLabel = s => {
 };
 
 const fmtTime = ts => (ts ? new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'not set');
-
-/** Ping target: nothing, the two broadcast forms, or a role in this server. */
-function mentionPicker(label, value, onChange) {
-  const current = value && value.startsWith('<@&') ? value.replace(/[^0-9]/g, '') : value;
-  return select(label, current || '', [
-    { value: '@everyone', label: '@everyone' },
-    { value: '@here', label: '@here' },
-    ...roleList().map(r => ({ value: r.id, label: `@${r.name}` })),
-  ], v => onChange(v || null), { blank: 'No ping' });
-}
 
 function renderSchedules() {
   const list = $('#sched-list');
