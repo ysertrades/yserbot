@@ -119,7 +119,18 @@ const PLATFORMS = {
     // the old one is a flat 404, which is exactly what came back in the wild.
     // The old path stays second for anyone pointing at an older self-hosted
     // build, where /x/ is the one that does not exist.
-    bridgePaths: h => [`/x/user/${h.replace(/^@/, '')}`, `/twitter/user/${h.replace(/^@/, '')}`],
+    //
+    // The third is not RSSHub's shape at all — it is Nitter's, which serves a
+    // handle's feed at /{handle}/rss. Nitter is the other thing people run
+    // for this, and pointing the bridge setting at one used to produce a 404
+    // for a service that was working perfectly well; now either kind of
+    // bridge is simply understood. Trying it costs one request against an
+    // RSSHub bridge, on a platform that has already failed twice by then.
+    bridgePaths: h => [
+      `/x/user/${h.replace(/^@/, '')}`,
+      `/twitter/user/${h.replace(/^@/, '')}`,
+      `/${h.replace(/^@/, '')}/rss`,
+    ],
   },
 };
 
@@ -610,7 +621,7 @@ async function fetchAccount(account, settings) {
     }
   }
 
-  const error = new Error(explain(platform, tried));
+  const error = new Error(explain(platform, tried, settings));
   error.tried = tried;
   throw error;
 }
@@ -621,26 +632,45 @@ async function fetchAccount(account, settings) {
  * "HTTP 404" is true and useless. Every one of these failures has a different
  * thing to do about it, and the panel has room for a sentence.
  */
-function explain(platform, tried) {
+function explain(platform, tried, settings = null) {
   const codes = tried.map(t => t.why);
   const all = code => codes.length > 0 && codes.every(c => c.includes(code));
+  const any = code => codes.some(c => c.includes(code));
 
   if (platform.direct) {
     return `Could not read that channel — ${codes[0] || 'no reply'}.`;
   }
+
+  // Whether this is the shared address everyone gets by default. Its operator
+  // has said in as many words that it is for testing and that they are
+  // restricting readers, so on that bridge a refusal is the expected answer
+  // rather than a puzzle — and no amount of retrying or renaming will change
+  // it. Saying so beats sending someone off to check their spelling.
+  const onSharedBridge = !settings
+    || !settings.bridgeUrl
+    || String(settings.bridgeUrl).includes('rsshub.app');
+  const runYourOwn = onSharedBridge
+    ? ' The free shared helper is meant for testing only and turns servers away; running your own — or pointing Bridge at one that works — is the fix. https://docs.rsshub.app/deploy/'
+    : '';
+
+  // Refusal is checked before renaming, and on "any" rather than "all". A run
+  // that comes back 403 from one address and 404 from another is not two
+  // problems: the 404 is just a path that bridge does not carry, and the 403
+  // is the thing standing in the way. Requiring every code to match meant a
+  // mixed run fell through to a bare list of status numbers.
+  if (any('403') || any('401')) {
+    return `The helper service refused this server. Its ${platform.label} route needs a logged-in account.${runYourOwn}`;
+  }
   if (all('404')) {
-    return `The helper service has no ${platform.label} route at the address tried. It has probably been renamed — a different helper, or a feed address of your own, will fix it.`;
+    return `The helper service has no ${platform.label} route at any address tried. It has probably been renamed.${runYourOwn}`;
   }
-  if (all('403') || all('401')) {
-    return `The helper service refused this server. Its ${platform.label} route needs a logged-in account, which the free shared one does not have — running your own is the fix.`;
-  }
-  if (all('429')) {
-    return 'The helper service is rate-limiting us. The free one is shared by everybody; checking less often, or running your own, is the fix.';
+  if (any('429')) {
+    return `The helper service is rate-limiting us. It is shared by everybody; checking less often will help.${runYourOwn}`;
   }
   if (all('came back empty')) {
     return `The helper service answered but had no ${platform.label} posts in it. Check the account name.`;
   }
-  return `Could not read it — ${codes.join('; ')}`;
+  return `Could not read it — ${codes.join('; ')}.${runYourOwn}`;
 }
 
 /* ─── filtering ──────────────────────────────────────────────────────────── */

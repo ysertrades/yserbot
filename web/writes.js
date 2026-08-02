@@ -26,6 +26,7 @@ const {
   setPanelLogSettings,
 } = require('../utils/modConfig');
 const { listSources } = require('../utils/newsFeed');
+const { TOPICS } = require('../utils/newsTopics');
 const { IMPACT_LEVELS, CURRENCIES } = require('../utils/economicCalendar');
 const { BANNERS, getBannerCopy, setBannerCopy, changedFields } = require('../utils/bannerCopy');
 const composer = require('./composer');
@@ -172,7 +173,13 @@ const OPS = {
     }
 
     if ('filterTopics' in body) {
-      const next = list(body, 'filterTopics', null, 20);
+      // Against the catalogue, not against anything at all. A topic is a
+      // bundle of keywords looked up by key, so a word that is not one of
+      // these keys expands to nothing — and it used to be accepted, stored,
+      // and then quietly matched no headline whatsoever. Now it is dropped
+      // here, so what comes back from a save is what the filter will really
+      // use rather than a list with a dead entry sitting in it.
+      const next = list(body, 'filterTopics', TOPICS.map(t => t.key), 20);
       if (next === null) return { error: 'bad_topics' };
       if (next.join() !== (current.filterTopics || []).join()) {
         patch.filterTopics = next;
