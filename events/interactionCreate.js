@@ -318,9 +318,39 @@ module.exports = {
 
           entrants.add(interaction.user.id);
           try {
-            const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
-            const desc = (upd.data.description || '').replace(/📊 \*\*Entries:\*\* \d+ participants?/, `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`);
-            upd.setDescription(desc);
+            // Rebuilt from the catalogue, not patched. This used to find the
+            // exact string "📊 **Entries:** N participants" with a regular
+            // expression and swap the number — so the moment a server reworded
+            // the card, which is now something they can do on the Appearance
+            // screen, the counter stopped moving with nothing to say why.
+            const gawCmd = client.commands.get('giveaway');
+            const meta = global.giveawayMeta?.get(interaction.message.id)
+              ?? gawCmd?.getActiveGiveaway?.(interaction.message.id);
+            let upd = null;
+            // Everything the card needs, or nothing. A record from before this
+            // existed — or a partial one — would build a card full of
+            // "undefined" where the prize used to be, which is worse than the
+            // patch it replaced.
+            const canRebuild = meta?.prize && meta?.hostId && Number(meta?.endTime) > 0;
+            if (canRebuild && gawCmd?.buildLiveCard && interaction.guild) {
+              upd = gawCmd.buildLiveCard(interaction.guild, {
+                prize: meta.prize,
+                winnersCount: meta.winners ?? meta.winnersCount,
+                hostId: meta.hostId,
+                endTime: meta.endTime,
+                entries: entrants.size,
+                requirements: meta.requirementLines || [],
+              });
+            }
+            // A giveaway posted before this existed has no record to rebuild
+            // from; keeping the old patch for that case means those keep
+            // counting rather than freezing on the number they were at.
+            if (!upd) {
+              upd = EmbedBuilder.from(interaction.message.embeds[0]);
+              upd.setDescription((upd.data.description || '').replace(
+                /📊 \*\*Entries:\*\* \d+ participants?/,
+                `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`));
+            }
             // The banner is re-uploaded rather than re-linked. A signed CDN URL
             // copied out of the live embed is not something Discord can match
             // back to the attachment, so it drew the picture twice — once

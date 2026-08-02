@@ -763,6 +763,23 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 /* One button's editor: its fixed id and what it does, over the three fields
    that can be changed. */
 .btn-editor-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.45rem; }
+
+/* The palette: seventeen kinds, each a name and a swatch. Two columns where
+   there is room, because a single column of seventeen is a lot of scrolling
+   for what is really one decision repeated. */
+.palette { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.5rem 1.1rem; margin-top: 0.4rem; }
+.palette-row { display: flex; flex-direction: column; gap: 0.2rem; }
+.palette-head { display: flex; flex-direction: column; }
+.palette-head .nm { font-size: 0.86rem; color: var(--ink); }
+.palette-head .hint { margin: 0; font-size: 0.72rem; }
+.palette-row .field { margin: 0; }
+.palette-row .field > span:first-child { display: none; }
+
+/* Its preview is a row of spines rather than one card, because the thing
+   being edited is the colour of two hundred cards and not any one of them. */
+.palette-preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.4rem; }
+.palette-preview .demb { padding: 0.4rem 0.6rem; }
+.palette-preview .demb .t { margin: 0; font-size: 0.78rem; }
 .btn-editor-head .hint { margin: 0; }
 
 /* Social ─────────────────────────────────────────────────────────────────

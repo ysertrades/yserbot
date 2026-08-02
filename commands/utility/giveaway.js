@@ -12,6 +12,7 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
 const { parseDuration } = require('../../utils/duration');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
+const messageStyle = require('../../utils/messageStyle');
 
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
@@ -338,19 +339,10 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const endTimestamp   = Math.floor(endTime / 1000);
   const reqLines      = requirementsLines(data);
 
-  const embed = new EmbedBuilder()
-    .setColor(GOLD)
-    .setTitle(`🎟️  ${prize}`)
-    .setDescription(
-      `✨ Click **Enter** below to participate!\n\n` +
-      `🏆 **Winners:** ${winners}\n` +
-      `👤 **Hosted by:** <@${hostId}>\n` +
-      `⏰ **Ends:** <t:${endTimestamp}:R>\n` +
-      `📊 **Entries:** 0 participants` +
-      (reqLines.length ? `\n\n${reqLines.join('\n')}` : ''),
-    )
-    .setFooter({ text: `Ends at | ${dateStr(endTime)}` })
-    .setTimestamp(endTime);
+  const embed = buildLiveCard(guild, {
+    prize, winnersCount: winners, hostId, endTime, entries: 0,
+    requirements: reqLines,
+  });
 
   // A generated banner is not a URL — it has to be drawn, attached, and then
   // referenced as attachment://. Anything else is treated as an ordinary link.
@@ -360,12 +352,11 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const thumb = guild.iconURL({ dynamic: true }) || hostAvatarUrl;
   if (thumb) embed.setThumbnail(thumb);
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('giveaway_enter').setLabel('Enter').setStyle(ButtonStyle.Secondary).setEmoji('🎟️'),
-    new ButtonBuilder().setCustomId('giveaway_participants').setLabel('Participants').setStyle(ButtonStyle.Secondary).setEmoji('🏅'),
-  );
+  const row = buildLiveRow(guildId);
 
-  const msg = await channel.send({ content, embeds: [embed], components: [row], files, allowedMentions: mentionOpts });
+  const msg = await channel.send({
+    content, embeds: [embed], components: row ? [row] : [], files, allowedMentions: mentionOpts,
+  });
 
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   if (!global.giveawayMeta)     global.giveawayMeta     = new Map();
@@ -374,11 +365,15 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   global.giveawayMeta.set(msg.id, {
     prize, winners, imageUrl, hostId, endTime, guildId,
     requiredRoleId, bonusRoleId, minAccountAgeDays,
+    // Kept so the card can be rebuilt whole when the count changes. Without
+    // it every entry would quietly drop the entry conditions off the card.
+    requirementLines: reqLines,
   });
 
   // Persist so entries and the timer survive a bot restart
   saveActiveGiveaway(msg.id, {
     prize, winnersCount: winners, imageUrl: imageUrl || null,
+    requirementLines: reqLines,
     hostId, endTime, guildId, channelId: msg.channelId, entrants: [],
     requiredRoleId: requiredRoleId || null, bonusRoleId: bonusRoleId || null,
     minAccountAgeDays: minAccountAgeDays || 0, createdAt,
@@ -454,11 +449,13 @@ async function dmWinners(client, guild, winnerIds, prize, hostId, { rerolled = f
   for (const id of winnerIds) {
     try {
       const user = await client.users.fetch(id);
-      await user.send({ embeds: [new EmbedBuilder()
-        .setColor(GOLD)
-        .setTitle(rerolled ? '🎉 You Won a Rerolled Giveaway!' : '🎉 You Won a Giveaway!')
-        .setDescription(`You won **${prize}** in **${guild.name}**!\nContact the host, <@${hostId}>, to claim your prize.`)
-        .setTimestamp()] });
+      const dm = messageStyle.build(guild.id, 'giveaway.won', {
+        tokens: { server: guild.name, prize, host: `<@${hostId}>` },
+      });
+      // Off in Appearance means winners are only named in the channel.
+      if (!dm) continue;
+      if (rerolled) { try { dm.setTitle(`${dm.data.title || ''} (reroll)`.trim()); } catch { } }
+      await user.send({ embeds: [dm] });
     } catch { /* DMs closed — not fatal */ }
   }
 }
@@ -481,12 +478,12 @@ async function endGiveaway(message, meta) {
   if (giveawayTimers.has(message.id)) { clearTimeout(giveawayTimers.get(message.id)); giveawayTimers.delete(message.id); }
 
   if (!entrants || entrants.size === 0) {
-    const embed = new EmbedBuilder()
-      .setColor(0xe74c3c)
-      .setTitle(`🎟️  ${prize} — Ended`)
-      .setDescription('No participants entered the giveaway.')
-      .setFooter({ text: 'Better luck next time!' })
-      .setTimestamp();
+    const embed = messageStyle.build(guildId, 'giveaway.empty', {
+      tokens: {
+        server: message.guild?.name || '',
+        prize, host: `<@${hostId}>`, id: '',
+      },
+    });
     const endFiles = applyEmbedImage(embed, imageUrl, guildId);
     try {
       await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles(endFiles) });
@@ -520,17 +517,13 @@ async function endGiveaway(message, meta) {
   };
   writeJson('giveaways_ended.json', allEnded);
 
-  const embed = new EmbedBuilder()
-    .setColor(GOLD)
-    .setTitle(`🎟️  ${prize} — Ended`)
-    .setDescription(
-      `🏆 **Winner${winnerIds.length > 1 ? 's' : ''}:** ${winnerMentions}\n\n` +
-      `👤 **Hosted by:** <@${hostId}>\n` +
-      `📊 **Total entries:** ${entrants.size}\n\n` +
-      `🔁 To reroll, use \`/giveaway reroll\` or \`g.reroll ${shortId}\``,
-    )
-    .setFooter({ text: `Congratulations! 🎉 • ID: ${shortId}` })
-    .setTimestamp();
+  const embed = messageStyle.build(guildId, 'giveaway.ended', {
+    tokens: {
+      server: message.guild?.name || '',
+      prize, winners: winnerMentions, host: `<@${hostId}>`,
+      entries: String(entrants.size), id: shortId,
+    },
+  });
   const endFiles = applyEmbedImage(embed, imageUrl, guildId);
 
   // The edit is the only part of ending that can fail — a deleted message, a
@@ -550,6 +543,39 @@ async function endGiveaway(message, meta) {
 
   // DM the winners — a small polish touch most giveaway bots skip.
   await dmWinners(message.client, message.guild, winnerIds, prize, hostId);
+}
+
+/**
+ * The card while the giveaway is running.
+ *
+ * Rebuilt from the catalogue every time the count changes rather than having
+ * the count patched into the text with a regular expression. That regex
+ * looked for the exact string "📊 **Entries:** N participants", so the moment
+ * a server reworded the card — which is now something they can do — the
+ * counter would have stopped moving with nothing to say why.
+ */
+function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, requirements = [] }) {
+  const embed = messageStyle.build(guild.id, 'giveaway.live', {
+    at: new Date(endTime),
+    tokens: {
+      server: guild.name,
+      prize,
+      winners: String(winnersCount),
+      host: `<@${hostId}>`,
+      ends: `<t:${Math.floor(endTime / 1000)}:R>`,
+      endsAt: dateStr(endTime),
+      entries: `${entries} participant${entries === 1 ? '' : 's'}`,
+      requirements: requirements.length ? `\n\n${requirements.join('\n')}` : '',
+    },
+  });
+  if (!embed) return null;
+  return embed;
+}
+
+/** The row under it, with whatever the two buttons have been renamed to. */
+function buildLiveRow(guildId) {
+  return messageStyle.buildButtons(guildId, 'giveaway.live',
+    { ButtonBuilder, ActionRowBuilder, ButtonStyle });
 }
 
 async function earlyEndGiveaway(interaction, msgId) {
@@ -953,3 +979,6 @@ module.exports.postGiveaway = postGiveaway;
 module.exports.performReroll = performReroll;
 module.exports.endGiveaway = endGiveaway;
 module.exports.ACTIVE_FILE = ACTIVE_FILE;
+// So the entry handler can rebuild the card from the catalogue rather than
+// patching the count into whatever text happens to be on screen.
+module.exports.buildLiveCard = buildLiveCard;

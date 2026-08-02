@@ -1,5 +1,11 @@
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 
+// Required lazily inside the functions rather than here: messageStyle reads
+// storage on load and this file is pulled in by very nearly everything, so a
+// top-level require would drag the whole of it into places that only wanted a
+// colour constant.
+const style = () => require('./messageStyle');
+
 // Discord embeds only support a single solid sidebar colour — no true gradients.
 // These colours are chosen as rich, distinct stops across the visible spectrum
 // so each embed type has its own unmistakable identity (the closest we can get
@@ -122,14 +128,48 @@ function createEmbed(type, options = {}) {
 // So the polish now goes on the things that are actually being read — a card
 // with fields, a picture, or chrome the caller asked for by name. A bare title
 // and a sentence is an acknowledgement, and an acknowledgement is two lines.
-function createServerEmbed(type, options = {}, guild) {
-  const isCard = !!(options.fields?.length || options.image || options.footer || options.author);
-  if (!isCard) return createEmbed(type, { ...options, timestamp: false });
+/**
+ * A guild's own look for the kind of card this is.
+ *
+ * The colour and the two lines of chrome used to be fixed here, which meant a
+ * server could restyle the fifteen messages with a catalogue entry and not the
+ * two hundred without one — every confirmation, refusal and notice stayed the
+ * colours this file happened to be written with. Both now come from the
+ * Appearance screen, per guild, and fall back to exactly what was here before
+ * when there is no guild or nothing has been changed.
+ *
+ * Never throws. Every caller of this is a message that has to go out.
+ */
+function guildLook(type, guild) {
+  const fallback = { color: null, name: 'YSER Flow', footer: `${guild?.name || 'Server'} • YSER Flow` };
+  if (!guild?.id) return fallback;
+  try {
+    const s = style();
+    const chrome = s.styleFor(guild.id, 'base.chrome');
+    return {
+      color: s.paletteFor(guild.id)[type] ?? null,
+      name: (chrome?.title || '').trim() || fallback.name,
+      footer: s.fill(chrome?.footer ?? '', { server: guild.name || '' }).trim() || fallback.footer,
+    };
+  } catch {
+    return fallback;
+  }
+}
 
-  const footerText = options.footer || `${guild?.name || 'Server'} • YSER Flow`;
+function createServerEmbed(type, options = {}, guild) {
+  const look = guildLook(type, guild);
+  // An explicit colour on the call still wins — a few callers pass one for a
+  // reason of their own, and overriding those would be this deciding it knows
+  // better than the code that asked.
+  const tinted = { ...options, color: options.color || look.color || undefined };
+
+  const isCard = !!(options.fields?.length || options.image || options.footer || options.author);
+  if (!isCard) return createEmbed(type, { ...tinted, timestamp: false });
+
+  const footerText = options.footer || look.footer;
   const author = options.author
-    || (guild ? { name: 'YSER Flow', iconURL: guild.iconURL?.({ dynamic: true }) || undefined } : undefined);
-  return createEmbed(type, { ...options, footer: footerText, author });
+    || (guild ? { name: look.name, iconURL: guild.iconURL?.({ dynamic: true }) || undefined } : undefined);
+  return createEmbed(type, { ...tinted, footer: footerText, author });
 }
 
 const TEMP_REPLY_MS = 5000; // matches the "embed sent" confirmation delay this mirrors
@@ -154,4 +194,4 @@ async function sendTempFollowUp(interaction, payload, ms = TEMP_REPLY_MS) {
     setTimeout(() => msg.delete().catch(() => {}), ms);
 }
 
-module.exports = { createEmbed, createServerEmbed, colors, parseColor, isValidHexColor, isValidUrl, sendTempReply, sendTempFollowUp };
+module.exports = { createEmbed, createServerEmbed, guildLook, colors, parseColor, isValidHexColor, isValidUrl, sendTempReply, sendTempFollowUp };
