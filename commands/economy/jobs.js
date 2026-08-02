@@ -6,6 +6,7 @@ const { getEffect } = require('../../utils/effectsManager');
 const { generateJobsHubImage } = require('../../utils/jobsVisual');
 const { activity } = require('../../utils/economySettings');
 const { refuseIfOff } = require('../../utils/economyGate');
+const { formatDuration } = require('../../utils/duration');
 
 const JOBS = [
   {
@@ -111,14 +112,21 @@ function jobsFor(guildId) {
   const cool = Number(cfg.cooldownScale) || 1;
   return JOBS
     .filter(j => cfg.closed[j.id] !== true)
-    .map(j => ({
-      ...j,
-      min: Math.max(1, Math.round(j.min * pay)),
-      max: Math.max(1, Math.round(j.max * pay)),
+    .map(j => {
       // A shift can be scaled to nothing, which is a server saying "no
       // cooldown" — floored at zero rather than going negative.
-      cooldownMs: Math.max(0, Math.round(j.cooldownMs * cool)),
-    }));
+      const cooldownMs = Math.max(0, Math.round(j.cooldownMs * cool));
+      return {
+        ...j,
+        min: Math.max(1, Math.round(j.min * pay)),
+        max: Math.max(1, Math.round(j.max * pay)),
+        cooldownMs,
+        // The hub card shows this string directly — it has to track the
+        // scaled cooldown above it rather than the shipped '45m' label, or a
+        // server that changes the shift-length scale sees the old time.
+        cooldownLabel: formatDuration(cooldownMs) || '0s',
+      };
+    });
 }
 
 // ── Shared embed/row builders (used by slash command + button handler) ────────

@@ -59,12 +59,15 @@ async function buildBankPanel(member, ownerId) {
   const userId    = member.id;
   const bankData  = getBank(userId);
   const wallet    = getBalance(userId);
-  const { interest } = calcInterest(bankData, member.guild?.id);
+  const guildId   = member.guild?.id;
+  const { interest } = calcInterest(bankData, guildId);
+  const bankCfg   = activity(guildId, 'bank');
   const avatarPng = await fetchAvatarPng(avatarUrlFor(member));
 
   const imageName  = `bank_${Date.now()}.png`;
   const attachment = new AttachmentBuilder(generateBankCardImage({
     avatarPng, username: member.displayName, wallet, bank: bankData.balance, interestReady: interest,
+    interestPercent: bankCfg.interestPercent, periodHours: bankCfg.periodHours,
   }), { name: imageName });
   const embed = new EmbedBuilder().setImage(`attachment://${imageName}`);
 
