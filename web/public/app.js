@@ -3776,14 +3776,6 @@ function sheetIsOpen() {
   return !!sheet && !sheet.hidden;
 }
 
-function setLiveState(on) {
-  const dot = $('#live-dot');
-  if (!dot) return;
-  dot.hidden = false;
-  dot.className = `live-dot${on ? ' on' : ''}`;
-  dot.title = on ? 'Live — changes appear on their own' : 'Reconnecting…';
-}
-
 function stopLive() {
   if (live) { live.close(); live = null; }
 }
@@ -3808,9 +3800,7 @@ function startLive() {
     return;
   }
 
-  live.addEventListener('open', () => setLiveState(true));
   live.addEventListener('overview', ev => {
-    setLiveState(true);
     let next;
     try { next = JSON.parse(ev.data); } catch { return; }
     // Guard against a payload that arrives after the guild has been switched.
@@ -3818,7 +3808,6 @@ function startLive() {
     state.overview = next;
     renderLive();
   });
-  live.addEventListener('error', () => setLiveState(false));
 }
 
 // A field losing focus is the moment a deferred repaint becomes safe.
