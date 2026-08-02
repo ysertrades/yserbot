@@ -688,9 +688,13 @@ function renderFeedForms() {
   const nf = { enabled: d.newsfeed.enabled, filterTopics: d.newsfeed.topics.slice() };
   $('#form-newsfeed').replaceChildren(
     toggle('Feed running', nf.enabled, v => { nf.enabled = v; }),
-    textField('Topics (comma separated, blank for all)', nf.filterTopics.join(', '),
-      v => { nf.filterTopics = v.split(',').map(s => s.trim()).filter(Boolean); },
-      { placeholder: 'forex, crypto' }),
+    // Picked, not typed. The filter works off each topic's bundle of
+    // keywords, so only one of these keys means anything — and the box that
+    // used to be here took any words at all, stored them, and then matched
+    // nothing, which looked identical to a filter that was simply strict.
+    pickValues('Topics', d.newsfeed.topicOptions || [], nf.filterTopics,
+      v => { nf.filterTopics = v; },
+      { allNote: 'Nothing picked — every headline is posted.' }),
     pickOne('Channel', 'channel', d.newsfeed.channelId, v => { nf.channelId = v; }),
     row('Sources', chips(d.newsfeed.sources)),
     actions(() => post('newsfeed', nf)),
@@ -881,6 +885,9 @@ function pickValues(label, options, values, onChange, { allNote = 'Nothing picke
     const text = typeof o === 'string' ? o : o.label;
     const b = el('button', 'chip-toggle', text);
     b.type = 'button';
+    // What the option actually covers, for vocabularies where the name alone
+    // does not say — "Commodities" is not obviously oil, gold and gas.
+    if (o && o.hint) b.title = o.hint;
     if (chosen.has(value)) b.setAttribute('aria-pressed', 'true');
     b.addEventListener('click', () => {
       if (chosen.has(value)) { chosen.delete(value); b.removeAttribute('aria-pressed'); }

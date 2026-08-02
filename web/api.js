@@ -20,6 +20,7 @@ const {
   getModLogChannel, PANEL_LOG_CATEGORIES: LOG_CATEGORIES, getPanelLogSettings: panelLogSettings,
 } = require('../utils/modConfig');
 const { listSources } = require('../utils/newsFeed');
+const { TOPICS } = require('../utils/newsTopics');
 const { allBannerCopy } = require('../utils/bannerCopy');
 const { IMPACT_LEVELS, CURRENCIES } = require('../utils/economicCalendar');
 const { stats: renderStats } = require('../utils/renderCache');
@@ -117,6 +118,14 @@ async function guildOverview(guildId, client) {
       channelId: newsfeed.channelId ?? null,
       channel: channelName(newsfeed.channelId),
       topics: newsfeed.filterTopics || [],
+      // The topics there are to pick from. The filter matches on a topic's
+      // bundle of keywords, so only a key from this list means anything —
+      // which is why the panel offers them rather than taking typed words.
+      topicOptions: TOPICS.map(t => ({
+        value: t.key,
+        label: `${t.emoji} ${t.label}`,
+        hint: t.description,
+      })),
       // Map the stored keys onto their display names, and keep any key that
       // is no longer in the registry visible rather than silently dropping it.
       sources: (newsfeed.sources || []).map(key => ({
