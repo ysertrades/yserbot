@@ -161,7 +161,13 @@ h2 {
   font-family: var(--mono); font-size: 1rem; color: var(--accent);
 }
 .crest img { width: 100%; height: 100%; object-fit: cover; }
-.server-meta { margin: 0; color: var(--muted); font-size: 0.8rem; font-family: var(--mono); }
+/* The line under the server name is empty until the overview arrives, and an
+   empty <p> is nought pixels tall — so filling it grew the block and nudged
+   the whole page down. One line is reserved for it from the start. */
+.server-meta {
+  margin: 0; color: var(--muted); font-size: 0.8rem; font-family: var(--mono);
+  line-height: 1.45; min-height: 1.45em;
+}
 
 .guilds { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.2rem; }
 .guilds button {
@@ -198,6 +204,10 @@ h2 {
 .tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .tile.live .n { color: var(--good); }
 .tile.idle .n { color: var(--off); }
+/* The placeholders in the markup. Hidden, not removed: visibility keeps the
+   layout box, so the six real tiles land in a space that is already exactly
+   their size and nothing below them moves when they arrive. */
+.tile.ph { visibility: hidden; }
 
 /* ── rows ────────────────────────────────────────────────────────────── */
 .rows { display: flex; flex-direction: column; gap: 0.62rem; }
@@ -585,6 +595,9 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 /* Cards arrive in sequence rather than all at once. The stagger is short —
    it should read as one movement with depth, not as a queue. */
 .tiles > * { animation: popIn var(--mid) var(--ease) both; }
+/* A placeholder must not play the entrance — the real tile replacing it does
+   that, and both doing it is the stutter this was meant to remove. */
+.tiles > .ph { animation: none; }
 .tiles > :nth-child(1) { animation-delay: 140ms; }
 .tiles > :nth-child(2) { animation-delay: 180ms; }
 .tiles > :nth-child(3) { animation-delay: 220ms; }

@@ -95,7 +95,27 @@
 
     <!-- ── Overview ────────────────────────────────────────────────────── -->
     <div class="section" data-section="overview">
-      <div class="tiles" id="tiles"></div>
+      <!-- Six placeholders, holding the space the six real tiles will take.
+
+           This container is filled from the guild overview, which is a fetch
+           away, so it used to be nothing at all for the first fifth of a
+           second — and then 147px of tiles appeared and shoved everything
+           below them down by exactly that much, while those things were
+           still animating in. That was the shudder on opening the panel.
+
+           They are hidden rather than styled, so the real tiles still play
+           the entrance they were written for; visibility keeps the layout
+           box, which is the entire point. If renderOverview ever draws a
+           different number of tiles, change the count here too — uitest
+           checks that these two agree. -->
+      <div class="tiles" id="tiles">
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+      </div>
 
       <div class="grid">
         <article class="panel">
