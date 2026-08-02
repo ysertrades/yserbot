@@ -270,6 +270,112 @@ async function getText(url, { timeout = FETCH_TIMEOUT_MS } = {}) {
   }
 }
 
+/* ─── getting the picture at its real size ───────────────────────────────── */
+
+/**
+ * Feeds point at a small copy of the picture, and the card is wide.
+ *
+ * YouTube's Atom feed always names `hqdefault.jpg`, which is 480×360 — and
+ * 4:3, so a widescreen video is letterboxed inside it and the actual frame is
+ * 480×270. Drawn across the full width of an embed on a phone, at two or
+ * three device pixels to the CSS pixel, that is being asked to cover roughly
+ * four times the width it has, and it looks exactly as soft as that sounds.
+ *
+ * The same frame exists at 1280×720 under a different name, with no bars. It
+ * is not in the feed and there is no flag that says whether it is there, so
+ * the only way to know is to ask — which is what this does, once per video,
+ * and then remembers the answer.
+ *
+ *   maxresdefault — the source frame, whatever it was uploaded at
+ *   hq720         — 1280×720, present on some where maxres is not
+ *   (the feed's own hqdefault, if neither is)
+ *
+ * A video uploaded below 720p has neither, and YouTube answers those with a
+ * 404 whose *body* is a 120×90 grey placeholder — so this checks the status
+ * and not whether bytes came back. Getting that backwards would swap a soft
+ * picture for a grey rectangle, which is worse.
+ */
+const YT_THUMB = /^(https?:\/\/i\d?\.ytimg\.com\/vi(?:_webp)?\/[A-Za-z0-9_-]{6,}\/)([a-z0-9_]+)(\.(?:jpg|webp)(?:\?.*)?)$/i;
+const YT_BETTER = ['maxresdefault', 'hq720'];
+
+// One entry per video, and only for videos actually posted — a busy server
+// watching a dozen accounts will hold a few hundred of these at most. Capped
+// anyway, because a process that runs for months should not have anything
+// that only grows.
+const IMAGE_CACHE = new Map();
+const IMAGE_CACHE_MAX = 500;
+
+function rememberImage(from, to) {
+  if (IMAGE_CACHE.size >= IMAGE_CACHE_MAX) {
+    // Oldest first. Map keeps insertion order, so this is the first key.
+    IMAGE_CACHE.delete(IMAGE_CACHE.keys().next().value);
+  }
+  IMAGE_CACHE.set(from, to);
+  return to;
+}
+
+/** Does this address exist? Never throws — an unknown is a no. */
+async function exists(url, timeout = 6_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { method: 'HEAD', headers: { 'User-Agent': UA }, signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * X serves the same picture at whatever size the query string asks for.
+ *
+ * `name=small` is 680px on its longest side; `name=orig` is what was
+ * uploaded. Both are the same media key, so this is a rename rather than a
+ * guess — there is nothing to check and it cannot 404.
+ */
+function widenTwitterImage(url) {
+  if (!/^https?:\/\/pbs\.twimg\.com\//i.test(url)) return null;
+  // The query-string form, and the older colon suffix.
+  if (/[?&]name=/i.test(url)) return url.replace(/([?&]name=)[^&]*/i, '$1orig');
+  if (/:(thumb|small|medium|large)$/i.test(url)) return url.replace(/:(thumb|small|medium|large)$/i, ':orig');
+  return null;
+}
+
+/**
+ * The sharpest version of a picture a feed pointed at.
+ *
+ * Always resolves to a usable address: when there is nothing better, or when
+ * finding out would mean waiting on a network that is not answering, it hands
+ * back exactly what it was given. A soft picture beats no picture.
+ *
+ * Instagram and TikTok are deliberately left alone. Their CDNs bake the size
+ * into a signed path, so a rewritten URL does not return a bigger picture —
+ * it returns a 403.
+ */
+async function sharpestImage(url) {
+  if (!url || !/^https?:\/\//i.test(url)) return url;
+  if (IMAGE_CACHE.has(url)) return IMAGE_CACHE.get(url);
+
+  const widened = widenTwitterImage(url);
+  if (widened) return rememberImage(url, widened);
+
+  const yt = url.match(YT_THUMB);
+  if (yt) {
+    const [, base, name, ext] = yt;
+    // Already asking for one of the big ones.
+    if (YT_BETTER.includes(name.toLowerCase())) return rememberImage(url, url);
+    for (const better of YT_BETTER) {
+      const candidate = `${base}${better}${ext}`;
+      if (await exists(candidate)) return rememberImage(url, candidate);
+    }
+    return rememberImage(url, url);
+  }
+
+  return rememberImage(url, url);
+}
+
 /**
  * Turns a YouTube handle into the UC… id its feed is keyed by.
  *
@@ -575,4 +681,5 @@ module.exports = {
   getSettings, setSettings, patchAccount, normaliseAccount,
   feedUrlFor, feedUrlsFor, fetchAccount, parseFeed, explain, resolveYouTubeChannelId, checkBridge,
   matches, newItems, htmlToText, clamp,
+  sharpestImage, widenTwitterImage,
 };
