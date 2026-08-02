@@ -114,20 +114,6 @@ const MARKS = {
     },
   },
 
-  tiktok: {
-    label: 'TikTok',
-    color: '#FE2C55',
-    background: () => BLACK,
-    draw(x, y) {
-      // The note three times over: cyan up-left, red down-right, white on top.
-      // That offset is the whole look of the mark.
-      const d = 0.032;
-      if (note(x + d, y + d)) return TT_CYAN;
-      if (note(x - d, y - d)) return TT_RED;
-      if (note(x, y)) return WHITE;
-      return null;
-    },
-  },
 };
 
 /**

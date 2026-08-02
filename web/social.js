@@ -55,13 +55,12 @@ function describeAccount(account, guild) {
     // Shown so somebody can paste it into a browser and see for themselves
     // what the bot is reading. Half of diagnosing a quiet feed is knowing
     // which address was actually asked.
-    resolvedFeedUrl: social.feedUrlFor(account, social.getSettings(guild?.id || '')) || null,
+    resolvedFeedUrl: social.feedUrlFor(account) || null,
     profileUrl: platform?.profileUrl && account.handle ? platform.profileUrl(account.handle) : null,
     postChannel: channelName(account.postChannelId),
     mentionRole: roleName(account.mentionRoleId),
     // Whether this platform can be reached without a bridge, so the screen can
     // say which accounts depend on one.
-    needsBridge: !platform?.direct && !account.feedUrl,
   };
 }
 
@@ -75,8 +74,6 @@ function read(guildId, guild) {
     channel: channelName(s.channelId),
     mentionRoleId: s.mentionRoleId,
     mentionRole: (s.mentionRoleId && guild?.roles?.cache?.get(s.mentionRoleId)?.name) || null,
-    bridgeUrl: s.bridgeUrl,
-    defaultBridgeUrl: social.DEFAULTS.bridgeUrl,
     pollMinutes: s.pollMinutes,
     maxPerCheck: s.maxPerCheck,
     accounts: s.accounts.map(a => describeAccount(a, guild)),
@@ -84,7 +81,6 @@ function read(guildId, guild) {
     limits: LIMITS,
     // How many watched accounts depend on the bridge being up, which is the
     // single most useful number for working out why things are quiet.
-    bridgeAccounts: s.accounts.filter(a => !PLATFORMS[a.platform]?.direct && !a.feedUrl).length,
   };
 }
 
@@ -152,12 +148,7 @@ function saveSettings(guildId, body, { guild }) {
     }
   }
 
-  if ('bridgeUrl' in body) {
-    const url = text(body.bridgeUrl, 200) || social.DEFAULTS.bridgeUrl;
-    if (!httpUrl(url)) return { error: 'bad_bridge' };
-    const tidy = url.replace(/\/+$/, '');
-    if (tidy !== current.bridgeUrl) { patch.bridgeUrl = tidy; changed.push(`bridge set to ${tidy}`); }
-  }
+
 
   if ('pollMinutes' in body) {
     const n = Number(body.pollMinutes);
@@ -282,7 +273,7 @@ async function testAccount(guildId, body, { guild }) {
   const account = settings.accounts.find(a => a.id === text(body.id, 40));
   if (!account) return { error: 'unknown_account' };
 
-  const url = social.feedUrlFor(account, settings);
+  const url = social.feedUrlFor(account);
   try {
     const { items, channelId, feedPath } = await social.fetchAccount(account, settings);
     // A resolved YouTube id, and the address that answered, are both worth
@@ -295,7 +286,7 @@ async function testAccount(guildId, body, { guild }) {
     const kept = items.filter(i => social.matches(i, account));
     return {
       ok: true,
-      url: social.feedUrlFor({ ...account, channelId: channelId || account.channelId }, settings) || url,
+      url: social.feedUrlFor({ ...account, channelId: channelId || account.channelId }) || url,
       found: items.length,
       keptByFilters: kept.length,
       // Enough to recognise, not enough to be a second feed reader.
@@ -365,12 +356,6 @@ async function postLatest(guildId, body, { guild }) {
  * platforms go quiet at once and every account shows the same unhelpful
  * timeout. This says so in one sentence instead.
  */
-async function checkBridge(guildId, body) {
-  const settings = social.getSettings(guildId);
-  const url = text(body?.bridgeUrl, 200) || settings.bridgeUrl;
-  const result = await social.checkBridge(url);
-  return { ok: true, url, ...result };
-}
 
 /** The Appearance keys this screen links to, so the two stay in step. */
 function styleKeys() {
@@ -379,4 +364,4 @@ function styleKeys() {
     .filter(k => Object.hasOwn(messageStyle.CATALOGUE, k));
 }
 
-module.exports = { read, saveSettings, saveAccount, testAccount, postLatest, checkBridge, styleKeys };
+module.exports = { read, saveSettings, saveAccount, testAccount, postLatest, styleKeys };

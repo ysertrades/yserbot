@@ -3,24 +3,23 @@
 /**
  * socialFeed.js
  *
- * Watching accounts on YouTube and TikTok, and posting what they put out into
- * a Discord channel.
+ * Watching YouTube channels and posting what they put out into a Discord
+ * channel.
  *
- * ── Why these two and not four ───────────────────────────────────────────
+ * ── Why only YouTube ─────────────────────────────────────────────────────
  *
- * Instagram and X were here and have been taken out, because neither could be
- * made to work rather than because nobody wanted them. Both refuse a program
- * outright now, so the only way in is a bridge — a service that logs in, reads
- * the page and re-publishes it as RSS — and the free shared bridge everybody
- * points at has since restricted itself to testing use and turns servers away.
- * Instagram's route additionally wants a logged-in account that a shared
- * service does not have. Every public alternative that was tried refuses a
- * request from a server rather than a person.
+ * TikTok, Instagram and X were all here and have all been taken out, because
+ * none of them could be made to work rather than because nobody wanted them.
+ * All three refuse a program outright, so the only way in is a bridge — a
+ * service that logs in, reads the page and re-publishes it as RSS — and the
+ * free shared bridge everybody points at has since restricted itself to
+ * testing use and turns servers away. Every public alternative that was tried
+ * refuses a request from a server rather than a person.
  *
  * A platform that is offered and cannot work is worse than one that is not
  * offered: it reads as the bot being broken. Anyone running their own bridge
- * can still watch either of them through an account's own feed address, which
- * is the setting immediately below.
+ * can still watch any of them by pasting its address into an account's own
+ * feed address field, which takes any RSS or Atom URL and is untouched.
  *
  * ── How each one is actually reached ─────────────────────────────────────
  *
@@ -30,12 +29,6 @@
  *              resolved to the channel id once and remembered, because nobody
  *              knows their own UC… id off the top of their head.
  *
- *   TikTok   — will not hand a feed to a program without a logged-in session,
- *              so it goes through a bridge. RSSHub is the usual one and is the
- *              default here, but the address is a setting, so a server that
- *              runs its own bridge points at that instead — which is the only
- *              arrangement that is genuinely reliable, since the public
- *              instance is shared by everyone and restricts accordingly.
  *
  *   anything — every account can override its feed address outright. A bridge
  *              nobody here has heard of, a Nitter mirror, a plain RSS export:
@@ -43,7 +36,7 @@
  *              whatever we guessed about a platform's URLs stops being true.
  *
  * The panel says all of this on the screen rather than leaving someone to
- * work out why their Instagram is quiet.
+ * work out why nothing is arriving.
  *
  * ── What is stored ───────────────────────────────────────────────────────
  *
@@ -60,14 +53,11 @@ const FILE = 'social.json';
 /* ─── the platforms ──────────────────────────────────────────────────────── */
 
 /**
- * Brand colours.
+ * One entry, kept as a table rather than collapsed into constants: the shape
+ * is what makes adding a platform back a single object instead of a rewrite,
+ * and three of them have already come and gone.
  *
- * X's is black. Not #000000 though — Discord reads an embed colour of zero as
- * "no colour set" and draws its own grey instead, so pure black is the one
- * black that cannot be used. #0F1419 is X's own near-black and renders as
- * black.
- *
- * Each is editable on the Appearance screen like every other message.
+ * The colour is editable on the Appearance screen like every other message.
  */
 const PLATFORMS = {
   youtube: {
@@ -87,19 +77,6 @@ const PLATFORMS = {
       return id ? `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(id)}` : null;
     },
   },
-  tiktok: {
-    key: 'tiktok',
-    label: 'TikTok',
-    emoji: '🎵',
-    color: '#FE2C55',
-    mark: 'tiktok',
-    styleKey: 'social.tiktok',
-    direct: false,
-    handleHint: '@username',
-    verb: 'posted on TikTok',
-    profileUrl: h => `https://www.tiktok.com/@${h.replace(/^@/, '')}`,
-    bridgePaths: h => [`/tiktok/user/@${h.replace(/^@/, '')}`, `/tiktok/user/${h.replace(/^@/, '')}`],
-  },
 };
 
 const PLATFORM_KEYS = Object.keys(PLATFORMS);
@@ -110,9 +87,6 @@ const DEFAULTS = {
   enabled: false,
   channelId: null,
   mentionRoleId: null,
-  // The public RSSHub. Anyone running their own points at it here, which is
-  // the difference between "usually works" and "works".
-  bridgeUrl: 'https://rsshub.app',
   pollMinutes: 10,
   // A watched account that has been quiet for a week and then posts eight
   // things must not dump eight cards at once.
@@ -159,7 +133,6 @@ function getSettings(guildId) {
     ...stored,
     pollMinutes: clamp(stored.pollMinutes ?? DEFAULTS.pollMinutes, 2, 360),
     maxPerCheck: clamp(stored.maxPerCheck ?? DEFAULTS.maxPerCheck, 1, 10),
-    bridgeUrl: typeof stored.bridgeUrl === 'string' && stored.bridgeUrl ? stored.bridgeUrl : DEFAULTS.bridgeUrl,
     // An account on a platform that is no longer offered is dropped here
     // rather than normalised. normaliseAccount falls back to YouTube for a
     // platform it does not know, which is right for a typo and quite wrong
@@ -196,45 +169,22 @@ function patchAccount(guildId, accountId, patch) {
 /**
  * Every address worth trying for one account, best first.
  *
- * A list rather than one address because a bridge's routes get renamed and
- * the old name is not always kept. RSSHub moved X from /twitter/user to
- * /x/user, and the old path became a flat 404 — every watched X account went
- * quiet and the panel could only report the 404, which said nothing about
- * why. Trying both means a rename costs one wasted request instead of the
- * whole feature, and the working one is remembered afterwards.
- *
- * Order:
- *   1. whatever the account was told to use, alone — an explicit address is
- *      an instruction, not a suggestion, and guessing past it would be wrong;
- *   2. the one that worked last time, if there is one;
- *   3. the platform's own feed, or the bridge's candidates.
+ * Still a list of candidates rather than a single address, even though there
+ * is only ever one now: an account's own feed address overrides everything,
+ * and fetchAccount walks whatever comes back. Collapsing it to a string would
+ * be a rewrite the next time a platform is added rather than an addition.
  */
-function feedUrlsFor(account, settings) {
+function feedUrlsFor(account) {
   if (account.feedUrl) return [account.feedUrl];
   const platform = PLATFORMS[account.platform];
   if (!platform) return [];
-
-  if (platform.direct) {
-    const url = platform.feedUrl(account.handle, { channelId: account.channelId });
-    return url ? [url] : [];
-  }
-
-  const base = String(settings.bridgeUrl || DEFAULTS.bridgeUrl).replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(base)) return [];
-
-  const paths = platform.bridgePaths(account.handle);
-  // The remembered one first. It is still followed by the rest, so a bridge
-  // that changes again recovers on its own rather than sticking to a path
-  // that has stopped working.
-  const ordered = account.feedPath && paths.includes(account.feedPath)
-    ? [account.feedPath, ...paths.filter(x => x !== account.feedPath)]
-    : paths;
-  return ordered.map(path => `${base}${path}`);
+  const url = platform.feedUrl(account.handle, { channelId: account.channelId });
+  return url ? [url] : [];
 }
 
 /** The address that will be tried first — what the panel shows. */
-function feedUrlFor(account, settings) {
-  return feedUrlsFor(account, settings)[0] || null;
+function feedUrlFor(account) {
+  return feedUrlsFor(account)[0] || null;
 }
 
 /* ─── fetching ───────────────────────────────────────────────────────────── */
@@ -387,40 +337,6 @@ async function resolveYouTubeChannelId(handle) {
   return found ? found[1] : null;
 }
 
-/**
- * Asks the bridge whether it is there.
- *
- * Three of the four platforms are only reachable through it, and when it is
- * down or blocked they all go quiet at once with nothing to show for it. This
- * turns that into a sentence somebody can act on — and it is worth checking
- * from the machine the bot runs on rather than from a browser, because the two
- * are on different networks and only one of them matters.
- */
-async function checkBridge(bridgeUrl) {
-  const base = String(bridgeUrl || DEFAULTS.bridgeUrl).replace(/\/+$/, '');
-  if (!/^https?:\/\//i.test(base)) return { ok: false, reason: 'That is not an http address.' };
-
-  const started = Date.now();
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-    const res = await fetch(base, { headers: { 'User-Agent': UA }, signal: controller.signal })
-      .finally(() => clearTimeout(timer));
-    const ms = Date.now() - started;
-    if (res.ok) return { ok: true, status: res.status, ms };
-    return {
-      ok: false, status: res.status, ms,
-      reason: res.status === 403 || res.status === 429
-        ? `It answered ${res.status} — it is up, but it is refusing this server. A public bridge does that when it is busy or when it does not like where the request came from. Running your own is the fix.`
-        : `It answered ${res.status}.`,
-    };
-  } catch (err) {
-    return {
-      ok: false, ms: Date.now() - started,
-      reason: `Could not reach it at all: ${(err.message || String(err)).slice(0, 120)}`,
-    };
-  }
-}
 
 /* ─── parsing ────────────────────────────────────────────────────────────── */
 
@@ -571,8 +487,21 @@ async function fetchAccount(account, settings) {
 
   let resolvedChannelId = account.channelId;
   if (platform.direct && !account.feedUrl && !resolvedChannelId) {
-    resolvedChannelId = await resolveYouTubeChannelId(account.handle);
-    if (!resolvedChannelId) throw new Error('Could not find that YouTube channel');
+    // The lookup fetches the channel page, so a name nobody has comes back as
+    // a bare "HTTP 404" from deep inside — which then reached the panel word
+    // for word and told somebody who mistyped a handle nothing at all. Now
+    // the only wrong thing it can be is the name, so it says so.
+    try {
+      resolvedChannelId = await resolveYouTubeChannelId(account.handle);
+    } catch (err) {
+      const why = err.message || String(err);
+      throw new Error(/404/.test(why)
+        ? `There is no ${platform.label} channel called "${account.handle}". Check the @name, or paste the channel's address instead.`
+        : `Could not look up "${account.handle}" — ${why}.`);
+    }
+    if (!resolvedChannelId) {
+      throw new Error(`Found the page for "${account.handle}" but not its channel id. Paste the channel's address instead.`);
+    }
   }
 
   const urls = feedUrlsFor({ ...account, channelId: resolvedChannelId }, settings);
@@ -605,45 +534,18 @@ async function fetchAccount(account, settings) {
  * "HTTP 404" is true and useless. Every one of these failures has a different
  * thing to do about it, and the panel has room for a sentence.
  */
-function explain(platform, tried, settings = null) {
+function explain(platform, tried) {
   const codes = tried.map(t => t.why);
-  const all = code => codes.length > 0 && codes.every(c => c.includes(code));
-  const any = code => codes.some(c => c.includes(code));
-
-  if (platform.direct) {
-    return `Could not read that channel — ${codes[0] || 'no reply'}.`;
+  if (codes.some(c => c.includes('came back empty'))) {
+    return `That channel's feed answered but had nothing in it. Check the ${platform.label} name.`;
   }
-
-  // Whether this is the shared address everyone gets by default. Its operator
-  // has said in as many words that it is for testing and that they are
-  // restricting readers, so on that bridge a refusal is the expected answer
-  // rather than a puzzle — and no amount of retrying or renaming will change
-  // it. Saying so beats sending someone off to check their spelling.
-  const onSharedBridge = !settings
-    || !settings.bridgeUrl
-    || String(settings.bridgeUrl).includes('rsshub.app');
-  const runYourOwn = onSharedBridge
-    ? ' The free shared helper is meant for testing only and turns servers away; running your own — or pointing Bridge at one that works — is the fix. https://docs.rsshub.app/deploy/'
-    : '';
-
-  // Refusal is checked before renaming, and on "any" rather than "all". A run
-  // that comes back 403 from one address and 404 from another is not two
-  // problems: the 404 is just a path that bridge does not carry, and the 403
-  // is the thing standing in the way. Requiring every code to match meant a
-  // mixed run fell through to a bare list of status numbers.
-  if (any('403') || any('401')) {
-    return `The helper service refused this server. Its ${platform.label} route needs a logged-in account.${runYourOwn}`;
+  if (codes.some(c => c.includes('404'))) {
+    return `${platform.label} has no feed at that address — check the channel name or id.`;
   }
-  if (all('404')) {
-    return `The helper service has no ${platform.label} route at any address tried. It has probably been renamed.${runYourOwn}`;
+  if (codes.some(c => c.includes('403') || c.includes('429'))) {
+    return `${platform.label} turned this server away (${codes[0]}). It is usually temporary; checking less often helps.`;
   }
-  if (any('429')) {
-    return `The helper service is rate-limiting us. It is shared by everybody; checking less often will help.${runYourOwn}`;
-  }
-  if (all('came back empty')) {
-    return `The helper service answered but had no ${platform.label} posts in it. Check the account name.`;
-  }
-  return `Could not read it — ${codes.join('; ')}.${runYourOwn}`;
+  return `Could not read that channel — ${codes[0] || 'no reply'}.`;
 }
 
 /* ─── filtering ──────────────────────────────────────────────────────────── */
@@ -682,7 +584,7 @@ function newItems(items, account, maxPerCheck) {
 module.exports = {
   FILE, PLATFORMS, PLATFORM_KEYS, DEFAULTS, LIMITS,
   getSettings, setSettings, patchAccount, normaliseAccount,
-  feedUrlFor, feedUrlsFor, fetchAccount, parseFeed, explain, resolveYouTubeChannelId, checkBridge,
+  feedUrlFor, feedUrlsFor, fetchAccount, parseFeed, explain, resolveYouTubeChannelId,
   matches, newItems, htmlToText, clamp,
   sharpestImage, widenTwitterImage,
 };

@@ -452,10 +452,6 @@ Object.assign(OPS, {
     // need to be able to read.
     return socialPanel.testAccount(guildId, body, ctx);
   },
-  async socialbridge(guildId, body, ctx) {
-    // Read-only and posts nothing, so no audit line.
-    return socialPanel.checkBridge(guildId, body);
-  },
   async socialpost(guildId, body, ctx) {
     const r = await socialPanel.postLatest(guildId, body, ctx);
     if (r.ok) {

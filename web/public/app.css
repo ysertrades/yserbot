@@ -755,6 +755,15 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb-btns span.Success { background: #248046; }
 .demb-btns span.Danger  { background: #DA373C; }
 .demb-btns span.link::after { content: ' ↗'; opacity: 0.8; }
+/* Secondary is Discord's grey, which is what .demb-btns span already is —
+   named anyway so the class is always one of the four rather than sometimes
+   nothing, which would make a missing style look deliberate. */
+.demb-btns span.Secondary { background: #4E5058; }
+
+/* One button's editor: its fixed id and what it does, over the three fields
+   that can be changed. */
+.btn-editor-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.45rem; }
+.btn-editor-head .hint { margin: 0; }
 
 /* Social ─────────────────────────────────────────────────────────────────
    The spine down each account card is its platform's colour, so the list

@@ -141,7 +141,7 @@ const state = {
   tplName: null, draft: null,           // Composer
   styleKey: null,                       // Appearance — the message being edited
   socialDraft: null,                    // Social — the account being added
-  socialBridge: null, socialTests: {},   // Social — results of the two network buttons
+  socialTests: {},                       // Social — the result of each account's Test
   liveOn: false,                        // whether the push stream is connected
   socialOpen: new Set(),                // Social — which account cards are open
   openFolds: new Set(),                 // which fold-away sections are open
@@ -1592,14 +1592,6 @@ function mdNodes(text, depth = 0) {
   return out.length ? out : [document.createTextNode(src)];
 }
 
-/** What a bridge check came back with. */
-function bridgeResultNodes(res) {
-  return [
-    el('p', res.reason ? 'hint bad' : 'hint',
-      res.reason || `Reachable — answered ${res.status} in ${res.ms} ms.`),
-    el('p', 'hint mono', res.url || ''),
-  ];
-}
 
 /** The words box — comma separated, because that is how people write lists. */
 function wordsField(label, values, onChange, hint) {
@@ -1661,55 +1653,24 @@ function renderSocial() {
      Everything about *how* a platform is reached lives behind Advanced. Most
      of it is jargon nobody should have to learn to watch a YouTube channel,
      and all of it has a working default. */
-  const b = {
-    pollMinutes: d.pollMinutes, maxPerCheck: d.maxPerCheck,
-    bridgeUrl: d.bridgeUrl,
-  };
+  const b = { pollMinutes: d.pollMinutes, maxPerCheck: d.maxPerCheck };
 
-  const bridgeOut = el('div', 'social-test');
-  bridgeOut.hidden = !state.socialBridge;
-  if (state.socialBridge) bridgeOut.replaceChildren(...bridgeResultNodes(state.socialBridge));
-
-  // The result is kept in state rather than in this node. A successful write
-  // hands back a fresh overview and re-renders the whole screen, which would
-  // otherwise throw away the answer a moment after it arrived.
-  const checkBtn = el('button', 'btn small', 'Test the connection');
-  checkBtn.type = 'button';
-  checkBtn.addEventListener('click', async () => {
-    checkBtn.disabled = true;
-    checkBtn.textContent = 'Checking…';
-    try {
-      state.socialBridge = await post('socialbridge', { bridgeUrl: b.bridgeUrl }, { quiet: true })
-        || { reason: 'Could not run the check.', url: b.bridgeUrl };
-      renderSocial();
-    } finally {
-      checkBtn.disabled = false;
-      checkBtn.textContent = 'Test the connection';
-    }
-  });
-
-  const advanced = disclosure('social:advanced', 'Advanced', [
-    el('p', 'muted', 'YouTube hands out its posts directly, so it needs nothing here. TikTok does not, so the bot reads it through a helper service. The one below is free and shared by everybody and has since restricted itself to testing use — if TikTok goes quiet, this is the first thing to check, and running your own helper is the fix.'),
-    textField('Helper service', b.bridgeUrl, v => { b.bridgeUrl = v; }, { placeholder: d.defaultBridgeUrl }),
-    (() => { const row = el('div', 'actions'); row.append(checkBtn); return row; })(),
-    bridgeOut,
-  ]);
-
-  const bridgeNote = el('p', 'hint', '');
-  const failing = d.accounts.filter(a => a.needsBridge && a.lastError).length;
-  bridgeNote.textContent = failing
-    ? `${failing} account${failing === 1 ? ' is' : 's are'} not loading. Open Advanced and test the connection.`
-    : d.bridgeAccounts === 0
-      ? 'Only YouTube is being watched, which needs nothing extra.'
-      : `${d.bridgeAccounts} of ${d.accounts.length} accounts need the helper service.`;
-  bridgeNote.className = `hint${failing ? ' bad' : ''}`;
+  // The helper-service box and its connection test are gone with the three
+  // platforms that needed one. YouTube publishes its own feed, so there is
+  // nothing in between to configure or to test — and a box that changes
+  // nothing is worse than no box.
+  const note = el('p', 'hint', '');
+  const failing = d.accounts.filter(a => a.lastError).length;
+  note.textContent = failing
+    ? `${failing} channel${failing === 1 ? ' is' : 's are'} not loading — open one to see why.`
+    : 'YouTube hands out its posts directly, so there is nothing in between to set up.';
+  note.className = `hint${failing ? ' bad' : ''}`;
 
   $('#form-social-bridge').replaceChildren(
     textField('Check every (minutes)', String(b.pollMinutes), v => { b.pollMinutes = Number(v); }),
     textField('At most this many per check', String(b.maxPerCheck), v => { b.maxPerCheck = Number(v); }),
-    el('p', 'hint', 'The cap stops an account that has been quiet for a week filling the channel the moment it posts again.'),
-    bridgeNote,
-    advanced,
+    el('p', 'hint', 'The cap stops a channel that has been quiet for a week filling your server the moment it posts again.'),
+    note,
     actions(() => post('social', b)),
   );
 
@@ -2100,6 +2061,47 @@ function fillTokens(text, values) {
 }
 
 /** Draws one message the way Discord will, from the values being edited. */
+/**
+ * The editors for one message's buttons.
+ *
+ * A row each: what it says, what it says it with, and what colour it is. The
+ * id is shown but never editable — it is what the bot routes the press on, so
+ * a typed one would be a button that looks right and does nothing.
+ */
+function buttonEditors(entry, values, repaint) {
+  const wrap = el('div', 'subfields');
+  wrap.append(el('h2', null, 'Buttons'));
+  values.buttons = values.buttons || [];
+
+  if (!values.buttons.length) {
+    wrap.append(el('p', 'hint', 'This message has no buttons.'));
+    return wrap;
+  }
+
+  for (const b of values.buttons) {
+    const row = el('div', 'subfield');
+    const head = el('div', 'btn-editor-head');
+    head.append(el('span', 'tag', b.id));
+    if (b.does) head.append(el('span', 'hint', b.does));
+    row.append(head);
+    row.append(
+      textField('What it says', b.label, v => { b.label = v; repaint(); }),
+      textField('Emoji', b.emoji, v => { b.emoji = v; repaint(); }),
+      select('Colour', b.style, (entry.buttonStyles || []).map(x => ({ value: x, label: BUTTON_STYLE_LABEL[x] || x })),
+        v => { b.style = v; repaint(); }),
+    );
+    wrap.append(row);
+  }
+  wrap.append(el('p', 'hint', 'Leave the words empty to have the emoji stand alone — but not both, or Discord refuses the whole message.'));
+  return wrap;
+}
+
+// Discord's names for these are about intent, not colour, and the colour is
+// the thing you are actually choosing.
+const BUTTON_STYLE_LABEL = {
+  Primary: 'Blurple', Secondary: 'Grey', Success: 'Green', Danger: 'Red',
+};
+
 function stylePreview(entry, values, sample) {
   const box = el('div', 'demb');
   box.style.borderLeftColor = /^#[0-9a-f]{6}$/i.test(values.color || '') ? values.color : '#5865F2';
@@ -2151,6 +2153,23 @@ function stylePreview(entry, values, sample) {
   row.append(main);
   if (values.thumbnail) row.append(el('span', 'demb-thumb'));
   box.append(row);
+
+  // The buttons under the card, in the colours they will actually be. This is
+  // the point of editing them here rather than guessing — "Danger" and "red"
+  // are the same thing and only one of them is visible.
+  if (values.buttons?.length) {
+    const btns = el('div', 'demb-btns');
+    for (const b of values.buttons) {
+      const chip = el('span', b.style || 'Secondary',
+        `${b.emoji ? `${b.emoji} ` : ''}${b.label || ''}`.trim() || b.id);
+      btns.append(chip);
+    }
+    // Outside the card: Discord draws a message's buttons under the embed,
+    // not inside it, and putting them in the box would teach the wrong thing.
+    const shell = el('div');
+    shell.append(box, btns);
+    return shell;
+  }
   return box;
 }
 
@@ -2334,6 +2353,8 @@ function renderAppearance() {
       fields.append(textField('Footer', values.footer, v => { values.footer = v; repaint(); }));
     } else if (part === 'thumbnail' || part === 'timestamp') {
       fields.append(toggle(PART_LABEL[part], !!values[part], v => { values[part] = v; repaint(); }));
+    } else if (part === 'buttons') {
+      fields.append(buttonEditors(entry, values, repaint));
     }
   }
   card.append(trackFocus(fields, focusRef));
@@ -2347,6 +2368,12 @@ function renderAppearance() {
     try {
       const payload = { key: entry.key };
       for (const part of entry.parts) payload[part] = values[part];
+      // Sent as a map keyed by id — the server matches those against the ids
+      // the message actually declares, so a stale tab cannot invent one.
+      if (entry.parts.includes('buttons')) {
+        payload.buttons = Object.fromEntries((values.buttons || []).map(b =>
+          [b.id, { label: b.label, emoji: b.emoji, style: b.style }]));
+      }
       const res = await post('appearance', payload);
       if (res?.ok) {
         state.overview = await get(`/api/guild/${state.guildId}`);

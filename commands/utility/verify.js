@@ -60,14 +60,26 @@ function panelCopy(guildId) {
 /** The message members press to start. Exported so the web panel can post it. */
 function buildVerifyPanel(guild) {
   const copy = panelCopy(guild.id);
+  // The words stay in the verification settings, where they have always been
+  // — two places to edit the same sentence is worse than one awkward place.
+  // The colour and the button come from the Appearance catalogue.
+  const style = messageStyle.styleFor(guild.id, 'verify.panel');
+  const button = messageStyle.buttonsFor(guild.id, 'verify.panel')[0];
+  // A label set on the Settings screen still wins, because that field existed
+  // first and somebody may have set it there years ago.
+  const label = copy.buttonLabel || button?.label || 'Start Verification';
   const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
     .setTitle(copy.title)
     .setDescription(`${copy.intro.replace(/\{server\}/g, `**${guild.name}**`)}\n\n**📜 Server Rules**\n\n${copy.rulesText}`)
-    .setFooter({ text: `Click ${copy.buttonLabel} to begin` });
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('verify_start').setLabel(copy.buttonLabel).setEmoji('🧠').setStyle(ButtonStyle.Success),
-  );
+    .setFooter({ text: `Click ${label} to begin` });
+  try { embed.setColor(style?.color || '#5865F2'); } catch { embed.setColor(0x5865F2); }
+
+  const row = new ActionRowBuilder();
+  const btn = new ButtonBuilder().setCustomId('verify_start')
+    .setLabel(label)
+    .setStyle(ButtonStyle[button?.style] ?? ButtonStyle.Success);
+  if (button?.emoji) { try { btn.setEmoji(button.emoji); } catch { /* a character Discord refuses */ } }
+  row.addComponents(btn);
   return { embeds: [embed], components: [row] };
 }
 
