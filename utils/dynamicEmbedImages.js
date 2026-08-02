@@ -16,7 +16,7 @@
 const { AttachmentBuilder } = require('discord.js');
 const { generateEconomyShowcaseImage } = require('./economyShowcaseVisual');
 const { generateReportGuideImage } = require('./reportGuideVisual');
-const { generateNyseOpenImage } = require('./marketSessionVisual');
+const { generateNyseOpenImage, generateFuturesOpenImage } = require('./marketSessionVisual');
 const { generateRiskGuideImage } = require('./riskGuideVisual');
 const { generateNewsfeedGuideImage } = require('./newsfeedGuideVisual');
 const { generateTradingViewBannerImage } = require('./tradingViewVisual');
@@ -37,6 +37,7 @@ const DYNAMIC_IMAGES = {
   economyShowcase: { filename: 'economy_showcase.png', generate: memoizeRender(generateEconomyShowcaseImage, { name: 'economyShowcase', max: 1 }) },
   reportGuide:      { filename: 'report_guide.png',     generate: memoizeRender(generateReportGuideImage,     { name: 'reportGuide',      max: 1 }) },
   nyseOpen:         { filename: 'nyse_open.png',        generate: memoizeRender(generateNyseOpenImage,        { name: 'nyseOpen',         max: 1 }) },
+  futuresOpen:      { filename: 'futures_open.png',      generate: memoizeRender(generateFuturesOpenImage,     { name: 'futuresOpen',      max: 1 }) },
   riskGuide:        { filename: 'risk_guide.png',       generate: memoizeRender(generateRiskGuideImage,       { name: 'riskGuide',        max: 1 }) },
   newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: memoizeRender(generateNewsfeedGuideImage,   { name: 'newsfeedGuide',    max: 1 }) },
   tradingViewBanner: { filename: 'tradingview_banner.png', takesCopy: true, generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 8 }) },
