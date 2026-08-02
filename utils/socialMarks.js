@@ -39,38 +39,9 @@ const WHITE = [255, 255, 255];
 const BLACK = [0, 0, 0];
 
 const YT_RED = [255, 0, 0];
-// X's own near-black. Not #000000: Discord reads an embed colour of zero as
-// "no colour set" and draws its default grey, so pure black is the one black
-// that cannot be used.
-const X_BLACK = [15, 20, 25];
 const TT_CYAN = [37, 244, 238];
 const TT_RED = [254, 44, 85];
 
-// Instagram's gradient, corner to corner.
-const IG_STOPS = [
-  [0.00, [255, 216, 117]],
-  [0.25, [250, 141, 77]],
-  [0.50, [245, 78, 108]],
-  [0.75, [219, 55, 160]],
-  [1.00, [137, 63, 212]],
-];
-
-function gradientAt(t) {
-  const clamped = Math.min(1, Math.max(0, t));
-  for (let i = 1; i < IG_STOPS.length; i++) {
-    const [p0, c0] = IG_STOPS[i - 1];
-    const [p1, c1] = IG_STOPS[i];
-    if (clamped <= p1) {
-      const k = (clamped - p0) / (p1 - p0);
-      return [
-        Math.round(c0[0] + (c1[0] - c0[0]) * k),
-        Math.round(c0[1] + (c1[1] - c0[1]) * k),
-        Math.round(c0[2] + (c1[2] - c0[2]) * k),
-      ];
-    }
-  }
-  return IG_STOPS[IG_STOPS.length - 1][1];
-}
 
 /* ─── shape tests, all in a 0..1 square ──────────────────────────────────── */
 
@@ -105,22 +76,6 @@ function inCapsule(px, py, ax, ay, bx, by, r) {
   return (px - qx) ** 2 + (py - qy) ** 2 <= r * r;
 }
 
-/**
- * Even-odd point-in-polygon.
- *
- * Even-odd rather than winding because that is the rule the mark below is
- * drawn with: X's logo is one outline with a second, smaller outline punched
- * through it, and the punch only reads as a hole under this rule.
- */
-function inPolygon(px, py, pts) {
-  let inside = false;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const [xi, yi] = pts[i], [xj, yj] = pts[j];
-    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
 /** A quadratic curve, as a run of capsules. Enough for a note's flag. */
 function inCurve(px, py, p0, p1, p2, r, steps = 24) {
   let prev = p0;
@@ -137,40 +92,7 @@ function inCurve(px, py, p0, p1, p2, r, steps = 24) {
   return false;
 }
 
-/* ─── X's outline ────────────────────────────────────────────────────────── */
-
-/**
- * The mark, as its own geometry: the outer shape and the slot punched through
- * it where the two strokes cross. Coordinates are the 24-unit square the logo
- * is drawn in, converted to the unit square by intoBox() below.
- */
-const X_BOX = { x0: 1.254, y0: 2.25, x1: 22.827, y1: 21.75 };
-
-const X_OUTLINE = [
-  [18.244, 2.25], [21.552, 2.25], [14.325, 10.51], [22.827, 21.75],
-  [16.170, 21.75], [10.956, 14.933], [4.990, 21.75], [1.680, 21.75],
-  [9.410, 12.915], [1.254, 2.25], [8.080, 2.25], [12.793, 8.481],
-];
-
-const X_HOLE = [
-  [17.083, 19.77], [18.916, 19.77], [7.084, 4.126], [5.117, 4.126],
-];
-
-/**
- * Maps a point in the unit square into the logo's own coordinates, centred and
- * scaled so the artwork spans `span` of the tile. Returns [-1, -1] for a point
- * outside it, which the caller reads as "nothing here".
- */
-function intoBox(x, y, span) {
-  const w = X_BOX.x1 - X_BOX.x0, h = X_BOX.y1 - X_BOX.y0;
-  const scale = span / Math.max(w, h);
-  const drawW = w * scale, drawH = h * scale;
-  const left = 0.5 - drawW / 2, top = 0.5 - drawH / 2;
-  if (x < left || x > left + drawW || y < top || y > top + drawH) return [-1, -1];
-  return [X_BOX.x0 + (x - left) / scale, X_BOX.y0 + (y - top) / scale];
-}
-
-/* ─── the four marks ─────────────────────────────────────────────────────── */
+/* ─── the marks ─────────────────────────────────────────────────────── */
 
 /**
  * Each mark is a function (x, y) → colour or null, over the unit square.
@@ -189,41 +111,6 @@ const MARKS = {
       if (!inRoundedRect(x, y, 0.17, 0.29, 0.66, 0.42, 0.125)) return null;
       const a = [0.445, 0.375], b = [0.445, 0.625], c = [0.635, 0.5];
       return inTriangle(x, y, a, b, c) ? WHITE : YT_RED;
-    },
-  },
-
-  twitter: {
-    label: 'X',
-    color: '#0F1419',
-    background: () => X_BLACK,
-    draw(x, y) {
-      // The real outline, not two crossed bars: the mark's strokes have flat
-      // cut ends and one passes behind the other, and a pair of round-capped
-      // diagonals reads as a multiplication sign instead.
-      const [ux, uy] = intoBox(x, y, 0.46);
-      if (ux < 0) return null;
-      const outer = inPolygon(ux, uy, X_OUTLINE);
-      const hole = inPolygon(ux, uy, X_HOLE);
-      return outer !== hole ? WHITE : null;
-    },
-  },
-
-  instagram: {
-    label: 'Instagram',
-    color: '#E1306C',
-    // The gradient runs corner to corner, the way the app icon's does.
-    background: (x, y) => gradientAt((x + (1 - y)) / 2),
-    draw(x, y) {
-      const t = 0.055;  // stroke weight
-      // The rounded square, as an outline.
-      const outer = inRoundedRect(x, y, 0.19, 0.19, 0.62, 0.62, 0.20);
-      const inner = inRoundedRect(x, y, 0.19 + t, 0.19 + t, 0.62 - 2 * t, 0.62 - 2 * t, 0.20 - t);
-      if (outer && !inner) return WHITE;
-      // The lens.
-      if (inDisc(x, y, 0.5, 0.5, 0.175) && !inDisc(x, y, 0.5, 0.5, 0.175 - t)) return WHITE;
-      // The little light.
-      if (inDisc(x, y, 0.665, 0.335, 0.038)) return WHITE;
-      return null;
     },
   },
 

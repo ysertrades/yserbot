@@ -3,13 +3,26 @@
 /**
  * socialFeed.js
  *
- * Watching accounts on YouTube, TikTok, Instagram and X, and posting what
- * they put out into a Discord channel.
+ * Watching accounts on YouTube and TikTok, and posting what they put out into
+ * a Discord channel.
+ *
+ * ── Why these two and not four ───────────────────────────────────────────
+ *
+ * Instagram and X were here and have been taken out, because neither could be
+ * made to work rather than because nobody wanted them. Both refuse a program
+ * outright now, so the only way in is a bridge — a service that logs in, reads
+ * the page and re-publishes it as RSS — and the free shared bridge everybody
+ * points at has since restricted itself to testing use and turns servers away.
+ * Instagram's route additionally wants a logged-in account that a shared
+ * service does not have. Every public alternative that was tried refuses a
+ * request from a server rather than a person.
+ *
+ * A platform that is offered and cannot work is worse than one that is not
+ * offered: it reads as the bot being broken. Anyone running their own bridge
+ * can still watch either of them through an account's own feed address, which
+ * is the setting immediately below.
  *
  * ── How each one is actually reached ─────────────────────────────────────
- *
- * This is the part worth being straight about, because only one of the four
- * has a door left open.
  *
  *   YouTube  — publishes a real Atom feed per channel, no key, no limits:
  *              /feeds/videos.xml?channel_id=UC…  This one just works, and it
@@ -17,15 +30,12 @@
  *              resolved to the channel id once and remembered, because nobody
  *              knows their own UC… id off the top of their head.
  *
- *   X, Instagram, TikTok
- *            — none of them will hand a feed to a program any more without a
- *              paid key or a logged-in session. What everybody actually does
- *              is put a bridge in between: a service that logs in, reads the
- *              page and re-publishes it as RSS. RSSHub is the usual one and is
- *              the default here, but the address is a setting, so a server
- *              that runs its own bridge points at that instead — which is the
- *              only arrangement that is genuinely reliable, since the public
- *              instance is shared by everyone and rate-limits accordingly.
+ *   TikTok   — will not hand a feed to a program without a logged-in session,
+ *              so it goes through a bridge. RSSHub is the usual one and is the
+ *              default here, but the address is a setting, so a server that
+ *              runs its own bridge points at that instead — which is the only
+ *              arrangement that is genuinely reliable, since the public
+ *              instance is shared by everyone and restricts accordingly.
  *
  *   anything — every account can override its feed address outright. A bridge
  *              nobody here has heard of, a Nitter mirror, a plain RSS export:
@@ -90,48 +100,6 @@ const PLATFORMS = {
     profileUrl: h => `https://www.tiktok.com/@${h.replace(/^@/, '')}`,
     bridgePaths: h => [`/tiktok/user/@${h.replace(/^@/, '')}`, `/tiktok/user/${h.replace(/^@/, '')}`],
   },
-  instagram: {
-    key: 'instagram',
-    label: 'Instagram',
-    emoji: '📸',
-    color: '#E1306C',
-    mark: 'instagram',
-    styleKey: 'social.instagram',
-    direct: false,
-    handleHint: '@username',
-    verb: 'posted on Instagram',
-    profileUrl: h => `https://www.instagram.com/${h.replace(/^@/, '')}/`,
-    bridgePaths: h => [`/instagram/user/${h.replace(/^@/, '')}`, `/picuki/profile/${h.replace(/^@/, '')}`],
-  },
-  twitter: {
-    key: 'twitter',
-    label: 'X',
-    emoji: '𝕏',
-    color: '#0F1419',
-    mark: 'twitter',
-    styleKey: 'social.twitter',
-    direct: false,
-    handleHint: '@username',
-    verb: 'posted on X',
-    profileUrl: h => `https://x.com/${h.replace(/^@/, '')}`,
-    // /x/… first. This used to be /twitter/… on the assumption that the old
-    // name was kept as a redirect — it is not. RSSHub renamed the route and
-    // the old one is a flat 404, which is exactly what came back in the wild.
-    // The old path stays second for anyone pointing at an older self-hosted
-    // build, where /x/ is the one that does not exist.
-    //
-    // The third is not RSSHub's shape at all — it is Nitter's, which serves a
-    // handle's feed at /{handle}/rss. Nitter is the other thing people run
-    // for this, and pointing the bridge setting at one used to produce a 404
-    // for a service that was working perfectly well; now either kind of
-    // bridge is simply understood. Trying it costs one request against an
-    // RSSHub bridge, on a platform that has already failed twice by then.
-    bridgePaths: h => [
-      `/x/user/${h.replace(/^@/, '')}`,
-      `/twitter/user/${h.replace(/^@/, '')}`,
-      `/${h.replace(/^@/, '')}/rss`,
-    ],
-  },
 };
 
 const PLATFORM_KEYS = Object.keys(PLATFORMS);
@@ -149,9 +117,6 @@ const DEFAULTS = {
   // A watched account that has been quiet for a week and then posts eight
   // things must not dump eight cards at once.
   maxPerCheck: 3,
-  // Discord unfurls a link in the message text into a second card underneath
-  // ours. Off by default because two cards for one post is what it looks like.
-  showLinkPreview: false,
 };
 
 const LIMITS = { accounts: 25, handle: 80, label: 60, keyword: 40, keywords: 12, feedUrl: 400 };
@@ -195,7 +160,15 @@ function getSettings(guildId) {
     pollMinutes: clamp(stored.pollMinutes ?? DEFAULTS.pollMinutes, 2, 360),
     maxPerCheck: clamp(stored.maxPerCheck ?? DEFAULTS.maxPerCheck, 1, 10),
     bridgeUrl: typeof stored.bridgeUrl === 'string' && stored.bridgeUrl ? stored.bridgeUrl : DEFAULTS.bridgeUrl,
-    accounts: (Array.isArray(stored.accounts) ? stored.accounts : []).map(normaliseAccount),
+    // An account on a platform that is no longer offered is dropped here
+    // rather than normalised. normaliseAccount falls back to YouTube for a
+    // platform it does not know, which is right for a typo and quite wrong
+    // for a retirement — an Instagram handle wearing a YouTube badge would
+    // fail every check forever and read as a bug rather than as a removal.
+    // The record stays on disk untouched; it simply stops being served.
+    accounts: (Array.isArray(stored.accounts) ? stored.accounts : [])
+      .filter(a => Object.hasOwn(PLATFORMS, a?.platform))
+      .map(normaliseAccount),
   };
 }
 

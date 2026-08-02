@@ -76,9 +76,9 @@ const action = (label, blurb, color, done, extra = {}) => ({
 /**
  * A card for one social platform.
  *
- * Four near-identical entries whose only real differences are the name and
- * the brand colour, so they are generated rather than written out four times
- * and then drifting apart. There is no on/off switch here: whether a platform
+ * Near-identical entries whose only real differences are the name and the
+ * brand colour, so they are generated rather than written out once each and
+ * then drifting apart. There is no on/off switch here: whether a platform
  * posts at all is the Social screen's business — each watched account has its
  * own switch there, and a second one here that meant something subtly
  * different would only be confusing.
@@ -280,10 +280,6 @@ const CATALOGUE = {
     'Posted when a watched YouTube channel publishes. {title} is the video title.'),
   ...social('tiktok', 'TikTok', '#FE2C55',
     'Posted when a watched TikTok account puts something out.'),
-  ...social('instagram', 'Instagram', '#E1306C',
-    'Posted when a watched Instagram account puts something out.'),
-  ...social('twitter', 'X', '#0F1419',
-    'Posted when a watched X account posts. The colour is X\'s own black — not quite #000000, because Discord reads a colour of exactly zero as "no colour" and draws its grey instead.'),
 
   'report.submitted': {
     group: 'Reports',

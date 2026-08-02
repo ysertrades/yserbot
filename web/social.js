@@ -79,7 +79,6 @@ function read(guildId, guild) {
     defaultBridgeUrl: social.DEFAULTS.bridgeUrl,
     pollMinutes: s.pollMinutes,
     maxPerCheck: s.maxPerCheck,
-    showLinkPreview: !!s.showLinkPreview,
     accounts: s.accounts.map(a => describeAccount(a, guild)),
     platforms: platformMeta(),
     limits: LIMITS,
@@ -172,14 +171,6 @@ function saveSettings(guildId, body, { guild }) {
     if (!Number.isFinite(n) || n < 1 || n > 10) return { error: 'bad_batch' };
     const v = Math.round(n);
     if (v !== current.maxPerCheck) { patch.maxPerCheck = v; changed.push(`at most ${v} per check`); }
-  }
-
-  if ('showLinkPreview' in body) {
-    const on = !!body.showLinkPreview;
-    if (on !== current.showLinkPreview) {
-      patch.showLinkPreview = on;
-      changed.push(on ? 'link preview on' : 'link preview off');
-    }
   }
 
   if (!changed.length) return { ok: true, unchanged: true };

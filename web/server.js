@@ -80,7 +80,16 @@ function csp() {
     // blob: is needed for the Studio previews — the PNG arrives as a blob and
     // is shown via createObjectURL. Blob URLs are same-origin and minted by
     // our own script, so this doesn't widen what the page can reach.
-    "img-src 'self' data: blob: https://cdn.discordapp.com",
+    //
+    // https: is needed because half of what the panel previews is a picture
+    // somebody typed the address of — an embed's image, an author icon, a
+    // social post's banner. Restricted to our own origin and Discord's CDN,
+    // the browser simply refused to load any of them, so the Preview button
+    // drew an embed with a hole where the picture goes and no way to tell
+    // that from a URL that was wrong. It is images only, still no http://,
+    // and it grants the page nothing it can read back — an <img> is opaque
+    // to script from another origin.
+    "img-src 'self' data: blob: https:",
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self'",
     "connect-src 'self'",
