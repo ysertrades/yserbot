@@ -133,9 +133,17 @@ function targetFor(guild, account, settings) {
  * can use exactly the same path — a test that goes through different code
  * from the real thing is a test of the wrong thing.
  */
-async function postItem(guild, account, settings, item) {
+async function postItem(guild, account, settings, raw) {
   const target = targetFor(guild, account, settings);
   if (!target) return false;
+
+  // The feed points at a small copy — YouTube's is 480×360, drawn across the
+  // whole width of the card. Finding the full-size one costs a HEAD request,
+  // so it happens here rather than in the parser: once per post that actually
+  // goes out, not once per item in every feed we read.
+  const item = raw.image
+    ? { ...raw, image: await social.sharpestImage(raw.image) }
+    : raw;
 
   const embed = buildPostEmbed(guild.id, account, item);
   if (!embed) return false;
