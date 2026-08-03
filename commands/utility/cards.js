@@ -20,7 +20,7 @@ function catalogFor(guildId, ownedIds = []) {
       if (c) byId.set(id, c);
     }
   }
-  return [...byId.values()].map(c => ({ id: c.id, name: c.name, rarity: c.rarity }));
+  return [...byId.values()].map(c => ({ id: c.id, name: c.name, rarity: c.rarity, art: c.art }));
 }
 const fmt = n => Number(n).toLocaleString();
 
@@ -72,6 +72,8 @@ module.exports = {
       const all     = readJson('cards.json', {});
       const owned   = all[target.id] || [];
 
+      // Answered before the defer below, so it stays private — an empty
+      // collection draws nothing, so there is no delay to cover here.
       if (owned.length === 0)
         return interaction.reply({ embeds: [new EmbedBuilder()
           .setColor(0x9E9E9E)
@@ -80,6 +82,12 @@ module.exports = {
             ? 'You haven\'t grabbed any cards yet!\nKeep chatting — cards drop across all channels.'
             : `<@${target.id}> hasn't collected any cards yet.`)
           .setThumbnail(target.displayAvatarURL({ dynamic: true }))], flags: MessageFlags.Ephemeral });
+
+      // Discord gives an interaction three seconds to be acknowledged, and
+      // this board is the heaviest render in the bot — every card in the set
+      // gets a cell, so it grew with the catalogue and went past that budget
+      // on a slower host. Deferring buys fifteen minutes.
+      await interaction.deferReply();
 
       const ownedCounts = {};
       for (const card of owned) ownedCounts[card.id] = (ownedCounts[card.id] || 0) + 1;
@@ -99,7 +107,7 @@ module.exports = {
       const boardBuf   = generateCollectionBoard({ catalog, ownedCounts, title: `${target.username}'s Collection` });
       const attachment = new AttachmentBuilder(boardBuf, { name: imageName });
 
-      return interaction.reply({ embeds: [new EmbedBuilder()
+      return interaction.editReply({ embeds: [new EmbedBuilder()
         .setColor(0xE91E63)
         .setDescription(`**${owned.length} cards** collected  ·  **${Object.keys(ownedCounts).length}/${catalog.length}** unique\n${summary}`)
         .setImage(`attachment://${imageName}`)
@@ -146,6 +154,11 @@ module.exports = {
 
     // ── Leaderboard ──────────────────────────────────────────────────────────
     if (sub === 'leaderboard') {
+      // filterNonBotIds below fetches up to thirty users from Discord to weed
+      // bots out of the ranking. That is network work, and network work
+      // before the first reply is exactly what runs out the three seconds.
+      await interaction.deferReply();
+
       const all    = readJson('cards.json', {});
       const ranked = Object.entries(all)
         .map(([uid, cards]) => ({
@@ -160,14 +173,14 @@ module.exports = {
       const scores = ranked.filter(s => humanIds.has(s.uid)).slice(0, 10);
 
       if (scores.length === 0)
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x9E9E9E).setTitle('🃏 No Cards Yet').setDescription('No one has collected any cards yet!')], flags: MessageFlags.Ephemeral });
+        return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x9E9E9E).setTitle('🃏 No Cards Yet').setDescription('No one has collected any cards yet!')] });
 
       const medals = ['🥇', '🥈', '🥉'];
       const desc = scores.map((s, i) =>
         `${medals[i] || `**${i + 1}.**`} <@${s.uid}> — **${s.total}** cards  ${s.mythic ? `⚜️×${s.mythic}` : ''}${s.legendary ? ` 🟨×${s.legendary}` : ''}`,
       ).join('\n');
 
-      return interaction.reply({ embeds: [new EmbedBuilder()
+      return interaction.editReply({ embeds: [new EmbedBuilder()
         .setColor(0xFFD700)
         .setTitle('🃏  Top Card Collectors')
         .setDescription(desc)

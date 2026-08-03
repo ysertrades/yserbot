@@ -5,6 +5,11 @@ module.exports = {
         .setName('userinfo').setDescription('Show user information')
         .addUserOption(opt => opt.setName('user').setDescription('User to inspect').setRequired(false)),
     async execute(interaction) {
+        // The fetch below is a live call to Discord for the banner/accent the
+        // cached user does not carry. Usually quick, but a rate limit makes it
+        // slow enough to lose the interaction.
+        await interaction.deferReply();
+
         const rawUser = interaction.options.getUser('user') || interaction.user;
         const user = await rawUser.fetch();
         const member = interaction.guild.members.cache.get(user.id);
@@ -50,6 +55,6 @@ module.exports = {
             embed.addFields({ name: '💎 Boosting Since', value: `<t:${boostSince}:F>`, inline: false });
         }
 
-        await interaction.reply({ embeds: [embed] });
+        await interaction.editReply({ embeds: [embed] });
     },
 };

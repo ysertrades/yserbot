@@ -19,13 +19,24 @@ const WHITE = [255, 255, 255, 255];
 // A network hiccup or a decode failure here should never break the caller —
 // every drawAvatarCircle() call below already handles a null buffer with a
 // graceful initial-letter fallback.
+//
+// The timeout is the important part. A bare fetch has none, so a CDN that
+// accepted the connection and then went quiet would leave the command waiting
+// forever — and every caller of this is a slash command that has already
+// promised Discord a reply. Four seconds, then draw the initial instead.
+const AVATAR_TIMEOUT_MS = 4000;
+
 async function fetchAvatarPng(avatarUrl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AVATAR_TIMEOUT_MS);
   try {
-    const res = await fetch(avatarUrl);
+    const res = await fetch(avatarUrl, { signal: controller.signal });
     if (!res.ok) return null;
     return PNG.sync.read(Buffer.from(await res.arrayBuffer()));
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
