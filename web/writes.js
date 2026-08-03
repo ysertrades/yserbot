@@ -38,6 +38,7 @@ const casinoPanel = require('./casino');
 const links = require('./links');
 const moderationPanel = require('./moderation');
 const economyPanel = require('./economy');
+const cardsPanel = require('./cards');
 const appearance = require('./appearance');
 const socialPanel = require('./social');
 
@@ -620,6 +621,23 @@ Object.assign(OPS, {
   async economyglobal(guildId, body, ctx) {
     const r = economyPanel.saveGlobal(guildId, body);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `📈 **Economy** — ${r.changed.join('; ')}`, 'features');
+    return r;
+  },
+
+  /* -- trading cards ------------------------------------------------------ */
+  async carddrops(guildId, body, ctx) {
+    const r = cardsPanel.saveDrops(guildId, body, ctx.guild);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🃏 **Card drops** — ${r.changed.join('; ')}`, 'features');
+    return r;
+  },
+  async cardrarity(guildId, body, ctx) {
+    const r = cardsPanel.saveRarities(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🃏 **Card odds** — ${r.changed.join(', ')} changed`, 'features');
+    return r;
+  },
+  async cardlist(guildId, body, ctx) {
+    const r = cardsPanel.saveCards(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🃏 **Cards** — ${r.changed.join(', ')}`, 'features');
     return r;
   },
 

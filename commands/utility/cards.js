@@ -3,11 +3,25 @@
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { addCoins, getBalance }  = require('../../utils/economyManager');
-const { CARDS, RARITY, SELL_PRICE } = require('../../utils/cardsManager');
+const { CARDS, RARITY, sellPrice, activeCards } = require('../../utils/cardsManager');
 const { generateCollectionBoard } = require('../../utils/cardCollectionVisual');
 const { filterNonBotIds } = require('../../utils/discordHelpers');
 
-const CARD_CATALOG = CARDS.map(c => ({ id: c.id, name: c.name, rarity: c.rarity }));
+/**
+ * The board a collection is scored against: the cards this guild drops, plus
+ * any the member already owns. Without the second half, a server disabling a
+ * card would erase it from the collections of everyone who had grabbed one.
+ */
+function catalogFor(guildId, ownedIds = []) {
+  const byId = new Map(activeCards(guildId).map(c => [c.id, c]));
+  for (const id of ownedIds) {
+    if (!byId.has(id)) {
+      const c = CARDS.find(x => x.id === id);
+      if (c) byId.set(id, c);
+    }
+  }
+  return [...byId.values()].map(c => ({ id: c.id, name: c.name, rarity: c.rarity }));
+}
 const fmt = n => Number(n).toLocaleString();
 
 module.exports = {
@@ -41,7 +55,7 @@ module.exports = {
       .slice(0, 25)
       .map(({ card, count }) => {
         const r     = RARITY[card.rarity];
-        const price = SELL_PRICE[card.rarity];
+        const price = sellPrice(interaction.guild?.id, card.rarity);
         const label = `${card.emoji} ${card.name} (${r.label})${count > 1 ? ` ×${count}` : ''} — ${fmt(price)} coins`;
         return { name: label.slice(0, 100), value: card.id };
       });
@@ -81,12 +95,13 @@ module.exports = {
       }).filter(Boolean).join('  ·  ');
 
       const imageName  = `card_board_${Date.now()}.png`;
-      const boardBuf   = generateCollectionBoard({ catalog: CARD_CATALOG, ownedCounts, title: `${target.username}'s Collection` });
+      const catalog    = catalogFor(interaction.guild?.id, Object.keys(ownedCounts));
+      const boardBuf   = generateCollectionBoard({ catalog, ownedCounts, title: `${target.username}'s Collection` });
       const attachment = new AttachmentBuilder(boardBuf, { name: imageName });
 
       return interaction.reply({ embeds: [new EmbedBuilder()
         .setColor(0xE91E63)
-        .setDescription(`**${owned.length} cards** collected  ·  **${Object.keys(ownedCounts).length}/${CARD_CATALOG.length}** unique\n${summary}`)
+        .setDescription(`**${owned.length} cards** collected  ·  **${Object.keys(ownedCounts).length}/${catalog.length}** unique\n${summary}`)
         .setImage(`attachment://${imageName}`)
         .setFooter({ text: 'Use /cards sell to trade duplicates for coins' })
         .setTimestamp()], files: [attachment] });
@@ -105,7 +120,7 @@ module.exports = {
       }
 
       const card  = owned[idx];
-      const price = SELL_PRICE[card.rarity];
+      const price = sellPrice(interaction.guild?.id, card.rarity);
       const cfg   = RARITY[card.rarity];
 
       // Remove one copy

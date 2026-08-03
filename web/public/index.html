@@ -373,10 +373,33 @@
           <div id="lottery-live" class="rows"></div>
           <form id="form-lottery" class="form"></form>
         </article>
-        <article class="panel">
-          <h2>Card drops</h2>
-          <form id="form-cards" class="form"></form>
-        </article>
+      </div>
+
+      <!-- Cards get their own block rather than a third of a row: the odds
+           table and the catalogue need the full width to stay readable. -->
+      <div class="panel">
+        <div class="queue-head">
+          <h2>Trading cards</h2>
+          <span class="pill" id="cards-count"></span>
+        </div>
+        <p class="muted">Cards drop as members talk. How often they land, what each tier is worth, and which cards this server drops at all.</p>
+        <form id="form-cards" class="form"></form>
+      </div>
+
+      <div class="panel">
+        <h2>Rarity table</h2>
+        <p class="muted">The weight decides how often a tier comes up — it is relative, so doubling one makes it twice as likely against the rest. The price is what selling one pays.</p>
+        <form id="form-card-rarity" class="form"></form>
+      </div>
+
+      <div class="panel">
+        <div class="queue-head">
+          <h2>Card catalogue</h2>
+          <span class="pill" id="cards-collected"></span>
+        </div>
+        <p class="muted">Every card in the set. Switch one off and it stops dropping — collections that already have it keep it.</p>
+        <div id="card-list" class="rows"></div>
+        <form id="form-card-list" class="form"></form>
       </div>
       <div class="panel">
         <h2>Shop items</h2>
