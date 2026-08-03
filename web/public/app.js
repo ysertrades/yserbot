@@ -18,6 +18,12 @@ const WRITE_ERRORS = {
   bad_mention:     'Pick a role that still exists, or @everyone / @here.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
+  bad_number:      'That number is outside the range this setting allows.',
+  bad_weight:      'A rarity weight has to be between 0 and 1000.',
+  bad_rarity:      'Could not read the rarity table.',
+  bad_cards:       'Could not read the card list.',
+  no_weight:       'Give at least one rarity a weight above zero, or nothing could drop.',
+  no_cards:        'Leave at least one card switched on.',
   bad_color:       'Colour needs to be a 6-digit hex code.',
   bad_csrf:        'Your session expired. Reload the page.',
   forbidden:       'You cannot change that server.',
@@ -531,7 +537,7 @@ function renderOverview() {
   renderLinkRequests();
   renderModeration();
   renderGroupForm('#form-lottery', 'lottery');
-  renderGroupForm('#form-cards', 'cards');
+  renderCards();
   renderGroupForm('#form-verify', 'verify');
   renderVerifyPanel();
   renderEconomy();
@@ -2764,6 +2770,103 @@ function renderEconomy() {
     actions(() => post('economyjobs', { jobs })),
   );
   syncJobs();
+}
+
+/* ── trading cards ─────────────────────────────────────────────────────── */
+
+const RARITY_TINT = {
+  common: '#9E9E9E', uncommon: '#43A047', rare: '#1E88E5',
+  epic: '#8E24AA', legendary: '#FFD700', mythic: '#FF1744',
+};
+
+function renderCards() {
+  const c = state.overview?.cards;
+  if (!c) return;
+
+  /* -- how often they drop ---------------------------------------------- */
+  const drops = { ...c.values };
+  $('#cards-count').textContent = `${c.totals.enabled}/${c.totals.catalogue} dropping`;
+  $('#cards-count').hidden = false;
+
+  $('#form-cards').replaceChildren(
+    ...c.fields.flatMap(f => [
+      textField(`${f.label} (${f.min}–${f.max})`, drops[f.key], v => { drops[f.key] = Number(v); }),
+      el('p', 'hint', f.hint),
+    ]),
+    pickOne('Drop channel', 'channel', drops.channelId, v => { drops.channelId = v; }, { blank: 'Anywhere members talk' }),
+    el('p', 'hint', 'Left blank, a card can drop in any channel that reaches the count.'),
+    actions(() => post('carddrops', drops)),
+  );
+
+  /* -- the odds and the payouts ------------------------------------------ */
+  const rarity = Object.fromEntries(c.rarities.map(r => [r.key, { weight: r.weight, price: r.price }]));
+  const oddsNote = el('p', 'hint', '');
+  const syncOdds = () => {
+    const total = Object.values(rarity).reduce((s, r) => s + (Number(r.weight) || 0), 0);
+    oddsNote.textContent = total > 0
+      ? c.rarities.map(r => `${r.label} ${Math.round(((Number(rarity[r.key].weight) || 0) / total) * 1000) / 10}%`).join('  ·  ')
+      : 'Every tier is at zero, so nothing could drop — give at least one a weight.';
+    oddsNote.className = `hint${total > 0 ? '' : ' bad'}`;
+  };
+
+  $('#form-card-rarity').replaceChildren(
+    ...c.rarities.map(r => {
+      const row = el('div', 'subfield');
+      const head = el('span', 'k', `${r.emoji} ${r.label} · ${r.cards} card${r.cards === 1 ? '' : 's'}`);
+      head.style.borderLeft = `3px solid ${RARITY_TINT[r.key] || 'var(--rule)'}`;
+      head.style.paddingLeft = '0.5rem';
+      row.append(
+        head,
+        textField('Weight', r.weight, v => { rarity[r.key].weight = Number(v); syncOdds(); }),
+        textField('Sells for (coins)', r.price, v => { rarity[r.key].price = Number(v); }),
+      );
+      return row;
+    }),
+    oddsNote,
+    actions(() => post('cardrarity', { rarity })),
+  );
+  syncOdds();
+
+  /* -- the catalogue ------------------------------------------------------ */
+  $('#cards-collected').textContent = `${c.totals.collected.toLocaleString()} held by ${c.totals.collectors}`;
+  $('#cards-collected').hidden = false;
+
+  const picked = Object.fromEntries(c.cards.map(x => [x.id, x.enabled]));
+  const listNote = el('p', 'hint', '');
+  const syncList = () => {
+    const on = Object.values(picked).filter(Boolean).length;
+    listNote.textContent = on === 0
+      ? 'At least one card has to stay on, or there would be nothing to drop.'
+      : `${on} of ${c.cards.length} dropping.`;
+    listNote.className = `hint${on === 0 ? ' bad' : ''}`;
+  };
+
+  // Grouped by tier, in the order they get rarer — a flat list of sixty-odd
+  // switches is a wall, and the tier is the thing you are usually filtering by.
+  const list = $('#card-list');
+  list.replaceChildren(...c.rarities.map(r => {
+    const group = el('details', 'item');
+    const sum = el('summary');
+    const badge = el('span', 'bstyle secondary', r.label);
+    badge.style.borderLeft = `3px solid ${RARITY_TINT[r.key] || 'var(--rule)'}`;
+    const mine = c.cards.filter(x => x.rarity === r.key);
+    sum.append(
+      badge,
+      el('span', 'nm', `${mine.length} cards`),
+      el('span', 'pr', `${mine.reduce((s, x) => s + x.held, 0).toLocaleString()} held`),
+    );
+    const body = el('div', 'body');
+    body.append(...mine.map(x => toggle(
+      `${x.emoji} ${x.name} — ${x.desc}${x.held ? `  ·  ${x.held} held` : ''}`,
+      x.enabled,
+      v => { picked[x.id] = v; syncList(); },
+    )));
+    group.append(sum, body);
+    return group;
+  }));
+
+  $('#form-card-list').replaceChildren(listNote, actions(() => post('cardlist', { cards: picked })));
+  syncList();
 }
 
 /* ── verification ──────────────────────────────────────────────────────── */

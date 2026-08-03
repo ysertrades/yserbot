@@ -18,6 +18,7 @@ const {
   PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
 } = require('./pixelArt');
+const { artFor } = require('./cardArt');
 
 const RARITY_ACCENT = {
   common:    [158, 158, 158, 255],
@@ -113,10 +114,11 @@ function drawStarRow(png, cx, y, filled, total, color) {
  * @param {string} [opts.name]
  * @param {string} [opts.desc]
  * @param {string} [opts.flavor]
+ * @param {string} [opts.art] - the card's own emblem key; falls back to its rarity's
  * @returns {Buffer} PNG image data
  */
 function generateCardImage(opts) {
-  const { rarity, starsFilled = 0, mystery = false, expired = false, name = '', desc = '', flavor = '' } = opts;
+  const { rarity, starsFilled = 0, mystery = false, expired = false, name = '', desc = '', flavor = '', art = null } = opts;
   const W = 520, H = 700;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   const accent = expired ? [110, 114, 122, 255] : (RARITY_ACCENT[rarity] || RARITY_ACCENT.common);
@@ -135,7 +137,11 @@ function generateCardImage(opts) {
   if (mystery || expired) {
     drawTextCentered(png, '?', cx, cy - 45, 9, accent);
   } else {
-    (EMBLEMS[rarity] || drawCommonEmblem)(png, cx, cy, 66, accent);
+    // The card's own emblem when it has one, its rarity's when it does not —
+    // an unknown art key costs one card its picture, never the drop.
+    const own = artFor(art);
+    if (own) own(png, cx, cy, 62, accent);
+    else (EMBLEMS[rarity] || drawCommonEmblem)(png, cx, cy, 66, accent);
   }
 
   if (mystery && !expired) {

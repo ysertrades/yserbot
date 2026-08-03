@@ -3,7 +3,7 @@
 const { Events, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createServerEmbed } = require('../utils/embedBuilder');
-const { pickRandomCard, buildDropEmbed, buildClaimedEmbed } = require('../utils/cardsManager');
+const { pickRandomCard, buildDropEmbed, buildClaimedEmbed, getCardConfig } = require('../utils/cardsManager');
 const { memberAction } = require('../utils/modEmbed');
 const { isOn } = require('../utils/messageStyle');
 
@@ -115,15 +115,18 @@ async function handleLeveling(message) {
 
 async function handleCardDrop(message) {
   try {
-    const config   = readJson('cards_config.json', {});
-    const cfg      = config[message.guild.id];
-    const interval = cfg?.interval || 50;
+    const guildId = message.guild.id;
+    const cfg = getCardConfig(guildId);
+
+    // A drop channel, when one is set. It was on the panel long before
+    // anything read it, so picking one used to change nothing at all.
+    if (cfg.channelId && cfg.channelId !== message.channel.id) return;
 
     // Increment per-channel counter
-    const key   = `${message.guild.id}:${message.channel.id}`;
+    const key   = `${guildId}:${message.channel.id}`;
     const count = (global.cardMessageCounts.get(key) || 0) + 1;
 
-    if (count < interval) {
+    if (count < cfg.interval) {
       global.cardMessageCounts.set(key, count);
       return;
     }
@@ -131,16 +134,21 @@ async function handleCardDrop(message) {
     // Hit the threshold — reset and drop a card
     global.cardMessageCounts.set(key, 0);
 
-    const card = pickRandomCard();
-    const { embed, files } = buildDropEmbed(card);
+    // ...and the chance roll, which was the panel's other dead setting. The
+    // counter still resets on a miss, so a low chance makes drops rarer rather
+    // than making the very next message drop one.
+    if (cfg.chance < 100 && Math.random() * 100 >= cfg.chance) return;
+
+    const card = pickRandomCard(guildId);
+    const { embed, files } = buildDropEmbed(card, false, cfg.claimSeconds);
     const row   = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('card_grab').setLabel('🃏 Grab Card!').setStyle(ButtonStyle.Secondary),
     );
 
     const msg = await message.channel.send({ embeds: [embed], files, components: [row] });
-    global.cardDrops.set(msg.id, { card, grabbed: false, guildId: message.guild.id });
+    global.cardDrops.set(msg.id, { card, grabbed: false, guildId });
 
-    // Expire after 8 seconds
+    // Expire once the claim window is up
     setTimeout(async () => {
       const drop = global.cardDrops.get(msg.id);
       if (!drop || drop.grabbed) return;
@@ -150,7 +158,7 @@ async function handleCardDrop(message) {
         new ButtonBuilder().setCustomId('card_gone').setLabel('💨 Nobody grabbed it...').setStyle(ButtonStyle.Secondary).setDisabled(true),
       );
       await msg.edit({ embeds: [expiredEmbed], files: expiredFiles, components: [disabled], attachments: [] }).catch(() => {});
-    }, 8000);
+    }, cfg.claimSeconds * 1000);
   } catch (err) {
     console.error('[CARD DROP]', err);
   }
