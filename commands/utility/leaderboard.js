@@ -6,6 +6,11 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('leaderboard').setDescription('View XP leaderboard'),
     async execute(interaction) {
+        // filterNonBotIds below fetches up to thirty users from Discord to
+        // keep bots out of the ranking — network work before the first reply,
+        // which is what runs out the three-second interaction budget.
+        await interaction.deferReply();
+
         const levels = readJson('levels.json', {});
         const guildData = levels[interaction.guild.id] || { users: {} };
         const ranked = Object.entries(guildData.users)
@@ -24,6 +29,6 @@ module.exports = {
             .setFooter({ text: `${interaction.guild.name} • YSER Flow`, iconURL: interaction.guild.iconURL({ dynamic: true }) })
             .setTimestamp();
 
-        await interaction.reply({ embeds: [embed] });
+        await interaction.editReply({ embeds: [embed] });
     },
 };

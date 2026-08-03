@@ -126,8 +126,12 @@ module.exports = {
 
   async execute(interaction) {
     if (await refuseIfOff(interaction, 'bank')) return;
+    // The panel fetches the member's avatar from Discord's CDN and then draws
+    // the card — a network round trip plus a render, both before the first
+    // reply, which is the pattern that runs out the three-second budget.
+    await interaction.deferReply();
     const payload = await buildBankPanel(interaction.member, interaction.user.id);
-    await interaction.reply(payload);
+    await interaction.editReply(payload);
   },
 
   async handleButton(interaction) {

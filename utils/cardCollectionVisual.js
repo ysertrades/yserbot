@@ -3,14 +3,18 @@
 /**
  * cardCollectionVisual.js
  *
- * Renders a user's /cards collection as a single fixed board — always
- * exactly 3 rows, with columns extending to fit the full card catalog (so
- * the same layout keeps applying no matter the catalog size). Every
- * catalog slot gets a cell: owned cards show their rarity emblem, name,
- * and a duplicate-count badge; unowned slots render as a dim locked
- * silhouette that still hints at the rarity tier waiting behind it — so
- * the board visibly fills in as more cards are collected instead of
- * growing indefinitely with duplicates.
+ * Renders a user's /cards collection as a single board. Every catalog slot
+ * gets a cell: owned cards show their rarity emblem, name, and a
+ * duplicate-count badge; unowned slots render as a dim locked silhouette
+ * that still hints at the rarity tier waiting behind it — so the board
+ * visibly fills in as more cards are collected instead of growing
+ * indefinitely with duplicates.
+ *
+ * The grid was three fixed rows with columns running off to the right, which
+ * held up at 28 cards and fell apart at 63: a 21-column board is 3,900 pixels
+ * wide, and Discord scales that down to an unreadable strip. Columns are
+ * capped now and rows grow instead, so the board stays roughly square and
+ * each cell stays legible however big the set gets.
  *
  * Deliberately decoupled from cardsManager.js — the caller passes in the
  * catalog + owned counts as plain data, matching the fishVisual.js /
@@ -23,9 +27,19 @@ const {
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
 } = require('./pixelArt');
 const { EMBLEMS, RARITY_ACCENT } = require('./cardVisual');
+const { artFor } = require('./cardArt');
 
-const ROWS = 3;
+// Wide enough to read at a glance, narrow enough that Discord does not shrink
+// it into a strip. Nine columns is 1,712px, which is about the widest an
+// embed image renders at full size.
+const MAX_COLS = 9;
 const CELL_W = 168, CELL_H = 216, GAP = 18, MARGIN = 28, HEADER_H = 84;
+
+/** A grid that stays roughly landscape whatever the catalogue size. */
+function gridFor(count) {
+  const cols = Math.min(MAX_COLS, Math.max(1, Math.ceil(Math.sqrt(count * 1.6))));
+  return { cols, rows: Math.max(1, Math.ceil(count / cols)) };
+}
 const WHITE = [255, 255, 255, 255];
 const GRAY  = [160, 166, 178, 255];
 
@@ -36,15 +50,15 @@ function drawLockIcon(png, cx, cy, size, color) {
 
 /**
  * @param {object} opts
- * @param {{id:string,name:string,rarity:string}[]} opts.catalog - fixed, ordered card list (e.g. common → mythic)
+ * @param {{id:string,name:string,rarity:string,art?:string}[]} opts.catalog - ordered card list (common → mythic)
  * @param {Record<string, number>} opts.ownedCounts - cardId → copies owned
  * @param {string} opts.title - e.g. "USERNAME'S COLLECTION"
  * @returns {Buffer} PNG image data
  */
 function generateCollectionBoard({ catalog, ownedCounts, title }) {
-  const cols = Math.max(1, Math.ceil(catalog.length / ROWS));
+  const { cols, rows } = gridFor(catalog.length);
   const W = MARGIN * 2 + cols * CELL_W + (cols - 1) * GAP;
-  const H = MARGIN * 2 + HEADER_H + ROWS * CELL_H + (ROWS - 1) * GAP;
+  const H = MARGIN * 2 + HEADER_H + rows * CELL_H + (rows - 1) * GAP;
 
   const png = new PNG({ width: W, height: H, colorType: 6 });
   flatBg(png, [14, 13, 20, 255]);
@@ -59,7 +73,9 @@ function generateCollectionBoard({ catalog, ownedCounts, title }) {
   const gridTop = MARGIN + HEADER_H;
 
   catalog.forEach((card, i) => {
-    const col = Math.floor(i / ROWS), row = i % ROWS;
+    // Row-major, so the set reads left to right in catalogue order (common
+    // through mythic) rather than top to bottom down each column.
+    const row = Math.floor(i / cols), col = i % cols;
     const x = MARGIN + col * (CELL_W + GAP);
     const y = gridTop + row * (CELL_H + GAP);
     const accent = RARITY_ACCENT[card.rarity] || RARITY_ACCENT.common;
@@ -80,7 +96,12 @@ function generateCollectionBoard({ catalog, ownedCounts, title }) {
     ringStroke(png, cx, cy, 40, accent, owned ? 4 : 3);
     if (owned) {
       dotBlend(png, cx, cy, 35, accent, 0.18);
-      (EMBLEMS[card.rarity] || EMBLEMS.common)(png, cx, cy, 23, accent);
+      // The card's own emblem, same as the card itself shows. Falling back to
+      // the rarity one would put the identical ring on every common, which is
+      // the board looking like a colour chart rather than a collection.
+      const own = artFor(card.art);
+      if (own) own(png, cx, cy, 25, accent);
+      else (EMBLEMS[card.rarity] || EMBLEMS.common)(png, cx, cy, 23, accent);
     } else {
       dotBlend(png, cx, cy, 35, [40, 40, 46, 255], 0.6);
       drawLockIcon(png, cx, cy, 19, [95, 98, 108, 255]);
