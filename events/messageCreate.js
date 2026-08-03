@@ -59,14 +59,28 @@ async function handleLeveling(message) {
     guildData.users[userId] = { xp: 0, level: 1, messages: 0, lastMessage: 0, totalXp: 0 };
   }
 
+  const settings = guildData.settings || { xpPerMessage: [15, 25], baseXp: 100, multiplier: 1.5 };
+
+  // Two levers, and they stop different things. The cooldown caps how *often*
+  // a member can earn; the minimum length caps how *cheaply*. On its own the
+  // cooldown still pays full XP for "k" every twenty seconds, which is the
+  // whole of what someone farming a leaderboard actually does.
+  //
+  // Length is checked first so a too-short message is simply not an earning
+  // attempt — it neither pays nor starts the clock, and the member's next real
+  // sentence is not punished for it.
+  const minLength = Number.isFinite(settings.minLength) ? settings.minLength : 0;
+  if (minLength > 0 && message.content.trim().length < minLength) return;
+
   const now        = Date.now();
-  const cooldownMs = 20000;
+  // 20 seconds is what this was fixed at before it could be set, so a guild
+  // that has never touched it behaves exactly as it always did.
+  const cooldownMs = Number.isFinite(settings.cooldownMs) ? settings.cooldownMs : 20000;
   if (now - guildData.users[userId].lastMessage < cooldownMs) return;
 
   guildData.users[userId].lastMessage = now;
   guildData.users[userId].messages   += 1;
 
-  const settings  = guildData.settings || { xpPerMessage: [15, 25], baseXp: 100, multiplier: 1.5 };
   const minXp     = settings.xpPerMessage[0] || 15;
   const maxXp     = settings.xpPerMessage[1] || 25;
   const xpGain    = Math.floor(Math.random() * (maxXp - minXp + 1)) + minXp;

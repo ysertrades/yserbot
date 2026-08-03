@@ -3741,15 +3741,68 @@ function renderLevels() {
   const form = $('#form-levels');
   if (!lv) { form.replaceChildren(el('p', 'muted', 'Not available.')); return; }
 
+  // Live copy of what is on screen, so the readout below can be recalculated
+  // as you type rather than only after a save.
+  const shown = Object.fromEntries(lv.fields.map(f => [f.key, lv.values[f.key] ?? f.fallback ?? '']));
+
+  const rate = el('p', 'hint');
+  const syncRate = () => { rate.textContent = describeXpRate(shown); };
+
   const draft = {};
-  const nodes = lv.fields.map(f => textField(
-    `${f.label} (${f.min}–${f.max})`,
-    String(lv.values[f.key] ?? f.fallback ?? ''),
-    v => { draft[f.key] = Number(v); },
-  ));
+  const nodes = [];
+  for (const f of lv.fields) {
+    // A duration keeps its 20s/1m form all the way through — Number() on it
+    // would send NaN, which is how a text-shaped field breaks a numeric form.
+    const isDuration = f.type === 'duration';
+    const label = isDuration ? f.label : `${f.label} (${f.min}–${f.max})`;
+    nodes.push(textField(label, String(shown[f.key]), v => {
+      shown[f.key] = isDuration ? v : Number(v);
+      draft[f.key] = shown[f.key];
+      syncRate();
+    }, isDuration ? { placeholder: '20s, 1m, 5m — or 0' } : {}));
+    if (f.hint) nodes.push(el('p', 'hint', f.hint));
+  }
+
+  syncRate();
+  nodes.push(rate);
   nodes.push(el('p', 'hint', `${num(lv.tracked)} members are being tracked.`));
   nodes.push(actions(() => post('levels', draft)));
   form.replaceChildren(...nodes);
+}
+
+/**
+ * What the level settings add up to, in a sentence.
+ *
+ * Four numbers that each make sense alone tell you nothing together — whether
+ * 25 XP on a 20-second cooldown is generous depends on the base XP and the
+ * curve, and nobody does that arithmetic in their head. Recomputed as the
+ * fields change, so the effect of a change is visible before it is saved.
+ */
+function describeXpRate(v) {
+  const ms = parseDurationMs(String(v.cooldownMs ?? '')) ?? (/^0/.test(String(v.cooldownMs)) ? 0 : null);
+  const maxXp = Number(v.xpMax) || 0;
+  const avgXp = ((Number(v.xpMin) || 0) + maxXp) / 2;
+  const baseXp = Number(v.baseXp) || 0;
+  if (ms === null || !avgXp || !baseXp) return 'Fill the fields above to see what they add up to.';
+
+  const msgs = Math.max(1, Math.ceil(baseXp / avgXp));
+  if (ms === 0) return `No cooldown — every message pays. About ${msgs} message${msgs === 1 ? '' : 's'} to reach level 2.`;
+
+  const perHour = Math.floor(3600000 / ms) * maxXp;
+  return `At most ${num(perHour)} XP/hour · about ${msgs} earning message${msgs === 1 ? '' : 's'} to reach level 2 (${shortDuration(msgs * ms)} at full speed).`;
+}
+
+/**
+ * Short, readable span. The page's own duration() floors to whole minutes,
+ * which turns every XP cooldown into "0m" — these are seconds-to-minutes, not
+ * the hours-to-days it was written for.
+ */
+function shortDuration(ms) {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), rest = s % 60;
+  if (h) return m ? `${h}h ${m}m` : `${h}h`;
+  return rest ? `${m}m ${rest}s` : `${m}m`;
 }
 
 function renderLevelRoles() {

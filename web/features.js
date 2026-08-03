@@ -24,6 +24,7 @@ const {
 } = require('../utils/scheduler');
 const { todaysSlotUTC, REWARD: LOTTERY_REWARD } = require('../utils/lotteryRunner');
 const { normaliseMention } = require('../utils/mentionTarget');
+const { parseDuration, formatDuration } = require('../utils/duration');
 
 // Exactly what utils/scheduler.js implements — anything not listed here is
 // treated as daily by computeNextRun, so a value the runner does not know
@@ -110,6 +111,12 @@ const LEVEL_FIELDS = [
   { key: 'xpMax', label: 'XP per message (max)', type: 'int', min: 1, max: 500, fallback: 20 },
   { key: 'baseXp', label: 'XP for level 1', type: 'int', min: 10, max: 100000, fallback: 150 },
   { key: 'multiplier', label: 'Growth per level (×)', type: 'float', min: 1.01, max: 5, fallback: 1.5 },
+  // The two anti-farming levers. Both were fixed in source until now — the
+  // cooldown at twenty seconds, the length check at nothing at all.
+  { key: 'cooldownMs', label: 'Wait between earning messages', type: 'duration', min: 0, max: 6 * 60 * 60 * 1000, fallback: 20000,
+    hint: 'How long before a member can earn again. 0 pays on every message.' },
+  { key: 'minLength', label: 'Shortest message that earns', type: 'int', min: 0, max: 500, fallback: 0,
+    hint: 'A shorter message earns nothing and does not start the cooldown, so a quick "yes" costs a member nothing. 0 turns it off.' },
 ];
 
 const dig = (o, p) => p.reduce((x, k) => (x == null ? x : x[k]), o);
@@ -171,7 +178,13 @@ function read(guildId, guild) {
   const xp = Array.isArray(s.xpPerMessage) ? s.xpPerMessage : [10, 20];
   out.levels = {
     fields: LEVEL_FIELDS,
-    values: { xpMin: xp[0], xpMax: xp[1], baseXp: s.baseXp ?? 150, multiplier: s.multiplier ?? 1.5 },
+    values: {
+      xpMin: xp[0], xpMax: xp[1], baseXp: s.baseXp ?? 150, multiplier: s.multiplier ?? 1.5,
+      // Shown as the string it would be typed back in as, the way the economy
+      // screen does its cooldowns.
+      cooldownMs: formatDuration(s.cooldownMs ?? 20000) || '0',
+      minLength: s.minLength ?? 0,
+    },
     roles: Object.entries(lv.roles || {}).map(([level, roleId]) => ({
       level: Number(level), roleId, roleName: guild.roles.cache.get(roleId)?.name || null,
     })).sort((a, b) => a.level - b.level),
@@ -235,6 +248,19 @@ function coerce(field, incoming, guild) {
       const n = Number(incoming);
       if (!Number.isFinite(n) || n < field.min || n > field.max) return { error: 'bad_number' };
       return { value: Math.round(n * 100) / 100 };
+    }
+    case 'duration': {
+      // The same 20s/10m/2h the slash commands take, so a value typed here and
+      // a value typed into /levelsettings mean the same thing. Zero is a real
+      // answer for a cooldown — "every message earns" — and parseDuration
+      // refuses it on purpose, so it is handled before the parse.
+      const raw = String(incoming ?? '').trim();
+      if (/^0[smhd]?$/i.test(raw) || raw === '') {
+        return field.min === 0 ? { value: 0 } : { error: 'bad_duration' };
+      }
+      const ms = parseDuration(raw);
+      if (ms === null || ms < field.min || ms > field.max) return { error: 'bad_duration' };
+      return { value: ms };
     }
     case 'text':
       return { value: typeof incoming === 'string' ? incoming.slice(0, field.max || 2000) : '' };
@@ -317,6 +343,8 @@ function saveLevels(guildId, body) {
     xpPerMessage: xp,
     baseXp: values.baseXp ?? s.baseXp ?? 150,
     multiplier: values.multiplier ?? s.multiplier ?? 1.5,
+    cooldownMs: values.cooldownMs ?? s.cooldownMs ?? 20000,
+    minLength: values.minLength ?? s.minLength ?? 0,
   };
   writeJson('levels.json', all);
   return { ok: true, changed: ['Levelling'] };
