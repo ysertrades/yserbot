@@ -22,13 +22,12 @@
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { normaliseMention, mentionSend } = require('../utils/mentionTarget');
+const panelPosts = require('../utils/panelPosts');
 const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
 
 // Required lazily: commands/utility/embed.js pulls in a good deal of the bot,
 // and web/ is loaded from index.js before the command files have all settled.
 const embedCommand = () => require('../commands/utility/embed.js');
-
-const POSTS_FILE = 'panel_posts.json';
 
 const BUTTON_STYLES = ['Primary', 'Secondary', 'Success', 'Danger', 'Link'];
 const BUTTON_TYPES  = ['role', 'link', 'ticket', 'custom'];
@@ -66,10 +65,22 @@ function buttonsFor(guildId, name) {
   return Object.values(all).filter(b => b.embedName === name);
 }
 
-/** Every template in a guild, each with its buttons and its live posts. */
-function list(guildId) {
+/**
+ * Every template in a guild, each with its buttons and its live posts.
+ *
+ * The sweep runs first so "Already posted" only ever lists messages that are
+ * really there. It is awaited rather than fired off, because a row that
+ * disappears a second after the screen draws is worse than one that was never
+ * drawn — and with nothing to check it costs nothing at all.
+ *
+ * `guild` is optional: without it there is no way to ask Discord anything, so
+ * the list is returned unverified rather than not at all.
+ */
+async function list(guildId, guild = null) {
+  if (guild) await panelPosts.prune(guild);
+
   const templates = readJson('embeds.json', {})[guildId] || {};
-  const posts = readJson(POSTS_FILE, {})[guildId] || {};
+  const posts = panelPosts.forGuild(guildId);
 
   return Object.entries(templates).map(([name, raw]) => {
     const t = normalize(raw);
@@ -319,17 +330,14 @@ function deleteButton(guildId, body) {
 
 /* ─── sending ────────────────────────────────────────────────────────────── */
 
+// The store itself lives in utils/panelPosts.js, because the delete events
+// need to reach it too and an event handler reaching into a web/ module to
+// edit its file would be the wrong way round.
 function rememberPost(guildId, messageId, record) {
-  const all = readJson(POSTS_FILE, {});
-  if (!all[guildId]) all[guildId] = {};
-  all[guildId][messageId] = record;
-
-  // Keep this from growing without bound — the oldest records are the least
-  // likely to still point at a message anyone wants to edit.
-  const entries = Object.entries(all[guildId]).sort((a, b) => (b[1].sentAt || 0) - (a[1].sentAt || 0));
-  if (entries.length > 200) all[guildId] = Object.fromEntries(entries.slice(0, 200));
-
-  writeJson(POSTS_FILE, all);
+  // A freshly sent message is alive by definition, so it starts out verified
+  // — otherwise the very next panel load would spend a request confirming
+  // something we just watched succeed.
+  panelPosts.remember(guildId, messageId, { ...record, checkedAt: Date.now() });
 }
 
 /**
@@ -440,7 +448,7 @@ async function updatePost(guildId, body, { guild, client }) {
   // confusing 50005. Say what is actually wrong instead.
   if (message.author?.id !== client.user?.id) return { error: 'not_our_message' };
 
-  const known = readJson(POSTS_FILE, {})[guildId]?.[messageId];
+  const known = panelPosts.get(guildId, messageId);
   const templateName = name || known?.templateName;
   if (!templateName) return { error: 'unknown_template' };
 
@@ -514,5 +522,8 @@ async function updatePost(guildId, body, { guild, client }) {
 
 module.exports = {
   list, meta, saveTemplate, deleteTemplate, saveButton, deleteButton, send, updatePost,
-  normalize, LIMITS, BUTTON_STYLES, BUTTON_TYPES, POSTS_FILE,
+  normalize, LIMITS, BUTTON_STYLES, BUTTON_TYPES,
+  // Re-exported so nothing that used to reach for it here has to learn a new
+  // path; utils/panelPosts.js owns the file itself.
+  POSTS_FILE: panelPosts.FILE,
 };

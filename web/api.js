@@ -185,7 +185,7 @@ async function guildOverview(guildId, client) {
     })).sort((a, b) => a.name.localeCompare(b.name)),
     // The composer, giveaways and settings screens all read from the same
     // overview call, so switching between sections never waits on the network.
-    composer: composer.list(guildId),
+    composer: await composer.list(guildId, guild),
     composerMeta: composer.meta(),
     // What Studio has saved, so opening it shows the wording the embeds are
     // actually sending rather than the factory defaults.
