@@ -29,10 +29,14 @@ module.exports = {
     // contract makes, so "10.5 ticks" is not a distance that exists. Discord
     // rejects the fraction at the prompt rather than the bot rejecting it
     // after the fact.
+    // Named `ticks`, not `stop`. Discord shows the option *name* as you type
+    // the command — the description only appears once that option is
+    // selected — so an option called "stop" reads as "stop distance" and
+    // invites the points figure the calculator no longer takes.
     .addIntegerOption((option) =>
       option
-        .setName('stop')
-        .setDescription('Stop distance in TICKS (e.g. 8)')
+        .setName('ticks')
+        .setDescription('Stop distance in ticks — whole ticks only (e.g. 8)')
         .setRequired(true)
         .setMinValue(1)
     ),
@@ -40,7 +44,7 @@ module.exports = {
   async execute(interaction) {
     const symbol = interaction.options.getString('symbol');
     const riskUsd = interaction.options.getNumber('risk');
-    const stopTicks = interaction.options.getInteger('stop');
+    const stopTicks = interaction.options.getInteger('ticks');
 
     const result = calculateRisk(symbol, riskUsd, stopTicks);
 
