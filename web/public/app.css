@@ -317,6 +317,20 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .embed-link-row input { flex: 1; min-width: 0; }
 #embed-link-card .actions { margin-top: 0.85rem; padding-top: 0; border-top: none; }
 
+/* The fine print under the sign-in card. Small on purpose — present for
+   anyone who wants it before handing over a Discord login, and quiet enough
+   that it never competes with the one button on the page. */
+.fineprint {
+  margin: 1.1rem 0 0;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+  display: flex; justify-content: center; align-items: center; gap: 0.5rem;
+}
+.fineprint a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
+.fineprint a:hover { color: var(--soft); border-bottom-color: var(--rule); }
+.fineprint a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
 /* ── terms & privacy ──────────────────────────────────────────────────────
    Two link cards rather than two plain buttons: each one carries the address
    it opens, because pasting that address into Discord's application listing

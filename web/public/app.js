@@ -450,8 +450,32 @@ function renderIdentity(user) {
   }
   wrap.append(el('span', 'who', user.name));
   const out = el('a', 'btn small', 'Sign out');
+  // Still an anchor, so a browser with no JavaScript can sign out of a cookie
+  // session by following it. With JavaScript the click is taken over below,
+  // because a plain navigation sends only the cookie — and the session that
+  // most needs ending is often the one living purely in a bearer token.
   out.href = '/auth/logout';
-  out.addEventListener('click', () => { state.token = null; remember(null); });
+  out.addEventListener('click', async (e) => {
+    e.preventDefault();
+    out.textContent = 'Signing out…';
+    try {
+      // Carries the token, so the server knows whose sessions to revoke even
+      // when no cookie was ever set. Revocation is what makes this stick: the
+      // stored token is dead server-side before the page reloads, so a copy
+      // that survived in storage — or in a host app's saved URL — cannot sign
+      // anyone back in.
+      await fetch('/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { ...authHeaders(), 'x-csrf-token': state.csrf || '' },
+      });
+    } catch { /* the local clear and the reload below still happen */ }
+    state.token = null;
+    remember(null);
+    // replace(), not assign(): Back must not return to a panel rendered from
+    // the state this page still has in memory.
+    location.replace('/');
+  });
   wrap.append(out);
 }
 
