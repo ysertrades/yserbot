@@ -317,6 +317,43 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .embed-link-row input { flex: 1; min-width: 0; }
 #embed-link-card .actions { margin-top: 0.85rem; padding-top: 0; border-top: none; }
 
+/* ── terms & privacy ──────────────────────────────────────────────────────
+   Two link cards rather than two plain buttons: each one carries the address
+   it opens, because pasting that address into Discord's application listing
+   is the job people come to this card for. Side by side where there is room,
+   stacked on a phone. */
+.legal-links { display: grid; grid-template-columns: 1fr; gap: 0.6rem; margin-top: 0.85rem; }
+@media (min-width: 34rem) { .legal-links { grid-template-columns: 1fr 1fr; } }
+
+.legal-link {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--rule); border-radius: 12px;
+  background: var(--sunken);
+  color: var(--ink); text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.legal-link:hover { border-color: var(--accent); background: var(--raised); transform: translateY(-1px); }
+.legal-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.legal-icon {
+  flex: none; width: 32px; height: 32px; border-radius: 9px;
+  display: grid; place-items: center;
+  background: var(--accent-d); color: var(--accent);
+  /* Serif, so the § and ◈ read as marks rather than as stray punctuation. */
+  font-family: Georgia, "Times New Roman", serif; font-size: 1rem;
+}
+.legal-text { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
+.legal-name { font-size: 0.9rem; font-weight: 500; }
+.legal-url {
+  font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.legal-arrow { margin-left: auto; color: var(--muted); font-size: 0.85rem; flex: none; }
+.legal-link:hover .legal-arrow { color: var(--accent); }
+
+#legal-card .actions { margin-top: 0.85rem; padding-top: 0; border-top: none; }
+
 /* A heading that follows content needs air above it; the first one in a panel
    already has the panel's padding. */
 * + h2 { margin-top: 1.25rem; }

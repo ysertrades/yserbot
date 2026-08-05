@@ -532,6 +532,7 @@ function renderOverview() {
   renderGiveaways();
   renderSettings();
   renderPanelLog();
+  renderLegalLinks();
   renderTickets();
   renderCasino();
   renderLinkRequests();
@@ -3514,6 +3515,38 @@ function initEmbedLink() {
     try { await navigator.clipboard.writeText(input.value); toast('Copied.', 'good'); }
     catch { input.select(); toast('Select and copy the link manually.'); }
   });
+}
+
+/* ── terms & privacy ──────────────────────────────────────────────────────
+   The pages themselves are static and public; all this does is show their
+   real, absolute addresses. Relative hrefs would open fine, but the thing
+   you actually need from this card is a URL to paste into Discord's
+   application listing — and for that it has to be the full one. */
+
+function renderLegalLinks() {
+  const card = $('#legal-card');
+  if (!card) return;
+  // Wired once. This runs on every overview refresh, and a second pass would
+  // stack a second click handler on each copy button — two toasts, then three.
+  if (card.dataset.wired) return;
+  card.dataset.wired = '1';
+
+  const absolute = path => new URL(path, location.origin).href;
+  const links = {
+    terms:   { url: absolute('/terms'),   urlEl: '#legal-terms-url',   copy: '#legal-copy-terms' },
+    privacy: { url: absolute('/privacy'), urlEl: '#legal-privacy-url', copy: '#legal-copy-privacy' },
+  };
+
+  for (const { url, urlEl, copy } of Object.values(links)) {
+    // Shown without the scheme — the address is there to be recognised and
+    // copied, and "https://" at the front of both is the part nobody reads.
+    $(urlEl).textContent = url.replace(/^https?:\/\//, '');
+    $(urlEl).title = url;
+    $(copy).addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(url); toast('Link copied.', 'good'); }
+      catch { toast(url); }
+    });
+  }
 }
 
 /* ── feature groups ────────────────────────────────────────────────────────
