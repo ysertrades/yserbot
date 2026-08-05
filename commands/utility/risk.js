@@ -25,20 +25,24 @@ module.exports = {
         .setRequired(true)
         .setMinValue(1)
     )
-    .addNumberOption((option) =>
+    // An integer option, not a number: a tick is the smallest move the
+    // contract makes, so "10.5 ticks" is not a distance that exists. Discord
+    // rejects the fraction at the prompt rather than the bot rejecting it
+    // after the fact.
+    .addIntegerOption((option) =>
       option
         .setName('stop')
-        .setDescription('Stop distance in POINTS (e.g. 2.5)')
+        .setDescription('Stop distance in TICKS (e.g. 8)')
         .setRequired(true)
-        .setMinValue(0.01)
+        .setMinValue(1)
     ),
 
   async execute(interaction) {
     const symbol = interaction.options.getString('symbol');
     const riskUsd = interaction.options.getNumber('risk');
-    const stopPoints = interaction.options.getNumber('stop');
+    const stopTicks = interaction.options.getInteger('stop');
 
-    const result = calculateRisk(symbol, riskUsd, stopPoints);
+    const result = calculateRisk(symbol, riskUsd, stopTicks);
 
     if (result.error) {
       return interaction.reply({
