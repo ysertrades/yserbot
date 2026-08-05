@@ -22,7 +22,7 @@ const {
   generateScheduleId, parseScheduleTime,
   nextWeekdayTimestamp, nextDayOfWeekTimestamp, dayOfWeek, DAY_NAMES,
 } = require('../utils/scheduler');
-const { todaysSlotUTC, REWARD: LOTTERY_REWARD } = require('../utils/lotteryRunner');
+const { todaysSlotUTC, REWARD: LOTTERY_REWARD, drawStatus } = require('../utils/lotteryRunner');
 const { normaliseMention } = require('../utils/mentionTarget');
 const { parseDuration, formatDuration } = require('../utils/duration');
 
@@ -74,9 +74,14 @@ const CONFIG_GROUPS = {
   lottery: {
     label: 'Lottery',
     fields: [
+      // Without one there is no draw at all — the runner has always skipped a
+      // guild that has not set this, so it is the difference between the
+      // lottery existing and not.
       { key: 'channelId', path: ['lotterySettings', 'channelId'], label: 'Results channel', type: 'channel' },
-      // Skips the daily draw without touching the pool, so entries already
-      // bought are still there when it is switched back on.
+      // Stops the draw *and* the ticket sales. It used to stop only the draw,
+      // which meant a paused lottery went on taking coins for entries that
+      // would never be drawn. The pool itself is untouched either way, so
+      // entries already bought are still there when it is switched back on.
       { key: 'paused', path: ['lotterySettings', 'paused'], label: 'Pause the daily draw', type: 'bool' },
     ],
   },
@@ -206,8 +211,14 @@ function read(guildId, guild) {
   // utils/lotteryRunner on its own schedule; this is the window onto it.
   const lot = readJson('lottery.json', {})[guildId] || { pool: {}, lastDrawAt: 0, history: [] };
   const pool = Object.entries(lot.pool || {}).sort((a, b) => b[1] - a[1]);
+  const lotteryStatus = drawStatus(guildId);
   out.lottery = {
     reward: LOTTERY_REWARD,
+    // Whether a draw can actually happen. The panel used to show a countdown
+    // whatever the state, which is the screen promising a draw that a paused
+    // or unconfigured lottery was never going to run.
+    open: lotteryStatus.open,
+    closedReason: lotteryStatus.reason,
     totalTickets: pool.reduce((n, [, c]) => n + c, 0),
     participants: pool.length,
     nextDrawAt: todaysSlotUTC(Date.now() + 86400000),

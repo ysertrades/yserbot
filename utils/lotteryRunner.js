@@ -49,8 +49,9 @@ async function runTick(client) {
 
   for (const guildId of Object.keys(config)) {
     const settings = config[guildId]?.lotterySettings;
-    if (!settings?.channelId) continue;
-    if (isPaused(guildId)) continue;
+    // The same predicate the buy path uses, so "no draw will run" and "no
+    // tickets are on sale" are always the same answer.
+    if (!drawStatus(guildId).open) continue;
 
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
@@ -115,4 +116,28 @@ function isPaused(guildId) {
   return readJson('config.json', {})[guildId]?.lotterySettings?.paused === true;
 }
 
-module.exports = { startLotteryRunner, todaysSlotUTC, isPaused, REWARD };
+/**
+ * Whether a draw can actually happen, and if not, why.
+ *
+ * The reason this exists rather than the two checks being written out at each
+ * call site: the runner skipped a guild for two reasons — paused, or no
+ * results channel — and the buy path checked neither. So a paused lottery
+ * kept selling tickets into a pool that would never be drawn, and a server
+ * that had simply never set a channel did the same thing silently and
+ * forever. Coins in, nothing out, which is the worst way for a switch to be
+ * half-wired.
+ *
+ * One predicate, consulted by the runner that skips the draw, the command
+ * that sells the tickets and the panel that reports on it — so those three
+ * cannot disagree about whether the lottery is running.
+ *
+ * @returns {{open: boolean, reason: 'paused'|'no_channel'|null}}
+ */
+function drawStatus(guildId) {
+  const settings = readJson('config.json', {})[guildId]?.lotterySettings;
+  if (settings?.paused === true) return { open: false, reason: 'paused' };
+  if (!settings?.channelId) return { open: false, reason: 'no_channel' };
+  return { open: true, reason: null };
+}
+
+module.exports = { startLotteryRunner, todaysSlotUTC, isPaused, drawStatus, REWARD };

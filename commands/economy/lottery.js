@@ -3,7 +3,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ChannelType, MessageFlags } = require('discord.js');
 const { getBalance, removeCoins } = require('../../utils/economyManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
-const { todaysSlotUTC, REWARD } = require('../../utils/lotteryRunner');
+const { todaysSlotUTC, REWARD, drawStatus } = require('../../utils/lotteryRunner');
 
 const TICKET_PRICE        = 500;
 const MAX_TICKETS_PER_DAY = 20;
@@ -25,6 +25,32 @@ function saveState(guildId, state) {
 function nextDrawTs(now = Date.now()) {
   const slot = todaysSlotUTC(now);
   return slot > now ? slot : slot + DAY_MS;
+}
+
+/**
+ * What to tell a member when there is no draw coming.
+ *
+ * Both cases have to say what happens to tickets they already hold, because
+ * that is the only question anyone actually has — pausing keeps the pool, so
+ * their entries are not lost, and saying so is the difference between a
+ * closed shop and a robbery.
+ */
+const CLOSED_MESSAGE = {
+  paused: {
+    title: '⏸️ The Lottery Is Paused',
+    body: 'An admin has switched the daily draw off, so tickets are not on sale right now.\n\n'
+      + 'Any tickets you already hold are safe — the pool is kept exactly as it is and goes into the next draw when the lottery resumes.',
+  },
+  no_channel: {
+    title: '🚧 The Lottery Is Not Set Up',
+    body: 'This server has no lottery results channel, so no draw can take place — selling you a ticket for it would be taking your coins for nothing.\n\n'
+      + 'An admin can set one with `/lottery channel`, or from the Economy screen in the panel.',
+  },
+};
+
+function closedEmbed(reason) {
+  const copy = CLOSED_MESSAGE[reason] || CLOSED_MESSAGE.no_channel;
+  return new EmbedBuilder().setColor(0xE67E22).setTitle(copy.title).setDescription(copy.body);
 }
 
 module.exports = {
@@ -49,7 +75,12 @@ module.exports = {
       const channel = interaction.options.getChannel('channel');
       const config  = readJson('config.json', {});
       if (!config[guildId]) config[guildId] = {};
-      config[guildId].lotterySettings = { channelId: channel.id };
+      // Merged, not replaced. This assigned a fresh object, so setting the
+      // channel here silently cleared `paused` — an admin who paused the
+      // lottery in the panel and later pointed it at a channel from Discord
+      // restarted the draw without ever asking to. Every other settings
+      // writer in the bot merges; this was the one that did not.
+      config[guildId].lotterySettings = { ...(config[guildId].lotterySettings || {}), channelId: channel.id };
       writeJson('config.json', config);
 
       return interaction.reply({ embeds: [new EmbedBuilder()
@@ -59,6 +90,14 @@ module.exports = {
     }
 
     if (sub === 'buy') {
+      // Checked before anything is charged. A ticket is only worth buying if
+      // a draw is going to happen, and until now neither of the two things
+      // that stop a draw stopped the sale.
+      const status = drawStatus(guildId);
+      if (!status.open) {
+        return interaction.reply({ embeds: [closedEmbed(status.reason)], flags: MessageFlags.Ephemeral });
+      }
+
       const qty   = interaction.options.getInteger('quantity') || 1;
       const state = getState(guildId);
       const owned = state.pool[userId] || 0;
@@ -99,10 +138,16 @@ module.exports = {
 
       const lines = entries.slice(0, 15).map(([uid, count]) => `<@${uid}> — **${count}** ticket${count !== 1 ? 's' : ''}`);
 
+      // A countdown to a draw that cannot happen is worse than no countdown
+      // — it is the screen telling somebody their tickets are about to pay
+      // out. When the lottery is closed the slot says so instead.
+      const status = drawStatus(guildId);
       const fields = [
         { name: '🎫 Total Tickets', value: `**${totalTickets}**`, inline: true },
         { name: '👥 Participants',  value: `**${entries.length}**`, inline: true },
-        { name: '⏰ Next Draw',     value: `<t:${drawTs}:R>`,        inline: true },
+        status.open
+          ? { name: '⏰ Next Draw', value: `<t:${drawTs}:R>`, inline: true }
+          : { name: '⏸️ Next Draw', value: status.reason === 'paused' ? '**Paused**' : '**Not set up**', inline: true },
       ];
       if (lastWin) {
         fields.push({
@@ -113,9 +158,12 @@ module.exports = {
       }
 
       return interaction.reply({ embeds: [new EmbedBuilder()
-        .setColor(0xF1C40F)
+        .setColor(status.open ? 0xF1C40F : 0xE67E22)
         .setTitle('🎟️ Daily Lottery Pool')
-        .setDescription(entries.length ? lines.join('\n') : "No tickets bought yet today — be the first with `/lottery buy`!")
+        .setDescription([
+          status.open ? null : CLOSED_MESSAGE[status.reason].body,
+          entries.length ? lines.join('\n') : (status.open ? "No tickets bought yet today — be the first with `/lottery buy`!" : null),
+        ].filter(Boolean).join('\n\n') || 'Nothing in the pool.')
         .addFields(fields)
         .setFooter({ text: `Prize: ${fmt(REWARD)} coins • Ticket price: ${fmt(TICKET_PRICE)} coins` })
         .setTimestamp()] });
