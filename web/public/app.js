@@ -2606,13 +2606,25 @@ function renderLottery() {
     row('Prize', `${num(l.reward)} coins`),
   ];
 
-  if (l.nextDrawAt) {
+  if (l.open && l.nextDrawAt) {
     // The draw is daily, so the bar runs from the previous one. Without that
     // it filled from whenever the page happened to be opened.
     const c = countdownEl(l.nextDrawAt, l.lastDrawAt || l.nextDrawAt - 86400000);
     const line = el('div', 'row');
     line.append(el('span', 'k', 'Next draw'), c.node);
     nodes.push(line, c.bar);
+  } else if (!l.open) {
+    // No countdown when there is nothing to count down to, and a plain
+    // statement of what that means for the coins already in the pot. A
+    // paused lottery holding tickets is real money frozen, and the person
+    // who paused it is the only one who can unfreeze it.
+    const why = l.closedReason === 'paused'
+      ? 'Paused — no draw will run, and tickets are not on sale.'
+      : 'No results channel set, so no draw can run. Tickets are not on sale.';
+    const note = el('p', 'hint bad', l.totalTickets
+      ? `${why} ${num(l.totalTickets)} ticket${l.totalTickets === 1 ? '' : 's'} are held in the pot and stay there until it runs again.`
+      : why);
+    nodes.push(note);
   }
 
   if (l.top.length) {
