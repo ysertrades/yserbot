@@ -305,7 +305,29 @@ async function route(req, res, client) {
   }
 
   if (p === '/auth/logout') {
-    return redirect(res, '/', { 'set-cookie': auth.clearCookie(auth.SESSION_COOKIE) });
+    // Clearing the cookie was never enough. The same session also exists as a
+    // bearer token in the browser's storage — and, inside a host app, in the
+    // URL that host reloads every time it opens — and a bearer token does not
+    // care what happened to a cookie. So the account's session generation is
+    // bumped here, which stops every token it ever issued from verifying,
+    // whatever the client managed to clear on its way out.
+    //
+    // sessionFor reads the bearer header first and the cookie second, which
+    // matters: a plain link navigation carries only the cookie, and the tab
+    // that most needs signing out is the one whose cookie was never allowed
+    // in the first place. So the page sends this as a fetch carrying its
+    // token, and the anchor stays as the fallback for a cookie session with
+    // no JavaScript.
+    //
+    // Not CSRF-guarded on purpose. The worst a forced request can do here is
+    // sign somebody out, and requiring a token would break the no-JS anchor
+    // that is the whole point of the fallback.
+    const session = auth.sessionFor(req);
+    if (session?.uid) auth.revokeSessions(session.uid);
+
+    const clear = { 'set-cookie': auth.clearCookie(auth.SESSION_COOKIE) };
+    if (req.method === 'POST') return json(res, 200, { ok: true }, clear);
+    return redirect(res, '/', clear);
   }
 
   /* -- api (everything below requires a session) -------------------------- */

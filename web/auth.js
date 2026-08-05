@@ -253,6 +253,10 @@ async function completeLogin(code, client) {
       name: user.global_name || user.username,
       avatar: user.avatar,
       guilds: manageable,
+      // Which generation of this account's sessions this token belongs to.
+      // Signing out bumps the counter, and every token stamped with an older
+      // one stops verifying — see revokeSessions.
+      sv: sessionVersion(user.id),
       exp: Date.now() + SESSION_TTL_MS,
     }, c.secret),
     user,
@@ -353,15 +357,63 @@ function revokeEmbedLinks(uid) {
   writeJson('panel_embed_links.json', versions);
 }
 
-/** True for an ordinary session, and for an embed link that has not been revoked since. */
+const SESSION_VERSION_FILE = 'panel_session_versions.json';
+
+function sessionVersion(uid) {
+  return readJson(SESSION_VERSION_FILE, {})[uid] || 1;
+}
+
+/**
+ * Ends every signed-in session this account has, everywhere.
+ *
+ * Signing out used to clear the cookie and nothing else, which was not
+ * signing out. A session is *also* a bearer token — held in the browser's
+ * storage, and carried in the URL of a Whop embed link — and a bearer token
+ * is self-contained: it stays valid until it expires no matter what the
+ * cookie does. So the button cleared the cookie, the page reloaded, the
+ * stored token signed you straight back in, and nothing looked like it had
+ * happened. It failed hardest exactly where it mattered most: in an embedded
+ * frame, where Safari can block the storage write that was doing the real
+ * work, and where the host reloads a URL that still has the token in it.
+ *
+ * A counter fixes it properly. Every token carries the version that was
+ * current when it was minted; bumping the version makes every one of them
+ * stop verifying at once, on the server, whatever the client did or failed
+ * to do.
+ */
+function revokeSessions(uid) {
+  const versions = readJson(SESSION_VERSION_FILE, {});
+  versions[uid] = (versions[uid] || 1) + 1;
+  writeJson(SESSION_VERSION_FILE, versions);
+}
+
+/**
+ * Whether a token is still one this account honours.
+ *
+ * The two credentials are versioned separately on purpose. An embed link is a
+ * long-lived thing somebody deliberately minted for a host app to replay, and
+ * it has its own Replace button; signing out of the panel on a laptop should
+ * not silently break the Whop embed. So logout bumps sessions only, and
+ * Replace bumps embed links only.
+ *
+ * A token minted before versions existed carries no `sv`. Those stay valid
+ * while the account has never signed out — nobody is forced to log in again
+ * by this shipping — and stop the moment it does, which is the whole point.
+ */
 function embedLinkCurrent(session) {
-  return session.ev == null || session.ev === embedVersion(session.uid);
+  if (session.ev != null) return session.ev === embedVersion(session.uid);
+  const want = sessionVersion(session.uid);
+  return session.sv == null ? want === 1 : session.sv === want;
 }
 
 function refreshed(session) {
   const remaining = session.exp - Date.now();
   if (remaining > SESSION_TTL_MS - REFRESH_AFTER_MS) return null;
   const { exp, ...rest } = session;
+  // `rest` carries the token's own sv forward untouched. Re-stamping it with
+  // the current version here would let a revoked session renew itself back
+  // into life on its next refresh, which is the one way this could have been
+  // written that puts the bug straight back.
   return sign({ ...rest, exp: Date.now() + SESSION_TTL_MS }, config().secret);
 }
 
@@ -441,5 +493,6 @@ module.exports = {
   authorizeUrl, completeLogin,
   sessionFor, sessionForToken, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,
+  revokeSessions, sessionVersion,
   SESSION_COOKIE, STATE_COOKIE, SESSION_TTL_MS, STATE_TTL_MS,
 };
