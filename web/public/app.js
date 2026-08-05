@@ -4274,6 +4274,28 @@ async function selectGuild(id) {
   startLive();
 }
 
+/**
+ * Whether /api/me has ever answered. It is the line between "we do not know
+ * who you are" and "we know exactly who you are and something else broke",
+ * and those two need opposite responses: one is a sign-in page, the other is
+ * an error message on a panel you stay signed in to.
+ */
+let signedIn = false;
+
+/** Says what actually went wrong, instead of implying you are not signed in. */
+function reportLoadFailure(err) {
+  console.error(err);
+  // A 401 this late is the real thing — the session died while the page was
+  // using it — so this is the one failure that does belong on the sign-in page.
+  if (err?.status === 401) {
+    state.token = null;
+    remember(null);
+    signedIn = false;
+    return showLogin();
+  }
+  toast('Could not load that server. Reload to try again.', 'bad');
+}
+
 async function main() {
   watchScroll();
   dismissKeyboardOnOutsideTap();
@@ -4295,11 +4317,31 @@ async function main() {
     me = await get('/api/me');
   } catch (err) {
     if (err.status === 503 && err.body?.missing) return showSetup(err.body.missing);
+
     // A stored token that no longer works is worse than none — it would keep
-    // failing silently on every load.
-    if (err.status === 401 && state.token) { state.token = null; remember(null); }
-    return showLogin();
+    // failing silently on every load. Throwing it away and asking once more is
+    // the other half: signing out and straight back in leaves exactly that
+    // pair behind, a fresh cookie from the callback and a dead token still in
+    // storage, and one refused credential should never be allowed to decide
+    // that a page with a perfectly good cookie is not signed in. Costs one
+    // extra request, and only on a load that had already failed.
+    if (err.status === 401 && state.token) {
+      state.token = null;
+      remember(null);
+      try {
+        me = await get('/api/me');
+      } catch (retry) {
+        if (retry.status === 503 && retry.body?.missing) return showSetup(retry.body.missing);
+        return showLogin();
+      }
+    } else {
+      return showLogin();
+    }
   }
+
+  // Past this point there is a session. Anything that fails from here on is a
+  // problem with the data, not with who you are — see the handler on main().
+  signedIn = true;
 
   state.csrf = me.csrf;
   if (me.token) { state.token = me.token; remember(me.token); }
@@ -4336,7 +4378,11 @@ async function main() {
   paintBar();
 
   const first = me.guilds.some(g => g.id === wanted) ? wanted : me.guilds[0]?.id;
-  if (first) await selectGuild(first);
+  // A server whose overview will not load is a broken server, not a broken
+  // session. Letting this throw sent the whole of main() into its catch and
+  // showed the sign-in page to somebody who had just signed in perfectly
+  // well — one bad request and the panel appeared to reject the login.
+  if (first) await selectGuild(first).catch(reportLoadFailure);
 
   // Independent of the guild view, so one slow call never blanks the others.
   get('/api/leaderboard').then(renderBoard).catch(() => {});
@@ -4344,4 +4390,12 @@ async function main() {
   initStudio().catch(() => {});
 }
 
-main().catch(err => { console.error(err); showLogin(); });
+// Never sign somebody out over a bug. Before /api/me answers, a failure really
+// does mean there is no session and the sign-in page is the right screen.
+// After it answers, the session is good and blanking the panel back to a
+// sign-in button just tells the person a lie about why nothing loaded.
+main().catch(err => {
+  console.error(err);
+  if (signedIn) toast('Something went wrong loading the panel. Reload to try again.', 'bad');
+  else showLogin();
+});
