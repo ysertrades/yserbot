@@ -266,6 +266,44 @@ function _drawTextCentered(png, text, cx, y, scale, color) {
   _drawText(png, text, Math.round(cx - _textWidth(text, scale) / 2), y, scale, color);
 }
 
+/**
+ * The same line, one pixel heavier.
+ *
+ * A pixel font has no weight, so bold is the glyphs drawn twice a pixel
+ * apart — strokes go from two pixels to three at scale 2. Deliberately not a
+ * larger scale: the line has to stay exactly where it is and exactly as wide,
+ * or it stops lining up with the two around it.
+ */
+function _drawTextCenteredBold(png, text, cx, y, scale, color) {
+  const x = Math.round(cx - _textWidth(text, scale) / 2);
+  _drawText(png, text, x, y, scale, color);
+  _drawText(png, text, x + 1, y, scale, color);
+}
+
+const _lum = c => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+
+/**
+ * Lifts a colour toward white, but only as far as it needs to be readable on
+ * this card's near-black panel.
+ *
+ * Most contracts carry the house grey (0x474747), which is dark enough that a
+ * line drawn in it is barely there once Discord scales the card down in the
+ * feed. A colour that is already bright — the gold of a recommendation, the
+ * red of a warning — is returned untouched, so nothing that reads as a status
+ * gets washed out.
+ */
+function _readable(color, min = 0.62) {
+  const l = _lum(color);
+  if (l >= min) return color;
+  const t = Math.min(1, (min - l) / (1 - l));
+  return [
+    Math.round(color[0] + (255 - color[0]) * t),
+    Math.round(color[1] + (255 - color[1]) * t),
+    Math.round(color[2] + (255 - color[2]) * t),
+    255,
+  ];
+}
+
 function _fmtUsdPx(v) {
   return `$${Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -328,7 +366,7 @@ function _drawStandardCard(png, x, y, w, h, standard, accent, riskUsd) {
   const lineY1 = y + 40 + bigScale * GLYPH_H + 18;
   if (viable) {
     _drawTextCentered(png, `${_fmtUsdPx(standard.riskPerContract)} EACH`, cx, lineY1, 2, WHITE);
-    _drawTextCentered(png, `${_fmtUsdPx(standard.totalRisk)} ACTUAL RISK`, cx, lineY1 + 22, 2, panelAccent);
+    _drawTextCenteredBold(png, `${_fmtUsdPx(standard.totalRisk)} ACTUAL RISK`, cx, lineY1 + 22, 2, _readable(panelAccent));
     _drawTextCentered(png, `${_fmtUsdPx(riskUsd - standard.totalRisk)} LEFT`, cx, lineY1 + 44, 2, GOOD);
   } else {
     _drawTextCentered(png, 'STOP TOO WIDE', cx, lineY1, 2, WARN);
@@ -371,7 +409,7 @@ function _drawMicroCard(png, x, y, w, h, micro, needsMicro, accent, riskUsd) {
   const lineY1 = y + 40 + bigScale * GLYPH_H + 18;
   if (viable) {
     _drawTextCentered(png, `${_fmtUsdPx(micro.riskPerContract)} EACH`, cx, lineY1, 2, WHITE);
-    _drawTextCentered(png, `${_fmtUsdPx(micro.totalRisk)} ACTUAL RISK`, cx, lineY1 + 22, 2, panelAccent);
+    _drawTextCenteredBold(png, `${_fmtUsdPx(micro.totalRisk)} ACTUAL RISK`, cx, lineY1 + 22, 2, _readable(panelAccent));
     _drawTextCentered(png, `${_fmtUsdPx(riskUsd - micro.totalRisk)} LEFT`, cx, lineY1 + 44, 2, recommended ? REC : GOOD);
   } else {
     _drawTextCentered(png, 'STOP TOO WIDE', cx, lineY1, 2, WARN);
