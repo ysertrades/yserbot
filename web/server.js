@@ -319,15 +319,24 @@ async function route(req, res, client) {
     // token, and the anchor stays as the fallback for a cookie session with
     // no JavaScript.
     //
-    // Not CSRF-guarded on purpose. The worst a forced request can do here is
-    // sign somebody out, and requiring a token would break the no-JS anchor
-    // that is the whole point of the fallback.
+    // Only POST revokes. A GET must never be destructive: browsers, link
+    // prefetchers and scanners follow same-origin links on their own, and any
+    // other site can point an <img> at this address — all of which would have
+    // silently killed a live session, and a session killed a moment after
+    // signing in looks exactly like signing in not working at all.
+    //
+    // Dropping revocation from the GET costs nothing, because the GET is the
+    // fallback for a browser running no JavaScript, and without JavaScript
+    // there is no bearer token to revoke — the token only ever exists because
+    // a script put it in storage. For that visitor the cookie *is* the whole
+    // session, so clearing it is a complete sign-out. Everyone else arrives
+    // here by POST from the button, which carries the token and revokes.
+    const clear = { 'set-cookie': auth.clearCookie(auth.SESSION_COOKIE) };
+    if (req.method !== 'POST') return redirect(res, '/', clear);
+
     const session = auth.sessionFor(req);
     if (session?.uid) auth.revokeSessions(session.uid);
-
-    const clear = { 'set-cookie': auth.clearCookie(auth.SESSION_COOKIE) };
-    if (req.method === 'POST') return json(res, 200, { ok: true }, clear);
-    return redirect(res, '/', clear);
+    return json(res, 200, { ok: true }, clear);
   }
 
   /* -- api (everything below requires a session) -------------------------- */
