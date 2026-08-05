@@ -388,7 +388,7 @@ function _drawMicroCard(png, x, y, w, h, micro, needsMicro, accent, riskUsd) {
  * @returns {Buffer} PNG image data
  */
 function generateRiskImage(result) {
-  const { standard, micro, needsMicro, riskUsd, stopPoints, symbol, color } = result;
+  const { standard, micro, needsMicro, riskUsd, stopTicks, symbol, color } = result;
 
   const W = 900, H = 420;
   const png = new PNG({ width: W, height: H, colorType: 6 });
@@ -400,7 +400,7 @@ function generateRiskImage(result) {
 
   // ── Header strip: the inputs (symbol / risk / stop), pixel-rendered ──────
   const headerY = 40;
-  const headerText = `${symbol}   RISK ${_fmtUsdPx(riskUsd)}   STOP ${stopPoints} PTS`;
+  const headerText = `${symbol}   RISK ${_fmtUsdPx(riskUsd)}   STOP ${stopTicks} TICKS`;
   _drawTextCentered(png, headerText, W / 2, headerY, 3, accent);
   for (let x = 70; x < W - 70; x++) _setPxBlend(png, x, headerY + 3 * GLYPH_H + 14, accent, 0.4);
 

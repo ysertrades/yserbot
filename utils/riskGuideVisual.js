@@ -50,7 +50,7 @@ function drawCheckIcon(png, cx, cy, size, color) {
 const STEPS = [
   { icon: drawSlashIcon, title: 'RUN /RISK', desc: 'Pick a futures symbol — ES, NQ, GC & more' },
   { icon: drawDollarIcon, title: 'SET YOUR RISK', desc: "How much you're willing to lose, in USD" },
-  { icon: drawRulerIcon, title: 'SET YOUR STOP', desc: 'Your stop distance, in points' },
+  { icon: drawRulerIcon, title: 'SET YOUR STOP', desc: 'Your stop distance, in ticks' },
   { icon: drawStackIcon, title: 'GET YOUR SIZE', desc: 'Standard & micro contract counts, instantly' },
   { icon: drawCheckIcon, title: 'TRADE WITH A PLAN', desc: 'Never guess your position size again' },
 ];
