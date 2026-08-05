@@ -322,6 +322,37 @@
         </div>
         <p class="note soft" id="embed-link-note" hidden></p>
       </div>
+
+      <!-- Last on the page on purpose: these are the two pages you link to
+           once and then forget about. The addresses are shown as well as
+           linked, because the thing you usually need is to paste one into
+           Discord's app directory rather than to read it. -->
+      <div class="panel" id="legal-card">
+        <h2>Terms &amp; privacy</h2>
+        <p class="muted">Two public pages, readable without signing in. Open them to check the wording, or copy an address to paste into your Discord application listing.</p>
+        <div class="legal-links">
+          <a class="legal-link" id="legal-terms" href="/terms" target="_blank" rel="noopener">
+            <span class="legal-icon" aria-hidden="true">§</span>
+            <span class="legal-text">
+              <span class="legal-name">Terms of Service</span>
+              <span class="legal-url" id="legal-terms-url">/terms</span>
+            </span>
+            <span class="legal-arrow" aria-hidden="true">↗</span>
+          </a>
+          <a class="legal-link" id="legal-privacy" href="/privacy" target="_blank" rel="noopener">
+            <span class="legal-icon" aria-hidden="true">◈</span>
+            <span class="legal-text">
+              <span class="legal-name">Privacy Policy</span>
+              <span class="legal-url" id="legal-privacy-url">/privacy</span>
+            </span>
+            <span class="legal-arrow" aria-hidden="true">↗</span>
+          </a>
+        </div>
+        <div class="actions">
+          <button class="btn" id="legal-copy-terms" type="button">Copy terms link</button>
+          <button class="btn" id="legal-copy-privacy" type="button">Copy privacy link</button>
+        </div>
+      </div>
     </div>
 
     <!-- ── Feeds ───────────────────────────────────────────────────────── -->

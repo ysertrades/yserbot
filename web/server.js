@@ -175,6 +175,10 @@ const TYPES = {
   '.png':  'image/png',
   // Served with its registered type or the install prompt never appears.
   '.webmanifest': 'application/manifest+json',
+  // Instrument Serif, self-hosted for the legal pages. Served from our own
+  // origin so the panel's content policy stays at 'self' — pulling it from a
+  // font CDN would have meant widening style-src and font-src for everything.
+  '.woff2': 'font/woff2',
 };
 
 function serveStatic(res, urlPath) {
@@ -201,6 +205,15 @@ async function route(req, res, client) {
 
   /* -- health: the only thing reachable without logging in ---------------- */
   if (p === '/healthz') return json(res, 200, { ok: true });
+
+  // The legal pages, on purpose without a session and without a redirect.
+  // A terms or privacy link has to open for somebody who has never logged in
+  // — a reviewer, a member deciding whether to use the bot, Discord's own app
+  // directory — so putting them behind the gate would defeat the point of
+  // having them. Clean paths rather than /terms.html because these are the
+  // addresses that get pasted into places that never change.
+  if (p === '/terms' || p === '/terms/') return serveStatic(res, 'terms.html');
+  if (p === '/privacy' || p === '/privacy/') return serveStatic(res, 'privacy.html');
 
   // Home-screen icons. Public on purpose: iOS and Android fetch these from
   // outside any session — often before one exists — so putting them behind the

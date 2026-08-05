@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Privacy Policy — YSER Flow</title>
+<meta name="description" content="What the YSER Flow Discord bot stores, why it stores it, and how to have it removed.">
+<meta name="theme-color" content="#08090C">
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+<div class="wrap">
+<main class="card">
+
+  <div class="brand"><span class="dot"></span> <b>YSER&nbsp;Flow</b> · Legal</div>
+
+  <h1>What this bot <span class="serif">remembers</span></h1>
+  <p class="lede">Written from the code, not from a template. Everything below is something the bot actually stores, and the list is meant to be complete.</p>
+
+  <div class="meta">
+    <span><b>Effective</b> 5 August 2026</span>
+    <span><b>Applies to</b> the bot and its control panel</span>
+    <span><a href="/terms">Terms of Service →</a></span>
+  </div>
+
+  <section>
+    <div class="eyebrow"><span class="n">01</span> The short version</div>
+    <h2>Identifiers and counters, <span class="serif">not</span> conversations</h2>
+    <p>YSER Flow stores Discord IDs and the numbers attached to them — your balance, your level, the cards you hold, the warnings against you. It does not keep a copy of your conversations, it never asks for an email or a password, and it does not sell or share anything with advertisers.</p>
+    <div class="note blue">
+      <p class="tight">The bot reads messages in order to award XP, drop cards, run auto-replies and apply the word filter. Reading is not the same as keeping: message text is examined as it arrives and discarded. The exceptions are named in <strong>section 03</strong>, and there are only three.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">02</span> What is stored</div>
+    <h2>Everything it <span class="serif">keeps</span>, in one list</h2>
+    <dl class="rows">
+      <div class="row"><dt>Discord user ID</dt><dd>The number that identifies your account. It is the key every record below hangs off.</dd></div>
+      <div class="row"><dt>Server &amp; channel IDs</dt><dd>Which server a setting belongs to, and which channels a feature posts in.</dd></div>
+      <div class="row"><dt>Economy</dt><dd>Wallet and bank balances, interest timing, shop purchases, active boosts, and command cooldowns.</dd></div>
+      <div class="row"><dt>Levelling</dt><dd>XP, level, a count of messages that earned XP, and the timestamp of the last one — the count only, never the messages.</dd></div>
+      <div class="row"><dt>Cards &amp; games</dt><dd>The cards you have collected, lottery tickets held today, and casino limits such as the daily wheel cap.</dd></div>
+      <div class="row"><dt>Moderation records</dt><dd>Warnings, kicks, bans, timeouts and reports: who, by whom, when, and the reason a moderator typed.</dd></div>
+      <div class="row"><dt>Giveaways</dt><dd>Who entered which giveaway, and who won.</dd></div>
+      <div class="row"><dt>Server configuration</dt><dd>Everything an administrator sets — embed templates, scheduled posts, auto-replies, feeds, message wording and colours.</dd></div>
+      <div class="row"><dt>Panel session</dt><dd>Your user ID, display name, avatar reference, and the list of server IDs you can manage. Held in a signed token in your browser.</dd></div>
+    </dl>
+    <p>Data is held either in a database or in files on the server the bot runs on, depending on how the operator has deployed it.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">03</span> Message content</div>
+    <h2>The three times text is <span class="serif">written down</span></h2>
+    <p>Message content is otherwise processed and dropped. It is only retained when a server has deliberately switched on one of these:</p>
+    <h3>Moderation logging</h3>
+    <p>If a server enables message logging, a deleted or edited message's text is copied into that server's log channel so its moderators can see what happened. It lives in that channel, under that server's control.</p>
+    <h3>Ticket transcripts</h3>
+    <p>If a server enables transcripts, the contents of a support ticket are saved when the ticket closes.</p>
+    <h3>Reports</h3>
+    <p>When a member files a report, the reason they write and any link they attach are stored with it.</p>
+    <p>In all three cases the server's administrators chose to turn the feature on, and they can turn it off.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">04</span> Why</div>
+    <h2>Each thing has <span class="serif">one</span> job</h2>
+    <ul>
+      <li><strong>To make the features work at all.</strong> A balance that is not stored is not a balance; a level that resets every restart is not a level.</li>
+      <li><strong>To enforce fairness.</strong> Cooldowns, daily caps and ticket limits need to remember what you already did.</li>
+      <li><strong>To give moderators a record.</strong> A warning nobody can look up later is not moderation.</li>
+      <li><strong>To keep you signed in</strong> to the panel between visits.</li>
+    </ul>
+    <p>There is no profiling, no advertising, and no automated decision with a legal effect on anyone.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">05</span> Signing in</div>
+    <h2>The panel asks Discord, <span class="serif">not</span> you</h2>
+    <p>The control panel signs in through Discord's own OAuth. It requests two scopes — <code>identify</code> and <code>guilds</code> — which tell it who you are and which servers you are in.</p>
+    <p>The access token Discord returns is <strong>used once and discarded</strong>. It is never written to storage. The panel cannot post as you, read your messages, or act on your account in any way; it only ever acts as the bot.</p>
+    <p>What remains is a signed session token in your browser holding your ID, display name, avatar reference and manageable server IDs. Signing out discards it.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">06</span> Who can see it</div>
+    <h2>Your server's staff, and <span class="serif">nobody</span> else</h2>
+    <p>Anyone with <strong>Manage Server</strong> on a server can see that server's data through the panel — balances, levels, warnings, tickets and configuration. That is the same group who could already see it through Discord's own tools.</p>
+    <p>Data is not sold, rented, or shared with third parties for their own purposes. It leaves the bot only in these ways:</p>
+    <ul>
+      <li><strong>Discord</strong>, which is where every message the bot sends necessarily goes.</li>
+      <li><strong>The hosting provider</strong> the operator runs the bot on, and its database provider if one is used.</li>
+      <li><strong>Public sources the bot reads from</strong> — news feeds, an economic calendar, YouTube and similar. These are fetched <em>from</em>; nothing about you is sent to them.</li>
+      <li><strong>Where the law requires it.</strong></li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">07</span> How long</div>
+    <h2>Until it stops being <span class="serif">needed</span></h2>
+    <ul>
+      <li><strong>Economy, levels and cards</strong> stay while the bot is in the server, so your progress survives.</li>
+      <li><strong>Cooldowns and daily caps</strong> expire on their own.</li>
+      <li><strong>Lottery tickets</strong> clear at each daily draw.</li>
+      <li><strong>Moderation records</strong> stay until a moderator clears them.</li>
+      <li><strong>Panel sessions</strong> expire, and signing out ends them immediately.</li>
+      <li><strong>Removing the bot</strong> ends all processing for that server. Ask the operator if you also want the stored records deleted.</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">08</span> Your choices</div>
+    <h2>Seeing it, and <span class="serif">deleting</span> it</h2>
+    <p>Much of your own data is readable from Discord right now: <code>/bank</code> for balances, <code>/rank</code> for level, <code>/cards collection</code> for cards, <code>/warnings</code> for moderation history.</p>
+    <p>For a copy of everything held about you, or for deletion, contact the operator of the bot through the support server or the contact route published where you added it. Ask your own server's administrators first for anything they control directly — balances, warnings and configuration are theirs to change.</p>
+    <p>Deleting a record may reset progress tied to it. That is the trade, and it is yours to make.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">09</span> Children</div>
+    <h2>Discord's <span class="serif">minimum</span> age applies</h2>
+    <p>Discord requires users to be at least 13, or older where local law sets a higher age. This bot is not intended for anyone below that, and no data is knowingly collected from them. If you believe a younger user's data is held, contact the operator and it will be removed.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="n">10</span> Changes</div>
+    <h2>When this page <span class="serif">moves</span></h2>
+    <p>If what is stored or why it is stored changes, this page changes with it and the effective date at the top is updated. Continuing to use the bot after that means accepting the current version.</p>
+  </section>
+
+  <div class="foot">
+    <span>YSER Flow · Privacy Policy</span>
+    <a class="pill" href="/terms">Terms of Service <span class="arrow">→</span></a>
+  </div>
+
+</main>
+</div>
+</body>
+</html>
