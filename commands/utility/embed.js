@@ -51,15 +51,29 @@ function resolveChannelMentions(text, guild) {
 
 // ── Placeholder variables ───────────────────────────────────────────────────────
 // Resolved at send/preview time so templates stay generic and reusable.
-function resolvePlaceholders(text, ctx) {
+/**
+ * @param {object} opts
+ *   mentions — whether this slot renders a mention as a link.
+ *
+ * Discord only turns <#id> into something clickable in places that take
+ * markdown: an embed's description and its field *values*, and the message
+ * content. A title, an author line, a footer and a field *name* are drawn as
+ * plain characters, so the same markup shows up there as the literal string
+ * "<#1234567890>" — which is worse than what was typed, because at least
+ * "#tickets" reads as the name of a channel.
+ *
+ * So the slot decides. Somewhere it will link, the name becomes a mention;
+ * somewhere it will not, the name is left exactly as written.
+ */
+function resolvePlaceholders(text, ctx, { mentions = true } = {}) {
   if (!text || !ctx) return text;
   const resolved = text
-    .replace(/\{user\}/gi, ctx.user ? `<@${ctx.user.id}>` : '')
+    .replace(/\{user\}/gi, ctx.user ? (mentions ? `<@${ctx.user.id}>` : `@${ctx.user.username}`) : '')
     .replace(/\{username\}/gi, ctx.user?.username || '')
     .replace(/\{server\}/gi, ctx.guild?.name || '')
     .replace(/\{membercount\}/gi, ctx.guild?.memberCount != null ? String(ctx.guild.memberCount) : '')
-    .replace(/\{channel\}/gi, ctx.channel ? `<#${ctx.channel.id}>` : '');
-  return resolveChannelMentions(resolved, ctx.guild);
+    .replace(/\{channel\}/gi, ctx.channel ? (mentions ? `<#${ctx.channel.id}>` : `#${ctx.channel.name}`) : '');
+  return mentions ? resolveChannelMentions(resolved, ctx.guild) : resolved;
 }
 
 // ── Data helpers ───────────────────────────────────────────────────────────────
@@ -139,14 +153,17 @@ function safeSet(what, apply) {
 }
 
 function buildEmbedFromData(data, { placeholderOk = false, ctx = null } = {}) {
+  // Linked where Discord renders links, plain where it does not — see
+  // resolvePlaceholders. The distinction is Discord's, not ours.
   const rp = (s) => (ctx ? resolvePlaceholders(s, ctx) : s);
+  const plain = (s) => (ctx ? resolvePlaceholders(s, ctx, { mentions: false }) : s);
   const e = new EmbedBuilder().setColor(parseColor(data.color) || 0x5865F2);
-  if (data.title)             safeSet('the title', () => e.setTitle(rp(data.title).slice(0, 256)));
+  if (data.title)             safeSet('the title', () => e.setTitle(plain(data.title).slice(0, 256)));
   if (data.titleUrl && isValidUrl(data.titleUrl)) safeSet('the title link', () => e.setURL(data.titleUrl));
   if (data.description)       safeSet('the description', () => e.setDescription(rp(data.description).slice(0, 4096)));
-  if (data.footer)            safeSet('the footer', () => e.setFooter({ text: rp(data.footer).slice(0, 2048), iconURL: isValidUrl(data.footerIcon) ? data.footerIcon : undefined }));
+  if (data.footer)            safeSet('the footer', () => e.setFooter({ text: plain(data.footer).slice(0, 2048), iconURL: isValidUrl(data.footerIcon) ? data.footerIcon : undefined }));
   if (data.authorName)        safeSet('the author line', () => e.setAuthor({
-    name: rp(data.authorName).slice(0, 256),
+    name: plain(data.authorName).slice(0, 256),
     iconURL: isValidUrl(data.authorIcon) ? data.authorIcon : undefined,
     url: isValidUrl(data.authorUrl) ? data.authorUrl : undefined,
   }));
@@ -165,7 +182,8 @@ function buildEmbedFromData(data, { placeholderOk = false, ctx = null } = {}) {
     // One bad row must not cost the other twenty-four, so they go in one at a
     // time rather than as a single addFields call.
     for (const f of data.fields) {
-      safeSet('a field', () => e.addFields({ name: rp(f.name).slice(0, 256), value: rp(f.value).slice(0, 1024), inline: !!f.inline }));
+      // A field's name is plain text to Discord; its value takes markdown.
+      safeSet('a field', () => e.addFields({ name: plain(f.name).slice(0, 256), value: rp(f.value).slice(0, 1024), inline: !!f.inline }));
     }
   }
   if (data.timestamp)         e.setTimestamp();
@@ -482,6 +500,18 @@ function buildEmbedPayload(guild, name, ctx = {}) {
 }
 
 module.exports.buildEmbedPayload = buildEmbedPayload;
+
+/**
+ * The same treatment, for text that is not part of an embed.
+ *
+ * A message's own content takes markdown and renders mentions, so the line
+ * above a post and the note under it should read like anything else the bot
+ * says — "#tickets" typed into either of them becomes a channel you can
+ * click. They used to be sent exactly as typed, which is why they came out
+ * as flat text while the description beside them linked correctly.
+ */
+module.exports.resolveMessageText = (text, ctx) => resolvePlaceholders(text, ctx);
+module.exports.resolvePlaceholders = resolvePlaceholders;
 
 // ── Select menu handler (delete + field-removal flows) ─────────────────────────
 
