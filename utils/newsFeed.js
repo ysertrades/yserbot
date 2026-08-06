@@ -11,10 +11,27 @@ const { isValidUrl } = require('./embedBuilder');
 const messageStyle = require('./messageStyle');
 const { TOPICS, expandTopicKeywords } = require('./newsTopics');
 
-const FEED_URL          = 'https://www.financialjuice.com/feed.ashx';
+// The address Financial Juice publishes as its RSS link. The same endpoint
+// as the bare feed.ashx this used to request, with the query string their
+// own published link carries.
+const FEED_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const POLL_INTERVAL_MS  = 20_000;
 const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
+
+/**
+ * How long a headline will wait for a picture before going out without one.
+ *
+ * The banner is decoration; the headline is the product. Every lookup behind
+ * it has its own generous timeout — 4s for a YouTube thumbnail, twice over,
+ * then 5s for a linked page's share image, then 4s more for the article's own
+ * picture — and they run one after another, so a single item pointing at a
+ * slow or dead host could sit here for seventeen seconds before it was sent.
+ * A market headline that arrives seventeen seconds late has stopped being
+ * news. This caps the whole chain: whatever has been found by then is used,
+ * and what has not is simply left out.
+ */
+const PICTURE_BUDGET_MS = 2500;
 
 // Financial Juice's own feed double-encodes entities in places (raw XML has
 // literally "S&amp;amp;P 500" for "S&P 500" — the HTML-escaped "&amp;" got
@@ -385,6 +402,28 @@ async function resolveYouTubeThumb(videoId) {
   return chosen;
 }
 
+async function resolvePicture(item, source) {
+  return (item.video && await resolveYouTubeThumb(item.video.id))
+    || (item.source && await resolveLinkBanner(item.source.url))
+    || await resolveArticleImage(item, source);
+}
+
+/**
+ * The value if it arrives in time, null if it does not.
+ *
+ * The work is not cancelled — its own caches still fill, so the headline
+ * after this one, or the same story going to another guild, gets the picture
+ * for free. This only decides how long anyone waits for it.
+ */
+function withBudget(promise, ms) {
+  let timer;
+  const capped = new Promise(resolve => {
+    timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();   // never hold the process open for a banner
+  });
+  return Promise.race([promise.catch(() => null), capped]).finally(() => clearTimeout(timer));
+}
+
 /**
  * One headline, as the guild has styled it.
  *
@@ -417,10 +456,9 @@ async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = n
 
   // Banner priority: the video's thumbnail, then the linked page's own share
   // image, then whatever picture the article itself carries — so a link that
-  // turns out to have no banner never loses the image slot.
-  const pictureUrl = (item.video && await resolveYouTubeThumb(item.video.id))
-    || (item.source && await resolveLinkBanner(item.source.url))
-    || await resolveArticleImage(item, source);
+  // turns out to have no banner never loses the image slot. Capped, because
+  // none of it is worth making the headline late; see PICTURE_BUDGET_MS.
+  const pictureUrl = await withBudget(resolvePicture(item, source), PICTURE_BUDGET_MS);
   const picture = isValidUrl(pictureUrl) ? pictureUrl : null;
 
   const embed = messageStyle.build(guildId, key, {
@@ -531,8 +569,16 @@ async function runTick(client) {
 
       if (toPost.length > 0) {
         const chronological = [...toPost].reverse().filter(item => matchesFilter(item, settings));
-        for (const item of chronological) {
-          const embed = await buildNewsEmbed(item, source, guildId);
+        // Built together, sent in order. Building is all network reads with no
+        // side effects, and doing it one headline at a time meant every
+        // picture lookup in the batch was paid end to end — the eighth
+        // headline in a burst waited for the seven in front of it to finish
+        // theirs before its own even started. Now the batch costs what its
+        // slowest single item costs.
+        const embeds = await Promise.all(
+          chronological.map(item => buildNewsEmbed(item, source, guildId).catch(() => null)),
+        );
+        for (const embed of embeds) {
           // Null means this kind of headline is switched off in Appearance.
           // The cursor still advances below, so re-enabling it starts from the
           // headlines after this one rather than replaying the backlog.
