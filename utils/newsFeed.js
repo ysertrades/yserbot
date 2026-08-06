@@ -174,6 +174,15 @@ const MAX_BODY_LEN = 1500; // well under Discord's 4096 embed-description limit
 function htmlToDiscordText(html) {
   if (!html) return '';
   let text = html
+    // Elements whose contents are code, not prose, go with their tags.
+    // Stripping tags alone leaves what was between them, and Financial Juice
+    // embeds TradingView charts by putting a <script> in the description — so
+    // those items posted a line of JavaScript into the channel as the story:
+    //   new TradingView.chart({width:"100%",height:"400",chart:"E9L5ybe0"…});
+    .replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    // An unclosed one would otherwise survive the pass above and leak the
+    // rest of the description as source.
+    .replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*$/gi, '')
     .replace(/<li[^>]*>/gi, '• ')
     .replace(/<\/li>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -183,6 +192,9 @@ function htmlToDiscordText(html) {
     .replace(/<[^>]+>/g, '');
 
   text = text
+    // Placeholders their own templating did not fill in — {{NewsID}} and the
+    // like. Nobody reading a headline wants to see the template.
+    .replace(/\{\{\s*\w+\s*\}\}/g, '')
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean)
