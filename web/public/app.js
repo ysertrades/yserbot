@@ -962,15 +962,19 @@ function paintAgenda() {
   }
 
   // The week runs across days, so it gets a weekday column. A single day does
-  // not — repeating "Tue" down forty rows is noise. The stylesheet collapses
-  // the column rather than the markup dropping it, so every other column
-  // stays where it was when you switch range.
-  host.dataset.range = desk.scope === 'week' ? 'week' : 'day';
+  // not — repeating "Tue" down forty rows is noise.
+  //
+  // The cell is left out of the markup rather than hidden in CSS, and the
+  // stylesheet has a matching template with no track for it. Hiding a grid
+  // item does not collapse its column, it removes the item, and everything
+  // after it slides one track left into the wrong width.
+  const weekly = desk.scope === 'week';
+  host.dataset.range = weekly ? 'week' : 'day';
 
   const rows = scope.events.map(e => {
     const r = el('div', 'agenda-row');
     r.append(el('span', `impact-dot ${IMPACT_RANK[e.impact] || 'low'}`));
-    r.append(el('span', 'agenda-day', deskDay(e.timestamp)));
+    if (weekly) r.append(el('span', 'agenda-day', deskDay(e.timestamp)));
     r.append(el('span', 'agenda-time', deskTime(e.timestamp)));
     r.append(el('span', 'agenda-cur', e.currency || '—'));
     r.append(el('span', 'agenda-title', e.title));

@@ -410,18 +410,25 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .agenda > p { margin: 0.35rem 0; }
 /* Fixed columns, and the weekday is a column of its own rather than a prefix
    glued onto the time — sharing one cell is what made "Thu 08:30" run into
-   the currency beside it. It is emitted on every row and simply has no
-   column to occupy on a single day, so the times stay in the same place
-   whichever range you are reading. */
+   the currency beside it.
+
+   A single day has no weekday cell in the markup at all, and this template
+   has no track for one. Collapsing it in CSS instead does not work and is
+   worth spelling out: display:none takes an element out of the grid
+   entirely, so it stops being an item, and every cell after it slides one
+   track to the left. The time landed in a zero-width track and spilled over
+   the currency, and the event name landed in the 2.4rem currency track and
+   was cut to three letters. Nothing overflowed the row or the page, so it
+   read as clean to every measurement that was not looking inside the row. */
 .agenda-row {
   display: grid;
-  grid-template-columns: 0.5rem 0 3rem 2.4rem minmax(0, 1fr) auto;
+  grid-template-columns: 0.5rem 3.1rem 2.5rem minmax(0, 1fr) auto;
   align-items: center; gap: 0.55rem;
   padding: 0.42rem 0.1rem;
   border-bottom: 1px solid var(--rule);
   font-size: 0.82rem;
 }
-.agenda[data-range="week"] .agenda-row { grid-template-columns: 0.5rem 2.1rem 3rem 2.4rem minmax(0, 1fr) auto; }
+.agenda[data-range="week"] .agenda-row { grid-template-columns: 0.5rem 2.2rem 3.1rem 2.5rem minmax(0, 1fr) auto; }
 .agenda-row:last-child { border-bottom: none; }
 
 /* Impact as a dot rather than a word: it is the thing you sort by at a
@@ -434,10 +441,17 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .impact-dot.low { background: transparent; border: 1px solid var(--off); }
 .impact-dot.holiday { background: var(--accent); }
 
-.agenda-day { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; }
-.agenda[data-range="day"] .agenda-day { display: none; }
-.agenda-time { font-family: var(--mono); font-size: 0.76rem; color: var(--soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.agenda-cur { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; white-space: nowrap; }
+/* Every fixed-width cell clips rather than spills. The tracks are sized for
+   this panel's own type, and a phone rendering the monospace stack a step
+   wider — or a language whose weekday abbreviation runs longer — must lose a
+   character to an ellipsis, never draw over the cell beside it. */
+.agenda-day, .agenda-time, .agenda-cur {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--mono); letter-spacing: 0.04em;
+}
+.agenda-day { font-size: 0.7rem; color: var(--muted); }
+.agenda-time { font-size: 0.76rem; color: var(--soft); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.agenda-cur { font-size: 0.72rem; color: var(--muted); }
 .agenda-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agenda-fig { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
 
@@ -452,9 +466,32 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 /* On a phone the figures are the first thing to go — the time, the currency
    and what the release is are what the column is for. */
 @media (max-width: 30rem) {
-  .agenda-row { grid-template-columns: 0.5rem 0 2.9rem 2.3rem minmax(0, 1fr); gap: 0.45rem; }
-  .agenda[data-range="week"] .agenda-row { grid-template-columns: 0.5rem 2rem 2.9rem 2.3rem minmax(0, 1fr); }
+  .agenda-row { grid-template-columns: 0.5rem 3rem 2.4rem minmax(0, 1fr); gap: 0.45rem; }
+  .agenda[data-range="week"] .agenda-row { grid-template-columns: 0.5rem 2.1rem 3rem 2.4rem minmax(0, 1fr); }
+  /* Safe to hide, unlike the weekday: this is the last cell, so removing it
+     as a grid item shifts nothing after it. */
   .agenda-fig { display: none; }
+
+  /* The name is the thing being read, so on a narrow phone it wraps onto a
+     second line rather than being cut to "Core CPI …". A row an extra line
+     tall beats a row you cannot identify — and the fixed columns beside it
+     are why wrapping here costs nothing anywhere else.
+
+     break-word, not anywhere: anywhere lets the browser break wherever it
+     likes to keep the column narrow, which turned "Unemployment Claims" into
+     "Unemploym / ent Claims". This breaks a word only when the word alone
+     will not fit. And hyphens makes that last resort legible — at 125% text
+     "Unemployment" genuinely does not fit the column and a break has to
+     happen somewhere, but "Unemploy-ment" is a word broken properly where
+     "Unemploym ent" is a typo. The row keeps its centred alignment, so the
+     time and the currency sit level with a title of either height. */
+  .agenda-title {
+    white-space: normal; overflow: visible;
+    overflow-wrap: break-word; hyphens: auto;
+  }
+
+  /* "TOMORROW" has to fit before it earns an ellipsis. */
+  .scope-name { font-size: 0.66rem; letter-spacing: 0.03em; }
 }
 
 #release-desk .actions { margin-top: 0.85rem; padding-top: 0.85rem; }
