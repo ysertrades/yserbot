@@ -15,6 +15,16 @@ const LOGIN_ERRORS = {
 
 const WRITE_ERRORS = {
   bad_channel:     'Pick a text channel that still exists.',
+  bad_scope:       'Pick today, tomorrow or this week.',
+  missing_permissions: 'I need Send Messages and Embed Links in that channel.',
+  calendar_unavailable: 'The calendar source is not answering. Try again in a few minutes.',
+  nothing_to_post: 'Nothing is scheduled for that range.',
+  no_question:     'Give the poll a question.',
+  question_too_long: 'That question is too long for a Discord embed.',
+  need_two_options: 'A poll needs at least two options.',
+  too_many_options: 'Five options is the most Discord fits on one row.',
+  option_too_long: 'One of the options is too long.',
+  unknown_poll:    'That poll is no longer listed.',
   bad_mention:     'Pick a role that still exists, or @everyone / @here.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
@@ -604,6 +614,7 @@ function renderOverview() {
   renderPanelLog();
   renderLegalLinks();
   renderTickets();
+  renderPolls();
   renderCasino();
   renderLinkRequests();
   renderModeration();
@@ -816,6 +827,192 @@ function renderFeedForms() {
     toggle('Post the week ahead', wp.enabled, v => { wp.enabled = v; weeklyWrap.hidden = !v; }),
     weeklyWrap,
     actions(() => post('econcal', ec)),
+  );
+
+  renderReleaseDesk();
+}
+
+/* ── release desk ──────────────────────────────────────────────────────────
+ *
+ * The three scopes /econcal can post, with their contents on screen first.
+ *
+ * The agenda is fetched separately from the overview, on purpose: it is the
+ * one read in the panel that can reach the network, and the overview must
+ * never wait on the calendar mirror. So the card carries its own small
+ * lifecycle — asking, loaded, or unavailable — and the rest of the tab is
+ * finished long before it resolves.
+ */
+
+const SCOPE_LABEL = { today: 'Today', tomorrow: 'Tomorrow', week: 'This week' };
+const SCOPE_SEND = { today: "today's releases", tomorrow: "tomorrow's releases", week: 'the week ahead' };
+const IMPACT_RANK = { High: 'high', Medium: 'medium', Low: 'low', Holiday: 'holiday' };
+
+const desk = { scope: 'today', agenda: null, loadedFor: null, error: null, loading: false };
+
+function renderReleaseDesk() {
+  const card = $('#release-desk');
+  if (!card) return;
+
+  // One fetch per server, not one per repaint — the live stream repaints this
+  // tab whenever anything in the guild changes, and the calendar has not.
+  if (desk.loadedFor !== state.guildId && !desk.loading) loadAgenda();
+
+  paintDeskScopes();
+  paintAgenda();
+  paintDeskForm();
+}
+
+async function loadAgenda() {
+  const forGuild = state.guildId;
+  desk.loading = true;
+  desk.error = null;
+  desk.agenda = null;
+  paintAgenda();
+  try {
+    const data = await get(`/api/guild/${forGuild}/calendar`);
+    // A slow answer for a server you have since left is not an answer.
+    if (forGuild !== state.guildId) return;
+    desk.agenda = data;
+  } catch (err) {
+    if (forGuild !== state.guildId) return;
+    desk.error = err.status === 503 ? 'unavailable' : 'failed';
+  } finally {
+    if (forGuild === state.guildId) {
+      desk.loading = false;
+      desk.loadedFor = forGuild;
+      paintDeskScopes();
+      paintAgenda();
+      paintDeskForm();
+    }
+  }
+}
+
+function paintDeskScopes() {
+  const host = $('#desk-scopes');
+  host.replaceChildren(...Object.keys(SCOPE_LABEL).map(scope => {
+    const b = el('button', 'scope-tab');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.append(el('span', 'scope-name', SCOPE_LABEL[scope]));
+    // The count is the number that would actually be posted — the filters are
+    // applied before it is counted, so a small number here means a quiet day
+    // or a strict filter, and the note under the list says which.
+    const n = desk.agenda?.scopes?.[scope]?.count;
+    b.append(el('span', 'scope-count', n === undefined ? '–' : num(n)));
+    if (scope === desk.scope) b.setAttribute('aria-selected', 'true');
+    b.addEventListener('click', () => {
+      desk.scope = scope;
+      paintDeskScopes();
+      paintAgenda();
+      paintDeskForm();
+    });
+    return b;
+  }));
+
+  const src = $('#desk-source');
+  if (desk.loading) src.textContent = 'checking…';
+  else if (desk.error) src.textContent = '';
+  else if (desk.agenda) {
+    const narrowed = [
+      desk.agenda.impact.length ? desk.agenda.impact.join('/') : null,
+      desk.agenda.currencies.length ? desk.agenda.currencies.join(' ') : null,
+    ].filter(Boolean);
+    src.textContent = narrowed.length ? `filtered · ${narrowed.join(' · ')}` : 'all releases';
+  } else src.textContent = '';
+}
+
+/** The event time, in the timezone the weekly post is scheduled in. */
+function deskTime(ts) {
+  const shifted = new Date(ts + (desk.agenda?.offsetMinutes || 0) * 60000);
+  const hh = String(shifted.getUTCHours()).padStart(2, '0');
+  const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+const DESK_DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function deskDay(ts) {
+  return DESK_DAY[new Date(ts + (desk.agenda?.offsetMinutes || 0) * 60000).getUTCDay()];
+}
+
+function paintAgenda() {
+  const host = $('#desk-agenda');
+
+  if (desk.loading) {
+    host.replaceChildren(...Array.from({ length: 3 }, () => {
+      const s = el('div', 'skeleton');
+      s.style.height = '2.4rem';
+      return s;
+    }));
+    return;
+  }
+  if (desk.error) {
+    host.replaceChildren(el('p', 'muted', desk.error === 'unavailable'
+      ? 'The calendar source is not answering right now. Everything else on this tab still works — try again in a few minutes.'
+      : 'Could not load the calendar.'));
+    return;
+  }
+
+  const scope = desk.agenda?.scopes?.[desk.scope];
+  if (!scope) { host.replaceChildren(); return; }
+  if (scope.count === 0) {
+    host.replaceChildren(el('p', 'muted', desk.scope === 'week'
+      ? 'Nothing scheduled this week that matches your filters.'
+      : `Nothing scheduled ${desk.scope} that matches your filters.`));
+    return;
+  }
+
+  // The week runs across days, so it gets a weekday column. A single day does
+  // not — repeating "Tue" down forty rows is noise. The stylesheet collapses
+  // the column rather than the markup dropping it, so every other column
+  // stays where it was when you switch range.
+  host.dataset.range = desk.scope === 'week' ? 'week' : 'day';
+
+  const rows = scope.events.map(e => {
+    const r = el('div', 'agenda-row');
+    r.append(el('span', `impact-dot ${IMPACT_RANK[e.impact] || 'low'}`));
+    r.append(el('span', 'agenda-day', deskDay(e.timestamp)));
+    r.append(el('span', 'agenda-time', deskTime(e.timestamp)));
+    r.append(el('span', 'agenda-cur', e.currency || '—'));
+    r.append(el('span', 'agenda-title', e.title));
+    // Forecast against previous is the whole reason a release matters, so it
+    // rides along where there is room rather than being a click away.
+    const fig = [e.forecast && `f ${e.forecast}`, e.previous && `p ${e.previous}`].filter(Boolean).join('  ');
+    r.append(el('span', 'agenda-fig', fig));
+    r.title = `${e.impact} impact · ${e.currency} · ${e.title}`;
+    return r;
+  });
+
+  if (scope.truncated) {
+    rows.push(el('p', 'muted', `Showing the first ${scope.events.length} of ${num(scope.count)} — all of them are posted.`));
+  }
+  host.replaceChildren(...rows);
+  // Only fade the bottom edge when there is something below it to fade to.
+  host.classList.toggle('is-scrollable', host.scrollHeight > host.clientHeight + 1);
+}
+
+function paintDeskForm() {
+  const form = $('#form-econpost');
+  const scope = desk.agenda?.scopes?.[desk.scope];
+  const sendable = !!scope && scope.count > 0;
+
+  // Defaults to the configured calendar channel, because that is where this
+  // usually goes — and stays changeable, because the week ahead often wants
+  // an announcements channel the live reminders would be noise in.
+  const draft = { scope: desk.scope, channelId: desk.postChannelId ?? desk.agenda?.channelId ?? null };
+
+  const send = actions(async () => {
+    await post('econpost', { scope: desk.scope, channelId: draft.channelId }, { quiet: true });
+  }, { label: `Post ${SCOPE_SEND[desk.scope]}`, busyLabel: 'Posting…' });
+
+  const button = send.querySelector('button');
+  if (!sendable) {
+    button.disabled = true;
+    button.title = desk.loading ? 'Still loading the calendar' : 'Nothing to post for this range';
+  }
+
+  form.replaceChildren(
+    pickOne('Post to', 'channel', draft.channelId, v => { draft.channelId = v; desk.postChannelId = v; }),
+    send,
   );
 }
 
@@ -3491,6 +3688,171 @@ function openTicketSheet(tk) {
 }
 
 /** "3 hours ago", for anything with a timestamp and no room for a full date. */
+/* ── polls ─────────────────────────────────────────────────────────────────
+ *
+ * What is running, what it has collected, and the two things you do to a poll
+ * that has run long enough. The results are the point: a bar per option
+ * against the share of the vote, so the answer is readable at a glance rather
+ * than as six numbers you have to add up yourself.
+ */
+
+const POLL_LETTERS = 'ABCDE';
+
+// Kept outside the render so typing a question survives the live stream
+// repainting this tab underneath you.
+const pollDraft = { question: '', options: ['', ''], channelId: null };
+
+function pollResult(p) {
+  const card = el('div', 'gaw');
+
+  const top = el('div', 'gaw-top');
+  top.append(el('span', `kind ${p.closedAt ? '' : 'prize'}`.trim(), p.closedAt ? 'CLOSED' : 'OPEN'));
+  top.append(el('span', 'nm', p.question));
+  card.append(top);
+
+  const bits = [];
+  if (p.channel) bits.push(`#${p.channel}`);
+  bits.push(`${num(p.total)} vote${p.total === 1 ? '' : 's'}`);
+  if (p.createdAt) bits.push(relativeTime(p.createdAt));
+  if (p.createdByName) bits.push(`by ${p.createdByName}`);
+  card.append(el('p', 'hint', bits.join(' · ')));
+
+  // The leader is marked rather than left to be worked out. On a tie nothing
+  // is marked, because calling one of them the winner would be a lie.
+  const top1 = Math.max(0, ...p.options.map(o => o.votes));
+  const leaders = p.options.filter(o => o.votes === top1 && top1 > 0).length;
+
+  const results = el('div', 'poll-results');
+  p.options.forEach((o, i) => {
+    const line = el('div', `poll-line${o.votes === top1 && leaders === 1 && top1 > 0 ? ' lead' : ''}`);
+    line.append(el('span', 'poll-key', POLL_LETTERS[i]));
+    const body = el('div', 'poll-body');
+    const head = el('div', 'poll-head');
+    head.append(el('span', 'poll-label', o.label));
+    head.append(el('span', 'poll-num', `${num(o.votes)} · ${o.share}%`));
+    body.append(head);
+    const track = el('div', 'poll-track');
+    const fill = el('i');
+    fill.style.width = `${o.share}%`;
+    track.append(fill);
+    body.append(track);
+    line.append(body);
+    results.append(line);
+  });
+  card.append(results);
+
+  const act = el('div', 'actions');
+  if (p.link) {
+    const open = el('a', 'btn small', 'Open in Discord');
+    open.href = p.link;
+    open.target = '_blank';
+    open.rel = 'noopener';
+    act.append(open);
+  }
+  if (!p.closedAt) {
+    const close = el('button', 'btn small', 'Close voting');
+    close.type = 'button';
+    close.addEventListener('click', async () => {
+      close.disabled = true;
+      try { await post('pollclose', { messageId: p.messageId }, { quiet: true }); }
+      finally { close.disabled = false; }
+    });
+    act.append(close);
+  }
+  const drop = el('button', 'btn small danger', 'Remove');
+  drop.type = 'button';
+  drop.title = 'Takes it off this list. The message in Discord is left alone.';
+  drop.addEventListener('click', async () => {
+    drop.disabled = true;
+    try { await post('polldelete', { messageId: p.messageId }, { quiet: true }); }
+    finally { drop.disabled = false; }
+  });
+  act.append(drop);
+  card.append(act);
+
+  return card;
+}
+
+function renderPolls() {
+  const data = state.overview?.polls;
+  if (!data) return;
+
+  const count = $('#poll-count');
+  count.textContent = String(data.open.length);
+  count.hidden = data.open.length === 0;
+  $('#poll-state').textContent = data.closed.length
+    ? `${data.closed.length} closed recently`
+    : '';
+
+  const wrap = $('#poll-open');
+  const shown = [...data.open, ...data.closed];
+  wrap.replaceChildren(...(shown.length
+    ? shown.map(pollResult)
+    : [el('p', 'muted', 'No polls yet. Ask something below, or run /poll in Discord — either way it shows up here.')]));
+
+  /* -- the new-poll form ------------------------------------------------- */
+  const limits = data.limits;
+  const form = $('#form-poll');
+
+  const optionFields = el('div', 'subfields');
+  const drawOptions = () => {
+    optionFields.replaceChildren(...pollDraft.options.map((value, i) => {
+      const f = textField(`Option ${POLL_LETTERS[i]}`, value,
+        v => { pollDraft.options[i] = v.slice(0, limits.option); });
+      // Only the options past the required two can be taken away, so the form
+      // can never be edited into something the server would reject.
+      if (i >= 2) {
+        const strip = el('button', 'btn small', 'Remove');
+        strip.type = 'button';
+        strip.addEventListener('click', () => {
+          pollDraft.options.splice(i, 1);
+          drawOptions();
+        });
+        const row = el('div', 'poll-option-row');
+        row.append(f, strip);
+        return row;
+      }
+      return f;
+    }));
+
+    if (pollDraft.options.length < limits.options) {
+      const add = el('button', 'btn small', 'Add an option');
+      add.type = 'button';
+      add.addEventListener('click', () => {
+        pollDraft.options.push('');
+        drawOptions();
+      });
+      optionFields.append(add);
+    }
+  };
+  drawOptions();
+
+  form.replaceChildren(
+    textField('Question', pollDraft.question,
+      v => { pollDraft.question = v.slice(0, limits.question); },
+      { placeholder: 'Which session do you trade most?' }),
+    optionFields,
+    pickOne('Post to', 'channel', pollDraft.channelId, v => { pollDraft.channelId = v; }),
+    actions(async () => {
+      const r = await post('pollcreate', {
+        question: pollDraft.question,
+        options: pollDraft.options,
+        channelId: pollDraft.channelId,
+      });
+      // Cleared only once it is actually posted — a rejected poll keeps
+      // everything you typed. The redraw has to be explicit: post() repaints
+      // from the overview it gets back, and that repaint happens before this
+      // line, so clearing the draft alone would leave the old text on screen
+      // until something else happened to render the tab.
+      if (r?.ok) {
+        pollDraft.question = '';
+        pollDraft.options = ['', ''];
+        renderPolls();
+      }
+    }, { label: 'Post the poll', busyLabel: 'Posting…' }),
+  );
+}
+
 function relativeTime(ts) {
   const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
   const steps = [[60, 'second'], [60, 'minute'], [24, 'hour'], [7, 'day'], [4.35, 'week'], [12, 'month']];

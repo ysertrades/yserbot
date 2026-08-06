@@ -40,7 +40,8 @@ const appIcon = memoizeRender(generateAppIcon, { name: 'appIcon', max: ICON_SIZE
 // drawing one blocks the thread Discord is on.
 const MARK_SIZES = [64, 128];
 const socialMark = memoizeRender(generateSocialMark, { name: 'socialMark', max: MARK_KEYS.length * MARK_SIZES.length });
-const writes  = require('./writes');
+const writes   = require('./writes');
+const calendar = require('./calendar');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
@@ -444,6 +445,27 @@ async function route(req, res, client) {
       if (req.method !== 'GET') return json(res, 405, { error: 'use_get' });
       live.subscribe(guildId, res, req, client);
       return undefined;
+    }
+
+    /* -- the week ahead ---------------------------------------------------
+       Above the general guild route because that one is POST-only for
+       anything with a name on the end, and this is a read. It is also the one
+       read in the panel that can reach the network — the calendar mirror,
+       when its three-hour cache is cold — which is exactly why it is not part
+       of the overview. */
+    const calendarMatch = /^\/api\/guild\/(\d{5,25})\/calendar$/.exec(p);
+    if (calendarMatch) {
+      const guildId = calendarMatch[1];
+      if (!auth.canAccessGuild(session, guildId, client)) return json(res, 403, { error: 'forbidden' });
+      if (req.method !== 'GET') return json(res, 405, { error: 'use_get' });
+      try {
+        return json(res, 200, await calendar.agenda(guildId));
+      } catch (err) {
+        // The mirror being down is a fact about the mirror, not a broken
+        // panel: the card says so and everything else on the tab still works.
+        console.warn('[Panel] calendar unavailable:', err.message);
+        return json(res, 503, { error: 'calendar_unavailable' });
+      }
     }
 
     /* -- guild reads and writes ------------------------------------------- */

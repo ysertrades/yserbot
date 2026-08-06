@@ -377,6 +377,22 @@
           <form id="form-econcal" class="form"></form>
         </article>
       </div>
+
+      <!-- The release desk. /econcal can post today's, tomorrow's or the
+           week's releases, but it posts blind — you pick a scope and read
+           what you sent afterwards. Here the agenda is on screen first, cut
+           by the same impact and currency filters set above, so posting is
+           the last step rather than the only one. -->
+      <div class="panel" id="release-desk">
+        <div class="queue-head">
+          <h2>Release desk</h2>
+          <span class="hint" id="desk-source"></span>
+        </div>
+        <p class="muted">What is scheduled, narrowed by the filters above. Read it here, then send it to any channel — the wording is the same one the weekly summary uses.</p>
+        <div class="scope-tabs" id="desk-scopes" role="tablist" aria-label="Calendar range"></div>
+        <div class="agenda" id="desk-agenda"></div>
+        <form id="form-econpost" class="form"></form>
+      </div>
     </div>
 
     <!-- ── Economy ─────────────────────────────────────────────────────── -->
@@ -482,6 +498,20 @@
       <div class="panel">
         <h2>Level reward roles</h2>
         <div id="levelroles" class="items"></div>
+      </div>
+
+      <!-- Polls. /poll could post one and nothing could read one — no list of
+           what was running, no results anywhere but the message, and no way
+           to stop one. This is the other half. -->
+      <div class="panel" id="poll-card">
+        <div class="queue-head">
+          <h2>Polls <span class="tag" id="poll-count" hidden></span></h2>
+          <span class="hint" id="poll-state"></span>
+        </div>
+        <p class="muted">Ask the server something and watch the answer come in. Closing a poll takes the buttons off the message, so it stops collecting rather than silently ignoring people.</p>
+        <div class="rows" id="poll-open"></div>
+        <h2>Ask something new</h2>
+        <form id="form-poll" class="form"></form>
       </div>
     </div>
 

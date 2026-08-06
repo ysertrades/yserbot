@@ -15,7 +15,7 @@
  *      change anything — the log is what makes it safe to hand out.
  */
 
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const {
   setAutoModSettings, setModLogSettings, setNewsFeedSettings, setEconCalSettings,
@@ -28,12 +28,15 @@ const {
 const { listSources } = require('../utils/newsFeed');
 const { TOPICS } = require('../utils/newsTopics');
 const { IMPACT_LEVELS, CURRENCIES } = require('../utils/economicCalendar');
+const { buildWeeklySummaryEmbeds } = require('../utils/econCalRunner');
+const calendar = require('./calendar');
 const { BANNERS, getBannerCopy, setBannerCopy, changedFields } = require('../utils/bannerCopy');
 const composer = require('./composer');
 const giveaways = require('./giveaways');
 const settings = require('./settings');
 const features = require('./features');
 const tickets = require('./tickets');
+const pollsPanel = require('./polls');
 const casinoPanel = require('./casino');
 const links = require('./links');
 const moderationPanel = require('./moderation');
@@ -43,6 +46,7 @@ const appearance = require('./appearance');
 const socialPanel = require('./social');
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const SCOPE_WORD = { today: "today's", tomorrow: "tomorrow's", week: "this week's" };
 
 /* ─── audit ──────────────────────────────────────────────────────────────── */
 
@@ -280,6 +284,49 @@ const OPS = {
     setEconCalSettings(guildId, patch);
     await announce(client, guildId, session, `📅 **Economic calendar** — ${notes.join('; ')}`, 'feeds');
     return { ok: true };
+  },
+
+  /**
+   * Post one scope's releases into a channel, now.
+   *
+   * The same three buttons /econcal offers, except the panel has already shown
+   * you the agenda — so this is publishing something you have read, rather
+   * than the command's "pick a scope and find out". Deliberately any channel,
+   * not just the configured reminder one: the week ahead is often wanted in an
+   * announcements channel the live reminders would be noise in.
+   */
+  async econpost(guildId, body, { client, session, guild }) {
+    const scope = String(body?.scope || '');
+    if (!calendar.SCOPES.includes(scope)) return { error: 'bad_scope' };
+
+    const ch = channelIn(guild, body.channelId);
+    if (!ch.ok || !ch.value) return { error: 'bad_channel' };
+    const channel = guild.channels.cache.get(ch.value);
+    if (!channel) return { error: 'bad_channel' };
+
+    const perms = channel.permissionsFor(guild.members.me);
+    if (!perms?.has(PermissionFlagsBits.SendMessages) || !perms?.has(PermissionFlagsBits.EmbedLinks)) {
+      return { error: 'missing_permissions' };
+    }
+
+    let batches;
+    try {
+      const events = await calendar.eventsFor(guildId, scope);
+      // Same builder the command and the scheduled weekly post use, so a
+      // panel post is indistinguishable from either — including this guild's
+      // Appearance wording for the heading and the empty-week card.
+      batches = buildWeeklySummaryEmbeds(events, guild, scope);
+    } catch (err) {
+      console.error('[Panel] calendar post failed:', err.message);
+      return { error: 'calendar_unavailable' };
+    }
+
+    if (batches.length === 0) return { error: 'nothing_to_post' };
+    for (const batch of batches) await channel.send(batch);
+
+    await announce(client, guildId, session,
+      `📅 **Economic calendar** — posted ${SCOPE_WORD[scope]} releases to <#${channel.id}>`, 'feeds');
+    return { ok: true, posted: scope };
   },
 
   /* -- moderation -------------------------------------------------------- */
@@ -557,6 +604,27 @@ Object.assign(OPS, {
   async ticketpanel(guildId, body, ctx) {
     const r = await tickets.postPanel(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 Posted the ticket panel to #${r.channelName}`, 'tickets');
+    return r;
+  },
+
+  /* -- polls ------------------------------------------------------------- */
+  //
+  // Logged under engagement's own category rather than a new one: a poll is
+  // the same kind of act as posting a verification panel, and a log with a
+  // category per feature is a log nobody reads.
+  async pollcreate(guildId, body, ctx) {
+    const r = await pollsPanel.create(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📊 **Poll** — ${r.note}`, 'features');
+    return r;
+  },
+  async pollclose(guildId, body, ctx) {
+    const r = await pollsPanel.close(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📊 **Poll** — ${r.note}`, 'features');
+    return r;
+  },
+  async polldelete(guildId, body, ctx) {
+    const r = pollsPanel.remove(guildId, body);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📊 **Poll** — ${r.note}`, 'features');
     return r;
   },
 
