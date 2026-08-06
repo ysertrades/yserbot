@@ -1288,8 +1288,13 @@ function renderComposer() {
     inner.append(
       textField('Title', e.title, v => { e.title = v; }),
       areaField('Description', e.description, v => { e.description = v; }, 5),
+      el('p', 'hint', 'Type #channel-name here and it posts as a real channel link people can tap.'),
       textField('Colour (hex)', e.color, v => { e.color = v; }),
       textField('Footer', e.footer, v => { e.footer = v; }),
+      // Said here rather than left to be discovered: Discord draws a footer,
+      // a title and an author line as plain characters, so a channel written
+      // into one of them cannot be made clickable by us or by anyone.
+      el('p', 'hint', 'Discord draws the footer, the title and the author line as plain text — a #channel there stays writing, it cannot become a link. Put it in the description or under the embed instead.'),
       select('Image', e.image || '', [
         ...(meta?.dynamicImages || []).map(d => ({ value: d, label: `Generated · ${d.slice(8)}` })),
       ], v => { e.image = v; }, { blank: 'None or paste a URL below' }),
@@ -1345,7 +1350,7 @@ function renderComposer() {
   // otherwise be three empty boxes on every one of them.
   const a = draft.around;
   head.append(disclosure('composer:around', 'Text and picture around it', [
-    el('p', 'muted', 'Plain writing outside the embed — a line of context over the top, a note or a picture under it.'),
+    el('p', 'muted', 'Plain writing outside the embed — a line of context over the top, a note or a picture under it. Both take #channel-name and turn it into a real channel link.'),
     areaField('Above the embed', a.above, v => { a.above = v; }, 2),
     areaField('Below the embed', a.below, v => { a.below = v; }, 2),
     textField('Picture under it (URL)', a.picture, v => { a.picture = v; }),

@@ -348,11 +348,25 @@ function rememberPost(guildId, messageId, record) {
  * message, the note under it is not, and losing the whole post because a
  * picture URL had a typo would be the wrong trade. It is reported instead.
  */
-async function sendBelow(channel, around) {
+/**
+ * Message text, with the same resolution the embed beside it gets.
+ *
+ * A message's content renders mentions and markdown, so "#tickets" typed into
+ * the line above a post or the note under it should come out as a channel you
+ * can click — exactly as it already did inside the embed's description. These
+ * two were sent precisely as typed, which is why they arrived as flat grey
+ * text sitting under an embed that had linked its own channels properly.
+ */
+function messageText(text, guild, channel) {
+  if (!text) return text;
+  return embedCommand().resolveMessageText(text, { guild, channel });
+}
+
+async function sendBelow(channel, around, guild) {
   if (!around?.below && !around?.picture) return { id: null };
   try {
     const msg = await channel.send({
-      content: around.below || undefined,
+      content: messageText(around.below, guild, channel) || undefined,
       // discord.js fetches a URL and uploads it, so the picture is a real
       // attachment rather than a link Discord may or may not unfurl.
       files: around.picture ? [around.picture] : undefined,
@@ -393,7 +407,9 @@ async function send(guildId, body, { guild }) {
   // reads as an address rather than being spliced into the sentence. Trimmed
   // from the end if the pair overruns, which keeps the ping — the part that
   // was deliberately asked for — rather than failing the send outright.
-  const content = [ping.text, typed].filter(Boolean).join('\n').slice(0, LIMITS.content) || null;
+  // The ping is already real markup; only the typed half needs resolving.
+  const content = [ping.text, messageText(typed, guild, channel)]
+    .filter(Boolean).join('\n').slice(0, LIMITS.content) || null;
 
   let message;
   try {
@@ -412,7 +428,7 @@ async function send(guildId, body, { guild }) {
     return { error: 'send_failed', detail: err.message.slice(0, 140) };
   }
 
-  const below = await sendBelow(channel, around);
+  const below = await sendBelow(channel, around, guild);
 
   rememberPost(guildId, message.id, {
     channelId: channel.id, templateName: name, sentAt: Date.now(), content,
@@ -459,7 +475,10 @@ async function updatePost(guildId, body, { guild, client }) {
   // What this post was sent with wins over the template's own line: the send
   // form can override it per post, and an update must not quietly replace a
   // line somebody wrote for this one message.
-  const content = known?.content ?? around?.above ?? null;
+  // `known.content` was resolved when it was sent and is stored that way, so
+  // only the template's own line — the fallback for a post from before this
+  // was recorded — still needs it.
+  const content = known?.content ?? messageText(around?.above, guild, channel) ?? null;
 
   try {
     await message.edit({
@@ -503,15 +522,15 @@ async function updatePost(guildId, body, { guild, client }) {
     // replaced rather than edited — otherwise changing the picture would
     // silently keep the old one.
     try { await old.delete(); } catch { /* fall through and send anyway */ }
-    belowId = (await sendBelow(channel, around)).id;
+    belowId = (await sendBelow(channel, around, guild)).id;
   } else if (old) {
     try {
-      await old.edit({ content: around.below, files: [], allowedMentions: { parse: [] } });
+      await old.edit({ content: messageText(around.below, guild, channel), files: [], allowedMentions: { parse: [] } });
     } catch (err) {
       console.error('[Panel] the note under the embed did not update:', err.message);
     }
   } else if (wantsBelow) {
-    belowId = (await sendBelow(channel, around)).id;
+    belowId = (await sendBelow(channel, around, guild)).id;
   }
 
   rememberPost(guildId, messageId, {
