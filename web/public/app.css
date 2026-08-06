@@ -340,6 +340,12 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 @media (min-width: 34rem) { .legal-links { grid-template-columns: 1fr 1fr; } }
 
 .legal-link {
+  /* A grid item defaults to min-width:auto, which means it refuses to be
+     narrower than its own content — and the address inside is one unbreakable
+     nowrap string. On a phone that pushed the card wider than the column and
+     out past the edge of the panel. This is what lets the ellipsis do its job
+     instead. */
+  min-width: 0;
   display: flex; align-items: center; gap: 0.75rem;
   padding: 0.85rem 0.9rem;
   border: 1px solid var(--rule); border-radius: 12px;
@@ -366,7 +372,16 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .legal-arrow { margin-left: auto; color: var(--muted); font-size: 0.85rem; flex: none; }
 .legal-link:hover .legal-arrow { color: var(--accent); }
 
-#legal-card .actions { margin-top: 0.85rem; padding-top: 0; border-top: none; }
+/* The two copy buttons sit under the two cards, so they follow the same
+   breakpoint and the same column edges. As flex items they wrapped onto
+   separate lines at their own natural widths — two ragged left-aligned
+   buttons of different lengths under two cards that lined up perfectly. */
+#legal-card .actions {
+  margin-top: 0.85rem; padding-top: 0; border-top: none;
+  display: grid; grid-template-columns: 1fr; gap: 0.6rem;
+}
+@media (min-width: 34rem) { #legal-card .actions { grid-template-columns: 1fr 1fr; } }
+#legal-card .actions .btn { width: 100%; min-width: 0; }
 
 /* A heading that follows content needs air above it; the first one in a panel
    already has the panel's padding. */
@@ -655,6 +670,14 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .tiles > :nth-child(4) { animation-delay: 260ms; }
 .tiles > :nth-child(5) { animation-delay: 300ms; }
 .tiles > :nth-child(6) { animation-delay: 340ms; }
+
+/* That entrance is for tiles that just arrived. A tile that was already on
+   screen and merely counted upwards gets this instead: the tiles are kept and
+   updated in place now, so it plays on the one figure that actually moved
+   rather than on the whole row — the difference between a count ticking over
+   and the panel appearing to reload itself. */
+@keyframes tickOver { from { opacity: 0.4; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.tile .n.ticked { animation: tickOver var(--mid) var(--ease); }
 
 /* Switching sections replays the entrance for whatever just became visible,
    so a tab change is a movement rather than a jump cut. */
