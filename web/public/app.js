@@ -500,6 +500,52 @@ function tile(value, label, kind = '') {
 }
 
 /**
+ * The tiles, updated in place.
+ *
+ * They used to be rebuilt with replaceChildren on every repaint, and the
+ * stylesheet plays a staggered entrance on `.tiles > *`. So every repaint put
+ * all six back to opacity 0 and cascaded them in again over about 380ms —
+ * measurably: 140ms of a completely blank row, then one tile at a time. Once
+ * is an entrance. On every overview the live stream pushes it is a flicker,
+ * and on a busy server, where updates arrive closer together than the cascade
+ * takes to finish, the later tiles never reach full opacity at all. That is
+ * the row that looks empty until you open the panel again.
+ *
+ * So the elements are built once and kept. After that only the number and the
+ * state class change, which means the entrance plays exactly when something
+ * entered, and an update is just the digits moving.
+ */
+function paintTiles(specs) {
+  const host = $('#tiles');
+  const live = [...host.children].filter(c => !c.classList.contains('ph'));
+  // Switching servers is new content, not an update to what is on screen, so
+  // it earns the entrance the same way the first load does.
+  const arrived = host.dataset.guild !== state.guildId || live.length !== specs.length;
+  host.dataset.guild = state.guildId || '';
+
+  if (arrived) {
+    host.replaceChildren(...specs.map(s => tile(s.value, s.label, s.kind)));
+    return;
+  }
+
+  specs.forEach((s, i) => {
+    const t = live[i];
+    const n = t.firstElementChild;
+    const next = String(s.value);
+    if (n.textContent !== next) {
+      n.textContent = next;
+      // Only on a real change, so a repaint that altered nothing stays
+      // perfectly still. Restarting the class is what lets it run twice.
+      n.classList.remove('ticked');
+      void n.offsetWidth;
+      n.classList.add('ticked');
+    }
+    const cls = `tile ${s.kind}`.trim();
+    if (t.className !== cls) t.className = cls;
+  });
+}
+
+/**
  * The read-only half of the overview screen: identity, tiles, the two cards.
  *
  * Split out because the live stream repaints these on every change and must
@@ -515,14 +561,14 @@ function renderOverviewCards() {
   $('#server-name').textContent = d.guild.name;
   $('#server-meta').textContent = `${num(d.guild.members)} members · ${num(d.guild.channels)} channels`;
 
-  $('#tiles').replaceChildren(
-    tile(d.newsfeed.enabled ? 'LIVE' : 'OFF', 'News feed', d.newsfeed.enabled ? 'live' : 'idle'),
-    tile(d.econcal.enabled ? 'LIVE' : 'OFF', 'Calendar', d.econcal.enabled ? 'live' : 'idle'),
-    tile(num(d.counts.activeGiveaways), 'Giveaways', d.counts.activeGiveaways ? 'live' : 'idle'),
-    tile(num(d.counts.embedTemplates), 'Templates'),
-    tile(num(d.counts.shopItems), 'Shop items'),
-    tile(num(d.counts.moderationCases), 'Mod cases'),
-  );
+  paintTiles([
+    { value: d.newsfeed.enabled ? 'LIVE' : 'OFF', label: 'News feed', kind: d.newsfeed.enabled ? 'live' : 'idle' },
+    { value: d.econcal.enabled ? 'LIVE' : 'OFF', label: 'Calendar', kind: d.econcal.enabled ? 'live' : 'idle' },
+    { value: num(d.counts.activeGiveaways), label: 'Giveaways', kind: d.counts.activeGiveaways ? 'live' : 'idle' },
+    { value: num(d.counts.embedTemplates), label: 'Templates', kind: '' },
+    { value: num(d.counts.shopItems), label: 'Shop items', kind: '' },
+    { value: num(d.counts.moderationCases), label: 'Mod cases', kind: '' },
+  ]);
 
   $('#card-systems').replaceChildren(
     row('News feed', pill(d.newsfeed.enabled, 'Running', 'Stopped')),
