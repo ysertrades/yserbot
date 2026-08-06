@@ -4717,30 +4717,24 @@ async function selectGuild(id) {
  * So the overview is something the page keeps asking for until it has it,
  * rather than something it tries once: retried on failure with a widening
  * gap, asked for again the moment the page is looked at, and again when the
- * network comes back. And while any of that is happening it says so, because
- * a blank panel that explains itself is a different thing from a broken one.
+ * network comes back.
+ *
+ * All of it silent. A first attempt takes a moment on any connection, and a
+ * panel that announces every one of them is a panel that is always talking
+ * about itself. The retry is the fix; saying "loading" is not, and a notice
+ * is one more thing that can be left on screen by mistake. What you should
+ * see is the panel filling in.
  */
 
 let overviewTries = 0;
 let overviewRetry = null;
-
-function setLoadNote(text) {
-  const note = $('#load-note');
-  if (!note) return;
-  note.hidden = !text;
-  if (text) $('#load-note-text').textContent = text;
-}
 
 async function refreshOverview() {
   const forGuild = state.guildId;
   if (!forGuild) return;
   clearTimeout(overviewRetry);
 
-  // Only say something when there is nothing on screen. A background refresh
-  // that fails while you are reading last minute's numbers is not worth a
-  // banner — it will simply try again.
   const blank = !state.overview;
-  if (blank) setLoadNote(overviewTries ? 'Still trying to load this server…' : 'Loading this server…');
 
   try {
     const data = await get(`/api/guild/${forGuild}`);
@@ -4749,7 +4743,6 @@ async function refreshOverview() {
     if (forGuild !== state.guildId) return;
     state.overview = data;
     overviewTries = 0;
-    setLoadNote(null);
     renderOverview();
     // Whatever else was blank when this was blank gets another go too.
     if (blank) refreshSidecars();
@@ -4769,8 +4762,6 @@ async function refreshOverview() {
     // 1s, 2s, 4s, 8s, then every 15s. Quick enough that a blip is invisible,
     // slow enough that a server which is genuinely down is not hammered.
     const wait = Math.min(15000, 1000 * 2 ** (overviewTries - 1));
-    if (blank) setLoadNote('Could not load this server. Trying again…');
-    else toast('Could not refresh this server. Trying again…', 'bad');
     overviewRetry = setTimeout(refreshOverview, wait);
   }
 }
@@ -4849,11 +4840,6 @@ async function main() {
   state.guilds = me.guilds;
   state.me = me.user;
   renderIdentity(me.user);
-  // Waiting is fine; being unable to do anything about it is not.
-  $('#load-note-retry').addEventListener('click', () => {
-    overviewTries = 0;
-    refreshOverview();
-  });
   initSections();
   initSheet();
   initEmbedLink();
