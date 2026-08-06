@@ -4638,8 +4638,24 @@ document.addEventListener('focusout', () => {
 // connection anyway. Reopening on return is also what makes the first thing
 // you see current rather than however old the tab was.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') stopLive();
-  else if (state.guildId) startLive();
+  if (document.visibilityState === 'hidden') { stopLive(); return; }
+  if (!state.guildId) return;
+  startLive();
+  // A page a phone put to sleep comes back holding whatever it had when it
+  // went away — which, if it was opened into a background tab, can be
+  // nothing at all. Ask again rather than trusting what is on screen.
+  refreshOverview();
+});
+
+// The other way a load quietly loses: the request went out while the
+// connection was down. Nothing tells the page that except this.
+window.addEventListener('online', () => { if (state.guildId) refreshOverview(); });
+
+// Coming back through the history stack — Back into the panel, or a phone
+// restoring the tab — replays the page from cache without re-running any of
+// it. Whatever was missing then is still missing now.
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted && state.guildId) refreshOverview();
 });
 
 /* ── boot ──────────────────────────────────────────────────────────────── */
@@ -4680,15 +4696,83 @@ function initSections() {
 
 async function selectGuild(id) {
   state.guildId = id;
+  state.overview = null;
   history.replaceState(null, '', `?g=${id}&s=${root.dataset.section}`);
   renderGuildPicker();
-  state.overview = await get(`/api/guild/${id}`);
-  renderOverview();
-  // Banner wording is per guild, so Studio has to re-read it rather than keep
-  // showing the previous server's copy.
-  if (state.tpl) selectTemplate(state.tpl.key);
-  // And the stream follows whichever server is being looked at.
-  startLive();
+  await refreshOverview();
+}
+
+/* ── keeping the panel filled ──────────────────────────────────────────────
+ *
+ * One failed request used to leave the panel empty for good: the top bar, the
+ * tabs, and a column of headed but blank cards, with a toast that had already
+ * faded. The only way out was to close it and open it again.
+ *
+ * That is easy to hit on a phone and hard to notice anywhere else. The panel
+ * is usually opened from Discord or from inside Whop, which means the page
+ * frequently starts loading in a tab that is not in front — and a phone will
+ * suspend a background page part-way through, cancel what it had in flight,
+ * and hand it back looking finished. Whatever had not arrived never does.
+ *
+ * So the overview is something the page keeps asking for until it has it,
+ * rather than something it tries once: retried on failure with a widening
+ * gap, asked for again the moment the page is looked at, and again when the
+ * network comes back. And while any of that is happening it says so, because
+ * a blank panel that explains itself is a different thing from a broken one.
+ */
+
+let overviewTries = 0;
+let overviewRetry = null;
+
+function setLoadNote(text) {
+  const note = $('#load-note');
+  if (!note) return;
+  note.hidden = !text;
+  if (text) $('#load-note-text').textContent = text;
+}
+
+async function refreshOverview() {
+  const forGuild = state.guildId;
+  if (!forGuild) return;
+  clearTimeout(overviewRetry);
+
+  // Only say something when there is nothing on screen. A background refresh
+  // that fails while you are reading last minute's numbers is not worth a
+  // banner — it will simply try again.
+  const blank = !state.overview;
+  if (blank) setLoadNote(overviewTries ? 'Still trying to load this server…' : 'Loading this server…');
+
+  try {
+    const data = await get(`/api/guild/${forGuild}`);
+    // An answer for a server you have since switched away from is not an
+    // answer to the question currently on screen.
+    if (forGuild !== state.guildId) return;
+    state.overview = data;
+    overviewTries = 0;
+    setLoadNote(null);
+    renderOverview();
+    // Whatever else was blank when this was blank gets another go too.
+    if (blank) refreshSidecars();
+    // Banner wording is per guild, so Studio has to re-read it rather than keep
+    // showing the previous server's copy.
+    if (state.tpl) selectTemplate(state.tpl.key);
+    // And the stream follows whichever server is being looked at.
+    startLive();
+  } catch (err) {
+    if (forGuild !== state.guildId) return;
+    // A 401 is the session, not the server, and retrying it forever would be
+    // a loop nobody can see the end of.
+    if (err.status === 401) return reportLoadFailure(err);
+
+    overviewTries += 1;
+    console.error(err);
+    // 1s, 2s, 4s, 8s, then every 15s. Quick enough that a blip is invisible,
+    // slow enough that a server which is genuinely down is not hammered.
+    const wait = Math.min(15000, 1000 * 2 ** (overviewTries - 1));
+    if (blank) setLoadNote('Could not load this server. Trying again…');
+    else toast('Could not refresh this server. Trying again…', 'bad');
+    overviewRetry = setTimeout(refreshOverview, wait);
+  }
 }
 
 /**
@@ -4765,6 +4849,11 @@ async function main() {
   state.guilds = me.guilds;
   state.me = me.user;
   renderIdentity(me.user);
+  // Waiting is fine; being unable to do anything about it is not.
+  $('#load-note-retry').addEventListener('click', () => {
+    overviewTries = 0;
+    refreshOverview();
+  });
   initSections();
   initSheet();
   initEmbedLink();
@@ -4801,10 +4890,21 @@ async function main() {
   // well — one bad request and the panel appeared to reject the login.
   if (first) await selectGuild(first).catch(reportLoadFailure);
 
-  // Independent of the guild view, so one slow call never blanks the others.
+  refreshSidecars();
+  initStudio().catch(() => {});
+}
+
+/**
+ * The two cards that are not part of the guild overview.
+ *
+ * Deliberately independent of it, so one slow call never blanks the others —
+ * but that also meant a failure here was swallowed and the card stayed empty
+ * until the next full reload. They are re-asked on the same occasions the
+ * overview is, so the whole screen recovers together rather than in pieces.
+ */
+function refreshSidecars() {
   get('/api/leaderboard').then(renderBoard).catch(() => {});
   get('/api/health').then(renderHealth).catch(() => {});
-  initStudio().catch(() => {});
 }
 
 // Never sign somebody out over a bug. Before /api/me answers, a failure really
