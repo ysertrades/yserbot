@@ -23,6 +23,20 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute means hidden, whatever a class says.
+ *
+ * It works through a browser's own stylesheet at the weight of a single
+ * selector, so any class carrying a display of its own quietly outranks it
+ * and the element stays on screen with `hidden` sitting on it doing nothing.
+ * The panel toggles a lot of things this way, and three of them are flex
+ * containers — which is how the weekly-summary fields stayed visible with
+ * their switch off, and how a notice that had been told to go away stayed
+ * pinned to the top of the page.
+ *
+ * Settling it once here rather than per class, because the next element
+ * added this way should not have to know. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);
@@ -330,30 +344,6 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .fineprint a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
 .fineprint a:hover { color: var(--soft); border-bottom-color: var(--rule); }
 .fineprint a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
-
-/* ── the loading notice ───────────────────────────────────────────────────
-   Shown only while the panel has nothing to show. It sits where the content
-   would be rather than floating over it, because it is not an alert — it is
-   the screen saying what it is doing, in the place the thing it is doing
-   will appear. */
-.load-note {
-  display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--rule); border-radius: 12px;
-  background: var(--surface);
-}
-.load-note p { margin: 0; flex: 1; min-width: 0; font-size: 0.86rem; color: var(--soft); }
-.load-note .btn { flex: none; }
-
-/* A ring that turns. Deliberately quiet — the message carries the meaning,
-   this only says the page has not given up. */
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinner {
-  flex: none; width: 1rem; height: 1rem; border-radius: 50%;
-  border: 2px solid var(--rule); border-top-color: var(--accent);
-  animation: spin 0.7s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
 
 /* ── polls ────────────────────────────────────────────────────────────────
    A result is a comparison, so it is drawn as one. The bar carries the shape
@@ -926,7 +916,8 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
    for attention. It rises from the bottom because on a phone that is where
    your thumb already is. */
 .sheet-wrap { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
-.sheet-wrap[hidden] { display: none; }
+/* The sheet used to need its own [hidden] rule for the reason above. The
+   global one at the top covers it, and every other case, now. */
 
 .sheet-scrim {
   position: absolute; inset: 0;
