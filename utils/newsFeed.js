@@ -15,7 +15,26 @@ const { TOPICS, expandTopicKeywords } = require('./newsTopics');
 // as the bare feed.ashx this used to request, with the query string their
 // own published link carries.
 const FEED_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
-const POLL_INTERVAL_MS  = 20_000;
+/**
+ * How often the feed is read.
+ *
+ * Twenty seconds by default, which is what this has always aimed for. It is
+ * a knob rather than a constant because the only thing that can say whether
+ * a faster cadence is safe is the endpoint itself: Financial Juice's front
+ * end rate-limits this URL, and polling past the limit gets the bot paused
+ * and delivers news *later*, not sooner. Turning it down is therefore an
+ * experiment to run against the real thing while watching for
+ * "Rate-limited by Financial Juice" in the log — and if that appears, the
+ * 429 handling below already honours their retry-after exactly, so the cost
+ * of finding the floor is a pause, not lost headlines.
+ *
+ * Clamped: below a few seconds is certain to be refused, and beyond a few
+ * minutes this has stopped being a news feed.
+ */
+const POLL_INTERVAL_MS = Math.min(
+  300_000,
+  Math.max(5_000, Number(process.env.NEWSFEED_POLL_MS) || 20_000),
+);
 const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
 
@@ -516,13 +535,31 @@ function matchesFilter(item, settings) {
 // can be added later as one entry instead of reworking the runner.
 const sourceCache = new Map(); // key -> { items, fetchedAt }
 
+/**
+ * Slack on the freshness window, so a poll is never skipped outright.
+ *
+ * The runner ticks on the same interval this cache holds for, which makes the
+ * comparison a photo finish the cache used to win. `fetchedAt` was stamped
+ * when the request *finished*, so a fetch taking any time at all — 50ms was
+ * enough — pushed the stamp past the next tick, that tick found the cache
+ * still fresh, and the poll was dropped. The feed was being read every forty
+ * seconds instead of twenty, and nothing said so.
+ *
+ * Stamping the start of the request removes the drift; this margin absorbs
+ * the remaining timer jitter, since setInterval is free to fire a hair early.
+ */
+const POLL_SLACK_MS = 2000;
+
 async function getSourceItems(source) {
   const cached = sourceCache.get(source.key);
-  if (cached && Date.now() - cached.fetchedAt < source.pollMs) return cached.items;
+  if (cached && Date.now() - cached.fetchedAt < source.pollMs - POLL_SLACK_MS) return cached.items;
+  // Taken before the request, not after: the cadence is measured from when we
+  // asked, so how long the answer takes cannot move the next poll.
+  const startedAt = Date.now();
   try {
     const items = await source.fetch();
     if (items && items.length) {
-      sourceCache.set(source.key, { items, fetchedAt: Date.now() });
+      sourceCache.set(source.key, { items, fetchedAt: startedAt });
       return items;
     }
     // A null return is the rate-limit/backoff path — keep serving the last
@@ -611,6 +648,11 @@ async function runTick(client) {
 
 // Safe to call once after the client is ready.
 function startNewsFeedRunner(client) {
+  // Said out loud, because the cadence is the single biggest thing standing
+  // between a headline being published and it being in a channel — and
+  // because it silently ran at half this for a long time without anything
+  // in the log to show for it.
+  console.log(`[NEWSFEED] Polling every ${POLL_INTERVAL_MS / 1000}s (set NEWSFEED_POLL_MS to change)`);
   const tick = () => runTick(client).catch(err => console.error('[NEWSFEED RUNNER ERROR]', err));
   tick();
   setInterval(tick, POLL_INTERVAL_MS);
