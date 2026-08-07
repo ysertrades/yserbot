@@ -7,9 +7,20 @@
 // re-fetched every few hours; forecasts rarely change mid-week anyway.
 const { readJson, writeJson } = require('./jsonStorage');
 
+/**
+ * Tried in order, first usable answer wins.
+ *
+ * The two faireconomy addresses are the source's own, so they lead. The third
+ * is an independent mirror of the same file and sits last deliberately: it is
+ * only reached when both of the originals are unreachable, which keeps the
+ * canonical source canonical and makes the mirror what it should be — a way
+ * for the calendar to survive an outage rather than a second opinion nobody
+ * asked for.
+ */
 const FEED_URLS = [
   'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
   'https://cdn-nfs.faireconomy.media/ff_calendar_thisweek.json',
+  'https://media.levlhq.com/cal',
 ];
 const CACHE_FILE          = 'econcal_cache.json';
 const REFRESH_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3h — well inside the mirror's rate limit
@@ -42,14 +53,47 @@ function parseEvents(raw) {
   return events;
 }
 
+/**
+ * The first mirror that answers with a usable week.
+ *
+ * "Usable" is checked rather than assumed, and that matters more now there is
+ * a third address in the list. A mirror that has been repointed, or that hands
+ * back an error page with a 200 on it, produces valid JSON that is not a
+ * calendar — and the old code would take an empty array as gospel, cache it,
+ * and report a week with nothing scheduled in it. A quiet wrong answer during
+ * an outage is worse than the outage.
+ *
+ * So a response only counts if it is a list that parsed into at least one
+ * event. Anything else moves to the next address, and if none of them manage
+ * it the caller falls back to the last good cache.
+ */
 async function fetchFromMirror() {
   let lastErr;
   for (const url of FEED_URLS) {
     try {
       const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' } });
       if (!res.ok) { lastErr = new Error(`Economic calendar mirror returned ${res.status}`); continue; }
+
       const raw = await res.json();
-      return parseEvents(raw);
+      if (!Array.isArray(raw)) {
+        lastErr = new Error(`${url} did not answer with a list`);
+        continue;
+      }
+
+      const events = parseEvents(raw);
+      if (events.length === 0) {
+        // Every week this feed publishes has releases in it, so nothing at all
+        // means the answer is not the calendar rather than that the week is
+        // quiet.
+        lastErr = new Error(`${url} answered with no events`);
+        continue;
+      }
+
+      // Named, because "the calendar is stale" and "the calendar has been
+      // coming from the backup for a fortnight" are different problems and
+      // only one of them is visible without this.
+      if (url !== FEED_URLS[0]) console.warn(`[ECONCAL] Served by fallback mirror: ${url}`);
+      return events;
     } catch (err) {
       lastErr = err;
     }
