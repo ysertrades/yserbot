@@ -13,6 +13,7 @@
  */
 
 const { ChannelType } = require('discord.js');
+const auth = require('./auth');
 const { readJson } = require('../utils/jsonStorage');
 const { getLeaderboard } = require('../utils/economyManager');
 const {
@@ -38,9 +39,22 @@ const appearance = require('./appearance');
 const socialPanel = require('./social');
 const cardsPanel = require('./cards');
 
-/** Guilds this session may open, as the picker needs them. */
+/**
+ * Guilds this session may open, as the picker needs them.
+ *
+ * `session.guilds` alone used to be the whole answer, and for an ordinary
+ * account it still is — a snapshot of what Discord said at login. Staff
+ * grants and the owner's blanket access are neither of those things: they
+ * are this bot's own data, so they are unioned in live, on every call,
+ * rather than baked into the token the way the Discord snapshot is. A grant
+ * made a minute ago shows up on this account's very next load.
+ */
 function me(session, client) {
-  const guilds = session.guilds
+  const owner = auth.isOwner(session.uid);
+  const ids = new Set([...(session.guilds || []), ...auth.staffGuildsFor(session.uid)]);
+  if (owner) for (const id of client.guilds.cache.keys()) ids.add(id);
+
+  const guilds = [...ids]
     .filter(id => client.guilds.cache.has(id))
     .map(id => {
       const g = client.guilds.cache.get(id);
@@ -52,6 +66,7 @@ function me(session, client) {
     user: { id: session.uid, name: session.name, avatar: session.avatar },
     expiresAt: session.exp,
     guilds,
+    isOwner: owner,
   };
 }
 
@@ -259,4 +274,4 @@ function health(client) {
   };
 }
 
-module.exports = { me, guildOverview, leaderboard, health };
+module.exports = { me, guildOverview, leaderboard, health, ensureMembers };

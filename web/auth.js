@@ -68,12 +68,30 @@ function config() {
     // Origins allowed to embed the panel. Empty (the default) means nobody.
     frameAncestors: (process.env.PANEL_FRAME_ANCESTORS || '')
       .split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
+    // The bot's own operator(s) — sees and manages every guild the bot is in,
+    // not only the ones Discord says they personally have Manage Server on.
+    // Empty (the default) means nobody gets the owner console.
+    ownerIds: (process.env.PANEL_OWNER_IDS || '')
+      .split(',').map(s => s.trim()).filter(Boolean),
   };
 }
 
 /** Whether the panel is configured to be embedded anywhere at all. */
 function embeddable() {
   return config().frameAncestors.length > 0;
+}
+
+/**
+ * Whether this Discord account is the bot's own operator, wired through
+ * PANEL_OWNER_IDS rather than any per-guild permission.
+ *
+ * A per-guild "Manage Server" gate is somebody else's to grant — that
+ * server's own admins, via their own roles — and it only ever covers the one
+ * server it was granted on. The console that spans every server the bot is
+ * in needs a gate that is not scoped to any single one, and this is it.
+ */
+function isOwner(uid) {
+  return config().ownerIds.includes(String(uid));
 }
 
 /** Which required settings are missing, so the server can say so precisely. */
@@ -241,7 +259,11 @@ async function completeLogin(code, client) {
     .filter(g => c.allowlist.length === 0 || c.allowlist.includes(g.id))
     .map(g => g.id);
 
-  if (manageable.length === 0) {
+  // The one account this rejects nobody for: the bot's own operator may not
+  // personally hold Manage Server anywhere the bot runs — that is the whole
+  // reason the owner console exists — so this login must not turn on the
+  // very check the console is here to see past.
+  if (manageable.length === 0 && !c.ownerIds.includes(user.id)) {
     const err = new Error('no_manageable_guilds');
     err.code = 'no_manageable_guilds';
     throw err;
@@ -335,14 +357,74 @@ function adoptable(req) {
  * only thing that does is the URL itself, because Whop is the one holding
  * onto it. An embed link is a normal session baked into that URL.
  *
+ * The session itself lives server-side, keyed by a short opaque id, rather
+ * than folded into a signed token the way every other session here works.
+ * A signed token carries its own payload — this account's whole guild list,
+ * name and avatar, base64'd — and that payload only grows with the account,
+ * while Whop's own field for this URL is a plain database column with a
+ * 255-character ceiling. An account managing more than a couple of servers
+ * cleared that ceiling easily, and there was no way to paste the link in at
+ * all: not "signed out sometimes", but the one thing meant to prevent that
+ * being impossible to configure in the first place. The id costs nothing to
+ * look up wherever it is used, and the URL is short regardless of how many
+ * servers the account manages.
+ *
  * Long-lived by design, which is why it carries its own revocation instead
  * of relying on expiry: `ev` is a version number checked against
  * embedVersion(uid) on every use, so regenerating a link invalidates every
  * link minted before it without touching anything else the account can do.
+ * A link minted before this change is still a signed token rather than an
+ * id, and still works — resolveToken tells the two apart by shape and reads
+ * whichever one it was handed.
+ *
+ * Minting always bumps the version and clears this account's older records
+ * first, in the same call — not as a separate revoke the caller does before
+ * asking for a new one. Whop's own note above says as much ("regenerating a
+ * link invalidates every link before it"), but the two-step version of this
+ * had a real failure mode once the link actually got usable: an admin whose
+ * only open session *is* the embed link — which is now the normal way to use
+ * this, having just fixed the one thing stopping anyone from pasting it in —
+ * clicking Replace would have the first step revoke the very token the
+ * second step needed to authenticate with. One request, one still-valid
+ * session at the moment it is checked, closes that gap entirely.
  */
+const EMBED_SESSIONS_FILE = 'panel_embed_sessions.json';
+
 function mintEmbedLink(session) {
   const { uid, name, avatar, guilds } = session;
-  return sign({ uid, name, avatar, guilds, ev: embedVersion(uid), exp: Date.now() + EMBED_LINK_TTL_MS }, config().secret);
+
+  const versions = readJson('panel_embed_links.json', {});
+  versions[uid] = (versions[uid] || 1) + 1;
+  writeJson('panel_embed_links.json', versions);
+
+  const store = readJson(EMBED_SESSIONS_FILE, {});
+  for (const [existingId, rec] of Object.entries(store)) if (rec.uid === uid) delete store[existingId];
+  pruneEmbedSessions(store);
+
+  const id = crypto.randomBytes(16).toString('base64url');
+  store[id] = { uid, name, avatar, guilds, ev: versions[uid], exp: Date.now() + EMBED_LINK_TTL_MS };
+  writeJson(EMBED_SESSIONS_FILE, store);
+  return id;
+}
+
+/** The stored record behind an embed-link id, or null — expiry only; the
+ * caller still runs it through embedLinkCurrent for revocation. */
+function embedSessionFor(id) {
+  if (typeof id !== 'string' || !/^[\w-]{16,32}$/.test(id)) return null;
+  const rec = readJson(EMBED_SESSIONS_FILE, {})[id];
+  if (!rec || rec.exp < Date.now()) return null;
+  return rec;
+}
+
+/** Drops entries that could never verify again — expired, or from a session
+ * a since-regenerated link left behind — so the store does not grow forever
+ * on an account that keeps hitting "Replace it". Run opportunistically on
+ * mint rather than on a timer, which needs nothing running between requests. */
+function pruneEmbedSessions(store) {
+  const now = Date.now();
+  for (const [id, rec] of Object.entries(store)) {
+    if (rec.exp < now || rec.ev !== embedVersion(rec.uid)) delete store[id];
+  }
 }
 
 function embedVersion(uid) {
@@ -355,6 +437,64 @@ function revokeEmbedLinks(uid) {
   const versions = readJson('panel_embed_links.json', {});
   versions[uid] = (versions[uid] || 1) + 1;
   writeJson('panel_embed_links.json', versions);
+
+  // Drop this account's own stored sessions immediately rather than waiting
+  // for the next mint elsewhere to prune them — the point of Replace is that
+  // the old link stops working now, not eventually.
+  const store = readJson(EMBED_SESSIONS_FILE, {});
+  let changed = false;
+  for (const [id, rec] of Object.entries(store)) {
+    if (rec.uid === uid) { delete store[id]; changed = true; }
+  }
+  if (changed) writeJson(EMBED_SESSIONS_FILE, store);
+}
+
+/* ── staff: who besides a guild's own managers may open its panel ───────────
+ *
+ * Manage Server is the normal gate, and it belongs to that server — its own
+ * admins hand it out through their own roles, and this bot has no say in it.
+ * Running the bot across many servers needs a second gate underneath that
+ * one: people the bot's operator lets in personally, independent of what any
+ * one server's roles say, and revocable the moment they should not have a
+ * server's panel anymore — see the owner console this backs, web/owner.js.
+ *
+ * Deliberately not folded into the signed session the way `guilds` is.
+ * That list is a snapshot of what Discord said at login and is only ever as
+ * fresh as SESSION_TTL by design (see the top of this file) — acceptable for
+ * a permission Discord itself governs, because Discord is slow to change it
+ * too. A grant made here is entirely this file's own data, so there is no
+ * reason to accept the same staleness: canAccessGuild below reads this store
+ * fresh on every request, and a revoke here is a revoke now.
+ */
+const STAFF_FILE = 'panel_staff.json';
+
+/** Guild ids this account currently has a staff grant in, read live. */
+function staffGuildsFor(uid) {
+  const staff = readJson(STAFF_FILE, {});
+  return Object.keys(staff).filter(guildId => uid in (staff[guildId] || {}));
+}
+
+/** Who currently holds a staff grant for one guild. */
+function listStaff(guildId) {
+  const staff = readJson(STAFF_FILE, {})[guildId] || {};
+  return Object.entries(staff).map(([userId, rec]) => ({ userId, ...rec }));
+}
+
+function grantStaff(guildId, userId, addedBy) {
+  const staff = readJson(STAFF_FILE, {});
+  if (!staff[guildId]) staff[guildId] = {};
+  staff[guildId][userId] = { addedBy, addedAt: Date.now() };
+  writeJson(STAFF_FILE, staff);
+}
+
+/** @returns {boolean} whether there was a grant to remove */
+function revokeStaff(guildId, userId) {
+  const staff = readJson(STAFF_FILE, {});
+  if (!staff[guildId] || !(userId in staff[guildId])) return false;
+  delete staff[guildId][userId];
+  if (Object.keys(staff[guildId]).length === 0) delete staff[guildId];
+  writeJson(STAFF_FILE, staff);
+  return true;
 }
 
 const SESSION_VERSION_FILE = 'panel_session_versions.json';
@@ -418,38 +558,52 @@ function refreshed(session) {
 }
 
 /**
+ * A session from whatever a token turns out to be, or null.
+ *
+ * There are two shapes a token can arrive in, and this is the one place that
+ * tells them apart. A signed session — from a login, or an embed link minted
+ * before short ids existed — is body-and-mac with a literal `.` between the
+ * two; sign() never produces the one without the other, so the dot alone is
+ * enough to tell it from an opaque embed-link id, which is nothing but random
+ * bytes and never contains one. Whichever it is, embedLinkCurrent makes the
+ * same revocation check apply either way.
+ */
+function resolveToken(token) {
+  const c = config();
+  if (!c.secret || typeof token !== 'string' || !token) return null;
+  const trimmed = token.trim();
+  const session = trimmed.includes('.') ? verify(trimmed, c.secret) : embedSessionFor(trimmed);
+  return session && embedLinkCurrent(session) ? session : null;
+}
+
+/**
+ * A session from a bare token, for the one caller that cannot send a header.
+ *
+ * Same resolution and same freshness check as a bearer header — this only
+ * changes where the string was carried, not how much it is believed.
+ */
+function sessionForToken(token) {
+  return resolveToken(token);
+}
+
+/**
  * The signed session on a request, or null.
  *
  * A bearer token is accepted alongside the cookie. That is what makes the
  * embedded panel work: inside a third-party iframe Safari drops the cookie
- * entirely, so the page holds the same signed token in memory and sends it as
- * a header instead. Same token, same signature check — only the transport
- * differs.
+ * entirely, so the page holds the same token in memory and sends it as a
+ * header instead. Same token, same check — only the transport differs.
  */
-/**
- * A session from a bare token, for the one caller that cannot send a header.
- *
- * Same verification and same freshness check as a bearer header — this only
- * changes where the string was carried, not how much it is believed.
- */
-function sessionForToken(token) {
-  const c = config();
-  if (!c.secret || typeof token !== 'string' || !token) return null;
-  const session = verify(token.trim(), c.secret);
-  return session && embedLinkCurrent(session) ? session : null;
-}
-
 function sessionFor(req) {
   const c = config();
   if (!c.secret) return null;
 
   const header = req.headers.authorization || '';
   if (header.startsWith('Bearer ')) {
-    const fromHeader = verify(header.slice(7).trim(), c.secret);
-    if (fromHeader && embedLinkCurrent(fromHeader)) return fromHeader;
+    const fromHeader = resolveToken(header.slice(7).trim());
+    if (fromHeader) return fromHeader;
   }
-  const fromCookie = verify(parseCookies(req)[SESSION_COOKIE], c.secret);
-  return fromCookie && embedLinkCurrent(fromCookie) ? fromCookie : null;
+  return resolveToken(parseCookies(req)[SESSION_COOKIE]);
 }
 
 /**
@@ -458,12 +612,22 @@ function sessionFor(req) {
  * allowlist checks are current as of this instant.
  */
 function canAccessGuild(session, guildId, client) {
-  if (!session || !Array.isArray(session.guilds)) return false;
-  if (!session.guilds.includes(guildId)) return false;
+  if (!session) return false;
   if (!client.guilds.cache.has(guildId)) return false;
+
+  // The bot's own operator sees every guild it is in — the allowlist below
+  // exists to narrow who gets a panel at all, and the owner console's whole
+  // job is to see past that narrowing, not be caught by it.
+  if (isOwner(session.uid)) return true;
+
   const { allowlist } = config();
   if (allowlist.length > 0 && !allowlist.includes(guildId)) return false;
-  return true;
+
+  // Either the Discord-permission snapshot this session was minted with, or a
+  // staff grant checked fresh against right now — see staffGuildsFor above
+  // for why those two get different freshness guarantees.
+  if (Array.isArray(session.guilds) && session.guilds.includes(guildId)) return true;
+  return staffGuildsFor(session.uid).includes(guildId);
 }
 
 /**
@@ -487,9 +651,10 @@ function csrfValid(session, token) {
 }
 
 module.exports = {
-  config, missingConfig, csrfFor, csrfValid, embeddable,
+  config, missingConfig, csrfFor, csrfValid, embeddable, isOwner,
   parkHandoff, collectHandoff, refreshed, adoptable,
   mintEmbedLink, revokeEmbedLinks,
+  staffGuildsFor, listStaff, grantStaff, revokeStaff,
   authorizeUrl, completeLogin,
   sessionFor, sessionForToken, canAccessGuild,
   parseCookies, cookie, clearCookie, verify,
