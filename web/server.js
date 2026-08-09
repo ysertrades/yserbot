@@ -539,6 +539,19 @@ function start(client) {
     } else {
       console.log(`[Panel] ${auth.config().baseUrl}`);
     }
+
+    // Said out loud, because the failure is otherwise invisible from this end.
+    // With nothing set, the panel answers every request with
+    // `frame-ancestors 'none'` and a host page gets a blank frame with the
+    // reason buried in a browser console nobody is looking at. One line here
+    // is the difference between "it did not work" and knowing why.
+    const { frameAncestors } = auth.config();
+    if (frameAncestors.length) {
+      console.log(`[Panel] Embedding allowed from: ${frameAncestors.join(' ')}`);
+    } else {
+      console.log('[Panel] Embedding is off — no host page may frame this panel. '
+        + 'Set PANEL_FRAME_ANCESTORS to the host origins (e.g. "https://whop.com https://*.whop.com") to allow it.');
+    }
   });
 
   return server;

@@ -708,6 +708,15 @@ module.exports = {
             const payload = buildEmbedPayload(interaction.guild, btnConfig.responseEmbedName || btnConfig.embedName, { user: interaction.user, channel: interaction.channel });
             if (!payload) { await interaction.reply({ content: '❌ Embed template not found.', flags: EPHEMERAL_FLAG }); }
             else { await interaction.reply({ embeds: payload.embeds, files: payload.files, components: payload.components.length ? payload.components : undefined, flags: EPHEMERAL_FLAG }); success = true; }
+          } else if (btnConfig.type === 'ticket') {
+            // The panel and /button have offered this type all along; nothing
+            // here knew what to do with it, so every ticket button told the
+            // person who pressed it that it was misconfigured. It opens a
+            // ticket exactly as the ticket panel's own button does — same
+            // channel, same permissions, same wording — because it is the
+            // same function.
+            await client.commands.get('ticket')?.openTicket(interaction);
+            success = true;
           } else if (btnConfig.type === 'random') {
             const list = (btnConfig.responses || '').split('|').map(s => s.trim()).filter(Boolean);
             if (list.length === 0) { await interaction.reply({ content: '❌ This button has no responses configured.', flags: EPHEMERAL_FLAG }); }

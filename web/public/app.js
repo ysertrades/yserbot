@@ -25,6 +25,8 @@ const WRITE_ERRORS = {
   too_many_options: 'Five options is the most Discord fits on one row.',
   option_too_long: 'One of the options is too long.',
   unknown_poll:    'That poll is no longer listed.',
+  need_response_embed:    'Pick the message this button should show privately.',
+  unknown_response_embed: 'That message no longer exists — pick another.',
   bad_mention:     'Pick a role that still exists, or @everyone / @here.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
@@ -1252,6 +1254,37 @@ function newDraft(name = '') {
   };
 }
 
+/* ── button types ──────────────────────────────────────────────────────────
+ *
+ * The server sends the machine names; these are what they actually do. "embed"
+ * tells you nothing about the behaviour that makes it worth choosing — that
+ * only the person who pressed sees the answer.
+ */
+const BUTTON_TYPE_LABELS = {
+  role:   'Give or take a role',
+  link:   'Open a link',
+  ticket: 'Open a support ticket',
+  embed:  'Show a message only they can see',
+  custom: 'Reply with a line of text',
+};
+
+const buttonTypeOptions = (meta) =>
+  (meta?.types || []).map(x => ({ value: x, label: BUTTON_TYPE_LABELS[x] || x }));
+
+/**
+ * Which saved message a "only they can see" button shows.
+ *
+ * From the Composer's own list — state.templates is Studio's banner artwork,
+ * which is a different thing with a confusingly similar name.
+ */
+function templatePick(value, onChange) {
+  const names = (state.overview?.composer || []).map(t => t.name).filter(Boolean);
+  return select('Message it shows privately', value || '',
+    names.map(n => ({ value: n, label: n })),
+    v => onChange(v || ''),
+    { blank: 'Only for "show a message" buttons' });
+}
+
 function renderComposer() {
   renderComposerIndex();
   const body = $('#composer-body');
@@ -1416,9 +1449,10 @@ function renderComposer() {
         textField('Label', b.label, v => { draftBtn.label = v; }),
         textField('Emoji', b.emoji, v => { draftBtn.emoji = v; }),
         select('Style', b.style, (meta?.styles || []).map(x => ({ value: x, label: x })), v => { draftBtn.style = v; }),
-        select('Does what', b.type, (meta?.types || []).map(x => ({ value: x, label: x })), v => { draftBtn.type = v; }),
+        select('Does what', b.type, buttonTypeOptions(meta), v => { draftBtn.type = v; }),
         pickOne('Role it grants', 'role', b.roleId, v => { draftBtn.roleId = v; }, { blank: 'Not a role button' }),
         textField('URL (for link buttons)', b.url, v => { draftBtn.url = v; }),
+        templatePick(b.responseEmbedName, v => { draftBtn.responseEmbedName = v; }),
       );
       const rowA = el('div', 'actions');
       const save = el('button', 'btn primary small', 'Save button');
@@ -1437,15 +1471,16 @@ function renderComposer() {
     const addSum = el('summary');
     addSum.append(el('span', 'nm', '+ Add a button'));
     const addBody = el('div', 'body');
-    const nb = { embedName: draft.name, id: '', label: '', style: 'Primary', type: 'custom', emoji: '', roleId: '', url: '' };
+    const nb = { embedName: draft.name, id: '', label: '', style: 'Primary', type: 'custom', emoji: '', roleId: '', url: '', responseEmbedName: '' };
     addBody.append(
       textField('Button id (letters, numbers, dashes)', '', v => { nb.id = v; }),
       textField('Label', '', v => { nb.label = v; }),
       textField('Emoji', '', v => { nb.emoji = v; }),
       select('Style', 'Primary', (meta?.styles || []).map(x => ({ value: x, label: x })), v => { nb.style = v; }),
-      select('Does what', 'custom', (meta?.types || []).map(x => ({ value: x, label: x })), v => { nb.type = v; }),
+      select('Does what', 'custom', buttonTypeOptions(meta), v => { nb.type = v; }),
       pickOne('Role it grants', 'role', '', v => { nb.roleId = v; }, { blank: 'Not a role button' }),
       textField('URL (link buttons)', '', v => { nb.url = v; }),
+      templatePick('', v => { nb.responseEmbedName = v; }),
       actions(() => post('button', nb)),
     );
     add.append(addSum, addBody);
