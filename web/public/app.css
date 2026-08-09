@@ -306,13 +306,40 @@ h2 {
 .field > span, .field-head { font-size: 0.78rem; color: var(--soft); }
 .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
 .field .count { color: var(--muted); font-family: var(--mono); font-size: 0.7rem; }
-input[type="text"], textarea, select {
+input[type="text"], input[type="date"], textarea, select {
   width: 100%; font: inherit; font-size: 0.88rem;
   background: var(--sunken); color: var(--ink);
   border: 1px solid var(--rule); border-radius: 8px; padding: 0.5rem 0.6rem;
 }
 textarea { resize: vertical; min-height: 4.5rem; font-family: var(--mono); font-size: 0.82rem; }
-input[type="text"] { font-family: var(--mono); font-size: 0.82rem; }
+input[type="text"], input[type="date"] { font-family: var(--mono); font-size: 0.82rem; }
+
+/* The native date picker, made to belong here.
+ *
+ * A date input is drawn by the browser, and it draws for a light page unless
+ * it is told otherwise — a white calendar and a black-on-white field in the
+ * middle of a dark panel. color-scheme is what tells it, and this panel is
+ * dark on purpose, so it is stated rather than left to the system.
+ *
+ * The calendar button is sized to the line rather than left alone, because a
+ * date input is as tall as its tallest part and that button is taller than the
+ * text — enough to leave the field standing a couple of pixels proud of every
+ * other input in the same form, which reads as a row that has slipped. */
+input[type="date"] {
+  color-scheme: dark;
+  -webkit-appearance: none; appearance: none;
+  text-align: left;
+}
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+/* The editable date itself lives in a shadow tree with padding of its own,
+   which is the last two pixels between this field and the ones around it. */
+input[type="date"]::-webkit-datetime-edit { padding: 0; line-height: inherit; }
+input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
+input[type="date"]::-webkit-calendar-picker-indicator {
+  height: 1em; width: 1em; padding: 0; margin: 0 0 0 0.3rem;
+  cursor: pointer; opacity: 0.6;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 
 /* ── forms ───────────────────────────────────────────────────────────── */

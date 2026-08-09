@@ -66,6 +66,46 @@ function nextDayOfWeekTimestamp(ts, day, offsetMinutes = 0) {
     return t;
 }
 
+// A calendar date as the schedule's own timezone sees it, 'YYYY-MM-DD'.
+// The same shift dayOfWeek uses, and for the same reason: a moment near
+// midnight UTC is already tomorrow in some zones and still yesterday in others.
+function formatDate(ts, offsetMinutes = 0) {
+    const d = new Date(ts + offsetMinutes * 60000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+// Parses 'YYYY-MM-DD' into its three numbers, or null if it is not a real day.
+//
+// The shape check alone is not enough: Date.UTC happily accepts 2026-02-31 and
+// rolls it into 3 March, so a typo would silently schedule a different day than
+// the one that was typed. Building the date and reading it back is the check —
+// a date that rolled is not the date it was asked for.
+function parseDate(input) {
+    const m = String(input ?? '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (!m) return null;
+    const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+    const back = new Date(Date.UTC(year, month - 1, day));
+    if (back.getUTCFullYear() !== year || back.getUTCMonth() !== month - 1 || back.getUTCDate() !== day) return null;
+    return { year, month, day };
+}
+
+// Moves a timestamp onto a given calendar date, keeping the time of day it
+// already has in the given timezone. The date counterpart of
+// nextDayOfWeekTimestamp: that one names a weekday and hunts forward for it,
+// this one names the day outright — so it can also move a run time backwards,
+// which is what makes it usable for correcting a date that was set too late.
+// Returns null when the date is not a real one.
+function onDateTimestamp(ts, dateInput, offsetMinutes = 0) {
+    const date = parseDate(dateInput);
+    if (date === null) return null;
+    const inZone = new Date(ts + offsetMinutes * 60000);
+    const moved = Date.UTC(
+        date.year, date.month - 1, date.day,
+        inZone.getUTCHours(), inZone.getUTCMinutes(), inZone.getUTCSeconds(), 0,
+    );
+    return moved - offsetMinutes * 60000;
+}
+
 // Parses a user-provided time string into an absolute future timestamp (ms).
 // Supports:
 //   - relative shorthand: "30m", "2h", "1d", "45s" (timezone-independent)
@@ -132,5 +172,6 @@ function computeNextRun(firedAt, frequency, now = Date.now(), offsetMinutes = 0)
 
 module.exports = {
     generateScheduleId, parseUtcOffset, parseScheduleTime, computeNextRun,
-    nextWeekdayTimestamp, nextDayOfWeekTimestamp, isWeekend, dayOfWeek, DAY_NAMES,
+    nextWeekdayTimestamp, nextDayOfWeekTimestamp, onDateTimestamp,
+    formatDate, parseDate, isWeekend, dayOfWeek, DAY_NAMES,
 };

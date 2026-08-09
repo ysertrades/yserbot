@@ -20,7 +20,8 @@ const { readJson, writeJson } = require('../utils/jsonStorage');
 const { getBalance, addCoins, setBalance } = require('../utils/economyManager');
 const {
   generateScheduleId, parseScheduleTime,
-  nextWeekdayTimestamp, nextDayOfWeekTimestamp, dayOfWeek, DAY_NAMES,
+  nextWeekdayTimestamp, nextDayOfWeekTimestamp, onDateTimestamp,
+  formatDate, dayOfWeek, DAY_NAMES,
 } = require('../utils/scheduler');
 const { todaysSlotUTC, REWARD: LOTTERY_REWARD, drawStatus } = require('../utils/lotteryRunner');
 const { normaliseMention } = require('../utils/mentionTarget');
@@ -54,6 +55,20 @@ function weeklyDay(body, fallback = null) {
   if (raw === undefined || raw === null || raw === '') return fallback;
   const n = Number(raw);
   return Number.isInteger(n) && n >= 0 && n <= 6 ? n : fallback;
+}
+
+/**
+ * The date picked for a schedule, or null when none was.
+ *
+ * Same trap as weeklyDay: a date input that has been cleared posts '', and an
+ * empty string has to mean "leave the day alone" rather than being handed to a
+ * parser that would reject it and fail an edit nobody meant to make.
+ */
+function scheduleDate(body) {
+  const raw = body.date;
+  if (raw === undefined || raw === null) return null;
+  const str = String(raw).trim();
+  return str === '' ? null : str;
 }
 
 // file → the settings inside it, so one table covers several stores.
@@ -166,6 +181,10 @@ function read(guildId, guild) {
     // Derived, not stored — see DAY_OPTIONS above. Null for every cadence
     // except weekly, where it is what the day picker shows as current.
     dayOfWeek: s.frequency === 'weekly' && s.time ? dayOfWeek(s.time, s.offsetMinutes ?? 0) : null,
+    // Derived the same way, and for the same reason: the date a schedule next
+    // runs on lives inside its run time. The picker needs it to open on the
+    // day that is actually set rather than on an empty box.
+    date: s.time ? formatDate(s.time, s.offsetMinutes ?? 0) : null,
     mention: s.mention ?? null,
     time: s.time ?? null,
     offsetMinutes: s.offsetMinutes ?? 0,
@@ -383,22 +402,45 @@ function saveLevelRole(guildId, body, guild) {
 }
 
 /**
- * Turns a typed time plus the browser's UTC offset into an absolute run time.
+ * Turns a typed time, a picked date and the browser's UTC offset into an
+ * absolute run time.
  *
  * This is why scheduling can live on the web at all: the page knows the
  * viewer's offset, so "09:30" means the same instant it would have meant if
  * you had typed it into /schedule.
+ *
+ * Returns the reason rather than a bare null, because there are now three ways
+ * this can fail and they need three different things done about them — a
+ * malformed time, a day that does not exist, and a moment that has already
+ * gone by all used to arrive as the same "check the time" message.
+ *
+ * @returns {{time: number}|{error: string}}
  */
-function resolveTime(input, offsetMinutes, frequency, day = null) {
+function resolveTime(input, offsetMinutes, frequency, day = null, date = null) {
   const offset = Number(offsetMinutes);
-  if (!Number.isFinite(offset) || offset < -720 || offset > 840) return null;
+  if (!Number.isFinite(offset) || offset < -720 || offset > 840) return { error: 'bad_time' };
   let t = parseScheduleTime(String(input || '').trim(), offset);
-  if (!t) return null;
+  if (!t) return { error: 'bad_time' };
+
+  // The date is the most specific thing said about when to post, so it is
+  // applied first and the cadence nudges work from there.
+  if (date) {
+    const onDate = onDateTimestamp(t, date, offset);
+    if (onDate === null) return { error: 'bad_date' };
+    // A time of day already gone by rolls to tomorrow on its own; pinning it
+    // to today puts it in the past, and the runner fires anything in the past
+    // on its very next tick.
+    if (onDate <= Date.now()) return { error: 'past_date' };
+    t = onDate;
+  }
+
   if (frequency === 'weekdays') t = nextWeekdayTimestamp(t, offset);
   // Weekly keeps whatever weekday its run time lands on, so the picked day is
-  // applied to that time rather than stored beside it.
-  if (frequency === 'weekly' && day !== null) t = nextDayOfWeekTimestamp(t, day, offset);
-  return t;
+  // applied to that time rather than stored beside it. A date already names a
+  // weekday, so it wins — applying both would move the run off the very date
+  // that was picked.
+  if (frequency === 'weekly' && day !== null && !date) t = nextDayOfWeekTimestamp(t, day, offset);
+  return { time: t };
 }
 
 /** Creates a scheduled post. */
@@ -413,8 +455,9 @@ function createSchedule(guildId, body, guild) {
   const frequency = FREQUENCY_VALUES.includes(body.frequency) ? body.frequency : null;
   if (!frequency) return { error: 'bad_frequency' };
 
-  const time = resolveTime(body.time, body.offsetMinutes, frequency, weeklyDay(body));
-  if (!time) return { error: 'bad_time' };
+  const when = resolveTime(body.time, body.offsetMinutes, frequency, weeklyDay(body), scheduleDate(body));
+  if (when.error) return { error: when.error };
+  const time = when.time;
 
   const mention = normaliseMention(body.mention, guild);
   if (mention === undefined) return { error: 'bad_mention' };
@@ -467,19 +510,29 @@ function saveSchedule(guildId, body, guild) {
     if (m !== entry.mention) { entry.mention = m; changed.push('mention'); }
   }
   if (body.time) {
-    const t = resolveTime(body.time, body.offsetMinutes, entry.frequency, weeklyDay(body));
-    if (!t) return { error: 'bad_time' };
-    entry.time = t;
+    const when = resolveTime(body.time, body.offsetMinutes, entry.frequency, weeklyDay(body), scheduleDate(body));
+    if (when.error) return { error: when.error };
+    entry.time = when.time;
     entry.offsetMinutes = Number(body.offsetMinutes) || 0;
     changed.push('time');
-  } else if (entry.frequency === 'weekly') {
-    // No new time typed, but the day may have moved — or the schedule may
-    // have only just become weekly. Shift the run time already stored onto
-    // the picked day rather than making somebody retype a time they were
-    // happy with.
-    const day = weeklyDay(body);
+  } else {
+    // No new time typed, but the day it runs on may still have moved — or the
+    // schedule may have only just become weekly. Both branches shift the run
+    // time already stored rather than making somebody retype a time they were
+    // happy with; the time of day survives either way.
     const offset = entry.offsetMinutes || 0;
-    if (day !== null && entry.time && dayOfWeek(entry.time, offset) !== day) {
+    const date = scheduleDate(body);
+    const day = weeklyDay(body);
+
+    if (date && entry.time) {
+      const moved = onDateTimestamp(entry.time, date, offset);
+      if (moved === null) return { error: 'bad_date' };
+      if (moved !== entry.time) {
+        if (moved <= Date.now()) return { error: 'past_date' };
+        entry.time = moved;
+        changed.push('date');
+      }
+    } else if (entry.frequency === 'weekly' && day !== null && entry.time && dayOfWeek(entry.time, offset) !== day) {
       entry.time = nextDayOfWeekTimestamp(entry.time, day, offset);
       changed.push('day');
     }
