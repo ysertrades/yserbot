@@ -23,6 +23,7 @@ const path = require('node:path');
 
 const auth    = require('./auth');
 const api     = require('./api');
+const owner   = require('./owner');
 const preview = require('./preview');
 const live    = require('./live');
 const { generateAppIcon } = require('../utils/appIconVisual');
@@ -404,6 +405,56 @@ async function route(req, res, client) {
 
     if (p === '/api/leaderboard') {
       return json(res, 200, await api.leaderboard(client, 10));
+    }
+
+    /* -- the owner console --------------------------------------------------
+     * Everything under here is gated a second time, on top of the ordinary
+     * session check above: holding a session proves who you are, not that
+     * you are the bot's operator. Every route below re-checks isOwner itself
+     * rather than trusting a flag carried in from earlier in the request, for
+     * the same reason the guild checks below re-verify bot presence live
+     * instead of trusting what a session snapshot said at login. */
+    if (p.startsWith('/api/owner/')) {
+      if (!auth.isOwner(session.uid)) return json(res, 403, { error: 'forbidden' });
+
+      if (p === '/api/owner/guilds') {
+        if (req.method !== 'GET') return json(res, 405, { error: 'use_get' });
+        return json(res, 200, { guilds: owner.listGuilds(client) });
+      }
+
+      const membersMatch = /^\/api\/owner\/guild\/(\d{5,25})\/members$/.exec(p);
+      if (membersMatch) {
+        if (req.method !== 'GET') return json(res, 405, { error: 'use_get' });
+        return json(res, 200, { members: await owner.listMembers(membersMatch[1], client) });
+      }
+
+      if (p === '/api/owner/staff') {
+        if (req.method !== 'POST' && req.method !== 'DELETE') return json(res, 405, { error: 'use_post_or_delete' });
+        if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (err) { return json(res, err.message === 'body_too_large' ? 413 : 400, { error: err.message }); }
+        const guildId = String(body.guildId || '');
+        const userId  = String(body.userId || '');
+        const result = req.method === 'POST'
+          ? await owner.grantStaff(guildId, userId, session.uid, client)
+          : owner.revokeStaffGrant(guildId, userId);
+        if (result.error) return json(res, 400, result);
+        return json(res, 200, { ...result, guilds: owner.listGuilds(client) });
+      }
+
+      if (p === '/api/owner/sign-out') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
+        if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (err) { return json(res, err.message === 'body_too_large' ? 413 : 400, { error: err.message }); }
+        const result = owner.signOut(String(body.userId || ''));
+        if (result.error) return json(res, 400, result);
+        return json(res, 200, result);
+      }
+
+      return json(res, 404, { error: 'unknown_endpoint' });
     }
 
     /* -- banner previews -------------------------------------------------- */

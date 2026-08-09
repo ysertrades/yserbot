@@ -101,6 +101,10 @@
       <button type="button" data-goto="tickets">Tickets</button>
       <button type="button" data-goto="moderation">Moderation</button>
       <button type="button" data-goto="settings">Settings</button>
+      <!-- Hidden by default and revealed by app.js only for an account
+           PANEL_OWNER_IDS names — everyone else never has this button exist
+           to click, not merely a disabled one. -->
+      <button type="button" data-goto="owner" id="nav-owner" hidden>Owner</button>
     </nav>
 
     <!-- ── Overview ────────────────────────────────────────────────────── -->
@@ -362,6 +366,20 @@
           <button class="btn" id="legal-copy-terms" type="button">Copy terms link</button>
           <button class="btn" id="legal-copy-privacy" type="button">Copy privacy link</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Owner ───────────────────────────────────────────────────────────
+         Only ever reachable through #nav-owner, which only ever shows for an
+         account PANEL_OWNER_IDS names — so this section renders for nobody
+         else, whichever guild happens to be selected. It does not read from
+         the currently picked server at all; it spans every server the bot is
+         in, which is the entire point of it. -->
+    <div class="section" data-section="owner">
+      <div class="panel">
+        <h2>Every server the bot is in</h2>
+        <p class="muted">Grant an account access to a server's panel without touching its Discord roles, revoke it just as directly, or sign someone out everywhere at once — including a server's own manager, if it ever comes to that.</p>
+        <div class="rows" id="owner-guilds"></div>
       </div>
     </div>
 

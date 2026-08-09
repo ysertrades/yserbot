@@ -33,6 +33,10 @@ const WRITE_ERRORS = {
   past_date:       'That day and time have already gone by. Pick a later one.',
   bad_frequency:   'Pick how often it should post.',
   unknown_schedule: 'That scheduled post is no longer listed.',
+  not_a_member:    'That account is not a member of that server.',
+  unknown_grant:   'That access grant is no longer listed.',
+  unknown_guild:   'The bot is not in that server.',
+  bad_user:        'That is not a Discord account id.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
   bad_number:      'That number is outside the range this setting allows.',
@@ -4080,21 +4084,213 @@ function initEmbedLink() {
 
   revokeBtn.addEventListener('click', async () => {
     revokeBtn.disabled = true;
-    try {
-      const res = await fetch('/api/embed-link', {
-        method: 'DELETE', credentials: 'same-origin',
-        headers: { 'x-csrf-token': state.csrf, ...authHeaders() },
-      });
-      if (!res.ok) { toast('Could not replace the link.', 'bad'); return; }
-      await mint();
-      toast('New link ready — update Whop with it.', 'good');
-    } finally { revokeBtn.disabled = false; }
+    // One request, not a revoke-then-mint pair: minting always invalidates
+    // whatever this account had before. A separate revoke first used to mean
+    // the only credential an all-Whop admin has — the link itself — could get
+    // killed by the very click meant to replace it, one request before the
+    // mint that needed it.
+    try { await mint(); toast('New link ready — update Whop with it.', 'good'); }
+    finally { revokeBtn.disabled = false; }
   });
 
   $('#embed-link-copy').addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(input.value); toast('Copied.', 'good'); }
     catch { input.select(); toast('Select and copy the link manually.'); }
   });
+}
+
+/* ── owner console ─────────────────────────────────────────────────────────
+   Spans every server the bot is in, so nothing here reads state.guildId or
+   state.overview the way every other section does — it asks for its own
+   data and keeps its own small cache instead. */
+
+async function ownerWrite(method, path, body) {
+  const res = await fetch(path, {
+    method, credentials: 'same-origin',
+    headers: { 'content-type': 'application/json', 'x-csrf-token': state.csrf, ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { toast(WRITE_ERRORS[data.error] || 'That did not save.', 'bad'); return null; }
+  return data;
+}
+
+async function loadOwnerConsole() {
+  try {
+    const data = await get('/api/owner/guilds');
+    state.ownerGuilds = data.guilds;
+    renderOwnerConsole();
+  } catch (err) {
+    console.error(err);
+    toast('Could not load the owner console.', 'bad');
+  }
+}
+
+// Fetched once per guild card, the first time it is opened, and kept —
+// nothing on this page changes who is a member of a server, so there is
+// nothing that should ever invalidate it during one visit.
+const ownerMemberCache = new Map();
+
+async function ownerMembersFor(guildId) {
+  if (ownerMemberCache.has(guildId)) return ownerMemberCache.get(guildId);
+  const data = await get(`/api/owner/guild/${guildId}/members`);
+  ownerMemberCache.set(guildId, data.members);
+  return data.members;
+}
+
+async function ownerRevokeStaff(guildId, userId, name) {
+  if (!await askConfirm({
+    title: 'Revoke this access grant?',
+    message: `${name || 'This account'} loses the panel access you personally granted here. If Discord's own roles let them manage this server anyway, that is unaffected.`,
+    confirmLabel: 'Revoke it', danger: true,
+  })) return;
+  const data = await ownerWrite('DELETE', '/api/owner/staff', { guildId, userId });
+  if (!data) return;
+  state.ownerGuilds = data.guilds;
+  renderOwnerConsole();
+  toast('Access revoked.', 'good');
+}
+
+async function ownerSignOut(userId, name) {
+  if (!await askConfirm({
+    title: 'Sign this account out everywhere?',
+    message: `${name || 'This account'} is signed out of the panel immediately — every open tab, every saved Whop link. They can sign back in with Discord as long as something still lets them in.`,
+    confirmLabel: 'Sign them out', danger: true,
+  })) return;
+  const data = await ownerWrite('POST', '/api/owner/sign-out', { userId });
+  if (!data) return;
+  toast('Signed out.', 'good');
+}
+
+/**
+ * Fills one guild's member picker, from cache if this card has already been
+ * opened once this visit. Split out from renderOwnerConsole because a grant
+ * or a revoke re-renders the whole list — every guild's data can have
+ * changed, not just the one that was acted on — and the card you were just
+ * using has to come back open with its picker already usable, not collapsed
+ * back to a cold "Loading members…" you have to click through again.
+ */
+async function loadOwnerPicker(guildId, picker, placeholder, grantBtn, signOutAnyBtn) {
+  try {
+    const members = await ownerMembersFor(guildId);
+    picker.dataset.loaded = '1';
+    if (!members.length) {
+      placeholder.textContent = 'No members to pick from.';
+      return;
+    }
+    picker.replaceChildren(...members.map(m => {
+      const o = el('option', null, m.name);
+      o.value = m.id;
+      return o;
+    }));
+    picker.disabled = false;
+    grantBtn.disabled = false;
+    signOutAnyBtn.disabled = false;
+  } catch (err) {
+    console.error(err);
+    placeholder.textContent = 'Could not load members.';
+  }
+}
+
+function renderOwnerConsole() {
+  const list = $('#owner-guilds');
+  const guilds = state.ownerGuilds || [];
+  if (!guilds.length) { list.replaceChildren(el('p', 'muted', 'The bot is not in any server.')); return; }
+
+  // Every render below builds fresh <details> nodes, none of them open by
+  // default — so whichever ones were open a moment ago have to be reopened
+  // by hand afterward, or the very card just acted on snaps shut under you.
+  const openIds = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.guildId));
+
+  list.replaceChildren(...guilds.map(g => {
+    const d = el('details', 'item');
+    d.dataset.guildId = g.id;
+    const sum = el('summary');
+    if (g.icon) { const i = el('img'); i.src = g.icon; i.alt = ''; sum.append(i); }
+    sum.append(
+      el('span', 'nm', g.name),
+      el('span', 'pr', `${num(g.members)} member${g.members === 1 ? '' : 's'}`),
+    );
+    const body = el('div', 'body');
+
+    const staffList = el('div', 'rows');
+    if (!g.staff.length) {
+      staffList.append(el('p', 'muted', 'Nobody has a staff grant here yet.'));
+    } else {
+      staffList.append(...g.staff.map(s => {
+        const card = el('div', 'gaw');
+        const top = el('div', 'gaw-top');
+        top.append(el('span', 'nm', s.name || 'Former member'));
+        card.append(top);
+        card.append(el('p', 'hint', `granted access ${relativeTime(s.addedAt)}`));
+        const act = el('div', 'actions');
+        const signOutBtn = el('button', 'btn small', 'Sign out');
+        signOutBtn.type = 'button';
+        signOutBtn.addEventListener('click', () => ownerSignOut(s.userId, s.name));
+        const revokeBtn = el('button', 'btn small danger', 'Revoke');
+        revokeBtn.type = 'button';
+        revokeBtn.addEventListener('click', () => ownerRevokeStaff(g.id, s.userId, s.name));
+        act.append(signOutBtn, revokeBtn);
+        card.append(act);
+        return card;
+      }));
+    }
+    body.append(staffList);
+
+    // Grant and sign-out share one picker: both start from the same
+    // question, which of this server's members, and the picker itself is
+    // the "no raw snowflake" rule every other picker in this panel follows —
+    // pasting a bare Discord id here would be exactly the kind of typo this
+    // whole feature exists to keep out of something as sensitive as access.
+    const picker = el('select');
+    const placeholder = el('option', null, 'Loading members…');
+    placeholder.value = '';
+    picker.append(placeholder);
+    picker.disabled = true;
+    const pickerField = el('label', 'field');
+    pickerField.append(el('span', null, 'Member'), picker);
+
+    const act = el('div', 'actions');
+    const grantBtn = el('button', 'btn primary small', 'Grant access');
+    grantBtn.type = 'button';
+    grantBtn.disabled = true;
+    grantBtn.addEventListener('click', async () => {
+      if (!picker.value) return;
+      const data = await ownerWrite('POST', '/api/owner/staff', { guildId: g.id, userId: picker.value });
+      if (!data) return;
+      state.ownerGuilds = data.guilds;
+      renderOwnerConsole();
+      toast('Access granted.', 'good');
+    });
+    const signOutAnyBtn = el('button', 'btn small', 'Sign out this account');
+    signOutAnyBtn.type = 'button';
+    signOutAnyBtn.disabled = true;
+    signOutAnyBtn.addEventListener('click', () => {
+      if (!picker.value) return;
+      ownerSignOut(picker.value, picker.selectedOptions[0]?.textContent);
+    });
+    act.append(grantBtn, signOutAnyBtn);
+    body.append(pickerField, act);
+
+    // Loaded on open, not up front — a console listing every server the bot
+    // is in must not fetch every server's member list the moment it renders.
+    d.addEventListener('toggle', () => {
+      if (!d.open || picker.dataset.loaded) return;
+      loadOwnerPicker(g.id, picker, placeholder, grantBtn, signOutAnyBtn);
+    });
+
+    d.append(sum, body);
+    if (openIds.has(g.id)) {
+      d.open = true;
+      // Not left for the 'toggle' event above: setting .open here is this
+      // guild's card coming back the way it was, not a user opening it, and
+      // depending on a browser dispatching 'toggle' for a scripted change
+      // would make the picker's refill a coin flip across browsers instead
+      // of something this function is actually in charge of.
+      loadOwnerPicker(g.id, picker, placeholder, grantBtn, signOutAnyBtn);
+    }
+    return d;
+  }));
 }
 
 /* ── terms & privacy ──────────────────────────────────────────────────────
@@ -4862,6 +5058,11 @@ function initSections() {
     b.addEventListener('click', () => {
       showSection(b.dataset.goto);
       if (b.dataset.goto === 'giveaways') state.gawBump?.();
+      // Spans every guild, so nothing about switching servers ever refreshes
+      // it the way refreshOverview does the guild-scoped tabs — it has to ask
+      // for itself, and asking again on every visit is what catches a grant
+      // another admin made from a different device in between.
+      if (b.dataset.goto === 'owner') loadOwnerConsole();
       paintBar();
       history.replaceState(null, '', `?g=${state.guildId}&s=${b.dataset.goto}`);
     });
@@ -5017,6 +5218,12 @@ async function main() {
   initSections();
   initSheet();
   initEmbedLink();
+  // The button does not exist to click for anyone this is false for — see
+  // the comment on #nav-owner in the markup.
+  if (me.isOwner) {
+    $('#nav-owner').hidden = false;
+    loadOwnerConsole();
+  }
   $('#tpl-new').addEventListener('click', () => {
     state.tplName = null;
     state.draft = { ...newDraft(''), isNew: true };
