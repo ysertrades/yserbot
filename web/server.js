@@ -182,7 +182,12 @@ const TYPES = {
   '.woff2': 'font/woff2',
 };
 
-function serveStatic(res, urlPath) {
+/**
+ * @param {object} [opts]
+ *   orPanel — serve the panel itself when the path names no file on disk.
+ *   Only ever set for a path with no file extension; see the call site.
+ */
+function serveStatic(res, urlPath, { orPanel = false } = {}) {
   const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
   const file = path.resolve(PUBLIC_DIR, rel);
 
@@ -193,7 +198,12 @@ function serveStatic(res, urlPath) {
   }
 
   fs.readFile(file, (err, buf) => {
-    if (err) return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
+    if (err) {
+      // orPanel is false on the retry, so a missing index.html 404s rather
+      // than recursing.
+      if (orPanel) return serveStatic(res, '/');
+      return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
+    }
     send(res, 200, buf, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
   });
 }
@@ -498,7 +508,20 @@ async function route(req, res, client) {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return send(res, 405, 'Method not allowed', { 'content-type': 'text/plain' });
   }
-  return serveStatic(res, p);
+
+  // The panel is one page, so an address that names no file is still the
+  // panel. Without this only "/" answered, and every host that mounts an app
+  // at a path of its own got a plain-text "Not found" inside its frame —
+  // Whop's default is /experiences/[experienceId], which is not a file here
+  // and never will be. The same rule covers reloading a deep link and an
+  // installed home-screen app reopening on the address it was closed at.
+  //
+  // Gated on there being no file extension, which is the difference between a
+  // page and an asset. A missing /app.js has to stay a 404: answering it with
+  // the HTML instead would hand the browser a page where it asked for a
+  // script, and it would fail as a syntax error pointing nowhere near the
+  // real problem.
+  return serveStatic(res, p, { orPanel: !path.extname(p) });
 }
 
 /* ─── lifecycle ──────────────────────────────────────────────────────────── */
