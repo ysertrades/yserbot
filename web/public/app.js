@@ -28,6 +28,11 @@ const WRITE_ERRORS = {
   need_response_embed:    'Pick the message this button should show privately.',
   unknown_response_embed: 'That message no longer exists — pick another.',
   bad_mention:     'Pick a role that still exists, or @everyone / @here.',
+  bad_time:        'Give a time as HH:MM, or a gap from now like 2h.',
+  bad_date:        'That is not a real date — pick one from the calendar.',
+  past_date:       'That day and time have already gone by. Pick a later one.',
+  bad_frequency:   'Pick how often it should post.',
+  unknown_schedule: 'That scheduled post is no longer listed.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
   bad_number:      'That number is outside the range this setting allows.',
@@ -746,6 +751,105 @@ function durationField(label, value, onInput) {
     chips.append(c);
   }
   l.append(chips);
+  return l;
+}
+
+/* ── dates ─────────────────────────────────────────────────────────────── */
+
+/** 'YYYY-MM-DD' as this browser's own calendar reads it. */
+const localDate = d =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Midnight today, the reference every "in N days" is counted from. */
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+
+/**
+ * What a picked date says back — the weekday, and how far off it is.
+ *
+ * 2026-08-20 is the shape the scheduler wants and the one thing a person
+ * cannot check by eye: nothing in it says Thursday, and nothing says next
+ * week. This is the half the field adds.
+ */
+function dateEcho(value) {
+  if (!value) return { text: 'no date set', bad: false };
+  const [y, m, d] = String(value).split('-').map(Number);
+  const picked = new Date(y, (m || 1) - 1, d || 1);
+  if (isNaN(picked)) return { text: 'not a date', bad: true };
+
+  const days = Math.round((picked - startOfToday()) / 86400000);
+  const named = picked.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
+  if (days < 0) return { text: `${named} — already passed`, bad: true };
+  if (days === 0) return { text: `today · ${named}`, bad: false };
+  if (days === 1) return { text: `tomorrow · ${named}`, bad: false };
+  return { text: `${named} · in ${days} days`, bad: false };
+}
+
+/**
+ * A date picker, with the days anyone actually reaches for beside it.
+ *
+ * <input type="date"> rather than a hand-built calendar because it is the
+ * native one on every device this panel opens on — the wheel on a phone, the
+ * drop-down calendar on a desktop — and it can only ever hand back a real
+ * date in the exact shape the scheduler parses. `min` is today, so a date that
+ * would fire the moment it was saved is not offered in the first place.
+ *
+ * The chips are there because today and tomorrow are most of what a one-off
+ * post is ever set to, and finding today's cell in a calendar is slower than a
+ * word saying so. Clear is one of them too: on an existing schedule, a blank
+ * date has to stay reachable or the day could be changed but never left alone.
+ */
+function dateField(label, value, onInput, { note = '' } = {}) {
+  const l = el('label', 'field');
+  const head = el('div', 'field-head');
+  const title = el('span', null, label);
+  const echo = el('span', 'count');
+  head.append(title, echo);
+  l.append(head);
+
+  const input = el('input');
+  input.type = 'date';
+  input.value = value || '';
+  input.min = localDate(new Date());
+
+  const caption = el('p', 'hint', note);
+  caption.hidden = !note;
+
+  const sync = () => {
+    const { text, bad } = dateEcho(input.value);
+    echo.textContent = text;
+    echo.className = `count${bad ? ' bad' : ''}`;
+    input.classList.toggle('bad', bad);
+  };
+  sync();
+  const set = v => { input.value = v; sync(); onInput(v); };
+  input.addEventListener('change', () => { sync(); onInput(input.value); });
+
+  l.append(input);
+
+  const chips = el('div', 'chipset');
+  for (const [text, offsetDays] of [['Today', 0], ['Tomorrow', 1], ['Next week', 7]]) {
+    const c = el('button', 'chip', text);
+    c.type = 'button';
+    c.addEventListener('click', () => {
+      const d = startOfToday();
+      d.setDate(d.getDate() + offsetDays);
+      set(localDate(d));
+    });
+    chips.append(c);
+  }
+  const clear = el('button', 'chip', 'Clear');
+  clear.type = 'button';
+  clear.addEventListener('click', () => set(''));
+  chips.append(clear);
+  l.append(chips, caption);
+
+  // The label and the caption both depend on the cadence, which is picked in a
+  // different field, so the caller can move them without rebuilding the node.
+  l.retitle = (text, hint) => {
+    title.textContent = text;
+    caption.textContent = hint || '';
+    caption.hidden = !hint;
+  };
   return l;
 }
 
@@ -4118,6 +4222,25 @@ const cadenceLabel = s => {
 
 const fmtTime = ts => (ts ? new Date(ts).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'not set');
 
+// What the date means on each cadence, in the words that cadence needs.
+//
+// A date is one day for a schedule that posts once and a starting point for
+// one that repeats, and those are different enough that one label for both
+// would be wrong on three of the four. The weekly line says outright which of
+// the two day pickers wins, because that is the one place they overlap.
+const DATE_LABEL = {
+  once:     'Date it posts',
+  everyday: 'First post on',
+  weekdays: 'First post on',
+  weekly:   'First post on',
+};
+const DATE_NOTE = {
+  once:     'It posts once on this day at the time above, then removes itself.',
+  everyday: 'It starts on this day, then posts every day at the same time.',
+  weekdays: 'It starts on this day, moved to the next weekday if that lands on a weekend.',
+  weekly:   'It starts on this day and repeats weekly on that weekday — a date set here wins over the day picker.',
+};
+
 function renderSchedules() {
   const list = $('#sched-list');
   const items = state.overview?.features?.schedules || [];
@@ -4137,15 +4260,25 @@ function renderSchedules() {
     // rather than sitting there greyed out on the other cadences.
     const dayPick = select('Day of the week', s.dayOfWeek ?? '', dayOptions(),
       v => { draft.dayOfWeek = v; }, { blank: 'Leave it on its current day' });
-    const syncDay = f => { dayPick.style.display = f === 'weekly' ? '' : 'none'; };
-    syncDay(s.frequency);
+    // The date starts on whatever day this schedule already runs, so the
+    // picker opens on it — but it only joins the draft once it is touched.
+    // Sending it every time would make an untouched date look like an edit and
+    // quietly take precedence over a day that was the thing being changed.
+    const datePick = dateField(DATE_LABEL[s.frequency] || 'Date', s.date || '',
+      v => { draft.date = v; draft.offsetMinutes = tzOffset(); });
+    const syncCadence = f => {
+      dayPick.style.display = f === 'weekly' ? '' : 'none';
+      datePick.retitle(DATE_LABEL[f] || 'Date', DATE_NOTE[f] || '');
+    };
+    syncCadence(s.frequency);
     body.append(
       select('Message to post', s.embedName, templateOptions(), v => { draft.embedName = v; }),
       pickOne('Channel', 'channel', s.channelId, v => { draft.channelId = v; }),
-      select('How often', s.frequency, freqOptions(), v => { draft.frequency = v; syncDay(v); }),
+      select('How often', s.frequency, freqOptions(), v => { draft.frequency = v; syncCadence(v); }),
       dayPick,
       textField('Time (HH:MM, or "2h" from now)', '', v => { draft.time = v; draft.offsetMinutes = tzOffset(); },
         { placeholder: fmtTime(s.time) }),
+      datePick,
       mentionPicker('Ping with the post', s.mention, v => { draft.mention = v; }),
       el('p', 'hint', `Next: ${fmtTime(s.time)}${s.lastRun ? ` · last posted ${new Date(s.lastRun).toLocaleString()}` : ''}`),
     );
@@ -4178,14 +4311,20 @@ function renderSchedules() {
   const addBody = el('div', 'body');
   const newDayPick = select('Day of the week', '', dayOptions(),
     v => { nb.dayOfWeek = v; }, { blank: 'Whichever day the time lands on' });
-  const syncNewDay = f => { newDayPick.style.display = f === 'weekly' ? '' : 'none'; };
-  syncNewDay(nb.frequency);
+  const newDatePick = dateField(DATE_LABEL[nb.frequency] || 'Date', '', v => { nb.date = v; },
+    { note: DATE_NOTE[nb.frequency] });
+  const syncNewCadence = f => {
+    newDayPick.style.display = f === 'weekly' ? '' : 'none';
+    newDatePick.retitle(DATE_LABEL[f] || 'Date', DATE_NOTE[f] || '');
+  };
+  syncNewCadence(nb.frequency);
   addBody.append(
     select('Message to post', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a message' }),
     pickOne('Channel', 'channel', '', v => { nb.channelId = v; }, { blank: 'Pick a channel' }),
-    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; syncNewDay(v); }),
+    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; syncNewCadence(v); }),
     newDayPick,
     textField('Time', '', v => { nb.time = v; }, { placeholder: '09:30, or 2h from now' }),
+    newDatePick,
     mentionPicker('Ping with the post', null, v => { nb.mention = v; }),
     el('p', 'hint', `Times are read in your timezone (UTC${tzOffset() >= 0 ? '+' : ''}${(tzOffset() / 60).toFixed(2).replace(/\.00$/, '')}).`),
     actions(() => post('schedulenew', nb)),
