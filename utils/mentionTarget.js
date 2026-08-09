@@ -52,8 +52,13 @@ function mentionSend(mention) {
   const off = { parse: [] };
   if (!mention) return { text: null, allowedMentions: off };
 
+  // Both take parse: ['everyone']. Discord's allowed_mentions only knows three
+  // parse values — "roles", "users" and "everyone" — and that last one governs
+  // @everyone *and* @here together. There is no "here" to ask for, so asking
+  // for it was asking for nothing: the line rendered, and it never rang. That
+  // is why every other target worked and this one quietly did not.
   if (mention === '@everyone') return { text: '@everyone', allowedMentions: { parse: ['everyone'] } };
-  if (mention === '@here')     return { text: '@here',     allowedMentions: { parse: ['here'] } };
+  if (mention === '@here')     return { text: '@here',     allowedMentions: { parse: ['everyone'] } };
 
   const role = String(mention).match(/^<@&(\d+)>$/) || String(mention).match(/^(\d+)$/);
   if (role) return { text: `<@&${role[1]}>`, allowedMentions: { roles: [role[1]] } };

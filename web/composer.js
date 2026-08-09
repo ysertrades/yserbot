@@ -30,7 +30,16 @@ const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
 const embedCommand = () => require('../commands/utility/embed.js');
 
 const BUTTON_STYLES = ['Primary', 'Secondary', 'Success', 'Danger', 'Link'];
-const BUTTON_TYPES  = ['role', 'link', 'ticket', 'custom'];
+/**
+ * What pressing a button does.
+ *
+ * `embed` shows a message only the person who pressed can see — Discord calls
+ * that ephemeral, and it is the way to put a rulebook, a price list or a set
+ * of instructions behind a button without any of it landing in the channel.
+ * The bot has always known how to answer one; it simply was not on this list,
+ * so there was no way to make one from the panel.
+ */
+const BUTTON_TYPES  = ['role', 'link', 'ticket', 'embed', 'custom'];
 
 // Discord's own ceilings. Exceeding any of them makes the send fail with an
 // unhelpful 400, so they are enforced here where a message can be attached.
@@ -91,6 +100,7 @@ async function list(guildId, guild = null) {
       buttons: buttonsFor(guildId, name).map(b => ({
         id: b.id, label: b.label ?? '', style: b.style || 'Primary', type: b.type || 'custom',
         emoji: b.emoji ?? '', url: b.url ?? '', roleId: b.roleId ?? '',
+        responseEmbedName: b.responseEmbedName ?? '',
         cooldown: b.cooldown ?? 0, uses: b.uses ?? 0,
       })),
       // Messages this panel has posted from the template, so they can be
@@ -295,6 +305,17 @@ function saveButton(guildId, body, { guild } = {}) {
   // for a role that was deleted would produce a button that silently does
   // nothing, which is worse than refusing it here.
   if (type === 'role' && !guild?.roles?.cache?.has(roleId)) return { error: 'bad_role' };
+
+  // Which message an `embed` button shows privately. Checked against the
+  // guild's own templates for the same reason a role id is: a button pointing
+  // at a template that was renamed or deleted would look fine here and fail
+  // for whoever pressed it.
+  const responseEmbedName = clean(body.responseEmbedName, 80) || '';
+  if (type === 'embed') {
+    if (!responseEmbedName) return { error: 'need_response_embed' };
+    if (!templates[responseEmbedName]) return { error: 'unknown_response_embed' };
+  }
+
   if (!label && !body.emoji) return { error: 'need_label_or_emoji' };
 
   const all = readJson('buttons.json', {});
@@ -312,6 +333,7 @@ function saveButton(guildId, body, { guild } = {}) {
     emoji: clean(body.emoji, 60) || '',
     url: type === 'link' ? url : '',
     roleId: type === 'role' ? roleId : '',
+    responseEmbedName: type === 'embed' ? responseEmbedName : '',
     cooldown: Number.isInteger(body.cooldown) && body.cooldown >= 0 ? Math.min(body.cooldown, 86400) : 0,
     uses: existing?.uses ?? 0,
   };

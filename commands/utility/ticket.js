@@ -217,7 +217,19 @@ module.exports = {
     }
 
     if (interaction.customId !== 'create_ticket') return;
+    return module.exports.openTicket(interaction);
+  },
 
+  /**
+   * Opens a ticket for whoever clicked.
+   *
+   * Split out from handleButton because it used to be welded to one custom id.
+   * A ticket button built in the panel or with /button carries its own id, so
+   * it reached the stored-button dispatcher instead, which had no idea what a
+   * ticket was and told the clicker the button was misconfigured. It was not —
+   * nothing could open a ticket except the one panel button.
+   */
+  openTicket: async function(interaction) {
     // ── Create ticket ───────────────────────────────────────────────────
     const guild   = interaction.guild;
     const config  = readJson('config.json', {});
