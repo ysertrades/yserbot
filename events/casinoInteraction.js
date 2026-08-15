@@ -1,0 +1,1956 @@
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handles all interactions whose customId starts with "cs:"
+// ─────────────────────────────────────────────────────────────────────────────
+
+const {
+  EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder,
+  ModalBuilder, TextInputBuilder, TextInputStyle,
+  MessageFlags,
+} = require('discord.js');
+const { getBalance, addCoins, removeCoins, hasEnough, checkCooldown, setCooldown } = require('../utils/economyManager');
+const { getEffect, getEffectiveMaxBet } = require('../utils/effectsManager');
+const { getSession, updateSession, tryLock, unlock } = require('../casino/sessions');
+const { getSettings, isGameEnabled } = require('../casino/settings');
+const { gameHeading } = require('../casino/games');
+const { fetchAvatarPng } = require('../utils/avatarUtil');
+const { readJson, writeJson } = require('../utils/jsonStorage');
+const engine = require('../casino/engine');
+
+const WHEEL_DAILY_LIMIT = 10;
+
+function getTodayStr() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+function checkWheelLimit(userId, guildId) {
+  if (guildId && getEffect(userId, guildId, 'cooldown_skip')) return { spinsLeft: Infinity, used: 0, unlimited: true };
+  const data  = readJson('wheel_limits.json', {});
+  const entry = data[userId] || { date: '', count: 0 };
+  const today = getTodayStr();
+  if (entry.date !== today) return { spinsLeft: WHEEL_DAILY_LIMIT, used: 0 };
+  return { spinsLeft: WHEEL_DAILY_LIMIT - entry.count, used: entry.count };
+}
+
+// While a Cooldown Skip is active, spins aren't counted at all — so the
+// real daily allowance isn't silently eaten during the unlimited window.
+function recordWheelSpin(userId, guildId) {
+  if (guildId && getEffect(userId, guildId, 'cooldown_skip')) return null;
+  const data  = readJson('wheel_limits.json', {});
+  const today = getTodayStr();
+  const entry = (data[userId]?.date === today) ? data[userId] : { date: today, count: 0 };
+  entry.count += 1;
+  data[userId] = entry;
+  writeJson('wheel_limits.json', data);
+  return entry.count;
+}
+
+const fmt  = n => Number(n).toLocaleString();
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+const { recordOutcome } = require('../utils/winStreak');
+
+// Every game's resolve function funnels its outcome through here instead of
+// calling updateSession directly, so a single place tracks the cross-game
+// win streak and fires the milestone bonus — no per-game duplication needed.
+async function applyResult(interaction, userId, updates) {
+  updateSession(userId, updates);
+  const delta = updates.lastResult?.delta;
+  if (typeof delta !== 'number') return;
+
+  const bonus = recordOutcome(userId, delta, interaction.guild?.id);
+  if (!bonus) return;
+
+  await interaction.followUp({
+    embeds: [new EmbedBuilder()
+      .setColor(0xF1C40F)
+      .setTitle('🔥 Win Streak Bonus!')
+      .setDescription(`You're on a **${bonus.streak}-win streak** across the casino — here's a little something extra.`)
+      .addFields({ name: '🎁 Bonus Coins', value: `**+${fmt(bonus.amount)}** coins`, inline: true })
+      .setFooter({ text: 'YSER Flow Casino  •  Keep the streak alive!' })],
+    flags: MessageFlags.Ephemeral,
+  }).catch(() => {});
+}
+
+// Applies the coin_boost shop effect: adds a fraction of the profit on top
+// of the payout, scaled by the purchased tier's multiplier (1.5× tier adds
+// 50% of profit, 2× tier adds 100%, etc.). payout > bet means a real win;
+// push/loss are returned unchanged.
+function _applyBoost(payout, bet, userId, guildId) {
+  if (payout <= bet) return payout;
+  const boost = getEffect(userId, guildId, 'coin_boost');
+  if (!boost) return payout;
+  return payout + Math.floor((payout - bet) * ((boost.multiplier || 1.5) - 1));
+}
+
+// Global map for live crash sessions (userId → { interval, message, state })
+if (!global.crashSessions) global.crashSessions = new Map();
+// Global map for open PvP dice challenges
+if (!global.diceChallenges) global.diceChallenges = new Map();
+
+// ─────────────────────────────────────────────────────────────────────────────
+module.exports = {
+  name: 'interactionCreate',
+  async execute(interaction) {
+    if (interaction.isButton()     && interaction.customId.startsWith('cs:'))
+      return handleButton(interaction).catch(e => handleError(interaction, e));
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('cs:'))
+      return handleModal(interaction).catch(e => handleError(interaction, e));
+  },
+};
+
+// ─── Error fallback ───────────────────────────────────────────────────────────
+async function handleError(interaction, err) {
+  console.error('[CASINO ERROR]', err);
+  // A thrown handler after tryLock used to leave the player stuck on
+  // "Processing…" until the session itself expired. Always free the lock.
+  try { unlock(interaction.user.id); } catch {}
+  const m = { content: '❌ Something went wrong. Use `/casino` to start fresh.', flags: MessageFlags.Ephemeral };
+  try { interaction.replied || interaction.deferred ? await interaction.followUp(m) : await interaction.reply(m); } catch {}
+}
+
+// A casino panel belongs to exactly one player: whoever ran /casino to open
+// it. The session records that message id at creation, so requiring an exact
+// match is what stops a bystander — including one with their own table open
+// elsewhere — from driving someone else's panel.
+//
+// Note the missing `s.messageId &&` short-circuit that used to be here: it
+// meant a session with no recorded message id passed the check against ANY
+// message, which is precisely the hole this closes.
+function guardSession(interaction) {
+  const s = getSession(interaction.user.id);
+  if (!s) return null;
+  if (interaction.message && s.messageId !== interaction.message.id) return null;
+  return s;
+}
+
+/** The player who ran the slash command that created this panel, if known. */
+function panelOwnerId(interaction) {
+  return interaction.message?.interactionMetadata?.user?.id ?? null;
+}
+
+// Every guard failure routes here. "Not your table" and "your own session
+// expired" are very different situations, so tell the player which one it is
+// instead of sending everyone the same misleading "expired" notice.
+async function expired(interaction) {
+  const ownerId = panelOwnerId(interaction);
+  if (ownerId && ownerId !== interaction.user.id) {
+    return interaction.reply({
+      content: `🔒 This casino table belongs to <@${ownerId}> — run \`/casino\` to open your own.`,
+      flags: MessageFlags.Ephemeral,
+    });
+  }
+  return interaction.reply({ content: '⚠️ Session expired. Use `/casino` to start a new game.', flags: MessageFlags.Ephemeral });
+}
+
+const afterRow = () => new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId('cs:again').setLabel('🔁 Play Again').setStyle(ButtonStyle.Success),
+  new ButtonBuilder().setCustomId('cs:menu').setLabel('🏠 Menu').setStyle(ButtonStyle.Secondary),
+  new ButtonBuilder().setCustomId('cs:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Button router
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function handleButton(interaction) {
+  const parts = interaction.customId.split(':');
+  const type  = parts[1];
+
+  if (type === 'close') {
+    // Previously this deleted the message with no check whatsoever, so any
+    // passer-by could dismiss someone else's table. The session is the normal
+    // proof of ownership; the interaction-metadata fallback keeps the owner
+    // able to dismiss their own panel after their session has timed out.
+    const s = guardSession(interaction);
+    const owner = panelOwnerId(interaction);
+    if (!s && !(owner && owner === interaction.user.id)) return expired(interaction);
+    if (s) unlock(s.userId);
+    // Also stop any running crash session
+    if (global.crashSessions.has(interaction.user.id)) {
+      clearInterval(global.crashSessions.get(interaction.user.id).interval);
+      global.crashSessions.delete(interaction.user.id);
+    }
+    try { await interaction.message.delete(); } catch {}
+    return;
+  }
+
+  if (type === 'menu') {
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    const { mainEmbed, mainRows } = require('../commands/economy/casino');
+    updateSession(s.userId, { game: null, bjState: null, tradeState: null, raceState: null, hlState: null, monteState: null });
+    return interaction.update({ embeds: [mainEmbed(s.userId, s.guildId, s.lastResult)], components: mainRows(s.guildId), attachments: [] });
+  }
+
+  if (type === 'again') {
+    const s = guardSession(interaction);
+    if (!s || !s.game || !s.bet) return expired(interaction);
+
+    // Race and roulette still need the user to pick a racer / bet-type before
+    // committing a stake, so navigate back to the selection screen WITHOUT
+    // deducting coins here — the normal betamt handler deducts when confirmed.
+    if (s.game === 'horse' || s.game === 'turtle') {
+      updateSession(s.userId, { raceState: null });
+      await interaction.deferUpdate();
+      return showRacePick(interaction, getSession(s.userId));
+    }
+    if (s.game === 'roulette') {
+      updateSession(s.userId, { rouletteState: null });
+      await interaction.deferUpdate();
+      return showRoulettePick(interaction, getSession(s.userId));
+    }
+
+    // All other games resolve immediately — deduct the bet now.
+    if (!hasEnough(s.userId, s.bet))
+      return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: MessageFlags.Ephemeral });
+    removeCoins(s.userId, s.bet);
+    updateSession(s.userId, { bjState: null, tradeState: null, raceState: null, hlState: null, monteState: null });
+    await interaction.deferUpdate();
+    const upd = getSession(s.userId);
+    if (s.game === 'coinflip')  return showCoinflipChoice(interaction, upd);
+    if (s.game === 'blackjack') return startBlackjack(interaction, upd);
+    if (s.game === 'trading')   return startTrading(interaction, upd);
+    if (s.game === 'slots')     return startSlots(interaction, upd);
+    if (s.game === 'crash')       return startCrash(interaction, upd);
+    if (s.game === 'wheel')       return resolveWheel(interaction, upd);
+    if (s.game === 'dice')        return showDiceModeSelect(interaction, upd);
+    if (s.game === 'higherlower') return startHigherLower(interaction, upd);
+    if (s.game === 'monte')       return startMonte(interaction, upd);
+    return expired(interaction);
+  }
+
+  // Open game → bet selection screen
+  if (type === 'game') {
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    const game = parts[2];
+    // Checked here rather than only when building the menu: a casino message
+    // that was already on screen when a game was switched off still carries a
+    // working button for it.
+    if (!isGameEnabled(s.guildId, game)) {
+      return interaction.reply({ content: '❌ That game is switched off on this server.', flags: MessageFlags.Ephemeral });
+    }
+    updateSession(s.userId, { game });
+    if (game === 'horse' || game === 'turtle') {
+      await interaction.deferUpdate();
+      return showRacePick(interaction, getSession(s.userId));
+    }
+    if (game === 'roulette') {
+      updateSession(s.userId, { rouletteState: null });
+      await interaction.deferUpdate();
+      return showRoulettePick(interaction, getSession(s.userId));
+    }
+    await interaction.deferUpdate();
+    return showBetSelection(interaction, game);
+  }
+
+  // Race pick
+  if (type === 'racepick') {
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    const pick = parseInt(parts[2]);
+    updateSession(s.userId, { racePick: pick });
+    await interaction.deferUpdate();
+    return showBetSelection(interaction, s.game);
+  }
+
+  // Coinflip
+  if (type === 'cf') {
+    const s = guardSession(interaction);
+    if (!s || s.game !== 'coinflip') return expired(interaction);
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+    await interaction.deferUpdate();
+    return resolveCoinflip(interaction, s, parts[2]);
+  }
+
+  // Blackjack
+  if (type === 'bj') {
+    const s = guardSession(interaction);
+    if (!s || s.game !== 'blackjack') return expired(interaction);
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+    await interaction.deferUpdate();
+    return handleBJ(interaction, s, parts[2]);
+  }
+
+  // Higher or Lower
+  if (type === 'hl') {
+    const s = guardSession(interaction);
+    if (!s || s.game !== 'higherlower') return expired(interaction);
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+    await interaction.deferUpdate();
+    return handleHigherLower(interaction, s, parts[2]);
+  }
+
+  // Find the Queen (monte)
+  if (type === 'monte') {
+    const s = guardSession(interaction);
+    if (!s || s.game !== 'monte') return expired(interaction);
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+    await interaction.deferUpdate();
+    return handleMonte(interaction, s, parts[2], parts[3]);
+  }
+
+  // Trading
+  if (type === 'tr') {
+    const s = guardSession(interaction);
+    if (!s || s.game !== 'trading') return expired(interaction);
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+    if (parts[2] === 'rr') {
+      await interaction.deferUpdate();
+      return resolveTrading(interaction, s, s.tradeState.direction, `${parts[3]}:${parts[4]}`);
+    }
+    if (parts[2] === 'buy' || parts[2] === 'sell') {
+      updateSession(s.userId, { tradeState: { ...s.tradeState, direction: parts[2] } });
+      await interaction.deferUpdate();
+      return showRRChoice(interaction, s);
+    }
+    unlock(s.userId);
+    return expired(interaction);
+  }
+
+  // Crash cash-out
+  if (type === 'crash_cashout') {
+    return handleCrashCashOut(interaction);
+  }
+
+  // Roulette bet-type pick
+  if (type === 'rl') {
+    const s = guardSession(interaction);
+    if (!s || s.game !== 'roulette') return expired(interaction);
+    const betType = parts[2];
+    if (betType === 'straight') {
+      const modal = new ModalBuilder()
+        .setCustomId('cs:rl:straight')
+        .setTitle('🎡 Roulette — Straight Up Bet')
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('number').setLabel('Number (0–36)').setStyle(TextInputStyle.Short).setPlaceholder('e.g. 17').setRequired(true).setMinLength(1).setMaxLength(2),
+          ),
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('amount').setLabel('Bet Amount').setStyle(TextInputStyle.Short).setPlaceholder('e.g. 500').setRequired(true),
+          ),
+        );
+      updateSession(s.userId, { rouletteState: { betType: 'straight' } });
+      return interaction.showModal(modal);
+    }
+    updateSession(s.userId, { rouletteState: { betType } });
+    await interaction.deferUpdate();
+    return showBetSelection(interaction, 'roulette');
+  }
+
+  // ── Preset bet amount ────────────────────────────────────────────────────
+  if (type === 'betamt') {
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    const game     = parts[2];
+    const amtRaw   = parts[3];
+    const settings = getSettings(s.guildId);
+    const bal      = getBalance(s.userId);
+    const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
+    const bet      = amtRaw === 'all' ? Math.min(bal, maxBet) : parseInt(amtRaw, 10);
+    if (isNaN(bet) || bet < 1)     return interaction.reply({ content: '❌ Invalid amount.', flags: MessageFlags.Ephemeral });
+    if (bet < settings.minBet)     return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (bet > maxBet)              return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(bal)}**.`, flags: MessageFlags.Ephemeral });
+    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
+    if (cd > 0)                    return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: MessageFlags.Ephemeral });
+    removeCoins(s.userId, bet);
+    updateSession(s.userId, { bet, game, bjState: null, tradeState: null, raceState: null });
+    const upd = getSession(s.userId);
+    await interaction.deferUpdate();
+    if (game === 'coinflip')  return showCoinflipChoice(interaction, upd);
+    if (game === 'blackjack') return startBlackjack(interaction, upd);
+    if (game === 'trading')   return startTrading(interaction, upd);
+    if (game === 'slots')     return startSlots(interaction, upd);
+    if (game === 'crash')     return startCrash(interaction, upd);
+    if (game === 'horse' || game === 'turtle') return runRaceGame(interaction, upd);
+    if (game === 'wheel')     return resolveWheel(interaction, upd);
+    if (game === 'roulette')  return resolveRoulette(interaction, upd);
+    if (game === 'dice')         return showDiceModeSelect(interaction, upd);
+    if (game === 'higherlower')  return startHigherLower(interaction, upd);
+    if (game === 'monte')        return startMonte(interaction, upd);
+    return expired(interaction);
+  }
+
+  // ── Custom bet → open modal ──────────────────────────────────────────────
+  if (type === 'betcustom') {
+    return showBetModal(interaction, parts[2]);
+  }
+
+  // ── Dice mode selection ──────────────────────────────────────────────────
+  if (type === 'dicemode') {
+    const s = guardSession(interaction);
+    if (!s || s.game !== 'dice') return expired(interaction);
+    if (!tryLock(s.userId)) return interaction.reply({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+    await interaction.deferUpdate();
+    if (parts[2] === 'bot') return resolveDiceVsBot(interaction, s);
+    if (parts[2] === 'pvp') return showDicePvpChallenge(interaction, s);
+    unlock(s.userId);
+    return expired(interaction);
+  }
+
+  // ── Dice PvP — accept challenge ──────────────────────────────────────────
+  if (type === 'diceaccept') {
+    const challengerId = parts[2];
+    const bet          = parseInt(parts[3], 10);
+    const accepterId   = interaction.user.id;
+    if (accepterId === challengerId)
+      return interaction.reply({ content: '❌ You cannot accept your own challenge!', flags: MessageFlags.Ephemeral });
+    const challenge = global.diceChallenges.get(challengerId);
+    if (!challenge)
+      return interaction.reply({ content: '⚠️ This challenge has already been taken or expired.', flags: MessageFlags.Ephemeral });
+    if (!hasEnough(accepterId, bet))
+      return interaction.reply({ content: `❌ You need **${fmt(bet)}** coins to accept.`, flags: MessageFlags.Ephemeral });
+    global.diceChallenges.delete(challengerId);
+    removeCoins(accepterId, bet);
+    const pRoll = engine.rollDie(), aRoll = engine.rollDie();
+    const tie   = pRoll === aRoll, cWon = pRoll > aRoll;
+    if (tie) { addCoins(challengerId, bet); addCoins(accepterId, bet); }
+    else if (cWon) addCoins(challengerId, _applyBoost(bet * 2, bet, challengerId, interaction.guild?.id));
+    else           addCoins(accepterId, _applyBoost(bet * 2, bet, accepterId, interaction.guild?.id));
+    const cBal = getBalance(challengerId), aBal = getBalance(accepterId);
+
+    // The duel card needs both players' real names/avatars, which means a
+    // fetch — defer first so the 3s interaction window can't be missed.
+    await interaction.deferUpdate();
+    const [challenger, accepter] = await Promise.all([
+      interaction.client.users.fetch(challengerId).catch(() => null),
+      interaction.client.users.fetch(accepterId).catch(() => null),
+    ]);
+    const [cAvatar, aAvatar] = await Promise.all([
+      challenger ? fetchAvatarPng(challenger.displayAvatarURL({ extension: 'png', size: 128 })) : null,
+      accepter   ? fetchAvatarPng(accepter.displayAvatarURL({ extension: 'png', size: 128 }))   : null,
+    ]);
+
+    const imgName = `dicepvp-${Date.now()}.png`;
+    const file = new AttachmentBuilder(engine.renderDicePvpPng({
+      p1: { name: challenger?.username || 'Challenger', roll: pRoll, avatarPng: cAvatar },
+      p2: { name: accepter?.username   || 'Challenger', roll: aRoll, avatarPng: aAvatar },
+      winner: tie ? null : (cWon ? 'p1' : 'p2'),
+      pot: bet * 2,
+    }), { name: imgName });
+
+    const pvpEmbed = new EmbedBuilder()
+      .setColor(tie ? 0x95a5a6 : 0xf1c40f)
+      .setTitle('🎲 Dice — Duel Result')
+      .setImage(`attachment://${imgName}`)
+      .setDescription(
+        `<@${challengerId}> rolled ${engine.DICE_FACES[pRoll]} **${pRoll}**  ·  ` +
+        `<@${accepterId}> rolled ${engine.DICE_FACES[aRoll]} **${aRoll}**\n\n` +
+        (tie ? '⚖️ **Tie!** Both players get their coins back.'
+             : `🏆 **<@${cWon ? challengerId : accepterId}>** wins **${fmt(bet * 2)}** coins!`),
+      )
+      .addFields(
+        { name: `<@${challengerId}>`, value: `**${fmt(cBal)}** coins`, inline: true },
+        { name: `<@${accepterId}>`,   value: `**${fmt(aBal)}** coins`, inline: true },
+      )
+      .setFooter({ text: 'YSER Flow Casino  •  Table host can start a rematch' });
+
+    // Previously this ended with no buttons at all, forcing both players to
+    // run /casino again. Rematch re-opens the duel at the same stake for
+    // whichever of the two clicks it, so the loop can keep going in place.
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`cs:dicerematch:${challengerId}:${accepterId}:${bet}`)
+        .setLabel(`⚔️ Rematch (${fmt(bet)})`)
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('cs:menu').setLabel('🏠 Menu').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('cs:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+    );
+    return interaction.editReply({ embeds: [pvpEmbed], components: [row], files: [file], attachments: [] });
+  }
+
+  // ── Dice PvP — rematch (either duellist re-opens at the same stake) ──────
+  if (type === 'dicerematch') {
+    const bet = parseInt(parts[4], 10);
+    const userId = interaction.user.id;
+
+    // The rematch re-opens a challenge on this panel, and the panel belongs to
+    // the player who ran /casino — so it's theirs to restart, not the
+    // opponent's. The opponent opens their own table to host a duel.
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    if (!hasEnough(userId, bet))
+      return interaction.reply({ content: `❌ You need **${fmt(bet)}** coins to rematch. Balance: **${fmt(getBalance(userId))}**.`, flags: MessageFlags.Ephemeral });
+    if (global.diceChallenges.has(userId))
+      return interaction.reply({ content: '⚠️ You already have an open challenge.', flags: MessageFlags.Ephemeral });
+
+    updateSession(userId, { game: 'dice', bet, diceOdds: engine.randomDiceOdds() });
+    removeCoins(userId, bet);
+    await interaction.deferUpdate();
+    return showDicePvpChallenge(interaction, getSession(userId));
+  }
+
+  // ── Dice PvP — cancel / refund ───────────────────────────────────────────
+  if (type === 'dicepvpcancel') {
+    // This used to refund whoever clicked, on any challenge message — so a
+    // player with an open bet could click Cancel on other people's duels and
+    // be refunded their own stake each time, as well as deleting the message.
+    // Only the challenger can withdraw their own challenge.
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    if (s.bet && global.diceChallenges.has(s.userId)) {
+      addCoins(s.userId, s.bet);
+      global.diceChallenges.delete(s.userId);
+    }
+    unlock(s.userId);
+    try { await interaction.message.delete(); } catch {}
+    return;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bet modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function showBetModal(interaction, game) {
+  const gameNames = {
+    coinflip: 'Coinflip', blackjack: 'Blackjack', trading: 'Trading',
+    slots: 'Slots', crash: 'Crash', horse: 'Horse Race', turtle: 'Turtle Race',
+    wheel: 'Wheel of Fortune', roulette: 'Roulette', dice: 'Dice',
+    higherlower: 'Higher or Lower', monte: 'Find the Queen',
+  };
+  const modal = new ModalBuilder()
+    .setCustomId(`cs:bet:${game}`)
+    .setTitle(`💸 Place Your Bet — ${gameNames[game] || game}`)
+    .addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('amount').setLabel('Bet Amount').setStyle(TextInputStyle.Short).setPlaceholder('e.g. 500').setRequired(true),
+    ));
+  await interaction.showModal(modal);
+}
+
+async function showBetSelection(interaction, game) {
+  const s = getSession(interaction.user.id);
+  if (!s) return expired(interaction);
+  const settings = getSettings(s.guildId);
+  const bal      = getBalance(s.userId);
+  const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
+  const isVip    = maxBet > settings.maxBet;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x1a1a2e)
+    .setTitle(gameHeading(game))
+    .setDescription(`**Balance: ${fmt(bal)}** coins\nPick your bet, then play.`)
+    .setFooter({ text: `YSER Flow Casino  •  Min: ${fmt(settings.minBet)}  ·  Max: ${fmt(maxBet)}${isVip ? ' 👑' : ''}` });
+
+  // Set per server in the control panel. A preset outside the bet range still
+  // renders, disabled, so the row keeps its shape and it is obvious why it
+  // cannot be pressed.
+  const PRESETS = settings.presets;
+  const allIn   = Math.min(bal, maxBet);
+
+  const presetBtns = PRESETS.map(amt => {
+    const disabled = amt < settings.minBet || amt > maxBet || amt > bal;
+    return new ButtonBuilder()
+      .setCustomId(`cs:betamt:${game}:${amt}`)
+      .setLabel(String(amt))
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled);
+  });
+  presetBtns.push(
+    new ButtonBuilder()
+      .setCustomId(`cs:betamt:${game}:all`)
+      .setLabel('All In 🔥')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(allIn < settings.minBet),
+  );
+
+  const row1 = new ActionRowBuilder().addComponents(...presetBtns);
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`cs:betcustom:${game}`).setLabel('Custom ✏️').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('< Games').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:close').setLabel('Close').setStyle(ButtonStyle.Danger),
+  );
+
+  await interaction.editReply({ embeds: [embed], components: [row1, row2], attachments: [] });
+}
+
+async function handleModal(interaction) {
+  const parts = interaction.customId.split(':');
+
+  // Straight-up roulette modal (number + amount in one modal)
+  if (parts[1] === 'rl' && parts[2] === 'straight') {
+    const s = guardSession(interaction);
+    if (!s) return expired(interaction);
+    const numRaw = interaction.fields.getTextInputValue('number');
+    const amtRaw = interaction.fields.getTextInputValue('amount');
+    const num    = parseInt(numRaw, 10);
+    const bet    = parseInt(amtRaw, 10);
+    if (isNaN(num) || num < 0 || num > 36) return interaction.reply({ content: '❌ Invalid number. Must be **0–36**.', flags: MessageFlags.Ephemeral });
+    if (isNaN(bet) || bet < 1)             return interaction.reply({ content: '❌ Invalid bet amount.', flags: MessageFlags.Ephemeral });
+    const settings = getSettings(s.guildId);
+    const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
+    if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: MessageFlags.Ephemeral });
+    if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: MessageFlags.Ephemeral });
+    const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
+    if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: MessageFlags.Ephemeral });
+    removeCoins(s.userId, bet);
+    updateSession(s.userId, { bet, game: 'roulette', rouletteState: { betType: 'straight', betValue: num } });
+    await interaction.deferUpdate();
+    return resolveRoulette(interaction, getSession(s.userId));
+  }
+
+  if (parts[1] !== 'bet') return;
+  const s = guardSession(interaction);
+  if (!s) return expired(interaction);
+
+  const raw = interaction.fields.getTextInputValue('amount');
+  const bet = parseInt(raw);
+  if (isNaN(bet) || bet < 1) return interaction.reply({ content: '❌ Invalid bet amount.', flags: MessageFlags.Ephemeral });
+
+  const settings = getSettings(s.guildId);
+  const maxBet   = getEffectiveMaxBet(s.userId, s.guildId, settings.maxBet);
+  if (bet < settings.minBet) return interaction.reply({ content: `❌ Min bet is **${fmt(settings.minBet)}** coins.`, flags: MessageFlags.Ephemeral });
+  if (bet > maxBet)          return interaction.reply({ content: `❌ Max bet is **${fmt(maxBet)}** coins.`, flags: MessageFlags.Ephemeral });
+  if (!hasEnough(s.userId, bet)) return interaction.reply({ content: `❌ Not enough coins. Balance: **${fmt(getBalance(s.userId))}**.`, flags: MessageFlags.Ephemeral });
+
+  const cd = checkCooldown(s.userId, 'casino', settings.cooldownMs, s.guildId);
+  if (cd > 0) return interaction.reply({ content: `⏳ Cooldown: **${cd}s** remaining.`, flags: MessageFlags.Ephemeral });
+
+  removeCoins(s.userId, bet);
+  const game = parts[2];
+  updateSession(s.userId, { bet, game, bjState: null, tradeState: null, raceState: null });
+  const upd = getSession(s.userId);
+
+  await interaction.deferUpdate();
+  if (game === 'coinflip')  return showCoinflipChoice(interaction, upd);
+  if (game === 'blackjack') return startBlackjack(interaction, upd);
+  if (game === 'trading')   return startTrading(interaction, upd);
+  if (game === 'slots')     return startSlots(interaction, upd);
+  if (game === 'crash')     return startCrash(interaction, upd);
+  if (game === 'horse' || game === 'turtle') return runRaceGame(interaction, upd);
+  if (game === 'wheel')    return resolveWheel(interaction, upd);
+  if (game === 'roulette') return resolveRoulette(interaction, upd);
+  if (game === 'dice')         return showDiceModeSelect(interaction, upd);
+  if (game === 'higherlower')  return startHigherLower(interaction, upd);
+  if (game === 'monte')        return startMonte(interaction, upd);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COINFLIP — true 50/50
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function showCoinflipChoice(interaction, s) {
+  const chartName = `coinflip-choice-${s.userId}.png`;
+  const chart = new AttachmentBuilder(engine.renderCoinflipPng('heads', 'heads'), { name: chartName });
+  const embed = new EmbedBuilder()
+    .setColor(0xf1c40f)
+    .setTitle('🪙 Coinflip')
+    .setDescription('The coin spins in the air… pick your side!')
+    .setImage(`attachment://${chartName}`)
+    .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+    .setFooter({ text: 'YSER Flow Casino  •  50 / 50' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:cf:heads').setLabel('🪙 Heads').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:cf:tails').setLabel('🪙 Tails').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+  );
+  await interaction.editReply({ embeds: [embed], components: [row], files: [chart], attachments: [] });
+}
+
+async function resolveCoinflip(interaction, s, choice) {
+  const spinName = `coinflip-spin-${s.userId}.png`;
+  const spinResult = engine.coinflip(choice).result; // cosmetic mid-flip frame only — the real outcome is decided independently below
+  const spinChart = new AttachmentBuilder(engine.renderCoinflipPng(choice, spinResult), { name: spinName });
+  const spinEmbed = new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle('🪙 Coinflip — Flipping...')
+    .setDescription('🌀 The coin is in the air...')
+    .setImage(`attachment://${spinName}`)
+    .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+    .setFooter({ text: 'YSER Flow Casino' });
+
+  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinChart], attachments: [] });
+  await wait(750);
+
+  const result = engine.coinflip(choice);
+  let payout = result.won ? s.bet * 2 : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
+  if (payout > 0) addCoins(s.userId, payout);
+  const delta = payout - s.bet, newBal = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+  await applyResult(interaction, s.userId, { lastResult: { label: result.won ? '🟢 WIN' : '🔴 LOSS', delta } });
+  const chartName = `coinflip-result-${s.userId}.png`;
+  const chart = new AttachmentBuilder(engine.renderCoinflipPng(choice, result.result), { name: chartName });
+  const embed = new EmbedBuilder()
+    .setColor(result.won ? 0x2ecc71 : 0xe74c3c)
+    .setTitle(`🪙 Coinflip — ${result.won ? 'You Win! 🎉' : 'You Lose!'}`)
+    .setDescription(
+      `> The coin landed on **${result.result.toUpperCase()}**\n> You chose **${choice.toUpperCase()}**`,
+    )
+    .addFields(
+      { name: result.won ? '🏆 Won' : '💸 Lost', value: `**${fmt(s.bet)}** coins`, inline: true },
+      { name: '💰 Balance', value: `**${fmt(newBal)}** coins`, inline: true },
+    )
+    .setImage(`attachment://${chartName}`)
+    .setFooter({ text: 'YSER Flow Casino' });
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chart], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SLOTS — 3-reel slot machine with animated reveal
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function startSlots(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+  const result = engine.spinSlots();
+  const slotsImg = (spinning) => {
+    const name = `slots-${s.userId}-${Date.now()}.png`;
+    return { name, file: new AttachmentBuilder(engine.renderSlotsPng(result.reels, spinning), { name }) };
+  };
+
+  // ── Animated spin ───────────────────────────────────────────────────────
+  const spinFrame = async (spinning) => {
+    const img = slotsImg(spinning);
+    await interaction.editReply({
+      embeds: [new EmbedBuilder().setColor(0x9b59b6).setTitle('🎰 Slots — Spinning…')
+        .setImage(`attachment://${img.name}`)
+        .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+        .setFooter({ text: 'YSER Flow Casino' })],
+      components: [],
+      files: [img.file],
+      // Each spin frame replaces the last. Without this every frame is kept
+      // and the finished message carries the whole animation as a pile of
+      // stray images.
+      attachments: [],
+    });
+  };
+
+  await spinFrame([true, true, true]);
+  await wait(900);
+  await spinFrame([false, true, true]);
+  await wait(900);
+  await spinFrame([false, false, true]);
+  await wait(900);
+
+  let payout = result.won ? Math.floor(s.bet * result.mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
+  if (payout > 0) addCoins(s.userId, payout);
+  const delta = payout - s.bet, newBal = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+  await applyResult(interaction, s.userId, { lastResult: { label: result.won ? `🟢 ×${result.mult}` : '🔴 LOSS', delta } });
+
+  const typeLabels = { jackpot: '🎊 JACKPOT!!!', triple: '🎉 Triple Match!', pair: '✨ Pair!', lose: 'No Match' };
+  const typeColors = { jackpot: 0xf1c40f, triple: 0x2ecc71, pair: 0x3498db, lose: 0xe74c3c };
+
+  const symbolInfo = result.reels.map(r => r.name).join(' · ');
+  const finalImg = slotsImg([false, false, false]);
+
+  const embed = new EmbedBuilder()
+    .setColor(typeColors[result.resultType] || 0xe74c3c)
+    .setTitle(`🎰 Slots — ${typeLabels[result.resultType] || 'No Match'}`)
+    .setImage(`attachment://${finalImg.name}`)
+    .addFields(
+      { name: '🎯 Result',    value: symbolInfo,                                               inline: false },
+      { name: '💸 Bet',       value: `**${fmt(s.bet)}** coins`,                               inline: true  },
+      { name: '💵 Payout',    value: payout > 0 ? `**${fmt(payout)}** coins (×${result.mult})` : '—', inline: true },
+      { name: '💰 Balance',   value: `**${fmt(newBal)}** coins`,                              inline: true  },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+
+  if (result.resultType === 'jackpot') embed.setDescription('🎊 **JACKPOT! You hit the big one!** 🎊');
+
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalImg.file], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRASH — real-time multiplier with live embed updates
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function startCrash(interaction, s) {
+  const crashPoint = engine.generateCrashPoint();
+  let tick = 0;
+
+  const buildPayload = (mult, crashed = false, cashedOut = false, cashOutMult = null) => {
+    const color = crashed ? 0xe74c3c : cashedOut ? 0x2ecc71 : 0x3498db;
+    const title = crashed    ? `🛩️ Crash — CRASHED at ${mult}x! 💥`
+                : cashedOut  ? `🛩️ Crash — Cashed Out at ${cashOutMult}x! 🎉`
+                :              `🛩️ Crash — Flying at ${mult}x…`;
+    const imgName = `crash-${s.userId}-${Date.now()}.png`;
+    const file = new AttachmentBuilder(engine.renderCrashChart(tick, crashed), { name: imgName });
+    const embed = new EmbedBuilder()
+      .setColor(color)
+      .setTitle(title)
+      .setImage(`attachment://${imgName}`)
+      .addFields({ name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+      .setFooter({ text: crashed ? '💥 The plane crashed!' : cashedOut ? '✈️ You jumped out in time!' : '✈️ Click Cash Out before it crashes!' });
+    return { embed, file };
+  };
+
+  const cashOutRow = () => new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:crash_cashout').setLabel(`💰 Cash Out`).setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('cs:close').setLabel('🔒 Close').setStyle(ButtonStyle.Danger),
+  );
+
+  // Initial render
+  const initialMult = engine.tickMultiplier(0);
+  const initialPayload = buildPayload(initialMult);
+  await interaction.editReply({ embeds: [initialPayload.embed], components: [cashOutRow()], files: [initialPayload.file], attachments: [] });
+
+  // Store crash session
+  const crashState = {
+    userId:     s.userId,
+    bet:        s.bet,
+    guildId:    s.guildId,
+    crashPoint,
+    tick:       0,
+    cashedOut:  false,
+    crashed:    false,
+    interaction,
+  };
+
+  // The whole tick is wrapped: this runs every TICK_MS with nobody to reject
+  // to, and a throw halfway through used to leave the interval running against
+  // a session it could no longer advance.
+  const interval = setInterval(async () => {
+   try {
+    const cs = global.crashSessions.get(s.userId);
+    if (!cs || cs.cashedOut || cs.crashed) {
+      clearInterval(interval);
+      global.crashSessions.delete(s.userId);
+      return;
+    }
+
+    cs.tick++;
+    const currentMult = engine.tickMultiplier(cs.tick);
+    tick = cs.tick;
+
+    // Check crash
+    if (currentMult >= cs.crashPoint) {
+      cs.crashed = true;
+      clearInterval(interval);
+      global.crashSessions.delete(cs.userId);
+
+      // Lose — no payout
+      const newBal = getBalance(cs.userId);
+      setCooldown(cs.userId, 'casino');
+      await applyResult(cs.interaction, cs.userId, { lastResult: { label: `💥 CRASH ${cs.crashPoint}x`, delta: -cs.bet } });
+
+      try {
+        const payload = buildPayload(cs.crashPoint, true);
+        await cs.interaction.editReply({
+          embeds: [payload.embed],
+          components: [afterRow()],
+          files: [payload.file],
+          attachments: [],
+        });
+      } catch {}
+      return;
+    }
+
+    // Still flying — update embed
+    try {
+      const payload = buildPayload(currentMult);
+      await cs.interaction.editReply({
+        embeds: [payload.embed],
+        components: [cashOutRow()],
+        files: [payload.file],
+        attachments: [],
+      });
+    } catch { clearInterval(interval); global.crashSessions.delete(cs.userId); }
+   } catch (err) {
+    console.error('[CRASH] tick failed:', err.message ?? err);
+    clearInterval(interval);
+    global.crashSessions.delete(s.userId);
+   }
+  }, engine.TICK_MS);
+
+  crashState.interval = interval;
+  global.crashSessions.set(s.userId, crashState);
+}
+
+async function handleCrashCashOut(interaction) {
+  const cs = global.crashSessions.get(interaction.user.id);
+  if (!cs) {
+    return interaction.reply({ content: '⚠️ No active crash session.', flags: MessageFlags.Ephemeral });
+  }
+  if (cs.cashedOut || cs.crashed) {
+    return interaction.reply({ content: '⚠️ Game already ended.', flags: MessageFlags.Ephemeral });
+  }
+
+  cs.cashedOut = true;
+  clearInterval(cs.interval);
+  global.crashSessions.delete(cs.userId);
+
+  const cashOutMult = engine.tickMultiplier(cs.tick);
+  let payout        = _applyBoost(Math.floor(cs.bet * cashOutMult), cs.bet, cs.userId, interaction.guild?.id);
+  addCoins(cs.userId, payout);
+  const delta  = payout - cs.bet;
+  const newBal = getBalance(cs.userId);
+  setCooldown(cs.userId, 'casino');
+  await applyResult(interaction, cs.userId, { lastResult: { label: `✅ CASH OUT ×${cashOutMult}`, delta } });
+
+  const imgName = `crash-cashout-${cs.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderCrashChart(cs.tick, false), { name: imgName });
+  const embed = new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle(`🛩️ Crash — Cashed Out! 🎉`)
+    .setImage(`attachment://${imgName}`)
+    .addFields(
+      { name: '⚡ Multiplier', value: `**${cashOutMult}x**`,           inline: true },
+      { name: '💸 Bet',        value: `**${fmt(cs.bet)}** coins`,       inline: true },
+      { name: '💵 Payout',     value: `**${fmt(payout)}** coins`,       inline: true },
+      { name: '💰 Balance',    value: `**${fmt(newBal)}** coins`,       inline: true },
+      { name: '💥 Would have crashed at', value: `**${cs.crashPoint}x**`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+
+  await interaction.update({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RACE — pick competitor → bet → race
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function showRacePick(interaction, s) {
+  const isHorse  = s.game === 'horse';
+  const racers   = isHorse ? engine.HORSES : engine.TURTLES;
+  const emoji    = isHorse ? '🐎' : '🐢';
+  const gameName = isHorse ? 'Horse Race' : 'Turtle Race';
+  const mult     = isHorse ? '4.5' : '2.8';
+
+  const embed = new EmbedBuilder()
+    .setColor(isHorse ? 0xe67e22 : 0x27ae60)
+    .setTitle(`${emoji} ${gameName} — Pick Your Racer`)
+    .setDescription(
+      racers.map(r => `**#${r.id} ${r.emoji} ${r.name}**`).join('\n') +
+      `\n\n> Pick one and place your bet. Win = **${mult}×** your bet.\n> All racers have an equal random chance to win.`,
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Purely random — no predictable odds' });
+
+  const btns = racers.map(r =>
+    new ButtonBuilder()
+      .setCustomId(`cs:racepick:${r.id}`)
+      .setLabel(`#${r.id} ${r.name}`)
+      .setStyle(ButtonStyle.Primary),
+  );
+  const rows = [new ActionRowBuilder().addComponents(...btns.slice(0, 5))];
+  if (btns.length > 5) rows.push(new ActionRowBuilder().addComponents(...btns.slice(5)));
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+  ));
+
+  await interaction.editReply({ embeds: [embed], components: rows, attachments: [] });
+}
+
+async function runRaceGame(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+  const isHorse = s.game === 'horse';
+  const racers  = isHorse ? engine.HORSES : engine.TURTLES;
+  const picked  = (s.racePick ?? 1) - 1; // 0-indexed
+  const mult    = isHorse ? 4.5 : 2.8;
+
+  // Animate: show all at start line
+  const startImgName = `race-start-${s.userId}.png`;
+  const startFile = new AttachmentBuilder(engine.renderRaceTrack(racers, racers.map(() => 0), -1, picked), { name: startImgName });
+  const startEmbed = new EmbedBuilder()
+    .setColor(isHorse ? 0xe67e22 : 0x27ae60)
+    .setTitle(`${isHorse ? '🐎' : '🐢'} ${isHorse ? 'Horse' : 'Turtle'} Race — On your marks…`)
+    .setImage(`attachment://${startImgName}`)
+    .setFooter({ text: 'YSER Flow Casino' });
+  await interaction.editReply({ embeds: [startEmbed], components: [], files: [startFile], attachments: [] });
+
+  await wait(1200);
+
+  // Run the race
+  const { winnerIdx, progress } = engine.runRace(racers);
+  const won = winnerIdx === picked;
+
+  let payout = won ? Math.floor(s.bet * mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
+  if (payout > 0) addCoins(s.userId, payout);
+  const delta = payout - s.bet, newBal = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+  await applyResult(interaction, s.userId, {
+    lastResult: { label: won ? `🟢 WIN ×${mult}` : '🔴 LOSS', delta },
+  });
+
+  const winner     = racers[winnerIdx];
+  const pickedRacer = racers[picked];
+
+  const finalImgName = `race-final-${s.userId}.png`;
+  const finalFile = new AttachmentBuilder(engine.renderRaceTrack(racers, progress, winnerIdx, picked), { name: finalImgName });
+  const embed = new EmbedBuilder()
+    .setColor(won ? 0x2ecc71 : 0xe74c3c)
+    .setTitle(`${isHorse ? '🐎' : '🐢'} ${isHorse ? 'Horse' : 'Turtle'} Race — ${won ? `${pickedRacer.name} Wins! 🎉` : `${winner.name} Wins!`}`)
+    .setImage(`attachment://${finalImgName}`)
+    .addFields(
+      { name: '🏆 Winner',   value: `#${winner.id} ${winner.emoji} **${winner.name}**`,          inline: true },
+      { name: '🎯 Your Pick', value: `#${pickedRacer.id} ${pickedRacer.emoji} **${pickedRacer.name}**`, inline: true },
+      { name: '💸 Bet',      value: `**${fmt(s.bet)}** coins`,                                   inline: true },
+      { name: '💵 Payout',   value: payout > 0 ? `**${fmt(payout)}** coins` : '—',               inline: true },
+      { name: '💰 Balance',  value: `**${fmt(newBal)}** coins`,                                  inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [finalFile], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BLACKJACK (full real-rules implementation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function startBlackjack(interaction, s) {
+  const state = engine.dealBJ();
+  updateSession(s.userId, { bjState: state });
+  if (engine.handVal(state.player) === 21 && state.player.length === 2)
+    return finishBJ(interaction, s, state);
+  if (engine.canInsure(state)) return renderInsurance(interaction, s, state);
+  return renderBJ(interaction, s, state, true);
+}
+
+async function renderInsurance(interaction, s, state) {
+  const imgName = `bj-insurance-${s.userId}.png`;
+  const file = new AttachmentBuilder(engine.renderBlackjackTablePng({ dealer: state.dealer, player: state.player, hideDealerHole: true }), { name: imgName });
+  const embed = new EmbedBuilder()
+    .setColor(0xe67e22)
+    .setTitle('🛡️ Blackjack — Insurance?')
+    .setImage(`attachment://${imgName}`)
+    .setDescription(
+      `Dealer may have Blackjack. Take **insurance** for half your bet (**${fmt(Math.floor(s.bet / 2))}** coins)?\n` +
+      `Insurance pays **2:1** if dealer has Blackjack.`,
+    )
+    .addFields(
+      { name: '🂠 Dealer', value: `${state.dealer[0].r}${state.dealer[0].s} + ❓`, inline: true },
+      { name: '🃏 Your Hand', value: `${engine.hStr(state.player)} — **${engine.handVal(state.player)}**`, inline: true },
+      { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:bj:insurance_yes').setLabel('🛡️ Take Insurance').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:bj:insurance_no').setLabel('❌ No Thanks').setStyle(ButtonStyle.Secondary),
+  );
+  await interaction.editReply({ embeds: [embed], components: [row], files: [file], attachments: [] });
+}
+
+async function renderBJ(interaction, s, state, initial = false) {
+  const pv     = engine.handVal(state.player);
+  const splitPv = state.splitHand ? engine.handVal(state.splitHand) : null;
+
+  if (!initial && !state.playingSplit && (pv > 21 || pv === 21)) {
+    if (state.splitHand && !state.splitDone) {
+      const ns = engine.bjFirstHandDone(state);
+      updateSession(s.userId, { bjState: ns });
+      return renderBJ(interaction, s, ns, true);
+    }
+    unlock(s.userId);
+    return finishBJ(interaction, s, state);
+  }
+  if (state.playingSplit && splitPv !== null && (splitPv > 21 || splitPv === 21)) {
+    unlock(s.userId);
+    return finishBJ(interaction, s, state);
+  }
+
+  const activeHand   = state.playingSplit ? state.splitHand : state.player;
+  const activeVal    = engine.handVal(activeHand);
+  const canDouble    = activeHand.length === 2 && hasEnough(s.userId, s.bet);
+  const canSplitNow  = engine.canSplit(state) && initial && hasEnough(s.userId, s.bet);
+  const canSurrender = !state.playingSplit && state.player.length === 2 && !state.splitHand;
+
+  const imgName = `bj-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderBlackjackTablePng({
+    dealer: state.dealer, player: state.player, splitHand: state.splitHand,
+    hideDealerHole: true, playingSplit: state.playingSplit,
+  }), { name: imgName });
+
+  const handFields = [{ name: '🂠 Dealer', value: `${state.dealer[0].r}${state.dealer[0].s} + ❓`, inline: true }];
+  if (state.splitHand) {
+    const h1Tag = !state.playingSplit ? '▶ Hand 1' : 'Hand 1';
+    const h2Tag =  state.playingSplit ? '▶ Hand 2' : 'Hand 2';
+    handFields.push(
+      { name: h1Tag, value: `${engine.hStr(state.player)} — **${engine.handVal(state.player)}**`, inline: true },
+      { name: h2Tag, value: `${engine.hStr(state.splitHand)} — **${engine.handVal(state.splitHand)}**`, inline: true },
+    );
+  } else {
+    handFields.push({ name: '🃏 Your Hand', value: `${engine.hStr(state.player)} — **${activeVal}**`, inline: true });
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle('🃏 Blackjack')
+    .setImage(`attachment://${imgName}`)
+    .addFields(...handFields, { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true })
+    .setFooter({ text: 'YSER Flow Casino  •  Dealer hits soft 17  •  BJ pays 3:2' });
+
+  const btns = [
+    new ButtonBuilder().setCustomId('cs:bj:hit').setLabel('👆 Hit').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:bj:stand').setLabel('✋ Stand').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('cs:bj:double').setLabel('⬆️ Double').setStyle(ButtonStyle.Secondary).setDisabled(!canDouble),
+  ];
+  if (canSplitNow)  btns.push(new ButtonBuilder().setCustomId('cs:bj:split').setLabel('✂️ Split').setStyle(ButtonStyle.Primary));
+  if (canSurrender) btns.push(new ButtonBuilder().setCustomId('cs:bj:surrender').setLabel('🏳️ Surrender').setStyle(ButtonStyle.Secondary));
+
+  await interaction.editReply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(btns.slice(0, 5))], files: [file], attachments: [] });
+}
+
+async function handleBJ(interaction, s, action) {
+  let state = s.bjState;
+  if (!state) { unlock(s.userId); return expired(interaction); }
+
+  if (action === 'insurance_yes') {
+    const ib = Math.floor(s.bet / 2);
+    if (!hasEnough(s.userId, ib)) { unlock(s.userId); return interaction.followUp({ content: '❌ Not enough coins for insurance.', flags: MessageFlags.Ephemeral }); }
+    removeCoins(s.userId, ib);
+    state = engine.bjInsure(state);
+    updateSession(s.userId, { bjState: state, insuranceBet: ib });
+    unlock(s.userId);
+    return renderBJ(interaction, s, state, true);
+  }
+  if (action === 'insurance_no') {
+    state = engine.bjDeclineInsure(state);
+    updateSession(s.userId, { bjState: state });
+    unlock(s.userId);
+    return renderBJ(interaction, s, state, true);
+  }
+  if (action === 'surrender') {
+    const refund = Math.floor(s.bet / 2);
+    addCoins(s.userId, refund);
+    setCooldown(s.userId, 'casino');
+    await applyResult(interaction, s.userId, { lastResult: { label: '🏳️ Surrender', delta: -refund }, bjState: null });
+    const embed = new EmbedBuilder()
+      .setColor(0x95a5a6).setTitle('🃏 Blackjack — Surrendered')
+      .setDescription(`You surrendered and received **${fmt(refund)}** coins back (half your bet).`)
+      .addFields({ name: '💰 Balance', value: `**${fmt(getBalance(s.userId))}** coins`, inline: true })
+      .setFooter({ text: 'YSER Flow Casino' });
+    unlock(s.userId);
+    return interaction.editReply({ embeds: [embed], components: [afterRow()], attachments: [] });
+  }
+  if (action === 'split') {
+    if (!engine.canSplit(state) || !hasEnough(s.userId, s.bet)) { unlock(s.userId); return interaction.followUp({ content: '❌ Cannot split.', flags: MessageFlags.Ephemeral }); }
+    removeCoins(s.userId, s.bet);
+    state = engine.bjSplit(state);
+    updateSession(s.userId, { bjState: state, splitBet: s.bet });
+    unlock(s.userId);
+    return renderBJ(interaction, s, state, true);
+  }
+  if (action === 'double') {
+    if (!hasEnough(s.userId, s.bet)) { unlock(s.userId); return interaction.followUp({ content: '❌ Not enough coins to double.', flags: MessageFlags.Ephemeral }); }
+    removeCoins(s.userId, s.bet);
+    updateSession(s.userId, { bet: s.bet * 2 });
+    s = getSession(s.userId);
+    state = engine.bjDouble(state);
+    updateSession(s.userId, { bjState: state });
+    unlock(s.userId);
+    return finishBJ(interaction, s, state);
+  }
+  if (action === 'hit') {
+    state = engine.bjHit(state);
+    updateSession(s.userId, { bjState: state });
+    const val = engine.handVal(state.playingSplit ? state.splitHand : state.player);
+    unlock(s.userId);
+    if (val >= 21) {
+      if (!state.playingSplit && state.splitHand) {
+        const ns = engine.bjFirstHandDone(state);
+        updateSession(s.userId, { bjState: ns });
+        return renderBJ(interaction, s, ns, true);
+      }
+      return finishBJ(interaction, s, state);
+    }
+    return renderBJ(interaction, s, state);
+  }
+  if (action === 'stand') {
+    if (state.splitHand && !state.playingSplit) {
+      const ns = engine.bjFirstHandDone(state);
+      updateSession(s.userId, { bjState: ns });
+      unlock(s.userId);
+      return renderBJ(interaction, s, ns, true);
+    }
+    unlock(s.userId);
+    return finishBJ(interaction, s, state);
+  }
+  unlock(s.userId);
+}
+
+async function finishBJ(interaction, s, state) {
+  const final   = engine.dealerPlay(state);
+  const results = engine.bjResult(final);
+  const dv = engine.handVal(final.dealer), pv = engine.handVal(final.player);
+
+  const LABELS = { blackjack: '🃏 Natural Blackjack! 🎉', win: '🃏 You Win!', push: '🃏 Push', bust: '🃏 Bust', loss: '🃏 Dealer Wins', dealer_bust: '🃏 Dealer Busts!' };
+  const COLORS  = { blackjack: 0xf1c40f, win: 0x2ecc71, push: 0x95a5a6, bust: 0xe74c3c, loss: 0xe74c3c, dealer_bust: 0x2ecc71 };
+  const RLABELS = { blackjack: '🟡 BJ', win: '🟢 WIN', push: '⚪ Push', bust: '🔴 Bust', loss: '🔴 Loss', dealer_bust: '🟢 D.Bust' };
+
+  let payout = 0;
+  const main = results.main;
+  if (main === 'blackjack') payout += Math.floor(s.bet * 2.5);
+  else if (main === 'win' || main === 'dealer_bust') payout += s.bet * 2;
+  else if (main === 'push') payout += s.bet;
+  payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
+
+  let splitPayout = 0;
+  const splitBet = s.splitBet || 0;
+  if (results.split) {
+    const sp = results.split;
+    if (sp === 'blackjack' || sp === 'win' || sp === 'dealer_bust') splitPayout += splitBet * 2;
+    else if (sp === 'push') splitPayout += splitBet;
+  }
+  splitPayout = _applyBoost(splitPayout, splitBet, s.userId, interaction.guild?.id);
+
+  let insurancePayout = 0;
+  const insuranceBet  = s.insuranceBet || 0;
+  if (state.insuranceTaken && insuranceBet > 0) {
+    if (engine.handVal(final.dealer) === 21 && final.dealer.length === 2)
+      insurancePayout = insuranceBet * 3;
+  }
+  insurancePayout = _applyBoost(insurancePayout, insuranceBet, s.userId, interaction.guild?.id);
+
+  if (payout > 0)          addCoins(s.userId, payout);
+  if (splitPayout > 0)     addCoins(s.userId, splitPayout);
+  if (insurancePayout > 0) addCoins(s.userId, insurancePayout);
+
+  const totalOut = payout + splitPayout + insurancePayout;
+  const totalIn  = s.bet + splitBet + insuranceBet;
+  const delta    = totalOut - totalIn;
+  const newBal   = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+  await applyResult(interaction, s.userId, { lastResult: { label: RLABELS[main] || main, delta }, bjState: null, splitBet: null, insuranceBet: null });
+
+  const imgName = `bj-final-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderBlackjackTablePng({
+    dealer: final.dealer, player: final.player, splitHand: final.splitHand,
+    hideDealerHole: false, playingSplit: false,
+  }), { name: imgName });
+
+  const handFields = [
+    { name: '🂠 Dealer', value: `${engine.hStr(final.dealer)} — **${dv}**`, inline: true },
+    { name: '🃏 Your Hand', value: `${engine.hStr(final.player)} — **${pv}**`, inline: true },
+  ];
+  if (final.splitHand) handFields.push({ name: '✂️ Split Hand', value: `${engine.hStr(final.splitHand)} — **${engine.handVal(final.splitHand)}**`, inline: true });
+
+  const embed = new EmbedBuilder()
+    .setColor(COLORS[main] ?? 0x95a5a6)
+    .setTitle(`🃏 Blackjack — ${LABELS[main] ?? main}`)
+    .setImage(`attachment://${imgName}`)
+    .addFields(
+      ...handFields,
+      { name: '💸 Bet',     value: `**${fmt(s.bet)}** coins`,                  inline: true },
+      { name: '💵 Payout',  value: payout > 0 ? `**${fmt(payout)}** coins` : '—', inline: true },
+      { name: '💰 Balance', value: `**${fmt(newBal)}** coins`,                 inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+
+  if (results.split) embed.addFields(
+    { name: '✂️ Split', value: RLABELS[results.split] || results.split, inline: true },
+    { name: '✂️ Split Payout', value: splitPayout > 0 ? `**${fmt(splitPayout)}**` : '—', inline: true },
+  );
+  if (insuranceBet > 0) embed.addFields({ name: '🛡️ Insurance', value: insurancePayout > 0 ? `Won **${fmt(insurancePayout)}**` : 'Lost', inline: true });
+
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRADING
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function startTrading(interaction, s) {
+  const trade = engine.generateChart({ bet: s.bet, userId: s.userId });
+  const { setupChartPng, ...tradeState } = trade;
+  updateSession(s.userId, { tradeState });
+  const chartName = `trading-setup-${s.userId}.png`;
+  const setupChart = new AttachmentBuilder(setupChartPng, { name: chartName });
+  const embed = new EmbedBuilder()
+    .setColor(0x2c3e50).setTitle('📈 Trading — Setup')
+    .setDescription('Generated market path for this round. Choose direction, then pick RR.')
+    .setImage(`attachment://${chartName}`)
+    .addFields(
+      { name: '💸 Bet', value: `**${fmt(s.bet)}** coins`, inline: true },
+      { name: '🎯 Entry', value: `\`${tradeState.entryPrice.toFixed(2)}\``, inline: true },
+      { name: '📏 1R (Risk Unit)', value: `\`${tradeState.riskUnit.toFixed(2)}\``, inline: true },
+      { name: '📦 Position Size', value: `\`${tradeState.positionSize.toFixed(2)}\``, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Pick direction' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:tr:buy').setLabel('📈 BUY (Long)').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('cs:tr:sell').setLabel('📉 SELL (Short)').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+  );
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [row], files: [setupChart], attachments: [] });
+}
+
+async function showRRChoice(interaction, s) {
+  const embed = new EmbedBuilder()
+    .setColor(0x2c3e50).setTitle('📈 Trading — Risk/Reward')
+    .setDescription('Pick your **Risk:Reward** ratio. Outcome is resolved from this round’s generated price path.')
+    .addFields(
+      { name: '1:1', value: 'Payout: **2×**', inline: true },
+      { name: '1:2', value: 'Payout: **3×**', inline: true },
+      { name: '1:3', value: 'Payout: **4×**', inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:tr:rr:1:1').setLabel('1:1').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:tr:rr:1:2').setLabel('1:2').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:tr:rr:1:3').setLabel('1:3').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+  );
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [row], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DICE — vs bot or PvP
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function showDiceModeSelect(interaction, s) {
+  const odds = engine.randomDiceOdds();
+  updateSession(s.userId, { diceOdds: odds });
+  const embed = new EmbedBuilder()
+    .setColor(0x9b59b6)
+    .setTitle('🎲 Dice')
+    .setDescription(
+      `Roll a die — whoever gets the higher number wins!\n\n` +
+      `**Odds this round:** \`${odds}×\`  ·  Tie → push`,
+    )
+    .addFields(
+      { name: '💸 Bet',     value: `**${fmt(s.bet)}** coins`,               inline: true },
+      { name: '💰 Balance', value: `**${fmt(getBalance(s.userId))}** coins`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Odds are randomised each game' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:dicemode:bot').setLabel('🤖 vs Bot').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('cs:dicemode:pvp').setLabel('👥 vs Player').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+  );
+  await interaction.editReply({ embeds: [embed], components: [row], attachments: [] });
+}
+
+async function resolveDiceVsBot(interaction, s) {
+  const odds   = s.diceOdds ?? 2.0;
+  const result = engine.playDiceVsBot(odds);
+  let payout = 0;
+  if (result.push)     payout = s.bet;
+  else if (result.won) payout = _applyBoost(Math.floor(s.bet * odds), s.bet, s.userId, interaction.guild?.id);
+  if (payout > 0) addCoins(s.userId, payout);
+  const delta  = payout - s.bet, newBal = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+  await applyResult(interaction, s.userId, {
+    lastResult: { label: result.push ? '⚪ Push' : result.won ? `🟢 ×${odds}` : '🔴 LOSS', delta },
+    diceOdds: null,
+  });
+  const title = result.push ? '⚖️ Tie — Push!' : result.won ? '🏆 You Win!' : '💀 Bot Wins!';
+  const outcome = result.push ? 'push' : result.won ? 'win' : 'loss';
+  const imgName = `dice-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(engine.renderDicePng(result.playerRoll, result.botRoll, outcome), { name: imgName });
+  const embed = new EmbedBuilder()
+    .setColor(result.push ? 0x95a5a6 : result.won ? 0x2ecc71 : 0xe74c3c)
+    .setTitle(`🎲 Dice — ${title}`)
+    .setImage(`attachment://${imgName}`)
+    .setDescription(
+      `You rolled ${engine.DICE_FACES[result.playerRoll]} **${result.playerRoll}**\n` +
+      `Bot rolled ${engine.DICE_FACES[result.botRoll]} **${result.botRoll}**`,
+    )
+    .addFields(
+      { name: '🎯 Odds',    value: `**${odds}×**`,                                                              inline: true },
+      { name: '💸 Bet',     value: `**${fmt(s.bet)}** coins`,                                                   inline: true },
+      { name: result.won ? '💵 Won' : result.push ? '↩️ Returned' : '💸 Lost',
+        value: `**${fmt(result.push ? s.bet : result.won ? payout : s.bet)}** coins`,                           inline: true },
+      { name: '💰 Balance', value: `**${fmt(newBal)}** coins`,                                                  inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
+}
+
+async function showDicePvpChallenge(interaction, s) {
+  global.diceChallenges.set(s.userId, { bet: s.bet, timestamp: Date.now() });
+  setTimeout(() => { global.diceChallenges.delete(s.userId); }, 5 * 60 * 1000);
+  const embed = new EmbedBuilder()
+    .setColor(0x3498db)
+    .setTitle('🎲 Dice — Challenge Open!')
+    .setDescription(
+      `<@${s.userId}> challenges anyone to a dice duel!\n\n` +
+      `**Bet:** \`${fmt(s.bet)}\` coins each — winner takes **${fmt(s.bet * 2)}** coins!\n\n` +
+      `*Expires in 5 minutes*`,
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  First to accept wins the duel slot' });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`cs:diceaccept:${s.userId}:${s.bet}`)
+      .setLabel(`Accept ⚔️  (${fmt(s.bet)} coins)`)
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('cs:dicepvpcancel')
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Danger),
+  );
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [row], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROULETTE — bet type pick → amount → spin
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function showRoulettePick(interaction, s) {
+  const embed = new EmbedBuilder()
+    .setColor(0x2F3136)
+    .setTitle('🎡  Roulette — Choose Your Table Bet')
+    .setDescription(
+      'Select a bet type, then choose your amount.\n\n' +
+      '• **Outside (1:1):** Red, Black, Odd, Even\n' +
+      '• **Dozens (2:1):** 1–12, 13–24, 25–36\n' +
+      '• **Straight (35:1):** single number 0–36',
+    )
+    .addFields(
+      { name: '🧭 Table Info', value: 'European wheel with a single **0** pocket.', inline: true },
+      { name: '🎯 Next Step', value: 'After bet type, select stake and spin.', inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Roulette controls are neutral/secondary for clarity' });
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:rl:red').setLabel('🔴 Red').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:black').setLabel('⚫ Black').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:odd').setLabel('🔢 Odd').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:even').setLabel('🔢 Even').setStyle(ButtonStyle.Secondary),
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:rl:1-12').setLabel('1–12').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:13-24').setLabel('13–24').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:25-36').setLabel('25–36').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:rl:straight').setLabel('🎯 Straight (35:1)').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:menu').setLabel('← Back').setStyle(ButtonStyle.Secondary),
+  );
+  await interaction.editReply({ embeds: [embed], components: [row1, row2], attachments: [] });
+}
+
+async function resolveRoulette(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+  if (!s.rouletteState?.betType) { unlock(s.userId); return expired(interaction); }
+  const { betType, betValue } = s.rouletteState;
+  const spin    = engine.spinRoulette();
+  const result  = engine.rouletteResult(spin, betType, betValue);
+  let payout  = result.won ? Math.floor(s.bet * result.mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
+  if (payout > 0) addCoins(s.userId, payout);
+  const delta   = payout - s.bet;
+  const newBal  = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+
+  const betLabel = betType === 'straight' ? `Straight #${betValue}` : betType.replace(/-/g, '–').replace(/^./, c => c.toUpperCase());
+  const colorEmoji = spin.color === 'red' ? '🔴' : spin.color === 'black' ? '⚫' : '🟢';
+
+  const spinEmbed = new EmbedBuilder()
+    .setColor(0x2F3136)
+    .setTitle('🎡  Roulette — Spinning...')
+    .setDescription('Ball is rolling across the wheel.\nFinal pocket is being determined...')
+    .addFields(
+      { name: '📋 Bet', value: `**${betLabel}**`, inline: true },
+      { name: '💸 Stake', value: `**${fmt(s.bet)}** coins`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Secure random spin in progress' });
+  await interaction.editReply({ embeds: [spinEmbed], components: [], attachments: [] });
+  await wait(900);
+
+  await applyResult(interaction, s.userId, {
+    lastResult: { label: result.won ? `🟢 WIN ×${result.mult}` : '🔴 LOSS', delta },
+    rouletteState: null,
+  });
+
+  const rlChartName = `roulette-result-${s.userId}.png`;
+  const rlChart = new AttachmentBuilder(engine.renderRoulettePng({ num: spin.num, color: spin.color, won: result.won }), { name: rlChartName });
+
+  const embed = new EmbedBuilder()
+    .setColor(result.won ? 0x2ECC71 : 0xE74C3C)
+    .setTitle(`🎡  Roulette — ${result.won ? 'Hit! 🎉' : 'Miss'}`)
+    .setImage(`attachment://${rlChartName}`)
+    .addFields(
+      { name: '🎯 Ball Landed', value: `${colorEmoji} **${spin.num}** (${spin.color.toUpperCase()})`, inline: true },
+      { name: '📋 Your Bet',    value: `**${betLabel}** — ${result.won ? `×${result.mult}` : 'miss'}`, inline: true },
+      { name: '💸 Bet',      value: `**${fmt(s.bet)}** coins`,                                     inline: true },
+      { name: '💵 Payout',   value: payout > 0 ? `**${fmt(payout)}** coins` : '—',                 inline: true },
+      { name: '💰 Balance',  value: `**${fmt(newBal)}** coins`,                                    inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  European Roulette  •  Cryptographically secure number selection' });
+
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [rlChart], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WHEEL OF FORTUNE — spin for a random multiplier
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function resolveWheel(interaction, s) {
+  if (!tryLock(s.userId)) return interaction.followUp({ content: '⏳ Processing…', flags: MessageFlags.Ephemeral });
+
+  // ── Daily spin limit ───────────────────────────────────────────────────────
+  const { spinsLeft, used, unlimited } = checkWheelLimit(s.userId, interaction.guild?.id);
+  if (spinsLeft <= 0) {
+    // Refund the bet since we're blocking after coins were already removed
+    addCoins(s.userId, s.bet);
+    unlock(s.userId);
+    return interaction.editReply({ embeds: [new EmbedBuilder()
+      .setColor(0xE74C3C)
+      .setTitle('🎰  Wheel of Fortune — Daily Limit Reached')
+      .setDescription(`You've used all **${WHEEL_DAILY_LIMIT} spins** for today.\nCome back tomorrow for more!`)
+      .addFields({ name: '♻️ Refunded', value: `**${fmt(s.bet)}** coins returned to your balance`, inline: true })
+      .setFooter({ text: 'Limit resets at midnight UTC' })], components: [], attachments: [] });
+  }
+
+  // Record the spin IMMEDIATELY (before any await) so a concurrent "Play Again"
+  // click can never pass the limit check before this spin is counted.
+  recordWheelSpin(s.userId, interaction.guild?.id);
+
+  // Spin animation
+  const spinImgName = `wheel-spin-${s.userId}.png`;
+  const spinFile = new AttachmentBuilder(engine.renderWheelPng(null, true), { name: spinImgName });
+  const spinEmbed = new EmbedBuilder()
+    .setColor(0xFF6B35)
+    .setTitle('🎰  Wheel of Fortune — Spinning…')
+    .setImage(`attachment://${spinImgName}`)
+    .addFields(
+      { name: '💸 Bet',        value: `**${fmt(s.bet)}** coins`,                          inline: true },
+      { name: '🎡 Spins Left', value: unlimited ? '**⏩ Unlimited** (Cooldown Skip active)' : `**${spinsLeft - 1}** remaining today`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+  await interaction.editReply({ embeds: [spinEmbed], components: [], files: [spinFile], attachments: [] });
+  await wait(1500);
+
+  const segment = engine.spinWheel();
+  let payout  = segment.mult > 0 ? Math.floor(s.bet * segment.mult) : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
+  if (payout > 0) addCoins(s.userId, payout);
+  const delta   = payout - s.bet;
+  const newBal  = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+  await applyResult(interaction, s.userId, {
+    lastResult: { label: segment.mult > 1 ? `🟢 ×${segment.mult}` : segment.mult === 1 ? '⚪ Push' : '🔴 Bankrupt', delta },
+  });
+
+  const spinsAfter  = WHEEL_DAILY_LIMIT - (used + 1);
+  const colorMap = { jackpot: 0xFFD700, bigwin: 0x27AE60, win: 0x2ECC71, push: 0x95A5A6, lose: 0xE74C3C };
+  const resultImgName = `wheel-result-${s.userId}.png`;
+  const resultFile = new AttachmentBuilder(engine.renderWheelPng(segment, false), { name: resultImgName });
+  const embed = new EmbedBuilder()
+    .setColor(colorMap[segment.color] || 0xE74C3C)
+    .setTitle(`🎰  Wheel of Fortune — ${segment.label}${segment.mult >= 10 ? ' 🎊' : ''}`)
+    .setImage(`attachment://${resultImgName}`)
+    .addFields(
+      { name: '💸 Bet / Payout', value: payout > 0 ? `**${fmt(s.bet)}** → **${fmt(payout)}** coins` : `**${fmt(s.bet)}** coins lost`, inline: true },
+      { name: '💰 Balance / Spins', value: `**${fmt(newBal)}** coins  •  ${unlimited ? '⏩ **Unlimited** spins' : spinsAfter > 0 ? `**${spinsAfter}** spins left` : 'no spins left today'}`, inline: true },
+    )
+    .setFooter({ text: unlimited ? 'YSER Flow Casino  •  Wheel of Fortune  •  ⏩ Cooldown Skip active — unlimited spins' : 'YSER Flow Casino  •  Wheel of Fortune  •  10 spins/day' });
+
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [resultFile], attachments: [] });
+}
+
+async function resolveTrading(interaction, s, direction, rr) {
+  if (!s.tradeState) { unlock(s.userId); return expired(interaction); }
+  const res  = engine.resolveTradeWithChart(s.tradeState, direction, rr, s.bet);
+  if (!res.validation?.ok || res.tradeId !== s.tradeState.tradeId) {
+    addCoins(s.userId, s.bet);
+    await applyResult(interaction, s.userId, { tradeState: null, lastResult: { label: '⚠️ Trade Invalid', delta: 0 } });
+    unlock(s.userId);
+    return interaction.editReply({
+      embeds: [new EmbedBuilder()
+        .setColor(0xf39c12)
+        .setTitle('📈 Trading — Round Invalidated')
+        .setDescription('Trade state validation failed. Your bet was fully refunded.')
+        .addFields({ name: '♻️ Refunded', value: `**${fmt(s.bet)}** coins`, inline: true })],
+      components: [afterRow()],
+      attachments: [],
+    });
+  }
+  let payout = res.won ? s.bet * res.multiplier : 0;
+  if (payout > s.bet) payout = _applyBoost(payout, s.bet, s.userId, interaction.guild?.id);
+  if (payout > 0) addCoins(s.userId, payout);
+  const delta = payout - s.bet, newBal = getBalance(s.userId);
+  setCooldown(s.userId, 'casino');
+  await applyResult(interaction, s.userId, { lastResult: { label: res.won ? `🟢 +${res.rrReward}R` : '🔴 LOSS', delta }, tradeState: null });
+  const chartName = `trading-result-${s.userId}.png`;
+  const chartAttachment = new AttachmentBuilder(res.chartPng, { name: chartName });
+  const embed = new EmbedBuilder()
+    .setColor(res.won ? 0x2ecc71 : 0xe74c3c)
+    .setTitle(`📈 Trading — ${res.won ? `WIN  +${res.rrReward}R 🎉` : 'LOSS  -1R'}`)
+    .setDescription(`**Direction:** ${direction.toUpperCase()}  |  **RR:** ${rr}  |  **Hit:** ${res.hitType.toUpperCase()}`)
+    .setImage(`attachment://${chartName}`)
+    .addFields(
+      { name: '💸 Bet',     value: `**${fmt(s.bet)}** coins`,                  inline: true },
+      { name: '💵 Payout',  value: payout > 0 ? `**${fmt(payout)}** coins` : '—', inline: true },
+      { name: '💰 Balance', value: `**${fmt(newBal)}** coins`,                 inline: true },
+      { name: '🎯 Entry',   value: `\`${res.entryPrice.toFixed(2)}\``,         inline: true },
+      { name: '🛑 Stop',    value: `\`${res.sl.toFixed(2)}\``,                 inline: true },
+      { name: '✅ Target',  value: `\`${res.tp.toFixed(2)}\``,                 inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino' });
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [chartAttachment], attachments: [] });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HIGHER OR LOWER — streak + cash out
+// ─────────────────────────────────────────────────────────────────────────────
+
+function hlCashValue(bet, streak) {
+  return Math.floor(bet * engine.hlMultiplier(streak));
+}
+
+async function startHigherLower(interaction, s) {
+  const deck = engine.hlNewDeck();
+  const current = engine.drawCardFrom(deck);
+  updateSession(s.userId, {
+    hlState: { deck, current, streak: 0, pending: false },
+  });
+  return showHigherLowerPrompt(interaction, getSession(s.userId));
+}
+
+async function showHigherLowerPrompt(interaction, s) {
+  const st = s.hlState;
+  const mult = engine.hlMultiplier(Math.max(1, st.streak + 1)); // next-win mult preview
+  const imgName = `hl-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(
+    engine.renderHigherLowerPng(st.current, null, null, st.streak, engine.hlMultiplier(st.streak)),
+    { name: imgName },
+  );
+  const embed = new EmbedBuilder()
+    .setColor(0x3b82f6)
+    .setTitle('🃏 Higher or Lower')
+    .setDescription(
+      `Current card: **${engine.cStr(st.current)}**\n` +
+      `Will the next card be **higher**, **lower**, or the **same** rank?\n\n` +
+      (st.streak
+        ? `🔥 Streak **${st.streak}** · Cash out now for **${fmt(hlCashValue(s.bet, st.streak))}** (${engine.hlMultiplier(st.streak)}x)`
+        : `Bet **${fmt(s.bet)}** · First win pays **${engine.hlMultiplier(1)}x**`),
+    )
+    .setImage(`attachment://${imgName}`)
+    .addFields(
+      { name: '💸 Bet', value: `**${fmt(s.bet)}**`, inline: true },
+      { name: '📈 Next win', value: `**${mult}x**`, inline: true },
+      { name: '💰 Balance', value: `**${fmt(getBalance(s.userId))}**`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Fast card calls' });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:hl:higher').setLabel('⬆️ Higher').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('cs:hl:lower').setLabel('⬇️ Lower').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('cs:hl:same').setLabel('🟰 Same').setStyle(ButtonStyle.Primary),
+  );
+  const rows = [row];
+  if (st.streak > 0) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('cs:hl:cashout').setLabel(`💰 Cash Out (${fmt(hlCashValue(s.bet, st.streak))})`).setStyle(ButtonStyle.Success),
+    ));
+  }
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:close').setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
+  ));
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: rows, files: [file], attachments: [] });
+}
+
+async function handleHigherLower(interaction, s, action) {
+  const st = s.hlState;
+  if (!st || !st.current) { unlock(s.userId); return expired(interaction); }
+
+  if (action === 'cashout') {
+    if (st.streak <= 0) { unlock(s.userId); return showHigherLowerPrompt(interaction, s); }
+    const payout = hlCashValue(s.bet, st.streak);
+    const boosted = _applyBoost(payout, s.bet, s.userId, s.guildId);
+    addCoins(s.userId, boosted);
+    const delta = boosted - s.bet;
+    const imgName = `hl-cash-${s.userId}.png`;
+    const file = new AttachmentBuilder(
+      engine.renderHigherLowerPng(st.current, null, 'win', st.streak, engine.hlMultiplier(st.streak)),
+      { name: imgName },
+    );
+    const embed = new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle('🃏 Higher or Lower — Cashed Out!')
+      .setDescription(`You banked a **${st.streak}**-card streak at **${engine.hlMultiplier(st.streak)}x**.`)
+      .setImage(`attachment://${imgName}`)
+      .addFields(
+        { name: '💸 Bet', value: `**${fmt(s.bet)}**`, inline: true },
+        { name: '🏆 Payout', value: `**${fmt(boosted)}**`, inline: true },
+        { name: '📊 Profit', value: `**${delta >= 0 ? '+' : ''}${fmt(delta)}**`, inline: true },
+      )
+      .setFooter({ text: 'YSER Flow Casino' });
+    setCooldown(s.userId, 'casino');
+    await applyResult(interaction, s.userId, { lastResult: { label: `✅ HL ×${engine.hlMultiplier(st.streak)}`, delta: boosted - s.bet }, hlState: null });
+    unlock(s.userId);
+    await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
+    return;
+  }
+
+  if (!['higher', 'lower', 'same'].includes(action)) { unlock(s.userId); return; }
+
+  // Ensure deck has cards
+  if (!st.deck || st.deck.length < 1) st.deck = engine.hlNewDeck();
+  const next = engine.drawCardFrom(st.deck);
+  const { won } = engine.hlResolve(st.current, next, action);
+
+  if (!won) {
+    const imgName = `hl-lose-${s.userId}.png`;
+    const file = new AttachmentBuilder(
+      engine.renderHigherLowerPng(st.current, next, 'lose', st.streak, engine.hlMultiplier(st.streak)),
+      { name: imgName },
+    );
+    const embed = new EmbedBuilder()
+      .setColor(0xe74c3c)
+      .setTitle('🃏 Higher or Lower — Bust')
+      .setDescription(
+        `${engine.cStr(st.current)} → ${engine.cStr(next)}\n` +
+        `You called **${action}** — not this time.\n` +
+        (st.streak ? `Streak of **${st.streak}** is gone.` : 'One bad call.'),
+      )
+      .setImage(`attachment://${imgName}`)
+      .addFields(
+        { name: '💸 Lost', value: `**${fmt(s.bet)}**`, inline: true },
+        { name: '💰 Balance', value: `**${fmt(getBalance(s.userId))}**`, inline: true },
+      )
+      .setFooter({ text: 'YSER Flow Casino' });
+    setCooldown(s.userId, 'casino');
+    await applyResult(interaction, s.userId, { lastResult: { label: '🔴 HL LOSS', delta: -s.bet }, hlState: null });
+    unlock(s.userId);
+    await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
+    return;
+  }
+
+  // Win — advance streak, next card becomes current
+  const streak = st.streak + 1;
+  const mult = engine.hlMultiplier(streak);
+  updateSession(s.userId, {
+    hlState: { deck: st.deck, current: next, streak, pending: false },
+  });
+  const upd = getSession(s.userId);
+  const imgName = `hl-win-${s.userId}-${streak}.png`;
+  const file = new AttachmentBuilder(
+    engine.renderHigherLowerPng(st.current, next, 'win', streak, mult),
+    { name: imgName },
+  );
+  const embed = new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle('🃏 Higher or Lower — Hit!')
+    .setDescription(
+      `${engine.cStr(st.current)} → ${engine.cStr(next)}\n` +
+      `Called **${action}** · Streak **${streak}** · **${mult}x** on the table`,
+    )
+    .setImage(`attachment://${imgName}`)
+    .addFields(
+      { name: '💰 Cash out', value: `**${fmt(hlCashValue(s.bet, streak))}**`, inline: true },
+      { name: '🎲 Or continue', value: `Next win → **${engine.hlMultiplier(streak + 1)}x**`, inline: true },
+    )
+    .setFooter({ text: 'Cash out to bank it — or push the streak higher' });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:hl:cashout').setLabel(`💰 Cash Out (${fmt(hlCashValue(s.bet, streak))})`).setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('cs:hl:higher').setLabel('⬆️ Higher').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:hl:lower').setLabel('⬇️ Lower').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('cs:hl:same').setLabel('🟰 Same').setStyle(ButtonStyle.Secondary),
+  );
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [row], files: [file], attachments: [] });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIND THE QUEEN — progressive monte
+// ─────────────────────────────────────────────────────────────────────────────
+
+function monteCashValue(bet, streak) {
+  return Math.floor(bet * engine.monteMultiplier(streak));
+}
+
+const MONTE_LABELS = ['Left', '2', 'Middle', '4', '5', '6', '7', 'Right'];
+
+function monteButtonLabel(i, count) {
+  if (count === 3) return ['⬅️ Left', '⬆️ Middle', '➡️ Right'][i];
+  if (i === 0) return '⬅️ Left';
+  if (i === count - 1) return '➡️ Right';
+  return `• ${i + 1}`;
+}
+
+async function startMonte(interaction, s) {
+  const level = 1;
+  const count = engine.monteCardCount(level);
+  const deal = engine.monteDeal(count);
+  updateSession(s.userId, {
+    monteState: { level, streak: 0, count: deal.count, queenIdx: deal.queenIdx },
+  });
+  return showMontePrompt(interaction, getSession(s.userId), true);
+}
+
+async function showMontePrompt(interaction, s, shuffling = false) {
+  const st = s.monteState;
+  const mult = engine.monteMultiplier(Math.max(1, st.streak + 1));
+  const imgName = `monte-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(
+    engine.renderMontePng(st.count, null, null, false, st.level, mult),
+    { name: imgName },
+  );
+
+  if (shuffling) {
+    // Short “animation” via sequential edits — fast, no real wait long.
+    const spin = new EmbedBuilder()
+      .setColor(0x9b59b6)
+      .setTitle('👑 Find the Queen')
+      .setDescription('🔄 Shuffling the cards…')
+      .setFooter({ text: 'YSER Flow Casino' });
+    await interaction.editReply({ embeds: [spin], components: [], files: [], attachments: [] });
+    await new Promise(r => setTimeout(r, 450));
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x9b59b6)
+    .setTitle('👑 Find the Queen')
+    .setDescription(
+      `One of these **${st.count}** cards is the **Queen**.\n` +
+      `Pick carefully — a miss loses the whole bet.\n\n` +
+      (st.streak
+        ? `🔥 Streak **${st.streak}** · Cash out for **${fmt(monteCashValue(s.bet, st.streak))}** (${engine.monteMultiplier(st.streak)}x)`
+        : `Level **${st.level}** · First find pays **2x**`),
+    )
+    .setImage(`attachment://${imgName}`)
+    .addFields(
+      { name: '💸 Bet', value: `**${fmt(s.bet)}**`, inline: true },
+      { name: '📈 Next', value: `**${mult}x**`, inline: true },
+      { name: '🃏 Cards', value: `**${st.count}**`, inline: true },
+    )
+    .setFooter({ text: 'YSER Flow Casino  •  Find the Queen' });
+
+  // Buttons — Discord max 5 per row
+  const btns = [];
+  for (let i = 0; i < st.count; i++) {
+    btns.push(
+      new ButtonBuilder()
+        .setCustomId(`cs:monte:pick:${i}`)
+        .setLabel(monteButtonLabel(i, st.count))
+        .setStyle(ButtonStyle.Secondary),
+    );
+  }
+  const rows = [];
+  for (let i = 0; i < btns.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(...btns.slice(i, i + 5)));
+  }
+  if (st.streak > 0) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('cs:monte:cashout').setLabel(`💰 Cash Out (${fmt(monteCashValue(s.bet, st.streak))})`).setStyle(ButtonStyle.Success),
+    ));
+  }
+  rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:close').setLabel('🔒 Close').setStyle(ButtonStyle.Secondary),
+  ));
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: rows, files: [file], attachments: [] });
+}
+
+async function handleMonte(interaction, s, action, pickRaw) {
+  const st = s.monteState;
+  if (!st) { unlock(s.userId); return expired(interaction); }
+
+  if (action === 'cashout') {
+    if (st.streak <= 0) { unlock(s.userId); return showMontePrompt(interaction, s, false); }
+    const payout = monteCashValue(s.bet, st.streak);
+    const boosted = _applyBoost(payout, s.bet, s.userId, s.guildId);
+    addCoins(s.userId, boosted);
+    const delta = boosted - s.bet;
+    const imgName = `monte-cash-${s.userId}.png`;
+    const file = new AttachmentBuilder(
+      engine.renderMontePng(st.count, null, st.queenIdx, true, st.level, engine.monteMultiplier(st.streak)),
+      { name: imgName },
+    );
+    const embed = new EmbedBuilder()
+      .setColor(0x2ecc71)
+      .setTitle('👑 Find the Queen — Cashed Out!')
+      .setDescription(`You walked with **${st.streak}** clean finds at **${engine.monteMultiplier(st.streak)}x**.`)
+      .setImage(`attachment://${imgName}`)
+      .addFields(
+        { name: '💸 Bet', value: `**${fmt(s.bet)}**`, inline: true },
+        { name: '🏆 Payout', value: `**${fmt(boosted)}**`, inline: true },
+        { name: '📊 Profit', value: `**${delta >= 0 ? '+' : ''}${fmt(delta)}**`, inline: true },
+      )
+      .setFooter({ text: 'YSER Flow Casino' });
+    setCooldown(s.userId, 'casino');
+    await applyResult(interaction, s.userId, { lastResult: { label: `✅ Queen ×${engine.monteMultiplier(st.streak)}`, delta: boosted - s.bet }, monteState: null });
+    unlock(s.userId);
+    await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
+    return;
+  }
+
+  if (action === 'continue') {
+    unlock(s.userId);
+    return showMontePrompt(interaction, s, true);
+  }
+
+  if (action !== 'pick') { unlock(s.userId); return; }
+  const pickIdx = parseInt(pickRaw, 10);
+  if (!Number.isInteger(pickIdx) || pickIdx < 0 || pickIdx >= st.count) {
+    unlock(s.userId);
+    return;
+  }
+
+  const won = pickIdx === st.queenIdx;
+  const imgName = `monte-rev-${s.userId}-${Date.now()}.png`;
+  const file = new AttachmentBuilder(
+    engine.renderMontePng(st.count, pickIdx, st.queenIdx, true, st.level, engine.monteMultiplier(st.streak)),
+    { name: imgName },
+  );
+
+  if (!won) {
+    const embed = new EmbedBuilder()
+      .setColor(0xe74c3c)
+      .setTitle('👑 Find the Queen — Miss')
+      .setDescription(
+        `You picked card **${pickIdx + 1}**.\n` +
+        `The Queen was card **${st.queenIdx + 1}**.\n` +
+        (st.streak ? `Streak of **${st.streak}** is gone.` : 'The house keeps the bet.'),
+      )
+      .setImage(`attachment://${imgName}`)
+      .addFields(
+        { name: '💸 Lost', value: `**${fmt(s.bet)}**`, inline: true },
+        { name: '💰 Balance', value: `**${fmt(getBalance(s.userId))}**`, inline: true },
+      )
+      .setFooter({ text: 'YSER Flow Casino' });
+    setCooldown(s.userId, 'casino');
+    await applyResult(interaction, s.userId, { lastResult: { label: '🔴 Queen MISS', delta: -s.bet }, monteState: null });
+    unlock(s.userId);
+    await interaction.editReply({ embeds: [embed], components: [afterRow()], files: [file], attachments: [] });
+    return;
+  }
+
+  // Win — level up, more cards
+  const streak = st.streak + 1;
+  const level = st.level + 1;
+  const count = engine.monteCardCount(level);
+  const deal = engine.monteDeal(count);
+  const mult = engine.monteMultiplier(streak);
+  updateSession(s.userId, {
+    monteState: { level, streak, count: deal.count, queenIdx: deal.queenIdx },
+  });
+  const upd = getSession(s.userId);
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2ecc71)
+    .setTitle('👑 Find the Queen — Found!')
+    .setDescription(
+      `Queen was card **${pickIdx + 1}** — you nailed it.\n` +
+      `Streak **${streak}** · **${mult}x** on the table · next round has **${count}** cards.`,
+    )
+    .setImage(`attachment://${imgName}`)
+    .addFields(
+      { name: '💰 Cash out', value: `**${fmt(monteCashValue(s.bet, streak))}**`, inline: true },
+      { name: '🎲 Continue', value: `Next → **${engine.monteMultiplier(streak + 1)}x**`, inline: true },
+    )
+    .setFooter({ text: 'Cash out or go deeper' });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('cs:monte:cashout').setLabel(`💰 Cash Out (${fmt(monteCashValue(s.bet, streak))})`).setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('cs:monte:continue').setLabel('🎲 Continue').setStyle(ButtonStyle.Primary),
+  );
+  unlock(s.userId);
+  await interaction.editReply({ embeds: [embed], components: [row], files: [file], attachments: [] });
+}
+
+// Continue after a monte win → reshuffle prompt
+async function handleMonteContinue(interaction, s) {
+  return showMontePrompt(interaction, s, true);
+}
