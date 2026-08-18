@@ -1,17 +1,17 @@
 /* YSER FLOW control panel.
    Dark only, on purpose: it lives next to Discord and produces dark artwork.
-   The palette is the banners' — the same blue accent, the same cream-warm
-   neutrals — so the tool and its output read as one thing. */
+   Updated to a cleaner, more premium amtrades-style look — pure black, more space,
+   softer cards, bigger breathing room. All features kept. */
 
 :root {
-  --bg:      #0B0D11;
-  --surface: #14181F;
-  --raised:  #1B212B;
-  --sunken:  #0F1319;
-  --rule:    #262D39;
-  --ink:     #E8EBF1;
-  --soft:    #A9B2C1;
-  --muted:   #737D8C;
+  --bg:      #050506;
+  --surface: #0E1014;
+  --raised:  #161A21;
+  --sunken:  #0A0C10;
+  --rule:    #1E2430;
+  --ink:     #F0F2F5;
+  --soft:    #A0A8B5;
+  --muted:   #6B7380;
   --accent:  #4C7DFF;
   --accent-d:#16203A;
   --good:    #3FB984;
@@ -23,18 +23,6 @@
 
 * { box-sizing: border-box; }
 
-/* The hidden attribute means hidden, whatever a class says.
- *
- * It works through a browser's own stylesheet at the weight of a single
- * selector, so any class carrying a display of its own quietly outranks it
- * and the element stays on screen with `hidden` sitting on it doing nothing.
- * The panel toggles a lot of things this way, and three of them are flex
- * containers — which is how the weekly-summary fields stayed visible with
- * their switch off, and how a notice that had been told to go away stayed
- * pinned to the top of the page.
- *
- * Settling it once here rather than per class, because the next element
- * added this way should not have to know. */
 [hidden] { display: none !important; }
 
 body {
@@ -43,42 +31,32 @@ body {
   color: var(--ink);
   font-family: var(--sans);
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.55;
   -webkit-text-size-adjust: 100%;
 }
 
-/* ── top bar ──────────────────────────────────────────────────────────────
-   A floating pill rather than a strip across the top. It is inset from every
-   edge and genuinely translucent, so the page visibly slides underneath it
-   instead of disappearing at a hard line — and everything inside it gets room
-   to breathe. */
+/* ── top bar ────────────────────────────────────────────────────────────── */
 .bar {
   position: sticky;
-  top: max(0.6rem, env(safe-area-inset-top));
+  top: max(0.7rem, env(safe-area-inset-top));
   z-index: 5;
-  margin: 0.6rem 0.7rem 0;
+  margin: 0.7rem 0.85rem 0;
   display: flex; align-items: center; justify-content: space-between;
   gap: 0.9rem;
-  padding: 0.6rem 0.7rem 0.6rem 0.75rem;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--rule) 85%, transparent);
-  /* Low opacity is the point — 62% lets the cards read through as they pass
-     under. saturate() stops the blurred backdrop going flat and grey. */
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.75);
+  padding: 0.65rem 0.8rem 0.65rem 0.85rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 12px 36px -14px rgba(0, 0, 0, 0.85);
   overflow: hidden;
 }
 
-/* Browsers without backdrop-filter would show text over text, so those get an
-   opaque bar instead of an unreadable one. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .bar { background: var(--surface); }
 }
 
-/* How far down the page you are, as a hairline across the bottom of the pill.
-   Free information in space that was already there. */
 .bar::after {
   content: "";
   position: absolute; left: 0; bottom: 0; height: 2px;
@@ -87,16 +65,13 @@ body {
   transition: width 0.12s linear;
 }
 
-.brand { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .mark { width: 26px; height: 26px; flex: none; display: block; }
-.mark rect { fill: rgba(76,125,255,0.14); stroke: rgba(76,125,255,0.5); stroke-width: 1; }
+.mark rect { fill: rgba(76,125,255,0.12); stroke: rgba(76,125,255,0.45); stroke-width: 1; }
 .mark .y path { stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; fill: none; }
-.wordmark { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.09em; white-space: nowrap; }
+.wordmark { font-family: var(--mono); font-size: 0.8rem; letter-spacing: 0.1em; white-space: nowrap; }
 .wordmark b { color: var(--accent); font-weight: 600; }
 
-/* Where you are, shown once the section nav has scrolled away. It costs
-   nothing and answers the question the pill was previously just taking up
-   space next to. */
 .here {
   font-size: 0.78rem; color: var(--muted);
   padding-left: 0.55rem; margin-left: 0.1rem;
@@ -113,12 +88,8 @@ html[data-scrolled="1"] .here { opacity: 1; transform: none; }
   color: var(--soft); max-width: 8rem;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* The account cluster is its own group, separated from the identity so the
-   sign-out control never reads as part of your name. */
 .bar-right .btn { margin-left: 0.15rem; }
 
-/* Narrow phones: the avatar identifies you perfectly well on its own, and
-   dropping the name is what buys everything else its spacing back. */
 @media (max-width: 26rem) {
   .bar-right .who { display: none; }
   .wordmark { font-size: 0.74rem; letter-spacing: 0.07em; }
@@ -128,66 +99,56 @@ html[data-scrolled="1"] .here { opacity: 1; transform: none; }
 }
 
 /* ── layout ──────────────────────────────────────────────────────────── */
-#main { position: relative; z-index: 1; max-width: 64rem; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
-.view { display: none; flex-direction: column; gap: 1rem; }
+#main { position: relative; z-index: 1; max-width: 64rem; margin: 0 auto; padding: 1.6rem 1.1rem 5rem; }
+.view { display: none; flex-direction: column; gap: 1.25rem; }
 html[data-state="loading"] .view[data-view="loading"],
 html[data-state="login"]   .view[data-view="login"],
 html[data-state="setup"]   .view[data-view="setup"],
 html[data-state="panel"]   .view[data-view="panel"] { display: flex; }
 
-/* The active section marks itself, rather than the stylesheet listing every
-   section name and pairing it with the matching html[data-section] value.
-   That list was hand-maintained, and CSS cannot compare two attribute values
-   against each other — so adding a section and forgetting the line here left
-   it rendering into a container that was permanently display:none, with
-   nothing to show for it. showSection() sets data-active; nothing to keep in
-   step. */
-.section { display: none; flex-direction: column; gap: 0.85rem; }
+.section { display: none; flex-direction: column; gap: 1.1rem; }
 .section[data-active] { display: flex; }
 
-.grid { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
 @media (min-width: 46rem) { .grid { grid-template-columns: 1fr 1fr; } }
 
 .panel {
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--rule);
-  border-radius: 12px;
-  padding: 1.1rem 1.15rem 1.25rem;
+  border-radius: 16px;
+  padding: 1.35rem 1.4rem 1.5rem;
 }
-.panel.center { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.7rem; padding: 2.4rem 1.2rem; }
+.panel.center { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.85rem; padding: 2.8rem 1.4rem; }
 
-h1 { font-size: 1.25rem; margin: 0; letter-spacing: -0.015em; }
+h1 { font-size: 1.4rem; margin: 0; letter-spacing: -0.02em; font-weight: 600; }
 h2 {
-  font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.14em;
-  text-transform: uppercase; color: var(--muted); margin: 0 0 0.8rem;
+  font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--muted); margin: 0 0 0.95rem;
   font-weight: 500; display: flex; align-items: center; gap: 0.5rem;
 }
 .muted { color: var(--soft); margin: 0; }
 .hint { color: var(--muted); font-size: 0.78rem; margin: 0; }
 
 /* ── server identity ─────────────────────────────────────────────────── */
-.server { display: flex; flex-direction: column; gap: 0.7rem; }
-.server-id { display: flex; align-items: center; gap: 0.75rem; }
+.server { display: flex; flex-direction: column; gap: 0.85rem; }
+.server-id { display: flex; align-items: center; gap: 0.85rem; }
 .crest {
-  width: 44px; height: 44px; border-radius: 12px; flex: none;
+  width: 48px; height: 48px; border-radius: 14px; flex: none;
   background: var(--raised); border: 1px solid var(--rule);
   display: grid; place-items: center; overflow: hidden;
-  font-family: var(--mono); font-size: 1rem; color: var(--accent);
+  font-family: var(--mono); font-size: 1.05rem; color: var(--accent);
 }
 .crest img { width: 100%; height: 100%; object-fit: cover; }
-/* The line under the server name is empty until the overview arrives, and an
-   empty <p> is nought pixels tall — so filling it grew the block and nudged
-   the whole page down. One line is reserved for it from the start. */
 .server-meta {
   margin: 0; color: var(--muted); font-size: 0.8rem; font-family: var(--mono);
   line-height: 1.45; min-height: 1.45em;
 }
 
-.guilds { display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.2rem; }
+.guilds { display: flex; gap: 0.55rem; overflow-x: auto; padding-bottom: 0.25rem; }
 .guilds button {
   display: flex; align-items: center; gap: 0.5rem;
   background: var(--surface); border: 1px solid var(--rule);
-  color: var(--soft); border-radius: 10px; padding: 0.4rem 0.65rem;
+  color: var(--soft); border-radius: 12px; padding: 0.45rem 0.75rem;
   font: inherit; font-size: 0.82rem; cursor: pointer; white-space: nowrap;
 }
 .guilds button img { width: 18px; height: 18px; border-radius: 5px; }
@@ -196,38 +157,33 @@ h2 {
 
 /* ── section nav ─────────────────────────────────────────────────────── */
 .sections {
-  display: flex; gap: 0.3rem; overflow-x: auto;
-  border-bottom: 1px solid var(--rule); padding-bottom: 0.1rem;
+  display: flex; gap: 0.35rem; overflow-x: auto;
+  border-bottom: 1px solid var(--rule); padding-bottom: 0.15rem;
 }
 .sections button {
   background: none; border: 0; border-bottom: 2px solid transparent;
-  color: var(--muted); font: inherit; font-size: 0.88rem;
-  padding: 0.5rem 0.7rem; cursor: pointer; white-space: nowrap;
+  color: var(--muted); font: inherit; font-size: 0.9rem;
+  padding: 0.55rem 0.8rem; cursor: pointer; white-space: nowrap;
 }
 .sections button[aria-current="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .sections button:hover { color: var(--soft); }
 
 /* ── stat tiles ──────────────────────────────────────────────────────── */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: 0.6rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.8rem, 1fr)); gap: 0.75rem; }
 .tile {
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  border: 1px solid var(--rule); border-radius: 11px;
-  padding: 0.75rem 0.85rem; display: flex; flex-direction: column; gap: 0.15rem;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--rule); border-radius: 14px;
+  padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.2rem;
 }
-.tile .n { font-family: var(--mono); font-size: 1.3rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.tile .n { font-family: var(--mono); font-size: 1.45rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
 .tile.live .n { color: var(--good); }
 .tile.idle .n { color: var(--off); }
-/* The placeholders in the markup. Hidden, not removed: visibility keeps the
-   layout box, so the six real tiles land in a space that is already exactly
-   their size and nothing below them moves when they arrive. */
 .tile.ph { visibility: hidden; }
 
 /* ── rows ────────────────────────────────────────────────────────────── */
-.rows { display: flex; flex-direction: column; gap: 0.62rem; }
-/* A list that follows explanatory copy needs air between the two, or the
-   first entry reads as the next sentence of the paragraph. */
-.panel > .muted + .rows, .panel > .hint + .rows { margin-top: 0.85rem; }
+.rows { display: flex; flex-direction: column; gap: 0.7rem; }
+.panel > .muted + .rows, .panel > .hint + .rows { margin-top: 1rem; }
 .row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; font-size: 0.9rem; }
 .row .k { color: var(--soft); }
 .row .v { font-family: var(--mono); font-size: 0.85rem; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
@@ -235,17 +191,13 @@ h2 {
 
 .pill {
   font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.08em;
-  text-transform: uppercase; padding: 0.16rem 0.45rem; border-radius: 999px;
+  text-transform: uppercase; padding: 0.18rem 0.5rem; border-radius: 999px;
   border: 1px solid currentColor;
 }
 .pill.on { color: var(--good); }
 .pill.off { color: var(--off); }
 .pill.wait { color: var(--warn); }
 
-/* A name, a state and a control on one line.
-   Not the generic .row: that aligns on a shared baseline, which puts a button
-   and a line of text on the same invisible line and reads as crooked, and it
-   leaves nothing between the state and the button so they touch. */
 .permit {
   display: flex; align-items: center; justify-content: space-between;
   gap: 0.75rem; min-height: 2rem;
@@ -256,8 +208,6 @@ h2 {
 }
 .permit-right { display: flex; align-items: center; gap: 0.55rem; flex: none; }
 
-/* On a narrow phone the name and its controls stack rather than the name
-   being squeezed down to a few characters. */
 @media (max-width: 26rem) {
   .permit { flex-direction: column; align-items: stretch; gap: 0.45rem; }
   .permit-right { justify-content: space-between; }
@@ -266,73 +216,60 @@ h2 {
 .tag {
   font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em;
   color: var(--muted); border: 1px solid var(--rule);
-  border-radius: 999px; padding: 0.1rem 0.4rem; text-transform: uppercase;
+  border-radius: 999px; padding: 0.12rem 0.42rem; text-transform: uppercase;
 }
 
 .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; justify-content: flex-end; }
 .chips span {
   font-family: var(--mono); font-size: 0.68rem;
   background: var(--raised); border: 1px solid var(--rule);
-  border-radius: 5px; padding: 0.1rem 0.38rem; color: var(--soft);
+  border-radius: 6px; padding: 0.12rem 0.4rem; color: var(--soft);
 }
 .chips span.unknown { color: var(--warn); border-color: rgba(232,135,74,0.4); }
 
 /* ── leaderboard ─────────────────────────────────────────────────────── */
-.board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-.board li { display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; }
+.board { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.board li { display: flex; align-items: center; gap: 0.65rem; font-size: 0.9rem; }
 .board .rank { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); width: 1.4rem; }
 .board img { width: 24px; height: 24px; border-radius: 50%; flex: none; }
 .board .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board .bal { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--good); }
 
 /* ── studio ──────────────────────────────────────────────────────────── */
-.studio { display: grid; grid-template-columns: 1fr; gap: 0.85rem; }
+.studio { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
 @media (min-width: 56rem) { .studio { grid-template-columns: 1.35fr 1fr; align-items: start; } }
 
-.stage { display: flex; flex-direction: column; gap: 0.5rem; }
+.stage { display: flex; flex-direction: column; gap: 0.55rem; }
 .stage-frame {
-  position: relative; border-radius: 12px; overflow: hidden;
+  position: relative; border-radius: 14px; overflow: hidden;
   border: 1px solid var(--rule); background: var(--sunken);
   aspect-ratio: 5 / 2;
 }
 .stage-frame img { width: 100%; height: 100%; display: block; object-fit: contain; }
-.stage-busy { position: absolute; inset: 0; background: rgba(11,13,17,0.35); }
+.stage-busy { position: absolute; inset: 0; background: rgba(5,5,6,0.4); }
 .stage-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
 
-.editor { display: flex; flex-direction: column; gap: 0.6rem; }
+.editor { display: flex; flex-direction: column; gap: 0.7rem; }
 .editor-foot { display: flex; gap: 0.5rem; }
 
-.field { display: flex; flex-direction: column; gap: 0.35rem; }
+.field { display: flex; flex-direction: column; gap: 0.4rem; }
 .field > span, .field-head { font-size: 0.78rem; color: var(--soft); }
 .field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
 .field .count { color: var(--muted); font-family: var(--mono); font-size: 0.7rem; }
 input[type="text"], input[type="date"], textarea, select {
   width: 100%; font: inherit; font-size: 0.88rem;
   background: var(--sunken); color: var(--ink);
-  border: 1px solid var(--rule); border-radius: 8px; padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule); border-radius: 10px; padding: 0.55rem 0.7rem;
 }
 textarea { resize: vertical; min-height: 4.5rem; font-family: var(--mono); font-size: 0.82rem; }
 input[type="text"], input[type="date"] { font-family: var(--mono); font-size: 0.82rem; }
 
-/* The native date picker, made to belong here.
- *
- * A date input is drawn by the browser, and it draws for a light page unless
- * it is told otherwise — a white calendar and a black-on-white field in the
- * middle of a dark panel. color-scheme is what tells it, and this panel is
- * dark on purpose, so it is stated rather than left to the system.
- *
- * The calendar button is sized to the line rather than left alone, because a
- * date input is as tall as its tallest part and that button is taller than the
- * text — enough to leave the field standing a couple of pixels proud of every
- * other input in the same form, which reads as a row that has slipped. */
 input[type="date"] {
   color-scheme: dark;
   -webkit-appearance: none; appearance: none;
   text-align: left;
 }
 input[type="date"]::-webkit-date-and-time-value { text-align: left; }
-/* The editable date itself lives in a shadow tree with padding of its own,
-   which is the last two pixels between this field and the ones around it. */
 input[type="date"]::-webkit-datetime-edit { padding: 0; line-height: inherit; }
 input[type="date"]::-webkit-datetime-edit-fields-wrapper { padding: 0; }
 input[type="date"]::-webkit-calendar-picker-indicator {
@@ -343,26 +280,21 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 
 /* ── forms ───────────────────────────────────────────────────────────── */
-.form { display: flex; flex-direction: column; gap: 0.95rem; }
+.form { display: flex; flex-direction: column; gap: 1.05rem; }
 
-/* Actions get a rule and real space above them. They commit a change, so they
-   should read as separate from the fields rather than as one more field. */
 .actions {
-  display: flex; flex-wrap: wrap; gap: 0.5rem;
-  margin-top: 0.5rem; padding-top: 0.85rem;
+  display: flex; flex-wrap: wrap; gap: 0.55rem;
+  margin-top: 0.6rem; padding-top: 1rem;
   border-top: 1px solid var(--rule);
 }
-.form .actions { margin-top: 0.25rem; }
+.form .actions { margin-top: 0.3rem; }
 
-.embed-link-row { display: flex; gap: 0.5rem; margin-top: 0.85rem; }
+.embed-link-row { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
 .embed-link-row input { flex: 1; min-width: 0; }
-#embed-link-card .actions { margin-top: 0.85rem; padding-top: 0; border-top: none; }
+#embed-link-card .actions { margin-top: 0.9rem; padding-top: 0; border-top: none; }
 
-/* The fine print under the sign-in card. Small on purpose — present for
-   anyone who wants it before handing over a Discord login, and quiet enough
-   that it never competes with the one button on the page. */
 .fineprint {
-  margin: 1.1rem 0 0;
+  margin: 1.2rem 0 0;
   text-align: center;
   font-size: 0.72rem;
   color: var(--muted);
@@ -372,20 +304,16 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .fineprint a:hover { color: var(--soft); border-bottom-color: var(--rule); }
 .fineprint a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
-/* ── polls ────────────────────────────────────────────────────────────────
-   A result is a comparison, so it is drawn as one. The bar carries the shape
-   of the answer and the number carries the detail; either alone is half a
-   result — a bar you cannot read a figure off, or a column of figures you
-   have to rank in your head. */
-.poll-results { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.7rem 0 0.2rem; }
+/* ── polls ──────────────────────────────────────────────────────────────── */
+.poll-results { display: flex; flex-direction: column; gap: 0.55rem; margin: 0.8rem 0 0.25rem; }
 .poll-line { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); gap: 0.55rem; align-items: start; }
 .poll-key {
   font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
   line-height: 1.35; text-align: center;
-  border: 1px solid var(--rule); border-radius: 5px; background: var(--sunken);
+  border: 1px solid var(--rule); border-radius: 6px; background: var(--sunken);
 }
 .poll-line.lead .poll-key { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.poll-body { min-width: 0; display: flex; flex-direction: column; gap: 0.28rem; }
+.poll-body { min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .poll-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; }
 .poll-label { min-width: 0; font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .poll-num {
@@ -394,34 +322,23 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 }
 .poll-line.lead .poll-num { color: var(--ink); }
 .poll-track { height: 5px; border-radius: 999px; background: var(--sunken); border: 1px solid var(--rule); overflow: hidden; }
-/* Animated, because a live poll's bars move while you watch — and a bar that
-   jumps to its new length tells you less than one you can see move. */
 .poll-track > i { display: block; height: 100%; background: var(--off); transition: width var(--slow) var(--ease); }
 .poll-line.lead .poll-track > i { background: var(--accent); }
 
-/* The removable options carry their own button, so the field and the button
-   share a baseline instead of the button sitting under a stretched label. */
 .poll-option-row { display: flex; align-items: flex-end; gap: 0.5rem; }
 .poll-option-row .field { flex: 1; min-width: 0; }
 #form-poll .subfields > .btn { align-self: flex-start; }
 
-/* ── release desk ─────────────────────────────────────────────────────────
-   The week ahead, read before it is published.
-
-   A segmented control rather than three plain buttons: these are three views
-   of one thing, and the count sits under each label so the choice is made on
-   what is actually in each range rather than on the word. Equal columns, so
-   the row stays put as the numbers change — a control that resizes itself
-   every time a figure ticks over is a control you have to re-aim at. */
+/* ── release desk ───────────────────────────────────────────────────────── */
 .scope-tabs {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem;
-  margin-top: 0.85rem; padding: 0.3rem;
-  background: var(--sunken); border: 1px solid var(--rule); border-radius: 11px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem;
+  margin-top: 1rem; padding: 0.35rem;
+  background: var(--sunken); border: 1px solid var(--rule); border-radius: 12px;
 }
 .scope-tab {
-  display: flex; flex-direction: column; align-items: center; gap: 0.1rem;
-  padding: 0.5rem 0.35rem; min-width: 0;
-  border: 1px solid transparent; border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 0.12rem;
+  padding: 0.55rem 0.4rem; min-width: 0;
+  border: 1px solid transparent; border-radius: 9px;
   background: transparent; color: var(--muted); font: inherit; cursor: pointer;
   transition: background var(--fast) var(--ease), color var(--fast) var(--ease),
               border-color var(--fast) var(--ease);
@@ -435,57 +352,34 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
 }
 .scope-count {
-  font-family: var(--mono); font-size: 1.05rem; font-variant-numeric: tabular-nums;
+  font-family: var(--mono); font-size: 1.1rem; font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
 .scope-tab[aria-selected="true"] .scope-count { color: var(--accent); }
 
-/* The agenda. Tabular on purpose — a release is a time, a currency and a
-   name, and reading down a column of times is how anyone actually scans one.
-   It scrolls inside itself rather than growing the card to forty rows. */
 .agenda {
   display: flex; flex-direction: column;
-  margin-top: 0.85rem;
+  margin-top: 1rem;
   max-height: 22rem; overflow-y: auto;
 }
-.agenda > p { margin: 0.35rem 0; }
-/* Fixed columns, and the weekday is a column of its own rather than a prefix
-   glued onto the time — sharing one cell is what made "Thu 08:30" run into
-   the currency beside it.
-
-   A single day has no weekday cell in the markup at all, and this template
-   has no track for one. Collapsing it in CSS instead does not work and is
-   worth spelling out: display:none takes an element out of the grid
-   entirely, so it stops being an item, and every cell after it slides one
-   track to the left. The time landed in a zero-width track and spilled over
-   the currency, and the event name landed in the 2.4rem currency track and
-   was cut to three letters. Nothing overflowed the row or the page, so it
-   read as clean to every measurement that was not looking inside the row. */
+.agenda > p { margin: 0.4rem 0; }
 .agenda-row {
   display: grid;
   grid-template-columns: 0.5rem 3.1rem 2.5rem minmax(0, 1fr) auto;
   align-items: center; gap: 0.55rem;
-  padding: 0.42rem 0.1rem;
+  padding: 0.48rem 0.1rem;
   border-bottom: 1px solid var(--rule);
   font-size: 0.82rem;
 }
 .agenda[data-range="week"] .agenda-row { grid-template-columns: 0.5rem 2.2rem 3.1rem 2.5rem minmax(0, 1fr) auto; }
 .agenda-row:last-child { border-bottom: none; }
 
-/* Impact as a dot rather than a word: it is the thing you sort by at a
-   glance, and three letters of "Medium" in every row would out-shout the
-   event name, which is what you are actually reading. Four clearly different
-   marks, because a dot nobody can tell apart is worse than no dot. */
 .impact-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--off); }
 .impact-dot.high { background: #E5484D; box-shadow: 0 0 0 3px color-mix(in srgb, #E5484D 18%, transparent); }
 .impact-dot.medium { background: var(--warn); }
 .impact-dot.low { background: transparent; border: 1px solid var(--off); }
 .impact-dot.holiday { background: var(--accent); }
 
-/* Every fixed-width cell clips rather than spills. The tracks are sized for
-   this panel's own type, and a phone rendering the monospace stack a step
-   wider — or a language whose weekday abbreviation runs longer — must lose a
-   character to an ellipsis, never draw over the cell beside it. */
 .agenda-day, .agenda-time, .agenda-cur {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: var(--mono); letter-spacing: 0.04em;
@@ -496,65 +390,33 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .agenda-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agenda-fig { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
 
-/* A list that scrolls should say so. The last row fading out is the whole
-   message — a hard cut through the middle of a row reads as broken rather
-   than as continued. */
 .agenda.is-scrollable {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2rem), transparent 100%);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 2rem), transparent 100%);
 }
 
-/* On a phone the figures are the first thing to go — the time, the currency
-   and what the release is are what the column is for. */
 @media (max-width: 30rem) {
   .agenda-row { grid-template-columns: 0.5rem 3rem 2.4rem minmax(0, 1fr); gap: 0.45rem; }
   .agenda[data-range="week"] .agenda-row { grid-template-columns: 0.5rem 2.1rem 3rem 2.4rem minmax(0, 1fr); }
-  /* Safe to hide, unlike the weekday: this is the last cell, so removing it
-     as a grid item shifts nothing after it. */
   .agenda-fig { display: none; }
-
-  /* The name is the thing being read, so on a narrow phone it wraps onto a
-     second line rather than being cut to "Core CPI …". A row an extra line
-     tall beats a row you cannot identify — and the fixed columns beside it
-     are why wrapping here costs nothing anywhere else.
-
-     break-word, not anywhere: anywhere lets the browser break wherever it
-     likes to keep the column narrow, which turned "Unemployment Claims" into
-     "Unemploym / ent Claims". This breaks a word only when the word alone
-     will not fit. And hyphens makes that last resort legible — at 125% text
-     "Unemployment" genuinely does not fit the column and a break has to
-     happen somewhere, but "Unemploy-ment" is a word broken properly where
-     "Unemploym ent" is a typo. The row keeps its centred alignment, so the
-     time and the currency sit level with a title of either height. */
   .agenda-title {
     white-space: normal; overflow: visible;
     overflow-wrap: break-word; hyphens: auto;
   }
-
-  /* "TOMORROW" has to fit before it earns an ellipsis. */
   .scope-name { font-size: 0.66rem; letter-spacing: 0.03em; }
 }
 
-#release-desk .actions { margin-top: 0.85rem; padding-top: 0.85rem; }
+#release-desk .actions { margin-top: 1rem; padding-top: 1rem; }
 
-/* ── terms & privacy ──────────────────────────────────────────────────────
-   Two link cards rather than two plain buttons: each one carries the address
-   it opens, because pasting that address into Discord's application listing
-   is the job people come to this card for. Side by side where there is room,
-   stacked on a phone. */
-.legal-links { display: grid; grid-template-columns: 1fr; gap: 0.6rem; margin-top: 0.85rem; }
+/* ── terms & privacy ────────────────────────────────────────────────────── */
+.legal-links { display: grid; grid-template-columns: 1fr; gap: 0.7rem; margin-top: 1rem; }
 @media (min-width: 34rem) { .legal-links { grid-template-columns: 1fr 1fr; } }
 
 .legal-link {
-  /* A grid item defaults to min-width:auto, which means it refuses to be
-     narrower than its own content — and the address inside is one unbreakable
-     nowrap string. On a phone that pushed the card wider than the column and
-     out past the edge of the panel. This is what lets the ellipsis do its job
-     instead. */
   min-width: 0;
-  display: flex; align-items: center; gap: 0.75rem;
-  padding: 0.85rem 0.9rem;
-  border: 1px solid var(--rule); border-radius: 12px;
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--rule); border-radius: 14px;
   background: var(--sunken);
   color: var(--ink); text-decoration: none;
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
@@ -563,13 +425,12 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .legal-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .legal-icon {
-  flex: none; width: 32px; height: 32px; border-radius: 9px;
+  flex: none; width: 34px; height: 34px; border-radius: 10px;
   display: grid; place-items: center;
   background: var(--accent-d); color: var(--accent);
-  /* Serif, so the § and ◈ read as marks rather than as stray punctuation. */
   font-family: Georgia, "Times New Roman", serif; font-size: 1rem;
 }
-.legal-text { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
+.legal-text { display: flex; flex-direction: column; min-width: 0; gap: 0.12rem; }
 .legal-name { font-size: 0.9rem; font-weight: 500; }
 .legal-url {
   font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
@@ -578,101 +439,93 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .legal-arrow { margin-left: auto; color: var(--muted); font-size: 0.85rem; flex: none; }
 .legal-link:hover .legal-arrow { color: var(--accent); }
 
-/* The two copy buttons sit under the two cards, so they follow the same
-   breakpoint and the same column edges. As flex items they wrapped onto
-   separate lines at their own natural widths — two ragged left-aligned
-   buttons of different lengths under two cards that lined up perfectly. */
 #legal-card .actions {
-  margin-top: 0.85rem; padding-top: 0; border-top: none;
-  display: grid; grid-template-columns: 1fr; gap: 0.6rem;
+  margin-top: 1rem; padding-top: 0; border-top: none;
+  display: grid; grid-template-columns: 1fr; gap: 0.7rem;
 }
 @media (min-width: 34rem) { #legal-card .actions { grid-template-columns: 1fr 1fr; } }
 #legal-card .actions .btn { width: 100%; min-width: 0; }
 
-/* A heading that follows content needs air above it; the first one in a panel
-   already has the panel's padding. */
-* + h2 { margin-top: 1.25rem; }
+* + h2 { margin-top: 1.4rem; }
 .panel > h2:first-child, .rows h2, form > h2:first-child { margin-top: 0; }
 
 .toggle { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: 0.9rem; cursor: pointer; }
 .toggle span { color: var(--soft); }
-.toggle input { appearance: none; width: 40px; height: 22px; border-radius: 999px; background: var(--raised); border: 1px solid var(--rule); position: relative; cursor: pointer; flex: none; transition: background 0.15s; }
-.toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--off); transition: transform 0.15s, background 0.15s; }
+.toggle input { appearance: none; width: 42px; height: 24px; border-radius: 999px; background: var(--raised); border: 1px solid var(--rule); position: relative; cursor: pointer; flex: none; transition: background 0.15s; }
+.toggle input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--off); transition: transform 0.15s, background 0.15s; }
 .toggle input:checked { background: var(--accent-d); border-color: var(--accent); }
 .toggle input:checked::after { transform: translateX(18px); background: var(--accent); }
 .toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── shop items ──────────────────────────────────────────────────────── */
-.items { display: flex; flex-direction: column; gap: 0.6rem; }
-.item { border: 1px solid var(--rule); border-radius: 10px; background: var(--sunken); }
-.item summary { display: flex; align-items: center; gap: 0.6rem; padding: 0.65rem 0.8rem; cursor: pointer; font-size: 0.9rem; list-style: none; }
+.items { display: flex; flex-direction: column; gap: 0.7rem; }
+.item { border: 1px solid var(--rule); border-radius: 12px; background: var(--sunken); }
+.item summary { display: flex; align-items: center; gap: 0.65rem; padding: 0.75rem 0.9rem; cursor: pointer; font-size: 0.9rem; list-style: none; }
 .item summary::-webkit-details-marker { display: none; }
 .item summary .emoji { font-size: 1.05rem; }
 .item summary .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item summary .pr { font-family: var(--mono); font-size: 0.82rem; color: var(--good); font-variant-numeric: tabular-nums; }
 .item[open] summary { border-bottom: 1px solid var(--rule); }
-.item .body { padding: 0.95rem; display: flex; flex-direction: column; gap: 0.85rem; }
+.item .body { padding: 1.05rem; display: flex; flex-direction: column; gap: 0.9rem; }
 
 /* ── composer ────────────────────────────────────────────────────────── */
-.composer { display: grid; grid-template-columns: 1fr; gap: 0.85rem; align-items: start; }
-@media (min-width: 52rem) { .composer { grid-template-columns: 15rem 1fr; } }
+.composer { display: grid; grid-template-columns: 1fr; gap: 1.1rem; align-items: start; }
+@media (min-width: 52rem) { .composer { grid-template-columns: 15.5rem 1fr; } }
 
 .tpl-list {
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  border: 1px solid var(--rule); border-radius: 12px; padding: 0.85rem;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--rule); border-radius: 16px; padding: 1rem;
 }
 .tpl-list-head { display: flex; align-items: center; justify-content: space-between; }
 .tpl-list-head h2 { margin: 0; }
-#tpl-index { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.7rem; max-height: 24rem; overflow-y: auto; }
+#tpl-index { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.8rem; max-height: 24rem; overflow-y: auto; }
 .tpl-entry {
   display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
-  background: none; border: 1px solid transparent; border-radius: 8px;
+  background: none; border: 1px solid transparent; border-radius: 10px;
   color: var(--soft); font: inherit; font-size: 0.86rem;
-  padding: 0.4rem 0.5rem; cursor: pointer; text-align: left; width: 100%;
+  padding: 0.45rem 0.55rem; cursor: pointer; text-align: left; width: 100%;
 }
 .tpl-entry:hover { background: var(--raised); }
 .tpl-entry[aria-current="true"] { background: var(--raised); border-color: var(--accent); color: var(--ink); }
 .tpl-entry .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tpl-entry .mt { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); flex: none; }
 
-.composer-body { display: flex; flex-direction: column; gap: 1rem; }
+.composer-body { display: flex; flex-direction: column; gap: 1.15rem; }
 
-.embed-box { border: 1px solid var(--rule); border-radius: 10px; background: var(--sunken); margin-top: 0.6rem; }
-.embed-box summary { display: flex; align-items: center; gap: 0.55rem; padding: 0.6rem 0.75rem; cursor: pointer; list-style: none; font-size: 0.9rem; }
+.embed-box { border: 1px solid var(--rule); border-radius: 12px; background: var(--sunken); margin-top: 0.7rem; }
+.embed-box summary { display: flex; align-items: center; gap: 0.55rem; padding: 0.7rem 0.85rem; cursor: pointer; list-style: none; font-size: 0.9rem; }
 .embed-box summary::-webkit-details-marker { display: none; }
 .embed-box .swatch { width: 4px; height: 20px; border-radius: 2px; flex: none; }
 .embed-box[open] summary { border-bottom: 1px solid var(--rule); }
-.embed-box .body { padding: 0.95rem; display: flex; flex-direction: column; gap: 0.9rem; }
+.embed-box .body { padding: 1.05rem; display: flex; flex-direction: column; gap: 0.95rem; }
 
-.subfields { display: flex; flex-direction: column; gap: 0.9rem; border-top: 1px solid var(--rule); padding-top: 1.1rem; margin-top: 0.35rem; }
-.subfield { display: flex; flex-direction: column; gap: 0.6rem; border-left: 2px solid var(--rule); padding-left: 0.75rem; padding-bottom: 0.3rem; }
+.subfields { display: flex; flex-direction: column; gap: 0.95rem; border-top: 1px solid var(--rule); padding-top: 1.2rem; margin-top: 0.4rem; }
+.subfield { display: flex; flex-direction: column; gap: 0.65rem; border-left: 2px solid var(--rule); padding-left: 0.8rem; padding-bottom: 0.35rem; }
 
 .bstyle {
   font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em;
-  border-radius: 5px; padding: 0.1rem 0.36rem; border: 1px solid currentColor; flex: none;
+  border-radius: 5px; padding: 0.12rem 0.38rem; border: 1px solid currentColor; flex: none;
 }
 .bstyle.primary { color: var(--accent); }
 .bstyle.success { color: var(--good); }
 .bstyle.danger  { color: var(--warn); }
 .bstyle.secondary, .bstyle.link { color: var(--muted); }
 
-.post-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; padding: 0.6rem 0; border-top: 1px solid var(--rule); }
+.post-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; font-size: 0.84rem; padding: 0.65rem 0; border-top: 1px solid var(--rule); }
 .post-row .k { color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── giveaways ───────────────────────────────────────────────────────── */
-.gaw { border: 1px solid var(--rule); border-radius: 10px; background: var(--sunken); padding: 0.75rem 0.85rem; display: flex; flex-direction: column; gap: 0.4rem; }
-.gaw-top { display: flex; align-items: center; gap: 0.5rem; }
+.gaw { border: 1px solid var(--rule); border-radius: 12px; background: var(--sunken); padding: 0.85rem 0.95rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.gaw-top { display: flex; align-items: center; gap: 0.55rem; }
 .gaw-top .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
 .gaw .kind {
   font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em;
-  border-radius: 999px; padding: 0.12rem 0.42rem; border: 1px solid currentColor; flex: none;
+  border-radius: 999px; padding: 0.14rem 0.45rem; border: 1px solid currentColor; flex: none;
 }
 .gaw .kind.coins { color: var(--good); }
 .gaw .kind.prize { color: var(--accent); }
 .gaw .idtag { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); flex: none; }
 
-/* A finished giveaway opens its own sheet, so the whole card is the control.
-   The chevron is the affordance; the lift on press is the feedback. */
 .gaw.tappable {
   position: relative; width: 100%; text-align: left; cursor: pointer;
   color: inherit; font: inherit;
@@ -682,7 +535,7 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .gaw.tappable:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); background: var(--raised); }
 .gaw.tappable:active { transform: scale(0.985); }
 .gaw .chev {
-  position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%);
+  position: absolute; right: 0.9rem; top: 50%; transform: translateY(-50%);
   color: var(--muted); font-size: 1.2rem; line-height: 1;
   transition: transform var(--fast) var(--ease), color var(--fast) var(--ease);
 }
@@ -690,48 +543,30 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .v.mono { font-family: var(--mono); font-size: 0.8rem; }
 .v.mono.wrap { overflow-wrap: anywhere; text-align: right; }
 
-/* ── link requests ─────────────────────────────────────────────────────────
-   The badge carries the worst thing found about a request, so a queue can be
-   triaged by colour before anything is read. */
 .gaw .kind.sev-danger { color: var(--bad, #E74C3C); }
 .gaw .kind.sev-warn   { color: var(--warn); }
 .gaw .kind.sev-clear  { color: var(--good); }
 .gaw .kind.sev-idle   { color: var(--muted); }
 
-/* A heading with something beside it — a button, a pill, a status line.
-
-   The clearance below belongs to the row, not to the heading. It used to live
-   on the h2, which meant the heading cleared what came next and the thing
-   beside it did not: a button is taller than an 0.68rem label and hangs below
-   its baseline, so "Watch an account" ended up all but touching the first
-   account under it. Worse when the row wraps, where the button becomes the
-   last thing in the row and the h2's margin stops applying to the gap at all. */
 .queue-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  gap: 0.6rem 1rem; flex-wrap: wrap; margin-bottom: 0.9rem;
+  gap: 0.6rem 1rem; flex-wrap: wrap; margin-bottom: 1rem;
 }
 .queue-head h2 { margin-bottom: 0; }
 
-/* An activity card sits inside the Activities panel, so it drops the outer
-   panel's fill — a box drawn on a box reads as a mistake. A switched-off
-   activity keeps all its fields readable but stops competing for attention
-   with the ones that are running. */
 .econ-card {
   background: none;
   border-color: color-mix(in srgb, var(--rule) 70%, transparent);
-  padding: 0.95rem 1rem 1.05rem;
+  padding: 1.05rem 1.1rem 1.15rem;
 }
 .econ-card h2 { margin-bottom: 0; }
 .econ-card.off { opacity: 0.62; }
 .econ-card.off h2 { color: var(--off); }
 
-/* Each finding on its own line with its own weight — a shortened link and a
-   two-day-old account are different sizes of problem and should not read as
-   the same sentence. */
-.signals { display: flex; flex-direction: column; gap: 0.3rem; }
+.signals { display: flex; flex-direction: column; gap: 0.35rem; }
 .signal {
   margin: 0; font-size: 0.84rem; line-height: 1.35;
-  padding: 0.38rem 0.55rem; border-radius: 8px;
+  padding: 0.42rem 0.6rem; border-radius: 9px;
   border-left: 3px solid var(--rule); background: var(--sunken);
 }
 .signal.danger { border-left-color: #E74C3C; color: #F5B7B1; }
@@ -739,31 +574,26 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .signal.note   { border-left-color: var(--off); color: var(--soft); }
 .signal.good   { border-left-color: var(--good); color: #A9DFC4; }
 
-/* What the member wrote, set apart so it never reads as the panel's own copy. */
 .quote {
   border-left: 3px solid var(--accent);
-  background: var(--sunken); border-radius: 0 8px 8px 0;
-  padding: 0.5rem 0.7rem;
+  background: var(--sunken); border-radius: 0 9px 9px 0;
+  padding: 0.55rem 0.75rem;
 }
 .quote p { margin: 0; font-size: 0.88rem; overflow-wrap: anywhere; }
 
-/* A read-out block sitting above a form in the same panel needs a divider,
-   or the last control of one reads as the first control of the other. */
 .rows + .form {
-  margin-top: 1.25rem;
-  padding-top: 1.25rem;
+  margin-top: 1.4rem;
+  padding-top: 1.4rem;
   border-top: 1px solid var(--rule);
 }
 
 /* ── chip multi-select ───────────────────────────────────────────────── */
-.chipset { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chipset { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 
-/* Duration presets. Typing "10m" is the point; these are just the shortcuts
-   for the values anyone actually reaches for. */
-.field .chipset { margin-top: 0.4rem; }
+.field .chipset { margin-top: 0.45rem; }
 .chip {
   font: inherit; font-family: var(--mono); font-size: 0.72rem;
-  padding: 0.22rem 0.5rem; border-radius: 999px; cursor: pointer;
+  padding: 0.25rem 0.55rem; border-radius: 999px; cursor: pointer;
   background: var(--sunken); color: var(--muted);
   border: 1px solid var(--rule);
   transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
@@ -771,17 +601,12 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .chip:hover { color: var(--ink); border-color: var(--accent); }
 .chip:active { transform: scale(0.94); }
 
-/* The duration echo doubles as the error: it says what was understood, or
-   says it wasn't. */
 .field .count.bad { color: var(--warn); }
-
-/* A hint that has turned into a warning — a range that cannot be bet in, a
-   casino with nothing switched on. */
 .hint.bad { color: var(--warn); }
 .chip-toggle {
   font: inherit; font-size: 0.8rem;
   background: var(--sunken); border: 1px solid var(--rule); border-radius: 999px;
-  color: var(--muted); padding: 0.28rem 0.62rem; cursor: pointer;
+  color: var(--muted); padding: 0.3rem 0.7rem; cursor: pointer;
 }
 .chip-toggle:hover { color: var(--soft); border-color: var(--off); }
 .chip-toggle[aria-pressed="true"] {
@@ -797,55 +622,47 @@ input.bad { border-color: var(--warn); }
 .countdown.soon { color: var(--warn); }
 .countdown.over { color: var(--off); }
 
-/* Named .meter, not .bar — .bar is the header pill, and the two collided. */
 .meter { height: 4px; border-radius: 999px; background: var(--raised); overflow: hidden; }
 .meter > i { display: block; height: 100%; background: var(--accent); transition: width 1s linear; }
 .meter.soon > i { background: var(--warn); }
 
-.gaw-preview { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--sunken); }
+.gaw-preview { border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--sunken); }
 .gaw-preview img { display: block; width: 100%; }
 
 /* ── controls ────────────────────────────────────────────────────────── */
 .btn {
   display: inline-block; text-decoration: none; font: inherit; text-align: center;
-  border-radius: 9px; padding: 0.55rem 1rem; border: 1px solid var(--rule);
+  border-radius: 10px; padding: 0.6rem 1.1rem; border: 1px solid var(--rule);
   color: var(--ink); background: var(--raised); cursor: pointer;
 }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
-.btn.small { padding: 0.32rem 0.65rem; font-size: 0.8rem; }
+.btn.small { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
 .btn.danger { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .btn:hover:not(:disabled) { filter: brightness(1.12); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .note { color: var(--warn); font-size: 0.85rem; margin: 0; }
-/* The same slot used for errors also carries an explanation before anything
-   has gone wrong, and that should not be dressed as a warning. */
 .note.soft { color: var(--muted); }
-/* Only ever rendered on browsers that block both quiet ways of remembering a
-   session, so it is styled as a nudge rather than an alarm. */
 .storage-nudge { display: flex; flex-direction: column; gap: 0.7rem; align-items: flex-start; border-color: color-mix(in srgb, var(--accent) 34%, var(--rule)); }
 .storage-nudge .btn { align-self: stretch; }
 
-.keys { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
-.keys li { font-family: var(--mono); font-size: 0.85rem; background: var(--raised); border: 1px solid var(--rule); border-radius: 7px; padding: 0.4rem 0.6rem; }
+.keys { list-style: none; margin: 0.7rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.keys li { font-family: var(--mono); font-size: 0.85rem; background: var(--raised); border: 1px solid var(--rule); border-radius: 8px; padding: 0.45rem 0.65rem; }
 
 /* ── toast ───────────────────────────────────────────────────────────── */
 .toast {
   position: fixed; z-index: 20;
   left: 50%; transform: translateX(-50%);
-  bottom: max(1.1rem, env(safe-area-inset-bottom));
+  bottom: max(1.2rem, env(safe-area-inset-bottom));
   background: var(--raised); border: 1px solid var(--rule);
-  border-radius: 10px; padding: 0.6rem 0.9rem; font-size: 0.87rem;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.5); max-width: calc(100vw - 2rem);
+  border-radius: 12px; padding: 0.7rem 1rem; font-size: 0.87rem;
+  box-shadow: 0 10px 32px rgba(0,0,0,0.55); max-width: calc(100vw - 2rem);
 }
 .toast.bad { border-color: var(--warn); color: var(--warn); }
 .toast.good { border-color: var(--good); }
 
-/* ── motion ───────────────────────────────────────────────────────────────
-   One easing curve and three durations for the whole panel, so everything
-   moves like it belongs to the same object. The curve overshoots very
-   slightly — enough to feel physical, not enough to look bouncy. */
+/* ── motion ─────────────────────────────────────────────────────────────── */
 :root {
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --fast: 140ms;
@@ -859,16 +676,11 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 @keyframes popIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
 @keyframes shimmer { to { background-position: 200% 0; } }
 
-/* Opening the panel: the bar drops in, then the content rises under it. */
 .bar { animation: pillDrop var(--slow) var(--ease) both; }
 .server { animation: rise var(--slow) var(--ease) both 60ms; }
 .sections { animation: rise var(--slow) var(--ease) both 110ms; }
 
-/* Cards arrive in sequence rather than all at once. The stagger is short —
-   it should read as one movement with depth, not as a queue. */
 .tiles > * { animation: popIn var(--mid) var(--ease) both; }
-/* A placeholder must not play the entrance — the real tile replacing it does
-   that, and both doing it is the stutter this was meant to remove. */
 .tiles > .ph { animation: none; }
 .tiles > :nth-child(1) { animation-delay: 140ms; }
 .tiles > :nth-child(2) { animation-delay: 180ms; }
@@ -877,16 +689,9 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .tiles > :nth-child(5) { animation-delay: 300ms; }
 .tiles > :nth-child(6) { animation-delay: 340ms; }
 
-/* That entrance is for tiles that just arrived. A tile that was already on
-   screen and merely counted upwards gets this instead: the tiles are kept and
-   updated in place now, so it plays on the one figure that actually moved
-   rather than on the whole row — the difference between a count ticking over
-   and the panel appearing to reload itself. */
 @keyframes tickOver { from { opacity: 0.4; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 .tile .n.ticked { animation: tickOver var(--mid) var(--ease); }
 
-/* Switching sections replays the entrance for whatever just became visible,
-   so a tab change is a movement rather than a jump cut. */
 .section { animation: rise var(--mid) var(--ease) forwards; opacity: 1; }
 .section .panel { animation: rise var(--mid) var(--ease) forwards; opacity: 1; }
 .section .panel:nth-child(2) { animation-delay: 30ms; }
@@ -896,8 +701,6 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .grid > *:nth-child(3) { animation-delay: 90ms; }
 .grid > *:nth-child(4) { animation-delay: 135ms; }
 
-/* Controls respond to being pressed. On a phone this is most of what makes an
-   interface feel alive, because there is no hover to fall back on. */
 .btn { transition: filter var(--fast) var(--ease), transform var(--fast) var(--ease), opacity var(--fast); }
 .btn:active:not(:disabled) { transform: scale(0.96); }
 .sections button { transition: color var(--fast) var(--ease); }
@@ -919,38 +722,26 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .panel { transition: border-color var(--mid) var(--ease); }
 .item[open] .body, .embed-box[open] .body { animation: rise var(--mid) var(--ease) both; }
 
-/* The toast arrives from below and settles. */
 .toast { animation: rise var(--mid) var(--ease) both; }
 
-/* Loading placeholder — a moving sheen beats a spinner because it shows the
-   shape of what is coming. */
 .skeleton {
-  border-radius: 8px; min-height: 1rem;
+  border-radius: 9px; min-height: 1rem;
   background: linear-gradient(90deg, var(--raised) 25%, var(--rule) 50%, var(--raised) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
 
-/* The preview swaps images; cross-fading hides the swap. */
 .stage-frame img { transition: opacity var(--mid) var(--ease); }
 .stage-busy { transition: opacity var(--fast) var(--ease); }
 
-/* ── the sheet ─────────────────────────────────────────────────────────────
-   One overlay, reused by the giveaway detail and the embed preview.
-
-   The point of it is focus: the page behind is blurred and dimmed rather than
-   hidden, so you keep your bearings without the panel underneath competing
-   for attention. It rises from the bottom because on a phone that is where
-   your thumb already is. */
+/* ── the sheet ───────────────────────────────────────────────────────────── */
 .sheet-wrap { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; }
-/* The sheet used to need its own [hidden] rule for the reason above. The
-   global one at the top covers it, and every other case, now. */
 
 .sheet-scrim {
   position: absolute; inset: 0;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
   animation: scrimIn var(--mid) var(--ease) both;
 }
 
@@ -962,35 +753,32 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
   background: var(--surface);
   border: 1px solid var(--rule);
   border-bottom: none;
-  border-radius: 20px 20px 0 0;
-  padding: 0.5rem 1.05rem calc(1.05rem + env(safe-area-inset-bottom));
-  box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+  border-radius: 22px 22px 0 0;
+  padding: 0.55rem 1.15rem calc(1.15rem + env(safe-area-inset-bottom));
+  box-shadow: 0 -20px 55px rgba(0, 0, 0, 0.55);
   animation: sheetUp var(--slow) var(--ease) both;
 }
-/* Wider viewports have room to float it rather than dock it to the edge. */
 @media (min-width: 620px) {
   .sheet-wrap { align-items: center; }
-  .sheet { border-radius: 18px; border-bottom: 1px solid var(--rule); animation-name: sheetPop; }
+  .sheet { border-radius: 20px; border-bottom: 1px solid var(--rule); animation-name: sheetPop; }
   .sheet-grip { display: none; }
 }
 
-.sheet-grip { width: 36px; height: 4px; border-radius: 999px; background: var(--rule); margin: 0.15rem auto 0.5rem; }
+.sheet-grip { width: 38px; height: 4px; border-radius: 999px; background: var(--rule); margin: 0.15rem auto 0.55rem; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
-.sheet-head h2 { margin: 0; font-size: 1rem; }
+.sheet-head h2 { margin: 0; font-size: 1.05rem; }
 .sheet-x {
-  flex: none; width: 32px; height: 32px; line-height: 1;
-  font-size: 1.3rem; border-radius: 9px; cursor: pointer;
+  flex: none; width: 34px; height: 34px; line-height: 1;
+  font-size: 1.3rem; border-radius: 10px; cursor: pointer;
   background: var(--raised); color: var(--soft); border: 1px solid var(--rule);
 }
 .sheet-x:hover { color: var(--ink); }
 
-.sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 0.7rem; }
-.sheet-body > * + * { margin-top: 0.7rem; }
-.sheet .actions { margin-top: 0.85rem; }
+.sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 0.8rem; }
+.sheet-body > * + * { margin-top: 0.8rem; }
+.sheet .actions { margin-top: 0.95rem; }
 .sheet .actions:empty { display: none; }
 
-/* The rows inside the sheet stagger in behind it, so it reads as one movement
-   arriving rather than a finished block appearing. */
 .sheet-body > * { animation: sheetRow var(--mid) var(--ease) both; }
 .sheet-body > *:nth-child(1) { animation-delay: 90ms; }
 .sheet-body > *:nth-child(2) { animation-delay: 130ms; }
@@ -1002,8 +790,7 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 @keyframes sheetPop { from { transform: scale(0.97) translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes sheetRow { from { transform: translateY(7px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* A faithful-enough Discord embed: the coloured spine is the part that makes
-   it read as an embed at a glance, so that is what this leans on. */
+/* Discord embed preview */
 .demb {
   background: #2B2D31; border-radius: 4px;
   border-left: 4px solid var(--accent);
@@ -1017,11 +804,6 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb .f > div { min-width: 8rem; flex: 1 1 8rem; }
 .demb .f b { display: block; font-size: 0.78rem; color: #F2F3F5; }
 .demb .f span { font-size: 0.8rem; }
-/* Capped, the way Discord caps one: it scales a large picture down to fit the
-   message rather than letting it run the height of the screen, and a preview
-   that does not do the same is not showing you the message. object-fit keeps
-   a tall or square picture in proportion inside the cap instead of squashing
-   it, and left-aligns it the way the client does. */
 .demb img.big {
   display: block; width: 100%; max-height: 20rem; object-fit: contain;
   object-position: left top; border-radius: 4px; margin-top: 0.5rem;
@@ -1036,18 +818,10 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb-btns span.Success { background: #248046; }
 .demb-btns span.Danger  { background: #DA373C; }
 .demb-btns span.link::after { content: ' ↗'; opacity: 0.8; }
-/* Secondary is Discord's grey, which is what .demb-btns span already is —
-   named anyway so the class is always one of the four rather than sometimes
-   nothing, which would make a missing style look deliberate. */
 .demb-btns span.Secondary { background: #4E5058; }
 
-/* One button's editor: its fixed id and what it does, over the three fields
-   that can be changed. */
 .btn-editor-head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.45rem; }
 
-/* The palette: seventeen kinds, each a name and a swatch. Two columns where
-   there is room, because a single column of seventeen is a lot of scrolling
-   for what is really one decision repeated. */
 .palette { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.5rem 1.1rem; margin-top: 0.4rem; }
 .palette-row { display: flex; flex-direction: column; gap: 0.2rem; }
 .palette-head { display: flex; flex-direction: column; }
@@ -1056,29 +830,23 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .palette-row .field { margin: 0; }
 .palette-row .field > span:first-child { display: none; }
 
-/* Its preview is a row of spines rather than one card, because the thing
-   being edited is the colour of two hundred cards and not any one of them. */
 .palette-preview { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.4rem; }
 .palette-preview .demb { padding: 0.4rem 0.6rem; }
 .palette-preview .demb .t { margin: 0; font-size: 0.78rem; }
 .btn-editor-head .hint { margin: 0; }
 
-/* Social ─────────────────────────────────────────────────────────────────
-   The spine down each account card is its platform's colour, so the list
-   reads as four platforms rather than as one undifferentiated list. */
-.social-card { border-left: 3px solid var(--accent); margin-bottom: 0.9rem; }
+/* Social */
+.social-card { border-left: 3px solid var(--accent); margin-bottom: 1rem; }
 .social-card.off { opacity: 0.55; }
 .social-card .tag { font-weight: 700; }
 .social-head-left { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
 .social-head-left h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* The collapsed account. A whole card per watched account is unreadable at
-   four of them, so the list is these until one is tapped. */
 .social-strip {
-  display: flex; align-items: center; gap: 0.65rem; width: 100%;
-  margin-bottom: 0.5rem; padding: 0.7rem 0.85rem;
+  display: flex; align-items: center; gap: 0.7rem; width: 100%;
+  margin-bottom: 0.55rem; padding: 0.8rem 0.95rem;
   background: var(--surface); border: 1px solid var(--rule);
-  border-left: 3px solid var(--accent); border-radius: 12px;
+  border-left: 3px solid var(--accent); border-radius: 14px;
   color: inherit; font: inherit; text-align: left; cursor: pointer;
   transition: background 0.15s, transform 0.15s;
 }
@@ -1086,9 +854,6 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .social-strip:active { transform: scale(0.995); }
 .social-strip.off { opacity: 0.55; }
 
-/* The drawn mark. Round, because the marks are drawn as discs — the same
-   shape Discord crops an author icon to, so the panel and the posted card
-   show the same thing. */
 .social-badge {
   flex: 0 0 auto; display: grid; place-items: center; overflow: hidden;
   width: 1.9rem; height: 1.9rem; border-radius: 50%;
@@ -1100,32 +865,29 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .social-strip .pill { flex: 0 0 auto; }
 .social-chev { flex: 0 0 auto; color: var(--muted); font-size: 1.2rem; line-height: 1; }
 
-/* A fold-away section, used for everything that has a working default. */
-.disc { margin: 0.7rem 0 0; border-top: 1px solid var(--rule); padding-top: 0.6rem; }
+.disc { margin: 0.8rem 0 0; border-top: 1px solid var(--rule); padding-top: 0.7rem; }
 .disc > summary {
   cursor: pointer; list-style: none; color: var(--muted);
   font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700;
-  padding: 0.2rem 0;
+  padding: 0.25rem 0;
 }
 .disc > summary::-webkit-details-marker { display: none; }
 .disc > summary::before { content: '▸ '; display: inline-block; transition: transform 0.15s; }
 .disc[open] > summary::before { content: '▾ '; }
 .disc > summary:hover { color: var(--soft); }
-.social-status { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid var(--rule); }
+.social-status { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid var(--rule); }
 .social-status .bad { color: var(--warn); }
 .social-status a.mono {
   display: block; margin-top: 0.4rem; word-break: break-all;
   font-family: var(--mono, monospace); font-size: 0.72rem; color: var(--muted);
 }
 .social-test {
-  margin-top: 0.7rem; padding: 0.6rem 0.75rem;
-  background: var(--sunken); border: 1px solid var(--rule); border-radius: 8px;
+  margin-top: 0.8rem; padding: 0.7rem 0.85rem;
+  background: var(--sunken); border: 1px solid var(--rule); border-radius: 10px;
 }
 .social-test .row.dim { opacity: 0.45; }
 
-/* Appearance ─────────────────────────────────────────────────────────────
-   The compact action card puts its line in the author slot so the avatar sits
-   beside it; `.lead` is that line being the message rather than a byline. */
+/* Appearance */
 .demb .a.lead { font-size: 0.9rem; font-weight: 600; color: #F2F3F5; margin-bottom: 0.3rem; }
 .demb .a .av {
   width: 1.4rem; height: 1.4rem; border-radius: 50%; flex: 0 0 auto;
@@ -1134,11 +896,6 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 .demb .f.fixed { opacity: 0.45; }
 .demb .f.fixed span { font-style: italic; }
 
-/* Where the corner picture goes, drawn as an outline so the space it takes is
-   visible without pretending to know which picture will be in it.
-   A real element in a flex row, not something pinned over the top: pinned, it
-   hung out of the bottom of any card shorter than the square and covered the
-   line underneath. */
 .demb-row { display: flex; gap: 0.75rem; align-items: flex-start; }
 .demb-main { flex: 1 1 auto; min-width: 0; }
 .demb .md-link { color: #00A8FC; }
@@ -1150,59 +907,43 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
   flex: 0 0 auto; width: 2.8rem; height: 2.8rem; border-radius: 4px;
   border: 1px dashed #4E5058; background: #313338;
 }
-/* The Composer's preview shows the real picture rather than a placeholder,
-   because there it is an address somebody typed and whether it resolves is
-   most of what they are checking. */
 .demb-thumb-img { flex: 0 0 auto; width: 5rem; height: 5rem; object-fit: cover; border-radius: 4px; }
 
-/* The author row, and the little round icon that can sit in it or the footer.
-   Neither was drawn at all before, so a template with an author line previewed
-   as one that did not have one. */
 .demb-auth { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #F2F3F5; margin: 0 0 0.3rem; font-weight: 600; }
 .demb .ft { display: flex; align-items: center; gap: 0.4rem; }
 .demb-auth-ic { width: 1.25rem; height: 1.25rem; border-radius: 50%; object-fit: cover; flex: none; }
 
-/* Plain writing outside the embed — Discord draws it in the ordinary message
-   type, not the embed's, which is the whole reason for wanting it. */
 .demb-say {
   margin: 0 0 0.4rem; color: #DBDEE1; font-family: var(--sans);
   font-size: 0.9rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere;
 }
-/* The message under the embed is a separate message, and the preview says so
-   by drawing it as one rather than as more of the same card. */
 .demb-second { margin-top: 0.55rem; padding-top: 0.55rem; border-top: 1px dashed var(--rule); }
 .demb-second .hint { margin: 0 0 0.35rem; }
 .demb-second .demb-say { margin-bottom: 0.4rem; }
 .demb-second img.big { display: block; width: 100%; border-radius: 4px; }
 
-/* Not capped and scrolling the way the Composer's list is: this one is
-   grouped, and a scroll box inside a column that already scrolls hides the
-   headings that make it navigable. */
-#appearance-index { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.7rem; }
+#appearance-index { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.8rem; }
 
-.style-preview { display: grid; gap: 0.6rem; }
+.style-preview { display: grid; gap: 0.65rem; }
 
 .color-row { display: flex; gap: 0.5rem; align-items: center; }
 .color-row input[type="color"] {
   width: 2.6rem; height: 2.4rem; padding: 0; flex: 0 0 auto;
-  border: 1px solid var(--rule); border-radius: 8px; background: none; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 9px; background: none; cursor: pointer;
 }
 .color-row input[type="text"] { flex: 1 1 auto; font-family: var(--mono, monospace); text-transform: uppercase; }
 .color-row input[type="text"].bad { border-color: var(--warn); }
 
 .chip-toggle.mono { font-family: var(--mono, monospace); font-size: 0.78rem; }
 
-/* The group headings down the message list. */
 .index-group {
-  margin: 0.9rem 0 0.3rem; padding: 0 0.2rem;
+  margin: 1rem 0 0.35rem; padding: 0 0.2rem;
   font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted); font-weight: 700;
 }
 .index-group:first-child { margin-top: 0; }
 .tag.on { background: var(--accent); color: #fff; }
 
-/* All of it is decoration. Anyone who has asked their device to stop moving
-   things gets a panel that simply appears. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
@@ -1211,11 +952,7 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
   }
 }
 
-
-/* ── overview loading / empty recovery ───────────────────────────────────
-   Phone suspends and cancelled fetches used to leave headed-but-blank cards.
-   While a load is in flight we keep the layout honest; if it fails we show
-   a retry cue instead of an empty void. */
+/* ── overview loading / empty recovery ─────────────────────────────────── */
 .overview-loading .section[data-section="overview"] .panel .rows:empty::before,
 .overview-loading .section[data-section="overview"] .board:empty::before {
   content: 'Loading…';
