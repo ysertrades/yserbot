@@ -1,0 +1,306 @@
+'use strict';
+
+const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
+const { createServerEmbed, sendTempReply: sendTempEphemeralReply } = require('../../utils/embedBuilder');
+const messageStyle = require('../../utils/messageStyle');
+const { readJson, writeJson } = require('../../utils/jsonStorage');
+
+// ── Inactivity timer store ────────────────────────────────────────────────
+// channelId → { timerId, channel, guild, minutes, message }
+const ticketTimers = new Map();
+
+function startInactivityTimer(channel, guild, minutes, message) {
+  clearInactivityTimer(channel.id);
+  const ms    = minutes * 60 * 1000;
+  const entry = { channel, guild, minutes, message };
+
+  // Wrapped because a timer has no caller: anything that throws in here — a
+  // guild whose stored warning text is missing, a channel deleted since — would
+  // otherwise surface only as an anonymous unhandled rejection.
+  entry.timerId = setTimeout(async () => {
+   try {
+    ticketTimers.delete(channel.id);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('ticket_still_here')
+        .setLabel("I'm Still Here")
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('👋'),
+    );
+    const embed = createServerEmbed('warning', {
+      title: '💤 Ticket Inactivity Warning',
+      description: String(message ?? '').replace('{time}', `${minutes} minute${minutes !== 1 ? 's' : ''}`),
+    }, guild);
+    await channel.send({ embeds: [embed], components: [row] }).catch(() => {});
+   } catch (err) {
+    console.error(`[TICKET ${channel.id}] inactivity warning failed:`, err.message ?? err);
+   }
+  }, ms);
+
+  ticketTimers.set(channel.id, entry);
+}
+
+function clearInactivityTimer(channelId) {
+  const entry = ticketTimers.get(channelId);
+  if (entry) { clearTimeout(entry.timerId); ticketTimers.delete(channelId); }
+}
+
+function resetInactivityTimer(channelId) {
+  const entry = ticketTimers.get(channelId);
+  if (entry) startInactivityTimer(entry.channel, entry.guild, entry.minutes, entry.message);
+}
+
+// ── Default settings ──────────────────────────────────────────────────────
+const DEFAULT = {
+  inactivityEnabled: true,
+  inactivityTime: 30,
+  inactivityMessage: 'This ticket has been inactive for {time}. Click below if you still need help.',
+  transcriptEnabled: false,
+};
+
+async function sendTempReply(interaction, embed) {
+  await interaction.reply({ embeds: [embed], fetchReply: true });
+  setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+}
+
+// ── Main command ──────────────────────────────────────────────────────────
+/**
+ * The "open a ticket" panel, card and button together.
+ *
+ * Exported because the web panel posts this too, and it used to do it from
+ * its own copy of the wording — so restyling it on the Appearance screen
+ * changed what /ticket setup sent and not what the panel's own Post button
+ * sent. Two builders for one message is a bug waiting for somebody to edit
+ * one of them, which is exactly what happened. There is one now.
+ */
+function buildTicketPanel(guild) {
+  const embed = messageStyle.build(guild.id, 'ticket.panel', {
+    tokens: { server: guild.name },
+  });
+  const row = messageStyle.buildButtons(guild.id, 'ticket.panel',
+    { ButtonBuilder, ActionRowBuilder, ButtonStyle });
+  return {
+    embeds: embed ? [embed] : [],
+    components: row ? [row] : [],
+    // Nothing on this panel should ever ping anyone.
+    allowedMentions: { parse: [] },
+  };
+}
+
+module.exports = {
+  // Exported so web/tickets.js can present the same defaults rather than
+  // keeping a second copy of them.
+  DEFAULT,
+  buildTicketPanel,
+
+  data: new SlashCommandBuilder()
+    .setName('ticket').setDescription('Ticket system')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommand(s => s.setName('setup').setDescription('Set up the ticket panel')
+      .addChannelOption(o => o.setName('channel').setDescription('Channel for the panel').setRequired(true).addChannelTypes(ChannelType.GuildText)))
+    .addSubcommand(s => s.setName('supportrole').setDescription('Set the support role')
+      .addRoleOption(o => o.setName('role').setDescription('Support role').setRequired(true)))
+    .addSubcommand(s => s.setName('close').setDescription('Close the current ticket channel'))
+    .addSubcommand(s => s.setName('settings').setDescription('Change a ticket setting')
+      .addStringOption(o => o.setName('setting').setDescription('Setting').setRequired(true).addChoices(
+        { name: 'Inactivity Time (minutes)', value: 'inactivityTime'    },
+        { name: 'Inactivity Enabled',        value: 'inactivityEnabled' },
+        { name: 'Inactivity Message',        value: 'inactivityMessage' },
+        { name: 'Transcript Enabled',        value: 'transcriptEnabled' },
+      ))
+      .addStringOption(o => o.setName('value').setDescription('New value').setRequired(true)))
+    .addSubcommand(s => s.setName('viewsettings').setDescription('View current ticket settings')),
+
+  async execute(interaction) {
+    const config  = readJson('config.json', {});
+    const guildId = interaction.guild.id;
+    if (!config[guildId]) config[guildId] = {};
+    if (!config[guildId].ticketSettings) config[guildId].ticketSettings = { ...DEFAULT };
+    const sub = interaction.options.getSubcommand();
+
+    if (sub === 'setup') {
+      const channel = interaction.options.getChannel('channel');
+      await channel.send(buildTicketPanel(interaction.guild));
+      await sendTempReply(interaction, createServerEmbed('success', { title: 'Ticket Panel Created', description: `Panel sent to ${channel}.` }, interaction.guild));
+
+    } else if (sub === 'supportrole') {
+      config[guildId].supportRole = interaction.options.getRole('role').id;
+      writeJson('config.json', config);
+      await sendTempReply(interaction, createServerEmbed('success', { title: 'Support Role Set', description: `Support role set to **${interaction.options.getRole('role').name}**.` }, interaction.guild));
+
+    } else if (sub === 'close') {
+      const channel = interaction.channel;
+      if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
+        return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
+      }
+      clearInactivityTimer(channel.id);
+      await interaction.reply({ embeds: [createServerEmbed('info', { title: 'Closing Ticket', description: 'This ticket will be closed in **5 seconds**.' }, interaction.guild)] });
+      setTimeout(async () => { try { await channel.delete('Ticket closed'); } catch {} }, 5000);
+
+    } else if (sub === 'settings') {
+      const setting  = interaction.options.getString('setting');
+      const rawValue = interaction.options.getString('value');
+      const settings = config[guildId].ticketSettings;
+      let parsed, display;
+
+      if (setting === 'inactivityTime') {
+        parsed = parseInt(rawValue);
+        if (isNaN(parsed) || parsed < 1) return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Minimum 1 minute.' }, interaction.guild)] });
+        display = `${parsed} minute${parsed !== 1 ? 's' : ''}`;
+      } else if (setting === 'inactivityEnabled' || setting === 'transcriptEnabled') {
+        const low = rawValue.toLowerCase();
+        if (['true','yes','1','on'].includes(low))       { parsed = true;  display = 'Enabled'; }
+        else if (['false','no','0','off'].includes(low)) { parsed = false; display = 'Disabled'; }
+        else return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Use `true` or `false`.' }, interaction.guild)] });
+      } else {
+        parsed = rawValue; display = rawValue;
+      }
+
+      const old = settings[setting];
+      settings[setting] = parsed;
+      writeJson('config.json', config);
+      await sendTempReply(interaction, createServerEmbed('success', {
+        title: '⚙️ Setting Updated',
+        description: `**${setting}** has been updated.`,
+        fields: [{ name: 'Old', value: String(old ?? 'Not set'), inline: true }, { name: 'New', value: String(display), inline: true }],
+      }, interaction.guild));
+
+    } else if (sub === 'viewsettings') {
+      const s = config[guildId].ticketSettings;
+      await interaction.reply({
+        embeds: [createServerEmbed('info', {
+          title: '🎫 Ticket Settings',
+          fields: [
+            { name: 'Support Role',      value: config[guildId].supportRole ? `<@&${config[guildId].supportRole}>` : 'Not set', inline: false },
+            { name: 'Inactivity',        value: s.inactivityEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
+            { name: 'Inactivity Time',   value: `${s.inactivityTime} min`,  inline: true },
+            { name: 'Transcript',        value: s.transcriptEnabled ? '✅' : '❌', inline: true },
+            { name: 'Inactivity Message', value: s.inactivityMessage || DEFAULT.inactivityMessage, inline: false },
+          ],
+        }, interaction.guild)],
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+  },
+
+  // ── Button handlers ───────────────────────────────────────────────────────
+  handleButton: async function(interaction) {
+    if (interaction.customId === 'ticket_still_here') {
+      resetInactivityTimer(interaction.channel.id);
+      // If no timer was running (already fired), restart one
+      const config  = readJson('config.json', {});
+      const gCfg    = config[interaction.guild.id] || {};
+      const settings = gCfg.ticketSettings || DEFAULT;
+      if (settings.inactivityEnabled !== false && !ticketTimers.has(interaction.channel.id)) {
+        startInactivityTimer(interaction.channel, interaction.guild, settings.inactivityTime || DEFAULT.inactivityTime, settings.inactivityMessage || DEFAULT.inactivityMessage);
+      }
+
+      // Ping support role in the channel so staff are notified
+      const supportRoleId = gCfg.supportRole;
+      const pingContent   = supportRoleId
+        ? `<@&${supportRoleId}> — ${interaction.user} is still here and needs help!`
+        : `A support member is needed — ${interaction.user} is still here!`;
+      await interaction.channel.send({ content: pingContent }).catch(() => {});
+
+      return interaction.reply({ content: '✅ Done! Support has been notified and the inactivity timer has been reset.', flags: MessageFlags.Ephemeral });
+    }
+
+    if (interaction.customId === 'close_ticket') {
+      const channel = interaction.channel;
+      if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
+        return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
+      }
+      clearInactivityTimer(channel.id);
+      await interaction.reply({ embeds: [createServerEmbed('info', { title: 'Closing Ticket', description: 'This ticket will be closed in **5 seconds**.' }, interaction.guild)] });
+      setTimeout(async () => { try { await channel.delete('Ticket closed'); } catch {} }, 5000);
+      return;
+    }
+
+    if (interaction.customId !== 'create_ticket') return;
+    return module.exports.openTicket(interaction);
+  },
+
+  /**
+   * Opens a ticket for whoever clicked.
+   *
+   * Split out from handleButton because it used to be welded to one custom id.
+   * A ticket button built in the panel or with /button carries its own id, so
+   * it reached the stored-button dispatcher instead, which had no idea what a
+   * ticket was and told the clicker the button was misconfigured. It was not —
+   * nothing could open a ticket except the one panel button.
+   */
+  openTicket: async function(interaction) {
+    // ── Create ticket ───────────────────────────────────────────────────
+    const guild   = interaction.guild;
+    const config  = readJson('config.json', {});
+    const guildId = guild.id;
+    const gCfg    = config[guildId] || {};
+    const supportRoleId = gCfg.supportRole;
+
+    const existing = guild.channels.cache.find(c =>
+      c.topic === `ticket-owner:${interaction.user.id}`
+    ) || guild.channels.cache.find(c =>
+      c.name === `ticket-${interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '')}` && c.parentId
+    );
+
+    if (existing) {
+      return sendTempEphemeralReply(interaction, {
+        embeds: [createServerEmbed('error', { title: 'Ticket Already Open', description: `You already have a ticket: ${existing}` }, guild)],
+      });
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const overwrites = [
+      { id: guild.roles.everyone.id,  deny:  [PermissionFlagsBits.ViewChannel] },
+      { id: interaction.user.id,      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: guild.members.me.id,      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
+    ];
+    if (supportRoleId) overwrites.push({ id: supportRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] });
+
+    const channelName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 90) || `ticket-${interaction.user.id}`;
+
+    const channel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      topic: `ticket-owner:${interaction.user.id}`,
+      permissionOverwrites: overwrites,
+    });
+
+    const closeRow = messageStyle.buildButtons(guild.id, 'ticket.opened',
+      { ButtonBuilder, ActionRowBuilder, ButtonStyle });
+
+    await channel.send({
+      content: supportRoleId ? `<@&${supportRoleId}>` : undefined,
+      embeds: [messageStyle.build(guild.id, 'ticket.opened', {
+        fields: supportRoleId ? [{ name: 'Support Team', value: `<@&${supportRoleId}>`, inline: false }] : [],
+        tokens: {
+          user: `${interaction.user}`,
+          server: guild.name,
+          support: supportRoleId ? `<@&${supportRoleId}>` : '',
+          channel: `${channel}`,
+        },
+      })],
+      // Null when every button has been removed, and Discord rejects an
+      // empty row rather than ignoring it.
+      components: closeRow ? [closeRow] : [],
+    });
+
+    // Start inactivity timer
+    const settings = gCfg.ticketSettings || DEFAULT;
+    if (settings.inactivityEnabled !== false) {
+      startInactivityTimer(channel, guild, settings.inactivityTime || DEFAULT.inactivityTime, settings.inactivityMessage || DEFAULT.inactivityMessage);
+    }
+
+    await interaction.editReply({
+      embeds: [createServerEmbed('success', { title: 'Ticket Created', description: `Your ticket: ${channel}` }, guild)],
+    });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+  },
+
+  // Expose timer functions for messageCreate.js to call
+  startInactivityTimer,
+  clearInactivityTimer,
+  resetInactivityTimer,
+  ticketTimers,
+};

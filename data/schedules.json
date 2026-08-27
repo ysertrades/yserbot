@@ -1,0 +1,16 @@
+{
+  "1514666709985001666": {
+    "J3SSCE": {
+      "id": "J3SSCE",
+      "embedName": "nyse",
+      "channelId": "1514666711666659393",
+      "time": 1784640600000,
+      "frequency": "weekdays",
+      "mention": null,
+      "offsetMinutes": -240,
+      "createdBy": "1259562926147371079",
+      "createdAt": 1784227261673,
+      "lastRun": 1784554200518
+    }
+  }
+}

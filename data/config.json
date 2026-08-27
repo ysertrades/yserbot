@@ -1,0 +1,29 @@
+{
+  "1514666709985001666": {
+    "ticketSettings": {
+      "inactivityEnabled": true,
+      "inactivityTime": 1,
+      "inactivityMessage": "This ticket has been inactive for {time}. If you still need help, click the button below to notify support.",
+      "transcriptEnabled": false
+    },
+    "supportRole": "1514666998330691784",
+    "logsChannel": "1515880299773558835",
+    "welcomeChannel": "1515905301038108822",
+    "leaveChannel": "1515880299773558835",
+    "reportChannel": "1515880299773558835",
+    "reportRole": "1514666998330691784",
+    "cmdSetup": {
+      "modRoles": [
+        "1514667174017499208"
+      ],
+      "adminRoles": [
+        "1514666998330691784"
+      ]
+    },
+    "warnSettings": {
+      "threshold": 5,
+      "action": "mute",
+      "muteDuration": 3600000
+    }
+  }
+}

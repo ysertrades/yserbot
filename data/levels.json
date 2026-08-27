@@ -1,0 +1,43 @@
+{
+  "1514666709985001666": {
+    "users": {
+      "1259562926147371079": {
+        "xp": 425,
+        "level": 3,
+        "messages": 69,
+        "lastMessage": 1784570137320,
+        "totalXp": 1016
+      },
+      "1409129127511851008": {
+        "xp": 181,
+        "level": 2,
+        "messages": 21,
+        "lastMessage": 1784325802387,
+        "totalXp": 334
+      },
+      "1379545970366222446": {
+        "xp": 14,
+        "level": 1,
+        "messages": 1,
+        "lastMessage": 1784233216959,
+        "totalXp": 14
+      },
+      "1094221891566325790": {
+        "xp": 0,
+        "level": 2,
+        "messages": 10,
+        "lastMessage": 1784437618160,
+        "totalXp": 152
+      }
+    },
+    "roles": {},
+    "settings": {
+      "xpPerMessage": [
+        10,
+        20
+      ],
+      "baseXp": 150,
+      "multiplier": 1.5
+    }
+  }
+}

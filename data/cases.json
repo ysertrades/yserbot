@@ -1,0 +1,44 @@
+{
+  "1514666709985001666": [
+    {
+      "id": 1,
+      "type": "warn",
+      "userId": "1522668905812983890",
+      "userTag": "grays.11",
+      "moderatorId": "1259562926147371079",
+      "moderatorTag": "ysertrades",
+      "reason": "Report action by ysertrades",
+      "timestamp": 1784256551522
+    },
+    {
+      "id": 2,
+      "type": "kick",
+      "userId": "530082442967646230",
+      "userTag": "Giveaway Boat#2911",
+      "moderatorId": "1259562926147371079",
+      "moderatorTag": "ysertrades",
+      "reason": "No reason provided",
+      "timestamp": 1784423680316
+    },
+    {
+      "id": 3,
+      "type": "kick",
+      "userId": "678344927997853742",
+      "userTag": "Sapphire#8184",
+      "moderatorId": "1259562926147371079",
+      "moderatorTag": "ysertrades",
+      "reason": "No reason provided",
+      "timestamp": 1784435382153
+    },
+    {
+      "id": 4,
+      "type": "kick",
+      "userId": "800383254389194754",
+      "userTag": "Rocket Gambling Bot#1075",
+      "moderatorId": "1259562926147371079",
+      "moderatorTag": "ysertrades",
+      "reason": "No reason provided",
+      "timestamp": 1784439994317
+    }
+  ]
+}
