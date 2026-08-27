@@ -1,0 +1,16 @@
+{
+  "name": "QuantLab — Control Panel",
+  "short_name": "QuantLab",
+  "description": "Run the QuantLab Discord bot: messages, giveaways, tickets, feeds and the economy.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#15161D",
+  "theme_color": "#15161D",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
