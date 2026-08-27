@@ -42,4 +42,21 @@ function toggleEquip(userId, guildId, itemId) {
   return { ok: true, action: 'equipped', equipped: list };
 }
 
-module.exports = { MAX_EQUIPPED, getEquipped, isEquipped, toggleEquip };
+// Idempotent grant — used for automatic awards (a level threshold) where
+// calling it twice must never undo the first grant, unlike toggleEquip()
+// above which is built for a person clicking a button themselves. Silently
+// no-ops once full rather than bumping something the member chose to keep
+// equipped.
+function equip(userId, guildId, itemId) {
+  const data = readJson(FILE, {});
+  const k = key(userId, guildId);
+  if (!data[k]) data[k] = { equipped: [] };
+  const list = data[k].equipped;
+  if (list.includes(itemId)) return { ok: true, already: true, equipped: list };
+  if (list.length >= MAX_EQUIPPED) return { ok: false, equipped: list };
+  list.push(itemId);
+  writeJson(FILE, data);
+  return { ok: true, equipped: list };
+}
+
+module.exports = { MAX_EQUIPPED, getEquipped, isEquipped, toggleEquip, equip };

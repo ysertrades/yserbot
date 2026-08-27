@@ -12,13 +12,14 @@
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered, textWidth, GLYPH_H,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: SURF, darkCard, fillCanvas } = require('./brandTheme');
 
-const ACCENT = [52, 152, 219, 255];
-const WHITE = [255, 255, 255, 255];
-const GOOD = [46, 204, 113, 255];
+const ACCENT = LIGHT.purple;
+const WHITE = SURF.ink;
+const GOOD = LIGHT.cyan;
 
 function drawSlashIcon(png, cx, cy, size, color) {
   drawTextCentered(png, '/', cx, cy - size * 0.7, 3, color);
@@ -58,11 +59,11 @@ const STEPS = [
 function generateRiskGuideImage() {
   const W = 1000, H = 870;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  flatBg(png, [12, 15, 20, 255]);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: ACCENT, tintAlpha: 0.05, border: ACCENT, borderAlpha: 0.35 });
+  fillCanvas(png, SURF.bg);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 26 });
 
   drawTextCentered(png, 'HOW TO USE THE RISK CALCULATOR', W / 2, 44, 4, WHITE);
-  drawTextCentered(png, 'FIVE STEPS FROM SYMBOL TO POSITION SIZE', W / 2, 44 + 4 * GLYPH_H + 14, 2, [150, 190, 220, 255]);
+  drawTextCentered(png, 'FIVE STEPS FROM SYMBOL TO POSITION SIZE', W / 2, 44 + 4 * GLYPH_H + 14, 2, LIGHT.purpleLight);
   for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 130, ACCENT, 0.3);
 
   // ── Vertical step list — big icon badges on the left, bold left-aligned
@@ -84,7 +85,7 @@ function generateRiskGuideImage() {
     drawTextCentered(png, `${i + 1}`, nCx, nCy - GLYPH_H, 2, WHITE);
 
     drawText(png, step.title, textLeft, cy - 26, 2, WHITE);
-    drawText(png, step.desc, textLeft, cy - 26 + 2 * GLYPH_H + 10, 2, [172, 182, 198, 255]);
+    drawText(png, step.desc, textLeft, cy - 26 + 2 * GLYPH_H + 10, 2, SURF.grey1);
 
     if (i < STEPS.length - 1) {
       const nextCy = rowTop + (i + 1) * rowH + rowH / 2;
@@ -95,7 +96,7 @@ function generateRiskGuideImage() {
   // ── Worked example strip ──────────────────────────────────────────────────
   const exY = rowTop + STEPS.length * rowH + 36;
   for (let x = 60; x < W - 60; x++) setPxBlend(png, x, exY, ACCENT, 0.3);
-  drawTextCentered(png, 'A REAL EXAMPLE', W / 2, exY + 20, 2, [150, 190, 220, 255]);
+  drawTextCentered(png, 'A REAL EXAMPLE', W / 2, exY + 20, 2, LIGHT.purpleLight);
 
   const cmdText = '/RISK ES 100 2.5';
   const resText = '2 CONTRACTS';
@@ -106,7 +107,7 @@ function generateRiskGuideImage() {
   const startX = (W - totalW) / 2;
   const chipY = exY + 60;
 
-  fillRoundedRectBlend(png, startX, chipY, cmdW, 50, 10, WHITE, 0.1);
+  fillRoundedRectBlend(png, startX, chipY, cmdW, 50, 10, SURF.raised, 1);
   drawTextCentered(png, cmdText, startX + cmdW / 2, chipY + 16, 2, WHITE);
 
   const arrowCx = startX + cmdW + gap / 2;
@@ -117,7 +118,7 @@ function generateRiskGuideImage() {
   fillRoundedRectBlend(png, startX + cmdW + gap, chipY, resW, 50, 10, GOOD, 0.2);
   drawTextCentered(png, resText, startX + cmdW + gap + resW / 2, chipY + 16, 2, GOOD);
 
-  drawTextCentered(png, 'RISK $100 WITH A 2.5-POINT STOP ON ES', W / 2, chipY + 82, 1, [140, 146, 158, 255]);
+  drawTextCentered(png, 'RISK $100 WITH A 2.5-POINT STOP ON ES', W / 2, chipY + 82, 1, SURF.grey2);
 
   return PNG.sync.write(png);
 }

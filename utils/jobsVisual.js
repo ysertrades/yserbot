@@ -10,17 +10,24 @@
  * complete / still on shift) in the same style as the /fish and /mine catch
  * cards. The result-card generator is intentionally generic — /work reuses
  * it directly (see workVisual.js) instead of duplicating the card layout.
+ *
+ * QuantLab dark Phantom house style throughout: dark neutral card, purple
+ * accent, cyan for "ready"/positive states. Per-job icon colours stay
+ * distinct for quick scanning but are drawn from the brand's own accent
+ * family rather than a full rainbow.
  */
 
 const {
-  PNG, setPxBlend, roundedMask, dot, dotBlend, ringStroke, line,
-  glassPanel, flatBg, fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
+  fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: SURF, darkCard, fillCanvas } = require('./brandTheme');
 
-const GOOD = [46, 204, 113, 255];
+const GOOD = LIGHT.cyan;
+const TEXT = SURF.ink;
+const SUBTLE = SURF.grey1;
 const WHITE = [255, 255, 255, 255];
-const DIM = [150, 158, 172, 255];
-const DARK = [15, 20, 30, 255];
+const DARK = [12, 13, 18, 255];   // plain near-black — icon shading only, not the card surface
 
 /* ─── Per-job icons ──────────────────────────────────────────────────────── */
 
@@ -121,15 +128,18 @@ const JOB_ICONS = {
   content_creator: drawPhoneIcon,
 };
 
+// Drawn from the brand's own accent family (purple/cyan/sky and their
+// tints/shades) rather than a full rainbow — distinct enough to scan by eye,
+// still one palette.
 const JOB_COLORS = {
-  software_dev: [52, 152, 219, 255],
-  day_trader: [46, 204, 113, 255],
-  banker: [155, 89, 182, 255],
-  casino_dealer: [231, 76, 60, 255],
-  farmer: [230, 200, 60, 255],
-  uber_driver: [241, 196, 15, 255],
-  chef: [230, 126, 34, 255],
-  content_creator: [233, 30, 99, 255],
+  software_dev: LIGHT.purple,
+  day_trader: LIGHT.cyan,
+  banker: LIGHT.purpleDeep,
+  casino_dealer: LIGHT.purpleLight,
+  farmer: LIGHT.cyanDeep,
+  uber_driver: LIGHT.sky,
+  chef: LIGHT.purple,
+  content_creator: LIGHT.cyan,
 };
 
 function truncate(text, scale, maxWidth) {
@@ -156,15 +166,15 @@ function generateJobsHubImage(jobs, statusFor, boost) {
   const H = gridBottom + 50;
 
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  const brand = [230, 126, 34, 255];
-  flatBg(png, [16, 13, 9, 255]);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: brand, tintAlpha: 0.06, border: brand, borderAlpha: 0.4 });
+  const brand = LIGHT.purple;
+  fillCanvas(png, SURF.bg);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 28 });
 
-  drawTextCentered(png, 'JOBS HUB', W / 2, 40, 5, WHITE);
+  drawTextCentered(png, 'JOBS HUB', W / 2, 40, 5, TEXT);
   drawTextCentered(png,
     boost ? `ALL EARNINGS ${boost.multiplier || 1.5}X — COIN BOOST ACTIVE` : 'CLOCK IN AT ANY JOB FOR INSTANT PAY',
-    W / 2, 40 + 5 * GLYPH_H + 14, 2, boost ? [255, 215, 0, 255] : [190, 180, 170, 255]);
-  for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 134, brand, 0.3);
+    W / 2, 40 + 5 * GLYPH_H + 14, 2, boost ? GOOD : SUBTLE);
+  for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 134, brand, 0.35);
 
   const cellW = (W - 120) / cols;
 
@@ -178,17 +188,17 @@ function generateJobsHubImage(jobs, statusFor, boost) {
     const { ready } = statusFor(job);
 
     ringStroke(png, cx, cy, 46, color, 3);
-    dotBlend(png, cx, cy, 41, color, 0.14);
+    dotBlend(png, cx, cy, 41, color, 0.16);
     if (icon) icon(png, cx, cy, 22, color);
 
-    // Status ring accent — green dot for ready, dim for on cooldown.
-    dotBlend(png, cx + 38, cy - 32, 10, ready ? GOOD : [90, 96, 108, 255], 1);
-    ringStroke(png, cx + 38, cy - 32, 10, [16, 13, 9, 255], 3);
+    // Status ring accent — cyan dot for ready, dim for on cooldown.
+    dotBlend(png, cx + 38, cy - 32, 10, ready ? GOOD : SURF.grey2, 1);
+    ringStroke(png, cx + 38, cy - 32, 10, SURF.bg, 3);
 
     const nameY = cy + 60;
-    drawTextCentered(png, truncate(job.name.toUpperCase(), 2, cellW - 16), cx, nameY, 2, WHITE);
-    drawTextCentered(png, `${job.min.toLocaleString()}-${job.max.toLocaleString()} COINS${job.variance ? ' *' : ''}`, cx, nameY + 2 * GLYPH_H + 10, 1, [210, 195, 160, 255]);
-    drawTextCentered(png, ready ? 'READY NOW' : `COOLDOWN ${job.cooldownLabel}`, cx, nameY + 2 * GLYPH_H + 10 + GLYPH_H + 8, 1, ready ? GOOD : DIM);
+    drawTextCentered(png, truncate(job.name.toUpperCase(), 2, cellW - 16), cx, nameY, 2, TEXT);
+    drawTextCentered(png, `${job.min.toLocaleString()}-${job.max.toLocaleString()} COINS${job.variance ? ' *' : ''}`, cx, nameY + 2 * GLYPH_H + 10, 1, SUBTLE);
+    drawTextCentered(png, ready ? 'READY NOW' : `COOLDOWN ${job.cooldownLabel}`, cx, nameY + 2 * GLYPH_H + 10 + GLYPH_H + 8, 1, ready ? GOOD : SUBTLE);
   });
 
   return PNG.sync.write(png);
@@ -209,34 +219,27 @@ function generateJobsHubImage(jobs, statusFor, boost) {
  * @returns {Buffer} PNG image data
  */
 function generateJobCardImage(opts) {
-  const { icon, accent, kicker, banner, task, amountLabel, amountColor = [255, 215, 0, 255] } = opts;
+  const { icon, accent, kicker, banner, task, amountLabel, amountColor = LIGHT.cyan } = opts;
   const W = 640, H = 620;
   const png = new PNG({ width: W, height: H, colorType: 6 });
   const panelRadius = 22;
 
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (!roundedMask(W, H, panelRadius, x, y)) continue;
-      const band = Math.floor((y / H) * 6);
-      const shade = 20 - band * 2;
-      setPxBlend(png, x, y, [shade + 10, shade + 8, shade + 6, 255], 1);
-    }
-  }
+  fillRoundedRectBlend(png, 0, 0, W, H, panelRadius, SURF.card, 1);
 
-  drawText(png, kicker.toUpperCase(), 30, 26, 2, [190, 180, 170, 255]);
+  drawText(png, kicker.toUpperCase(), 30, 26, 2, SUBTLE);
 
   const cx = W / 2, cy = 220;
   ringStroke(png, cx, cy, 120, accent, 4);
-  dotBlend(png, cx, cy, 108, accent, 0.14);
+  dotBlend(png, cx, cy, 108, accent, 0.16);
   icon(png, cx, cy, 62, accent);
 
-  drawTextCentered(png, banner.toUpperCase(), cx, cy + 150, 3, WHITE);
+  drawTextCentered(png, banner.toUpperCase(), cx, cy + 150, 3, TEXT);
 
   let ty = cy + 150 + 3 * GLYPH_H + 30;
   if (task) {
     const lines = wrapText(task, 2, W - 100);
     for (const l of lines.slice(0, 3)) {
-      drawTextCentered(png, l, cx, ty, 2, [200, 205, 215, 255]);
+      drawTextCentered(png, l, cx, ty, 2, SUBTLE);
       ty += 2 * GLYPH_H + 10;
     }
     ty += 14;

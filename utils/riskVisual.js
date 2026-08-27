@@ -334,11 +334,17 @@ function _drawUnavailableIcon(png, cx, cy, r, color) {
 
 /* ─── Card composition ───────────────────────────────────────────────────── */
 
-const GOOD = [46, 204, 113, 255];
-const WARN = [231, 76, 60, 255];
-const REC = [241, 196, 15, 255];
-const GRAY = [140, 148, 160, 255];
-const WHITE = [255, 255, 255, 255];
+const { RGBA: LIGHT, RGBA_DARK: DARK } = require('./brandTheme');
+
+// Same family as everywhere else: viable/good reads as cyan, not-viable as
+// purple-deep rather than a literal red, and the micro-contract
+// recommendation gets its own step (purple) so it's visibly distinct from
+// a plain "this works" card without reaching for gold.
+const GOOD = LIGHT.cyan;
+const WARN = LIGHT.purpleDeep;
+const REC = LIGHT.purple;
+const GRAY = DARK.grey2;
+const WHITE = DARK.ink;
 
 function _drawStandardCard(png, x, y, w, h, standard, accent, riskUsd) {
   const viable = standard.contracts >= 1;
@@ -432,7 +438,7 @@ function generateRiskImage(result) {
   const png = new PNG({ width: W, height: H, colorType: 6 });
   const accent = _hexToRgb(color);
 
-  _flatBg(png, [15, 18, 28, 255]);
+  _flatBg(png, DARK.bg);
 
   _glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: accent, tintAlpha: 0.05, border: accent, borderAlpha: 0.35 });
 

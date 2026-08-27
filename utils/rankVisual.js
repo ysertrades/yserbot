@@ -3,27 +3,35 @@
 /**
  * rankVisual.js
  *
- * Renders /rank as a PNG in the same flat-glassmorphism house style as
- * riskVisual.js/pixelArt.js — level, XP progress, and stats live in the
- * image itself. Equipped badges (utils/badgeManager.js) render into three
- * fixed slots so a purchased badge always lands in a consistent, "designed
- * for it" spot rather than being appended ad hoc.
+ * Renders /rank as a PNG in QuantLab's dark Phantom house style — level, XP
+ * progress, and stats live in the image itself. Equipped badges
+ * (utils/badgeManager.js) render into three fixed slots so a purchased
+ * badge always lands in a consistent, "designed for it" spot rather than
+ * being appended ad hoc.
+ *
+ * Tier reads as depth of purple — the same "significance deepens the
+ * colour" rule used for moderation severity elsewhere in the bot — rather
+ * than the old gold/purple/blue/green spread, so a level card belongs to
+ * the same visual family as everything else instead of reaching outside it.
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg,
+  PNG, setPxBlend,
   drawText, drawTextCentered, textWidth, fillRoundedRectBlend, ringStroke, dotBlend, GLYPH_H,
 } = require('./pixelArt');
 const { BADGE_DEFS } = require('./badges');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
 
+const TEXT = DARK.ink;
+const SUBTLE = DARK.grey1;
 const BADGE_SLOTS = 3;
-const EMPTY_SLOT_COLOR = [80, 86, 102, 255];
+const EMPTY_SLOT_COLOR = DARK.border;
 
 function tierColor(level) {
-  if (level >= 50) return [255, 200, 60, 255];  // gold — legendary
-  if (level >= 25) return [176, 106, 230, 255]; // purple — veteran
-  if (level >= 10) return [61, 156, 240, 255];  // blue — established
-  return [80, 210, 130, 255];                   // green — rising
+  if (level >= 50) return LIGHT.purpleDeep;   // legendary — deepest purple
+  if (level >= 25) return LIGHT.purple;       // veteran
+  if (level >= 10) return LIGHT.cyan;         // established
+  return LIGHT.sky;                           // rising
 }
 
 function fmt(n) {
@@ -44,27 +52,27 @@ function generateRankImage(data) {
 
   const W = 900, H = 460;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  flatBg(png, [13, 15, 23, 255]);
+  fillCanvas(png, DARK.bg);
 
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: accent, tintAlpha: 0.05, border: accent, borderAlpha: 0.35 });
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 26 });
 
   // Header — username left, level badge right
-  drawText(png, username.toUpperCase().slice(0, 22), 56, 46, 3, [255, 255, 255, 255]);
-  drawText(png, 'TRADER RANK', 56, 46 + 3 * GLYPH_H + 10, 2, [150, 158, 172, 255]);
+  drawText(png, username.toUpperCase().slice(0, 22), 56, 46, 3, TEXT);
+  drawText(png, 'TRADER RANK', 56, 46 + 3 * GLYPH_H + 10, 2, SUBTLE);
 
   const levelLabel = `LEVEL ${level}`;
   const lvlScale = 5;
   drawText(png, levelLabel, W - 56 - textWidth(levelLabel, lvlScale), 38, lvlScale, accent);
 
-  for (let x = 56; x < W - 56; x++) setPxBlend(png, x, 112, accent, 0.3);
+  for (let x = 56; x < W - 56; x++) setPxBlend(png, x, 112, accent, 0.35);
 
   // XP progress bar
   const barX = 56, barY = 150, barW = W - 112, barH = 40;
-  fillRoundedRectBlend(png, barX, barY, barW, barH, barH / 2, [255, 255, 255], 0.08);
+  fillRoundedRectBlend(png, barX, barY, barW, barH, barH / 2, DARK.raised, 1);
   const pct = neededXp > 0 ? Math.max(0, Math.min(1, xp / neededXp)) : 0;
   const fillW = Math.max(barH, Math.round(barW * pct));
-  fillRoundedRectBlend(png, barX, barY, fillW, barH, barH / 2, accent, 0.85);
-  drawTextCentered(png, `${fmt(xp)} / ${fmt(neededXp)} XP`, W / 2, barY + barH / 2 - 3, 2, [255, 255, 255, 255]);
+  fillRoundedRectBlend(png, barX, barY, fillW, barH, barH / 2, accent, 0.9);
+  drawTextCentered(png, `${fmt(xp)} / ${fmt(neededXp)} XP`, W / 2, barY + barH / 2 - 3, 2, TEXT);
 
   // Stat cards
   const cardY = barY + barH + 40, cardH = 92;
@@ -74,9 +82,9 @@ function generateRankImage(data) {
     { x: 56 + cardW + 28, label: 'MESSAGES', value: fmt(messages) },
   ];
   for (const c of cards) {
-    glassPanel(png, c.x, cardY, cardW, cardH, { radius: 16, tint: accent, tintAlpha: 0.05, border: accent, borderAlpha: 0.25 });
-    drawText(png, c.label, c.x + 22, cardY + 20, 2, [150, 158, 172, 255]);
-    drawText(png, c.value, c.x + 22, cardY + 20 + 2 * GLYPH_H + 12, 3, [255, 255, 255, 255]);
+    fillRoundedRectBlend(png, c.x, cardY, cardW, cardH, 16, DARK.raised, 1);
+    drawText(png, c.label, c.x + 22, cardY + 20, 2, SUBTLE);
+    drawText(png, c.value, c.x + 22, cardY + 20 + 2 * GLYPH_H + 12, 3, TEXT);
   }
 
   // Badge row — 3 fixed slots so a badge always renders in the same spot
@@ -90,13 +98,13 @@ function generateRankImage(data) {
       const def = BADGE_DEFS[equipped.icon];
       const color = def?.color || accent;
       ringStroke(png, cx, badgeY, 34, color, 3);
-      dotBlend(png, cx, badgeY, 30, color, 0.12);
+      dotBlend(png, cx, badgeY, 30, color, 0.14);
       def?.draw(png, cx, badgeY, 17, color);
-      drawTextCentered(png, equipped.label.toUpperCase().slice(0, 14), cx, badgeY + 48, 1, [200, 205, 214, 255]);
+      drawTextCentered(png, equipped.label.toUpperCase().slice(0, 14), cx, badgeY + 48, 1, SUBTLE);
     } else {
       ringStroke(png, cx, badgeY, 34, EMPTY_SLOT_COLOR, 2);
       dotBlend(png, cx, badgeY, 3, EMPTY_SLOT_COLOR, 1);
-      drawTextCentered(png, 'EMPTY', cx, badgeY + 48, 1, [90, 96, 110, 255]);
+      drawTextCentered(png, 'EMPTY', cx, badgeY + 48, 1, DARK.grey2);
     }
   }
 

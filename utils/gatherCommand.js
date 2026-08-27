@@ -17,6 +17,7 @@ const { readJson, writeJson } = require('./jsonStorage');
 const { activity, scalePayout, boostNote } = require('./economySettings');
 const { refuseIfOff } = require('./economyGate');
 const { formatDuration } = require('./duration');
+const { isFeatureEnabled } = require('./featureToggles');
 
 const SESSIONS_FILE = 'gatherSessions.json';
 const fmt = n => Number(n).toLocaleString();
@@ -79,22 +80,35 @@ function buildGatherCommand(cfg) {
 
     let remaining = getRemaining(userId, action, econ.sessionUses);
     const item = rollFromTable(table);
-    let reward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
-    const boost = getEffect(userId, guildId, 'coin_boost');
-    if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
-    reward = scalePayout(guildId, reward, econ.payScale);
-    addCoins(userId, reward);
+    // Economy off: the catch/find is still real (the image still shows what
+    // you got and how rare it was), it just isn't worth anything — no coin
+    // roll, no payout, no balance line below, the same way /work and /jobs
+    // go quiet rather than half-working with numbers that don't add up.
+    const economyOn = isFeatureEnabled(guildId, 'economy');
+    let reward = 0, boost = null;
+    if (economyOn) {
+      reward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
+      boost = getEffect(userId, guildId, 'coin_boost');
+      if (boost) reward = Math.floor(reward * (boost.multiplier || 1.5));
+      reward = scalePayout(guildId, reward, econ.payScale);
+      addCoins(userId, reward);
+    }
 
     remaining -= 1;
 
     const imageName = `${imagePrefix}_${Date.now()}.png`;
-    const attachment = new AttachmentBuilder(generateImage({ name: item.name, rarity: item.rarity, reward }), { name: imageName });
+    const attachment = new AttachmentBuilder(
+      generateImage({ name: item.name, rarity: item.rarity, reward: economyOn ? reward : null }),
+      { name: imageName },
+    );
 
     const embed = new EmbedBuilder()
       .setColor(embedColor)
       .setTitle(embedTitle)
-      .setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}${boostNote(guildId) ? `\n${boostNote(guildId)}` : ''}`)
       .setImage(`attachment://${imageName}`);
+    if (economyOn) {
+      embed.setDescription(`**Balance:** ${fmt(getBalance(userId))} coins${boost ? `\n💰 *Coin Boost active — ${boost.multiplier || 1.5}× earnings!*` : ''}${boostNote(guildId) ? `\n${boostNote(guildId)}` : ''}`);
+    }
 
     const continueRow = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`gather_again:${action}:${userId}`).setLabel(buttonLabel).setEmoji(buttonEmoji).setStyle(ButtonStyle.Secondary),

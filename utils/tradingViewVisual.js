@@ -3,24 +3,30 @@
 /**
  * tradingViewVisual.js
  *
- * Banner for posting TradingView indicators — dark styling, matching how
- * TradingView present their own mark: white on black, with their signature
- * blue as the only accent. The logo itself is redrawn in utils/brandMarks.js
- * so it renders as a PNG at any size.
+ * Banner for posting TradingView indicators. The card itself is QuantLab's
+ * own — dark Phantom surface, purple accents, the signature gradient rule —
+ * since this is QuantLab presenting its own product. Only the small logo
+ * tile keeps TradingView's own blue-on-black, the same way the YouTube feed
+ * card keeps YouTube's red: it's actually displaying that platform's mark,
+ * not decorating QuantLab's own chrome with it. The logo itself is redrawn
+ * in utils/brandMarks.js so it renders as a PNG at any size.
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dot,
+  PNG, setPxBlend, dot,
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, fitScale, GLYPH_H,
 } = require('./pixelArt');
 const { drawTradingViewMark, TV_ASPECT } = require('./brandMarks');
 const { drawFlowLattice, drawFlowSignature, signatureWidth } = require('./brandSignature');
+const { RGBA: LIGHT, RGBA_DARK: DARK, gradientRect, darkCard, fillCanvas } = require('./brandTheme');
 
-const BLUE  = [41, 98, 255, 255];    // TradingView's brand blue
+const TV_BLUE = [41, 98, 255, 255]; // TradingView's own brand blue — logo tile only
 const WHITE = [255, 255, 255, 255];
 const BLACK = [0, 0, 0, 255];
-const BG    = [8, 9, 12, 255];
-const MUTED = [150, 162, 186, 255];
+const TEXT = DARK.ink;
+const SUBTLE = DARK.grey1;
+const PURPLE = LIGHT.purple;
+const PURPLE_L = LIGHT.purpleLight;
 
 // Faint horizontal gridlines — a chart surface, kept well under the content.
 function drawGrid(png, W, H, color) {
@@ -48,18 +54,18 @@ function generateTradingViewBannerImage(copy = {}) {
   const W = 1000, H = 400;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
-  flatBg(png, BG);
+  fillCanvas(png, DARK.bg);
   // Woven straight into the background, so it runs under the panel and out to
   // every edge rather than sitting on top as a removable stamp.
-  drawFlowLattice(png, { color: WHITE, alpha: 0.03 });
-  drawGrid(png, W, H, BLUE);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: BLUE, tintAlpha: 0.05, border: BLUE, borderAlpha: 0.38 });
+  drawFlowLattice(png, { color: PURPLE_L, alpha: 0.035 });
+  drawGrid(png, W, H, PURPLE);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 28 });
 
   // ── Status pill, top-right ────────────────────────────────────────────────
   const pillText = pill;
   const pillW = 40 + textWidth(pillText, 2);
   const pillX = W - 44 - pillW, pillY = 40;
-  fillRoundedRectBlend(png, pillX, pillY, pillW, 42, 10, BLUE, 0.95);
+  fillRoundedRectBlend(png, pillX, pillY, pillW, 42, 10, PURPLE, 1);
   dot(png, pillX + 20, pillY + 21, 6, WHITE);
   drawText(png, pillText, pillX + 34, pillY + 13, 2, WHITE);
 
@@ -73,7 +79,8 @@ function generateTradingViewBannerImage(copy = {}) {
 
   // ── Signature, centred under the logo tile ───────────────────────────────
   drawFlowSignature(png, Math.round(tileX + (tileW - signatureWidth()) / 2), 306, {
-    chip: BLUE, primary: WHITE, accent: BLUE, caption: MUTED,
+    chip: PURPLE, primary: TEXT, caption: SUBTLE,
+    chipAlpha: 0.18, borderAlpha: 0.45, captionAlpha: 0.85,
   });
 
   // ── Wordmark + subtitle ──────────────────────────────────────────────────
@@ -82,18 +89,19 @@ function generateTradingViewBannerImage(copy = {}) {
   const contentW = contentRight - contentLeft;
   // Scale steps down for longer copy rather than letting it run off the card.
   const headScale = fitScale(heading, contentW, 6, 2);
-  drawTextCentered(png, heading, contentCx, 96 + (6 - headScale) * GLYPH_H / 2, headScale, WHITE);
-  drawTextCentered(png, subtitle, contentCx, 96 + 6 * GLYPH_H + 16, fitScale(subtitle, contentW, 2, 1), BLUE);
+  drawTextCentered(png, heading, contentCx, 96 + (6 - headScale) * GLYPH_H / 2, headScale, TEXT);
+  drawTextCentered(png, subtitle, contentCx, 96 + 6 * GLYPH_H + 16, fitScale(subtitle, contentW, 2, 1), PURPLE_L);
 
   // ── Tagline ───────────────────────────────────────────────────────────────
-  for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 262, BLUE, 0.3);
+  // The one signature gradient rule, sparingly, as everywhere else.
+  gradientRect(png, contentLeft, 260, contentW, 4, 2);
   const lines = wrapText(tagline, 2, contentW);
   // Two lines is all the card has room for. Copy that runs past it gets a
   // visible ellipsis — silently dropping the end just looked like a bug.
   const shown = lines.slice(0, 2);
   if (lines.length > 2) shown[1] += '...';
   let ty = 284;
-  for (const l of shown) { drawTextCentered(png, l, contentCx, ty, 2, MUTED); ty += GLYPH_H * 2 + 10; }
+  for (const l of shown) { drawTextCentered(png, l, contentCx, ty, 2, SUBTLE); ty += GLYPH_H * 2 + 10; }
 
   return PNG.sync.write(png);
 }

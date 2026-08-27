@@ -3,33 +3,43 @@
 /**
  * cardVisual.js
  *
- * Renders /cards drops and reveals as a tall pixel-art "trading card" in the
- * same flat-glassmorphism house style as /risk and /mine — a rarity-tiered
- * emblem (escalating in complexity from a plain ring at common up to a
- * crown at mythic), a star-pip row, and the card's name/description/flavor
- * baked into the image. Deliberately self-contained (its own rarity/color
- * table) rather than importing from cardsManager.js, matching the existing
+ * Renders /cards drops and reveals as a tall pixel-art "trading card" in
+ * QuantLab's dark Phantom house style — a rarity-tiered emblem (escalating
+ * in complexity from a plain ring at common up to a crown at mythic), a
+ * star-pip row, and the card's name/description/flavor baked into the
+ * image. Deliberately self-contained (its own rarity/color table) rather
+ * than importing from cardsManager.js, matching the existing
  * fishVisual.js/mineVisual.js pattern — cardsManager.js requires this
  * module to attach images to the embeds it builds, so the reverse import
  * would be circular.
+ *
+ * Rarity reads as depth of purple/cyan for common through legendary — the
+ * same tiering as fish, mine, and the mystery box. Mythic is the one
+ * exception: it gets the brand's actual signature gradient as a glow behind
+ * the emblem, which is the "used sparingly, on hero surfaces" the brand
+ * book asks for applied literally — a mythic drop is the rarest hero
+ * moment the card system has.
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
 } = require('./pixelArt');
 const { artFor } = require('./cardArt');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas, gradientRect, gradientColorAt } = require('./brandTheme');
 
 const RARITY_ACCENT = {
-  common:    [158, 158, 158, 255],
-  uncommon:  [67, 160, 71, 255],
-  rare:      [30, 136, 229, 255],
-  epic:      [142, 36, 170, 255],
-  legendary: [255, 215, 0, 255],
-  mythic:    [255, 23, 68, 255],
+  common:    DARK.grey2,
+  uncommon:  LIGHT.cyanDeep,
+  rare:      LIGHT.cyan,
+  epic:      LIGHT.purple,
+  legendary: LIGHT.purpleDeep,
+  // mythic has no flat colour — see generateCardImage, which gives it the
+  // gradient instead.
 };
+const MYTHIC_ACCENT = LIGHT.ink; // "text on gradient is always ink" — used for anything drawn over the mythic glow
+const EXPIRED_ACCENT = DARK.grey2;
 const WHITE = [255, 255, 255, 255];
-const GRAY  = [150, 156, 168, 255];
 
 /* ─── Rarity emblems — escalating visual complexity so a card's tier reads
        at a glance even before the name is revealed ────────────────────── */
@@ -54,7 +64,7 @@ function drawRareEmblem(png, cx, cy, size, color) {
       if (Math.abs(dx) / rx + Math.abs(dy) / ry <= 1) setPxBlend(png, cx + dx, cy + dy, color, 1);
     }
   }
-  const facet = [20, 18, 28, 160];
+  const facet = [12, 13, 18, 160];
   line(png, cx, cy - ry, cx - rx * 0.5, cy, facet, 2);
   line(png, cx, cy - ry, cx + rx * 0.5, cy, facet, 2);
 }
@@ -119,21 +129,30 @@ function drawStarRow(png, cx, y, filled, total, color) {
  */
 function generateCardImage(opts) {
   const { rarity, starsFilled = 0, mystery = false, expired = false, name = '', desc = '', flavor = '', art = null } = opts;
+  const isMythic = rarity === 'mythic' && !expired;
   const W = 520, H = 700;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  const accent = expired ? [110, 114, 122, 255] : (RARITY_ACCENT[rarity] || RARITY_ACCENT.common);
+  const accent = expired ? EXPIRED_ACCENT : isMythic ? MYTHIC_ACCENT : (RARITY_ACCENT[rarity] || RARITY_ACCENT.common);
 
-  flatBg(png, [15, 13, 20, 255]);
-  glassPanel(png, 18, 18, W - 36, H - 36, { radius: 30, tint: accent, tintAlpha: 0.07, border: accent, borderAlpha: 0.45 });
-  glassPanel(png, 34, 34, W - 68, H - 68, { radius: 22, tint: accent, tintAlpha: 0.03, border: accent, borderAlpha: 0.2 });
+  fillCanvas(png, DARK.bg);
+  const borderTone = expired ? EXPIRED_ACCENT : isMythic ? LIGHT.purple : accent;
+  darkCard(png, 18, 18, W - 36, H - 36, { radius: 30, border: borderTone });
 
   const headerLabel = expired ? 'VANISHED' : mystery ? 'MYSTERY CARD' : rarity.toUpperCase();
-  drawTextCentered(png, headerLabel, W / 2, 56, 3, accent);
-  drawStarRow(png, W / 2, 100, starsFilled, 6, accent);
+  drawTextCentered(png, headerLabel, W / 2, 56, 3, isMythic ? LIGHT.purpleLight : accent);
+  drawStarRow(png, W / 2, 100, starsFilled, 6, isMythic ? LIGHT.purpleLight : accent);
 
   const cx = W / 2, cy = 260;
-  ringStroke(png, cx, cy, 118, accent, 4);
-  dotBlend(png, cx, cy, 105, accent, 0.15);
+  if (isMythic) {
+    // The one card that gets the actual signature gradient — sparingly, on
+    // the rarest hero moment this system has.
+    const glowR = 130;
+    gradientRect(png, cx - glowR, cy - glowR, glowR * 2, glowR * 2, glowR);
+  } else {
+    ringStroke(png, cx, cy, 118, accent, 4);
+    dotBlend(png, cx, cy, 105, accent, 0.16);
+  }
+
   if (mystery || expired) {
     drawTextCentered(png, '?', cx, cy - 45, 9, accent);
   } else {
@@ -145,27 +164,28 @@ function generateCardImage(opts) {
   }
 
   if (mystery && !expired) {
-    drawTextCentered(png, '???', W / 2, 410, 5, WHITE);
+    drawTextCentered(png, '???', W / 2, 410, 5, DARK.ink);
     const lines = wrapText('CAN YOU GRAB IT IN TIME?', 1, W - 140);
     let ty = 470;
-    for (const l of lines) { drawTextCentered(png, l, W / 2, ty, 1, GRAY); ty += GLYPH_H + 8; }
+    for (const l of lines) { drawTextCentered(png, l, W / 2, ty, 1, DARK.grey1); ty += GLYPH_H + 8; }
   } else if (expired) {
     drawTextCentered(png, 'TOO SLOW', W / 2, 410, 4, accent);
-    drawTextCentered(png, 'NOBODY GRABBED IT IN TIME', W / 2, 460, 1, GRAY);
+    drawTextCentered(png, 'NOBODY GRABBED IT IN TIME', W / 2, 460, 1, DARK.grey1);
   } else {
     const nameLines = wrapText(name.toUpperCase(), 3, W - 100);
     let ty = 400;
-    for (const l of nameLines.slice(0, 2)) { drawTextCentered(png, l, W / 2, ty, 3, WHITE); ty += GLYPH_H * 3 + 10; }
+    for (const l of nameLines.slice(0, 2)) { drawTextCentered(png, l, W / 2, ty, 3, DARK.ink); ty += GLYPH_H * 3 + 10; }
 
     ty += 14;
     const descLines = wrapText(desc, 1, W - 120);
-    for (const l of descLines.slice(0, 2)) { drawTextCentered(png, l, W / 2, ty, 1, GRAY); ty += GLYPH_H + 8; }
+    for (const l of descLines.slice(0, 2)) { drawTextCentered(png, l, W / 2, ty, 1, DARK.grey1); ty += GLYPH_H + 8; }
 
     ty += 18;
-    for (let x = 70; x < W - 70; x++) setPxBlend(png, x, ty, accent, 0.3);
+    const dividerTone = isMythic ? LIGHT.purple : accent;
+    for (let x = 70; x < W - 70; x++) setPxBlend(png, x, ty, dividerTone, 0.35);
     ty += 24;
     const flavorLines = wrapText(flavor.replace(/["“”]/g, ''), 1, W - 130);
-    for (const l of flavorLines.slice(0, 3)) { drawTextCentered(png, l, W / 2, ty, 1, accent); ty += GLYPH_H + 8; }
+    for (const l of flavorLines.slice(0, 3)) { drawTextCentered(png, l, W / 2, ty, 1, isMythic ? LIGHT.purpleLight : accent); ty += GLYPH_H + 8; }
   }
 
   return PNG.sync.write(png);

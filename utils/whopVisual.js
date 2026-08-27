@@ -3,21 +3,30 @@
 /**
  * whopVisual.js
  *
- * Banner for promoting a Whop storefront — orange styling, matching Whop's
- * own identity: their signature orange with the cream wing mark. The logo is
- * redrawn in utils/brandMarks.js so it renders as a PNG at any size.
+ * Banner for promoting the QuantLab Whop storefront — the brand book's own
+ * "Education, the on-ramp, via Whop" pillar, so this is a QuantLab surface
+ * first. Restyled to the same dark Phantom card as every other banner, with
+ * Whop's own orange-and-cream wing mark kept in its own tile — the same
+ * "the platform's mark stays in its own colours, the chrome around it is
+ * ours" rule used for the TradingView banner. The logo is redrawn in
+ * utils/brandMarks.js so it renders as a PNG at any size.
  */
 
 const {
-  PNG, setPxBlend, flatBg, dot, roundedMask,
+  PNG, dot,
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, fitScale, GLYPH_H,
 } = require('./pixelArt');
 const { drawWhopMark, WHOP_ASPECT } = require('./brandMarks');
 const { drawFlowLattice, drawFlowSignature, signatureWidth } = require('./brandSignature');
+const { RGBA: LIGHT, RGBA_DARK: DARK, gradientRect, darkCard, fillCanvas } = require('./brandTheme');
 
-const ORANGE = [250, 69, 22, 255];   // Whop's brand orange
-const DEEP   = [198, 48, 12, 255];   // a darker orange, for depth
+const ORANGE = [250, 69, 22, 255];   // Whop's own brand orange — mark tile only
 const CREAM  = [255, 240, 224, 255]; // the mark's own off-white
+const WHITE  = [255, 255, 255, 255];
+const TEXT   = DARK.ink;
+const SUBTLE = DARK.grey1;
+const PURPLE = LIGHT.purple;
+const PURPLE_L = LIGHT.purpleLight;
 
 // As above: passing nothing reproduces the original card exactly, so existing
 // callers are unaffected and the no-arg render keeps its cache entry.
@@ -37,41 +46,31 @@ function generateWhopBannerImage(copy = {}) {
   const W = 1000, H = 400;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
-  // Orange edge to edge — this one is the brand colour rather than a dark card.
-  flatBg(png, ORANGE);
+  fillCanvas(png, DARK.bg);
   // Woven straight into the background, so it runs under the panel and out to
   // every edge rather than sitting on top as a removable stamp.
-  drawFlowLattice(png, { color: CREAM, alpha: 0.038 });
+  drawFlowLattice(png, { color: PURPLE_L, alpha: 0.035 });
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 28 });
 
-  // Inset panel in a deeper orange, so the card still has an edge to read
-  // against Discord's dark background.
-  for (let y = 0; y < H - 40; y++) {
-    for (let x = 0; x < W - 40; x++) {
-      if (!roundedMask(W - 40, H - 40, 28, x, y)) continue;
-      const edge = x === 0 || y === 0 || x === W - 41 || y === H - 41
-        || !roundedMask(W - 40, H - 40, 28, x - 1, y) || !roundedMask(W - 40, H - 40, 28, x + 1, y)
-        || !roundedMask(W - 40, H - 40, 28, x, y - 1) || !roundedMask(W - 40, H - 40, 28, x, y + 1);
-      setPxBlend(png, 20 + x, 20 + y, edge ? CREAM : DEEP, edge ? 0.55 : 0.16);
-    }
-  }
-
-  // ── Status pill, top-right — cream on orange, inverting the card ──────────
+  // ── Status pill, top-right ────────────────────────────────────────────────
   const pillText = pill;
   const pillW = 40 + textWidth(pillText, 2);
   const pillX = W - 44 - pillW, pillY = 40;
-  fillRoundedRectBlend(png, pillX, pillY, pillW, 42, 10, CREAM, 0.96);
-  dot(png, pillX + 20, pillY + 21, 6, ORANGE);
-  drawText(png, pillText, pillX + 34, pillY + 13, 2, ORANGE);
+  fillRoundedRectBlend(png, pillX, pillY, pillW, 42, 10, PURPLE, 1);
+  dot(png, pillX + 20, pillY + 21, 6, WHITE);
+  drawText(png, pillText, pillX + 34, pillY + 13, 2, WHITE);
 
-  // ── The wing mark, straight on the orange the way Whop present it ─────────
-  const markW = 226;
-  const markX = 74;
-  drawWhopMark(png, markX, 150 - (markW / WHOP_ASPECT) / 2, markW, CREAM);
+  // ── The wing mark, on its own orange tile — Whop's own identity, the way
+  //    TradingView's mark keeps its own black-and-blue tile ────────────────
+  const tileX = 62, tileY = 128, tileW = 254, tileH = 148;
+  fillRoundedRectBlend(png, tileX, tileY, tileW, tileH, 30, ORANGE, 1);
+  const markW = 176;
+  drawWhopMark(png, tileX + (tileW - markW) / 2, tileY + (tileH - markW / WHOP_ASPECT) / 2, markW, CREAM);
 
-  // ── Signature, centred under the wing mark ───────────────────────────────
-  drawFlowSignature(png, Math.round(markX + (markW - signatureWidth()) / 2), 306, {
-    chip: CREAM, primary: CREAM, accent: [255, 184, 146, 255], caption: [255, 226, 208, 255],
-    chipAlpha: 0.16, borderAlpha: 0.55, captionAlpha: 0.7,
+  // ── Signature, centred under the tile ─────────────────────────────────────
+  drawFlowSignature(png, Math.round(tileX + (tileW - signatureWidth()) / 2), 306, {
+    chip: PURPLE, primary: TEXT, caption: SUBTLE,
+    chipAlpha: 0.18, borderAlpha: 0.45, captionAlpha: 0.85,
   });
 
   // ── Wordmark + subtitle ──────────────────────────────────────────────────
@@ -80,18 +79,18 @@ function generateWhopBannerImage(copy = {}) {
   const contentW = contentRight - contentLeft;
   // Scale steps down for longer copy rather than letting it run off the card.
   const headScale = fitScale(heading, contentW, 6, 2);
-  drawTextCentered(png, heading, contentCx, 96 + (6 - headScale) * GLYPH_H / 2, headScale, CREAM);
-  drawTextCentered(png, subtitle, contentCx, 96 + 6 * GLYPH_H + 16, fitScale(subtitle, contentW, 2, 1), [255, 214, 190, 255]);
+  drawTextCentered(png, heading, contentCx, 96 + (6 - headScale) * GLYPH_H / 2, headScale, TEXT);
+  drawTextCentered(png, subtitle, contentCx, 96 + 6 * GLYPH_H + 16, fitScale(subtitle, contentW, 2, 1), PURPLE_L);
 
   // ── Tagline ───────────────────────────────────────────────────────────────
-  for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 262, CREAM, 0.4);
+  gradientRect(png, contentLeft, 260, contentW, 4, 2);
   const lines = wrapText(tagline, 2, contentW);
   // Two lines is all the card has room for. Copy that runs past it gets a
   // visible ellipsis — silently dropping the end just looked like a bug.
   const shown = lines.slice(0, 2);
   if (lines.length > 2) shown[1] += '...';
   let ty = 284;
-  for (const l of shown) { drawTextCentered(png, l, contentCx, ty, 2, [255, 226, 208, 255]); ty += GLYPH_H * 2 + 10; }
+  for (const l of shown) { drawTextCentered(png, l, contentCx, ty, 2, SUBTLE); ty += GLYPH_H * 2 + 10; }
 
   return PNG.sync.write(png);
 }

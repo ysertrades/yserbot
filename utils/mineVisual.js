@@ -1,16 +1,20 @@
 'use strict';
 
 const {
-  PNG, setPxBlend, roundedMask, dot, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
 
+// Depth of purple/cyan stands in for rarity the same way it stands in for
+// mod-action severity and rank tiers elsewhere in the bot — a legendary
+// find is the deepest purple, not a shade the brand book doesn't have.
 const RARITY_COLOR = {
-  junk:      [148, 155, 168, 255],
-  common:    [180, 140, 100, 255],
-  uncommon:  [52, 152, 219, 255],
-  rare:      [46, 204, 113, 255],
-  legendary: [185, 90, 230, 255],
+  junk:      DARK.grey2,
+  common:    LIGHT.cyanDeep,
+  uncommon:  LIGHT.cyan,
+  rare:      LIGHT.purple,
+  legendary: LIGHT.purpleDeep,
 };
 
 function darken(c, f = 0.65) {
@@ -267,7 +271,7 @@ function fmtCoins(n) {
  * image itself; the embed around it stays to a title. Every find name gets
  * its own hand-drawn icon (see ICONS above) instead of one generic gem
  * shape recolored by rarity.
- * @param {{name: string, rarity: string, reward: number}} findData
+ * @param {{name: string, rarity: string, reward: number|null}} findData - reward null means the economy is off: the find is still real, it just isn't shown as being worth anything
  * @returns {Buffer} PNG image data
  */
 function generateMineImage(findData) {
@@ -280,38 +284,36 @@ function generateMineImage(findData) {
   const png = new PNG({ width: W, height: H, colorType: 6 });
   const panelRadius = 22;
 
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (!roundedMask(W, H, panelRadius, x, y)) continue;
-      const band = Math.floor((y / H) * 8);
-      const shade = 14 - band;
-      setPxBlend(png, x, y, [shade + 10, shade + 8, shade + 8, 255], 1);
-    }
-  }
+  fillCanvas(png, DARK.bg);
+  darkCard(png, 0, 0, W, H, { radius: panelRadius });
 
-  // Rock-strata texture — jagged translucent horizontal bands, not a gradient.
+  // Rock-strata texture — jagged translucent horizontal bands, not a
+  // gradient — kept from the original, recoloured to sit quietly on the
+  // dark card instead of a warm rock-brown background.
   for (let s = 0; s < 6; s++) {
     const sy = 80 + s * 90;
     for (let x = 15; x < W - 15; x++) {
       const yy = sy + Math.sin((x + s * 55) * 0.045) * 8 + (Math.floor(x / 23) % 2) * 3;
-      setPxBlend(png, x, Math.round(yy), [255, 255, 255, 255], 0.04);
+      setPxBlend(png, x, Math.round(yy), DARK.border, 0.5);
     }
   }
 
-  drawText(png, 'MINING', 30, 26, 2, [190, 180, 170, 255]);
+  drawText(png, 'MINING', 30, 26, 2, DARK.grey1);
 
   const cx = W / 2, cy = 250;
   ringStroke(png, cx, cy, 130, color, 4);
-  dotBlend(png, cx, cy, 118, color, 0.14);
+  dotBlend(png, cx, cy, 118, color, 0.16);
   drawIcon(png, cx, cy, 62, iconColor);
 
   const rarityLabel = rarity.toUpperCase();
   drawTextCentered(png, rarityLabel, cx, cy + 160, 2, color);
 
   const nameScale = 4;
-  drawTextCentered(png, name.toUpperCase(), cx, cy + 195, nameScale, [255, 255, 255, 255]);
+  drawTextCentered(png, name.toUpperCase(), cx, cy + 195, nameScale, DARK.ink);
 
-  drawTextCentered(png, fmtCoins(reward), cx, cy + 195 + 7 * nameScale + 26, 3, [255, 215, 0, 255]);
+  if (reward != null) {
+    drawTextCentered(png, fmtCoins(reward), cx, cy + 195 + 7 * nameScale + 26, 3, LIGHT.cyan);
+  }
 
   return PNG.sync.write(png);
 }

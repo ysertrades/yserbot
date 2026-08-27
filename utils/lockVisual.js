@@ -10,14 +10,18 @@
 
 const {
   PNG, setPx, setPxBlend, line, dotBlend, ringStroke,
-  flatBg, glassPanel, GLYPH_H, drawTextCentered, wrapText,
+  GLYPH_H, drawTextCentered, wrapText,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
 
-const BG    = [14, 12, 12, 255];
-const WHITE = [255, 255, 255, 255];
-const DIM   = [160, 168, 178, 255];
-const RED   = [220, 60, 60, 255];
-const GREEN = [46, 204, 113, 255];
+const BG    = DARK.bg;
+const TEXT  = DARK.ink;
+const DIM   = DARK.grey1;
+// Locked/unlocked reads as purple-deep vs. cyan — the same severity/success
+// split used everywhere else in the bot — rather than a literal red/green
+// traffic light.
+const LOCKED_COLOR   = LIGHT.purpleDeep;
+const UNLOCKED_COLOR = LIGHT.cyan;
 
 function arcStroke(png, cx, cy, r, th, startDeg, endDeg, color) {
   const half = th / 2;
@@ -75,9 +79,9 @@ function drawPadlock(png, cx, cy, size, color, locked) {
     }
   }
 
-  dotBlend(png, cx, bodyTop + bodyH * 0.38, size * 0.1, BG, 1);
+  dotBlend(png, cx, bodyTop + bodyH * 0.38, size * 0.1, DARK.card, 1);
   for (let y = 0; y < size * 0.32; y++) {
-    for (let x = -size * 0.05; x <= size * 0.05; x++) setPx(png, cx + x, bodyTop + bodyH * 0.38 + y, BG);
+    for (let x = -size * 0.05; x <= size * 0.05; x++) setPx(png, cx + x, bodyTop + bodyH * 0.38 + y, DARK.card);
   }
 }
 
@@ -90,7 +94,7 @@ function drawPadlock(png, cx, cy, size, color, locked) {
  */
 function generateLockToggleImage(opts) {
   const { locked, channelName, reason } = opts;
-  const color = locked ? RED : GREEN;
+  const color = locked ? LOCKED_COLOR : UNLOCKED_COLOR;
 
   const W = 720;
   const iconCy = 150;
@@ -108,20 +112,20 @@ function generateLockToggleImage(opts) {
   }
 
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  flatBg(png, BG);
-  glassPanel(png, 16, 16, W - 32, H - 32, { radius: 26, tint: color, tintAlpha: 0.05, border: color, borderAlpha: 0.4 });
+  fillCanvas(png, BG);
+  darkCard(png, 16, 16, W - 32, H - 32, { radius: 26 });
 
   ringStroke(png, W / 2, iconCy, 78, color, 3);
-  dotBlend(png, W / 2, iconCy, 73, color, 0.13);
+  dotBlend(png, W / 2, iconCy, 73, color, 0.16);
   drawPadlock(png, W / 2, iconCy, 46, color, locked);
 
-  drawTextCentered(png, locked ? 'CHANNEL LOCKED' : 'CHANNEL UNLOCKED', W / 2, titleY, 4, WHITE);
+  drawTextCentered(png, locked ? 'CHANNEL LOCKED' : 'CHANNEL UNLOCKED', W / 2, titleY, 4, TEXT);
   drawTextCentered(png, `#${channelName}`.toUpperCase(), W / 2, channelY, 2, DIM);
 
   if (reasonY !== null) {
-    for (let x = 100; x < W - 100; x++) setPxBlend(png, x, reasonY, color, 0.3);
+    for (let x = 100; x < W - 100; x++) setPxBlend(png, x, reasonY, color, 0.35);
     reasonLines.forEach((line_, i) => {
-      drawTextCentered(png, line_, W / 2, reasonY + 18 + i * (GLYPH_H * reasonScale + 8), reasonScale, [230, 220, 210, 255]);
+      drawTextCentered(png, line_, W / 2, reasonY + 18 + i * (GLYPH_H * reasonScale + 8), reasonScale, DIM);
     });
   }
 

@@ -10,9 +10,10 @@
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, GLYPH_H,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: SURF, darkCard, fillCanvas } = require('./brandTheme');
 
 function drawSlashIcon(png, cx, cy, size, color) {
   drawTextCentered(png, '/', cx, cy - size * 0.7, 3, color);
@@ -29,7 +30,7 @@ function drawTagIcon(png, cx, cy, size, color) {
     const w = size * 0.7 * (1 - t * 0.3);
     for (let dx = -w; dx <= w; dx++) setPxBlend(png, cx + dx, cy + dy, color, 1);
   }
-  dot(png, cx, cy - size * 0.28, size * 0.12, [20, 18, 28, 255]);
+  dot(png, cx, cy - size * 0.28, size * 0.12, [12, 13, 18, 255]);
 }
 
 function drawLinkIcon(png, cx, cy, size, color) {
@@ -53,12 +54,14 @@ const STEPS = [
 function generateReportGuideImage() {
   const W = 1000, H = 560;
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  const accent = [231, 76, 60, 255];
-  flatBg(png, [16, 12, 14, 255]);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: accent, tintAlpha: 0.05, border: accent, borderAlpha: 0.35 });
+  // Matches messageStyle's 'reports' colour — severity as depth of purple,
+  // same as everywhere else, not a literal alert red.
+  const accent = LIGHT.purpleDeep;
+  fillCanvas(png, SURF.bg);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 26 });
 
-  drawTextCentered(png, 'HOW TO REPORT A USER', W / 2, 44, 4, [255, 255, 255, 255]);
-  drawTextCentered(png, 'FIVE STEPS FROM COMMAND TO SUBMITTED', W / 2, 44 + 4 * GLYPH_H + 14, 2, [220, 160, 150, 255]);
+  drawTextCentered(png, 'HOW TO REPORT A USER', W / 2, 44, 4, SURF.ink);
+  drawTextCentered(png, 'FIVE STEPS FROM COMMAND TO SUBMITTED', W / 2, 44 + 4 * GLYPH_H + 14, 2, LIGHT.purpleLight);
   for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 130, accent, 0.3);
 
   const colW = (W - 80) / STEPS.length;
@@ -71,15 +74,14 @@ function generateReportGuideImage() {
     dotBlend(png, cx, iconY, 47, accent, 0.12);
     step.icon(png, cx, iconY, 26, accent);
 
-    drawTextCentered(png, `${i + 1}`, cx, iconY - 92, 2, [255, 255, 255, 255]);
-    dotBlend(png, cx, iconY - 84, 16, accent, 0.25);
-    drawTextCentered(png, `${i + 1}`, cx, iconY - 92, 2, accent);
+    dotBlend(png, cx, iconY - 84, 16, accent, 0.3);
+    drawTextCentered(png, `${i + 1}`, cx, iconY - 92, 2, SURF.ink);
 
-    drawTextCentered(png, step.title, cx, iconY + 78, 1, [255, 255, 255, 255]);
+    drawTextCentered(png, step.title, cx, iconY + 78, 1, SURF.ink);
     const lines = wrapText(step.desc, 1, colW - 24);
     let ly = iconY + 100;
     for (const line of lines) {
-      drawTextCentered(png, line, cx, ly, 1, [170, 176, 188, 255]);
+      drawTextCentered(png, line, cx, ly, 1, SURF.grey1);
       ly += GLYPH_H + 6;
     }
 
@@ -89,7 +91,7 @@ function generateReportGuideImage() {
     }
   });
 
-  drawTextCentered(png, 'ONLY YOU CAN SEE THE PANEL UNTIL YOU HIT SUBMIT', W / 2, H - 56, 1, [140, 146, 158, 255]);
+  drawTextCentered(png, 'ONLY YOU CAN SEE THE PANEL UNTIL YOU HIT SUBMIT', W / 2, H - 56, 1, SURF.grey2);
 
   return PNG.sync.write(png);
 }

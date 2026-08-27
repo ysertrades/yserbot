@@ -5,12 +5,14 @@
  *
  * The home-screen icon for the control panel.
  *
- * It is the same Y monogram that sits beside the wordmark in the panel's own
- * header, redrawn as a filled tile so it survives being shrunk to 60px and
- * masked into whatever shape the platform prefers. Drawn rather than shipped
- * as a file for the same reason every other image in this bot is: there is no
- * asset pipeline here, and a generated PNG cannot fall out of sync with the
- * brand it is generated from.
+ * The same mark as the panel's own favicon (see web/public/index.html's
+ * inline SVG): a rounded tile filled with the signature sky→periwinkle
+ * gradient, with an ink checkmark-style rising line across it — QuantLab's
+ * "mark only" lockup, drawn here as a PNG so it survives being shrunk to
+ * 60px and masked into whatever shape the platform prefers. Drawn rather
+ * than shipped as a file for the same reason every other image in this bot
+ * is: there is no asset pipeline here, and a generated PNG cannot fall out
+ * of sync with the brand it is generated from.
  *
  * Two things an icon has to get right that a banner does not:
  *
@@ -21,12 +23,10 @@
  *      iOS's squircle both crop the edges, so anything near them is at risk.
  */
 
-const { PNG, setPx, fillRect, line, dot, blendColor } = require('./pixelArt');
+const { PNG, setPx, line, dot } = require('./pixelArt');
+const { RGBA: LIGHT, gradientColorAt } = require('./brandTheme');
 
-const BG_TOP    = [20, 24, 31];    // the panel's --surface
-const BG_BOTTOM = [11, 13, 17];    // the panel's --bg
-const ACCENT    = [76, 125, 255];  // the panel's --accent
-const GLOW      = [76, 125, 255];
+const INK = LIGHT.ink; // "text/marks on the gradient are always ink, never white" — the brand book's own rule, applied to the icon's line
 
 /**
  * @param {number} size square edge in pixels
@@ -35,76 +35,38 @@ const GLOW      = [76, 125, 255];
 function generateAppIcon(size = 512) {
   const png = new PNG({ width: size, height: size });
 
-  // A vertical gradient rather than a flat fill: at icon scale it is the
-  // difference between looking drawn and looking like a placeholder.
-  for (let y = 0; y < size; y++) {
-    const t = y / (size - 1);
-    const c = [
-      Math.round(BG_TOP[0] + (BG_BOTTOM[0] - BG_TOP[0]) * t),
-      Math.round(BG_TOP[1] + (BG_BOTTOM[1] - BG_TOP[1]) * t),
-      Math.round(BG_TOP[2] + (BG_BOTTOM[2] - BG_TOP[2]) * t),
-      255,
-    ];
-    fillRect(png, 0, y, size, 1, c);
-  }
-
-  // A soft accent bloom behind the monogram, so the mark reads as lit rather
-  // than pasted on. Cheap radial falloff — no blur pass needed at this size.
-  const cx = size / 2;
-  const cy = size * 0.47;
-  const radius = size * 0.42;
+  // The signature gradient, corner to corner and fully opaque — the same
+  // asset the favicon and every hero card use, at icon scale it doesn't
+  // need the "used sparingly" caveat: the icon *is* the one hero surface.
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const d = Math.hypot(x - cx, y - cy) / radius;
-      if (d >= 1) continue;
-      const alpha = (1 - d) * (1 - d) * 0.16;
-      const idx = (size * y + x) << 2;
-      const base = [png.data[idx], png.data[idx + 1], png.data[idx + 2]];
-      const mixed = blendColor(base, GLOW, alpha);
-      setPx(png, x, y, [mixed[0], mixed[1], mixed[2], 255]);
+      const t = (x + y) / (size * 2 - 2);
+      const c = gradientColorAt(t);
+      setPx(png, x, y, [c[0], c[1], c[2], 255]);
     }
   }
 
-  drawMonogram(png, size);
+  drawMark(png, size);
   return PNG.sync.write(png);
 }
 
 /**
- * The Y, with the stem detached.
- *
- * That 2px break is the detail that makes the mark ours rather than a generic
- * letter Y, and it is proportional so it survives every size — at 180px it is
- * still a visible gap, and below about 48px the strokes merge and it reads as
- * a solid Y, which is the graceful way for it to fail.
+ * A rising three-point line — the brand's own chart-line motif (see
+ * brandSignature.js's monogram) — scaled up and thickened for icon
+ * legibility. Kept inside the middle 80% so a maskable crop cannot clip it.
  */
-function drawMonogram(png, size) {
-  const stroke = Math.max(2, Math.round(size * 0.085));
-  const cx = Math.round(size / 2);
+function drawMark(png, size) {
+  const stroke = Math.max(3, Math.round(size * 0.09));
+  const cap = Math.max(2, Math.round(stroke / 2));
 
-  // Kept inside the middle 80% so a maskable crop cannot clip the arms.
-  const top = Math.round(size * 0.28);
-  const junction = Math.round(size * 0.52);
-  const bottom = Math.round(size * 0.72);
-  const spread = Math.round(size * 0.19);
+  const p1 = { x: Math.round(size * 0.26), y: Math.round(size * 0.68) };
+  const p2 = { x: Math.round(size * 0.52), y: Math.round(size * 0.38) };
+  const p3 = { x: Math.round(size * 0.78), y: Math.round(size * 0.30) };
 
-  const gap = Math.max(2, Math.round(size * 0.045));
-  const colour = [...ACCENT, 255];
-  const cap = Math.max(1, Math.round(stroke / 2));
-
-  const strokes = [
-    [cx - spread, top, cx, junction],
-    [cx + spread, top, cx, junction],
-    [cx, junction + gap + stroke, cx, bottom],
-  ];
-
-  // Round caps, to match the stroke-linecap on the SVG mark in the header —
-  // square ends read as crude at icon scale, and the two marks sitting side by
-  // side on the same phone should look like the same drawing.
-  for (const [x1, y1, x2, y2] of strokes) {
-    line(png, x1, y1, x2, y2, colour, stroke);
-    dot(png, x1, y1, cap, colour);
-    dot(png, x2, y2, cap, colour);
+  for (const [a, b] of [[p1, p2], [p2, p3]]) {
+    line(png, a.x, a.y, b.x, b.y, [...INK], stroke);
   }
+  for (const p of [p1, p2, p3]) dot(png, p.x, p.y, cap, [...INK]);
 }
 
 module.exports = { generateAppIcon };

@@ -1,17 +1,20 @@
 'use strict';
 
 const {
-  PNG, setPxBlend, roundedMask, dot, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered,
 } = require('./pixelArt');
 const { drawChestIcon } = require('./mysteryBoxVisual');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
 
+// Same "depth of purple/cyan stands in for rarity" rule as mining and
+// everywhere else severity or significance is drawn rather than worded.
 const RARITY_COLOR = {
-  junk:      [148, 155, 168, 255],
-  common:    [46, 204, 113, 255],
-  uncommon:  [52, 152, 219, 255],
-  rare:      [155, 89, 182, 255],
-  legendary: [241, 196, 15, 255],
+  junk:      DARK.grey2,
+  common:    LIGHT.cyanDeep,
+  uncommon:  LIGHT.cyan,
+  rare:      LIGHT.purple,
+  legendary: LIGHT.purpleDeep,
 };
 
 function darken(c, f = 0.65) {
@@ -343,7 +346,7 @@ function fmtCoins(n) {
  * all drawn into the image itself; the embed around it stays to a title.
  * Every catch name gets its own hand-drawn icon (see ICONS above) instead
  * of one generic fish shape recolored by rarity.
- * @param {{name: string, rarity: string, reward: number}} catchData
+ * @param {{name: string, rarity: string, reward: number|null}} catchData - reward null means the economy is off: the catch is still real, it just isn't shown as being worth anything
  * @returns {Buffer} PNG image data
  */
 function generateFishImage(catchData) {
@@ -355,39 +358,35 @@ function generateFishImage(catchData) {
   const png = new PNG({ width: W, height: H, colorType: 6 });
   const panelRadius = 22;
 
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (!roundedMask(W, H, panelRadius, x, y)) continue;
-      const depth = y / H; // subtle vertical shift, deeper = darker — still flat bands, no smooth gradient
-      const band = Math.floor(depth * 6);
-      const shade = 22 - band * 2;
-      setPxBlend(png, x, y, [8, shade + 20, shade + 38, 255], 1);
-    }
-  }
+  fillCanvas(png, DARK.bg);
+  darkCard(png, 0, 0, W, H, { radius: panelRadius });
 
-  // Wave texture — layered translucent horizontal bands, not a gradient.
+  // Wave texture — layered translucent horizontal bands, not a gradient —
+  // kept from the original, recoloured to sit quietly on the dark card.
   for (let w = 0; w < 5; w++) {
     const wy = 90 + w * 95 + Math.sin(w) * 10;
     for (let x = 20; x < W - 20; x++) {
       const yy = wy + Math.sin((x + w * 40) * 0.03) * 6;
-      setPxBlend(png, x, Math.round(yy), [255, 255, 255, 255], 0.05);
+      setPxBlend(png, x, Math.round(yy), DARK.border, 0.6);
     }
   }
 
-  drawText(png, 'FISHING', 30, 26, 2, [190, 210, 230, 255]);
+  drawText(png, 'FISHING', 30, 26, 2, DARK.grey1);
 
   const cx = W / 2, cy = 250;
   ringStroke(png, cx, cy, 130, color, 4);
-  dotBlend(png, cx, cy, 118, color, 0.14);
+  dotBlend(png, cx, cy, 118, color, 0.16);
   drawIcon(png, cx, cy, 70, color);
 
   const rarityLabel = rarity.toUpperCase();
   drawTextCentered(png, rarityLabel, cx, cy + 160, 2, color);
 
   const nameScale = 4;
-  drawTextCentered(png, name.toUpperCase(), cx, cy + 195, nameScale, [255, 255, 255, 255]);
+  drawTextCentered(png, name.toUpperCase(), cx, cy + 195, nameScale, DARK.ink);
 
-  drawTextCentered(png, fmtCoins(reward), cx, cy + 195 + 7 * nameScale + 26, 3, [255, 215, 0, 255]);
+  if (reward != null) {
+    drawTextCentered(png, fmtCoins(reward), cx, cy + 195 + 7 * nameScale + 26, 3, LIGHT.cyan);
+  }
 
   return PNG.sync.write(png);
 }

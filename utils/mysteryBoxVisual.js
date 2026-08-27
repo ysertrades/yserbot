@@ -1,16 +1,19 @@
 'use strict';
 
 const {
-  PNG, setPxBlend, roundedMask, dot, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
 
+// Same "depth of purple/cyan" tiering as fish/mine rarity — a jackpot pull
+// is the deepest purple in the family, not a shade the brand book doesn't have.
 const TIER_COLOR = {
-  dud:     [148, 155, 168, 255],
-  small:   [46, 204, 113, 255],
-  good:    [52, 152, 219, 255],
-  rare:    [155, 89, 182, 255],
-  jackpot: [241, 196, 15, 255],
+  dud:     DARK.grey2,
+  small:   LIGHT.cyanDeep,
+  good:    LIGHT.cyan,
+  rare:    LIGHT.purple,
+  jackpot: LIGHT.purpleDeep,
 };
 
 const TIER_LABEL = {
@@ -32,9 +35,9 @@ function drawChestIcon(png, cx, cy, size, color) {
 
   fillRoundedRectBlend(png, cx - bodyW / 2, cy, bodyW, bodyH, 10, color, 1);
   fillRoundedRectBlend(png, cx - lidW / 2, cy - lidH, lidW, lidH, 14, darker, 1);
-  fillRoundedRectBlend(png, cx - bodyW / 2 - 4, cy - 9, bodyW + 8, 18, 5, [255, 215, 60, 255], 1);
-  dot(png, cx, cy + 3, size * 0.22, [255, 215, 60, 255]);
-  dot(png, cx, cy + 3, size * 0.1, [45, 34, 10, 255]);
+  fillRoundedRectBlend(png, cx - bodyW / 2 - 4, cy - 9, bodyW + 8, 18, 5, [255, 255, 255, 255], 0.9);
+  dot(png, cx, cy + 3, size * 0.22, [255, 255, 255, 255]);
+  dot(png, cx, cy + 3, size * 0.1, darker);
 
   // Sparkle bursts around the chest — bigger/more for higher tiers, drawn
   // by the caller passing a brighter/rarer color for jackpot pulls.
@@ -52,7 +55,10 @@ function fmtCoins(n) {
 
 /**
  * Renders the /shop use result for a mystery_box item — a chest-opening
- * reveal matching the fish/mine card scale and house style.
+ * reveal matching the fish/mine card scale and house style. Only reachable
+ * with the economy switched on (it's a shop item, and /shop is gated the
+ * same as everything else economy), so unlike fish/mine there's no
+ * economy-off variant to handle here.
  * @param {{tier: string, reward: number}} data
  * @returns {Buffer} PNG image data
  */
@@ -64,14 +70,10 @@ function generateMysteryBoxImage(data) {
   const png = new PNG({ width: W, height: H, colorType: 6 });
   const panelRadius = 22;
 
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (!roundedMask(W, H, panelRadius, x, y)) continue;
-      setPxBlend(png, x, y, [16, 10, 26, 255], 1);
-    }
-  }
+  fillCanvas(png, DARK.bg);
+  darkCard(png, 0, 0, W, H, { radius: panelRadius });
 
-  // Mystical starfield texture — scattered low-alpha dots, not a gradient.
+  // Starfield texture — scattered low-alpha dots, not a gradient.
   for (let i = 0; i < 90; i++) {
     const sx = 20 + ((i * 137) % (W - 40));
     const sy = 20 + ((i * 271 + i * i * 7) % (H - 40));
@@ -79,17 +81,17 @@ function generateMysteryBoxImage(data) {
     setPxBlend(png, sx, sy, [255, 255, 255, 255], a);
   }
 
-  drawText(png, 'MYSTERY BOX', 30, 26, 2, [190, 170, 210, 255]);
+  drawText(png, 'MYSTERY BOX', 30, 26, 2, DARK.grey1);
 
   const cx = W / 2, cy = 250;
   ringStroke(png, cx, cy, 130, color, 4);
-  dotBlend(png, cx, cy, 118, color, 0.14);
+  dotBlend(png, cx, cy, 118, color, 0.16);
   drawChestIcon(png, cx, cy, 58, color);
 
   const label = TIER_LABEL[tier] || tier.toUpperCase();
   drawTextCentered(png, label, cx, cy + 165, 2, color);
 
-  drawTextCentered(png, fmtCoins(reward), cx, cy + 200, 4, [255, 215, 0, 255]);
+  drawTextCentered(png, fmtCoins(reward), cx, cy + 200, 4, LIGHT.cyan);
 
   return PNG.sync.write(png);
 }

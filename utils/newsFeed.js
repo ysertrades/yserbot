@@ -7,9 +7,12 @@
 // headline going out.
 
 const { readJson, writeJson } = require('./jsonStorage');
+const { AttachmentBuilder } = require('discord.js');
 const { isValidUrl } = require('./embedBuilder');
 const messageStyle = require('./messageStyle');
 const { TOPICS, expandTopicKeywords } = require('./newsTopics');
+const { generateNewsCard } = require('./newsCardVisual');
+const { isFeatureEnabled } = require('./featureToggles');
 
 // The address Financial Juice publishes as its RSS link. The same endpoint
 // as the bare feed.ashx this used to request, with the query string their
@@ -508,10 +511,27 @@ async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = n
   // The picture belongs across the card unless the catalogue's thumbnail
   // switch says otherwise — a chart or a video still is the story, not
   // decoration in the corner.
+  let attachment = null;
   if (picture && !messageStyle.styleFor(guildId, key).thumbnail) {
     try { embed.setImage(picture); } catch { /* a URL Discord refuses is not worth the card */ }
+  } else if (!picture) {
+    // Most headlines carry no picture at all — a live feed is mostly plain
+    // text — so those get QuantLab's own browser-frame card instead of
+    // going out as a bare colour bar. Built fresh per headline (title and
+    // breaking-state both vary), unlike the other banners in the bot, which
+    // stay the same until Studio changes them.
+    try {
+      const buf = generateNewsCard({
+        headline: item.title,
+        source: source.label,
+        urlLabel: item.source?.host || 'financialjuice.com',
+        breaking: isBreaking,
+      });
+      attachment = new AttachmentBuilder(buf, { name: 'news-card.png' });
+      embed.setImage('attachment://news-card.png');
+    } catch { /* the text embed alone still carries the headline */ }
   }
-  return embed;
+  return { embed, attachment };
 }
 
 // Picking topics via /newsfeed topics is the only filter — no picked topics
@@ -593,6 +613,9 @@ async function runTick(client) {
   for (const guildId of Object.keys(config)) {
     const settings = config[guildId]?.newsFeedSettings;
     if (!settings?.enabled || !settings.channelId) continue;
+    // The Settings-tab master switch — off means the scheduler stays quiet
+    // here too, not just the /newsfeed command.
+    if (!isFeatureEnabled(guildId, 'newsfeed')) continue;
 
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
@@ -627,12 +650,14 @@ async function runTick(client) {
         const embeds = await Promise.all(
           chronological.map(item => buildNewsEmbed(item, source, guildId).catch(() => null)),
         );
-        for (const embed of embeds) {
+        for (const result of embeds) {
           // Null means this kind of headline is switched off in Appearance.
           // The cursor still advances below, so re-enabling it starts from the
           // headlines after this one rather than replaying the backlog.
-          if (!embed) continue;
-          await channel.send({ embeds: [embed] }).catch(() => {});
+          if (!result || !result.embed) continue;
+          const payload = { embeds: [result.embed] };
+          if (result.attachment) payload.files = [result.attachment];
+          await channel.send(payload).catch(() => {});
         }
       }
 

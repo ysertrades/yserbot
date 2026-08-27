@@ -11,13 +11,14 @@
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawTextCentered, wrapText, GLYPH_H,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: SURF, darkCard, fillCanvas } = require('./brandTheme');
 
-const BRAND = [29, 155, 240, 255]; // matches embedBuilder.js's 'news' color
-const WHITE = [255, 255, 255, 255];
-const DARK  = [10, 14, 20, 255];
+const BRAND = LIGHT.sky;  // matches messageStyle's 'news' colour
+const WHITE = SURF.ink;
+const DARK  = SURF.bg;
 
 function drawForexIcon(png, cx, cy, size, color) {
   line(png, cx - size * 0.6, cy - size * 0.25, cx + size * 0.35, cy - size * 0.25, color, 3);
@@ -99,11 +100,11 @@ function generateNewsfeedGuideImage() {
   const H = gridBottom + 60;
 
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  flatBg(png, [10, 14, 20, 255]);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: BRAND, tintAlpha: 0.06, border: BRAND, borderAlpha: 0.4 });
+  fillCanvas(png, DARK);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 26 });
 
   drawTextCentered(png, 'FINANCIAL JUICE NEWS FEED', W / 2, 44, 4, WHITE);
-  drawTextCentered(png, 'LIVE MARKET-MOVING HEADLINES, DELIVERED TO YOUR CHANNEL', W / 2, 44 + 4 * GLYPH_H + 14, 2, [140, 200, 240, 255]);
+  drawTextCentered(png, 'LIVE MARKET-MOVING HEADLINES, DELIVERED TO YOUR CHANNEL', W / 2, 44 + 4 * GLYPH_H + 14, 2, LIGHT.sky);
   for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 130, BRAND, 0.3);
 
   const cellW = (W - 120) / cols;
@@ -121,7 +122,7 @@ function generateNewsfeedGuideImage() {
     const subLines = wrapText(topic.sub.toUpperCase(), 2, cellW - 24);
     let sy = cy + 26 + 2 * GLYPH_H + 10;
     for (const l of subLines) {
-      drawTextCentered(png, l, cx, sy, 2, [160, 168, 184, 255]);
+      drawTextCentered(png, l, cx, sy, 2, SURF.grey1);
       sy += 2 * GLYPH_H + 6;
     }
   });

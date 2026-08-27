@@ -23,11 +23,12 @@
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dotBlend, ringStroke,
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, GLYPH_H,
 } = require('./pixelArt');
 const { EMBLEMS, RARITY_ACCENT } = require('./cardVisual');
 const { artFor } = require('./cardArt');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
 
 // Wide enough to read at a glance, narrow enough that Discord does not shrink
 // it into a strip. Nine columns is 1,712px, which is about the widest an
@@ -41,7 +42,7 @@ function gridFor(count) {
   return { cols, rows: Math.max(1, Math.ceil(count / cols)) };
 }
 const WHITE = [255, 255, 255, 255];
-const GRAY  = [160, 166, 178, 255];
+const GRAY  = DARK.grey1;
 
 function drawLockIcon(png, cx, cy, size, color) {
   ringStroke(png, cx, cy - size * 0.15, size * 0.4, color, 4);
@@ -61,14 +62,14 @@ function generateCollectionBoard({ catalog, ownedCounts, title }) {
   const H = MARGIN * 2 + HEADER_H + rows * CELL_H + (rows - 1) * GAP;
 
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  flatBg(png, [14, 13, 20, 255]);
-  glassPanel(png, 14, 14, W - 28, H - 28, { radius: 26, tint: [233, 30, 99, 255], tintAlpha: 0.04, border: [233, 30, 99, 255], borderAlpha: 0.3 });
+  fillCanvas(png, DARK.bg);
+  darkCard(png, 14, 14, W - 28, H - 28, { radius: 26 });
 
   const ownedTotal = Object.values(ownedCounts).reduce((s, n) => s + (n > 0 ? 1 : 0), 0);
-  drawText(png, title.toUpperCase(), MARGIN + 8, 30, 3, WHITE);
+  drawText(png, title.toUpperCase(), MARGIN + 8, 30, 3, DARK.ink);
   const pct = `${ownedTotal}/${catalog.length}`;
   const pctW = textWidth(pct, 3);
-  drawText(png, pct, W - MARGIN - 8 - pctW, 30, 3, [255, 215, 0, 255]);
+  drawText(png, pct, W - MARGIN - 8 - pctW, 30, 3, LIGHT.cyan);
 
   const gridTop = MARGIN + HEADER_H;
 
@@ -103,8 +104,8 @@ function generateCollectionBoard({ catalog, ownedCounts, title }) {
       if (own) own(png, cx, cy, 25, accent);
       else (EMBLEMS[card.rarity] || EMBLEMS.common)(png, cx, cy, 23, accent);
     } else {
-      dotBlend(png, cx, cy, 35, [40, 40, 46, 255], 0.6);
-      drawLockIcon(png, cx, cy, 19, [95, 98, 108, 255]);
+      dotBlend(png, cx, cy, 35, DARK.raised, 1);
+      drawLockIcon(png, cx, cy, 19, DARK.grey2);
     }
 
     if (owned) {
@@ -119,7 +120,7 @@ function generateCollectionBoard({ catalog, ownedCounts, title }) {
       const badge = `x${count}`;
       const bw = textWidth(badge, 2) + 12;
       fillRoundedRectBlend(png, x + CELL_W - bw - 6, y + 6, bw, 20, 5, accent, 0.9);
-      drawText(png, badge, x + CELL_W - bw, y + 9, 2, [20, 18, 26, 255]);
+      drawText(png, badge, x + CELL_W - bw, y + 9, 2, DARK.bg);
     }
   });
 

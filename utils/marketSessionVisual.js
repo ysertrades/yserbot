@@ -22,16 +22,17 @@
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, ringBlend, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, ringBlend, line,
   fillRoundedRectBlend, drawText, drawTextCentered, wrapText, textWidth, fitScale, GLYPH_H,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: SURF, darkCard, fillCanvas } = require('./brandTheme');
 
-const GOOD = [46, 204, 113, 255];
-const WHITE = [255, 255, 255, 255];
-const DARK = [10, 16, 13, 255];
-// The control panel's own accent (#4C7DFF) — used for Sunday's futures
-// reopen so the poster reads as the bot's own voice, not a recolored NYSE.
-const BLUE = [76, 125, 255, 255];
+const GOOD = LIGHT.cyan;
+const WHITE = SURF.ink;    // the brand's light-on-dark text colour, not literal white
+const DARK = [10, 11, 15, 255];   // plain near-black — icon window/shadow shading only
+// QuantLab's own purple — used for Sunday's futures reopen so the poster
+// reads as a second step in the same family, not a recolored NYSE.
+const PURPLE = LIGHT.purple;
 
 function drawSkylineIcon(png, cx, cy, size, color) {
   const buildings = [
@@ -151,9 +152,9 @@ function generateMarketSessionImage(opts) {
   const W = 1000, H = 400;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
-  flatBg(png, [11, 16, 13, 255]);
+  fillCanvas(png, SURF.bg);
   drawBgBars(png, W, H, accent);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: accent, tintAlpha: 0.06, border: accent, borderAlpha: 0.4 });
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 28 });
 
   // ── Content column, shared by everything right of the badge ──────────────
   const contentLeft = 356, contentRight = W - 44, contentWidth = contentRight - contentLeft;
@@ -196,7 +197,7 @@ function generateMarketSessionImage(opts) {
   for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 288, accent, 0.3);
   const lines = wrapText(tagline.toUpperCase(), 2, contentWidth);
   let ty = 310;
-  for (const l of lines.slice(0, 2)) { drawTextCentered(png, l, contentCx, ty, 2, [220, 226, 220, 255]); ty += GLYPH_H * 2 + 10; }
+  for (const l of lines.slice(0, 2)) { drawTextCentered(png, l, contentCx, ty, 2, SURF.grey1); ty += GLYPH_H * 2 + 10; }
 
   return PNG.sync.write(png);
 }
@@ -220,7 +221,7 @@ function generateFuturesOpenImage() {
     exchangeName: 'CME Globex',
     time: 'SUN 6:00 PM EST',
     tagline: "The week's first candle is forming - trade the plan, not your emotions.",
-    accent: BLUE,
+    accent: PURPLE,
     icon: drawCandleIcon,
     // 'LIVE' rather than a longer word: the pill shares the title's band, and
     // anything wider pushes "FUTURES OPEN" down a size to clear it. The

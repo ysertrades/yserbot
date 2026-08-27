@@ -10,16 +10,17 @@
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dot, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dot, dotBlend, ringStroke, line,
   fillRoundedRectBlend, drawText, drawTextCentered, textWidth, wrapText, GLYPH_H,
 } = require('./pixelArt');
+const { RGBA: LIGHT, RGBA_DARK: SURF, darkCard, fillCanvas } = require('./brandTheme');
 
-const BRAND = [29, 155, 240, 255];  // matches embedBuilder's 'news' colour
-const WHITE = [255, 255, 255, 255];
-const DIM   = [150, 162, 180, 255];
-const ON    = [46, 204, 113, 255];
-const OFF   = [231, 76, 60, 255];
-const DARK  = [10, 14, 20, 255];
+const BRAND = LIGHT.sky;   // matches messageStyle's 'news' colour
+const WHITE = SURF.ink;
+const DIM   = SURF.grey1;
+const ON    = LIGHT.cyan;
+const OFF   = LIGHT.purpleDeep;
+const DARK  = SURF.bg;
 
 function truncate(text, scale, maxWidth) {
   if (textWidth(text, scale) <= maxWidth) return text;
@@ -55,12 +56,12 @@ function generateNewsfeedPanelImage(opts) {
   const H = cardTop + sources.length * (cardH + cardGap) + 92;
 
   const png = new PNG({ width: W, height: H, colorType: 6 });
-  flatBg(png, DARK);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: BRAND, tintAlpha: 0.06, border: BRAND, borderAlpha: 0.4 });
+  fillCanvas(png, DARK);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 28 });
 
   // ── Header ────────────────────────────────────────────────────────────────
   drawTextCentered(png, 'NEWS FEED', W / 2, 46, 5, WHITE);
-  drawTextCentered(png, 'MARKET HEADLINES DELIVERED TO YOUR CHANNEL', W / 2, 46 + 5 * GLYPH_H + 14, 2, [140, 200, 240, 255]);
+  drawTextCentered(png, 'MARKET HEADLINES DELIVERED TO YOUR CHANNEL', W / 2, 46 + 5 * GLYPH_H + 14, 2, LIGHT.sky);
 
   // ── State pill, top-right ─────────────────────────────────────────────────
   const pillText = enabled ? 'LIVE' : 'PAUSED';
@@ -84,11 +85,11 @@ function generateNewsfeedPanelImage(opts) {
   // ── One card per source ───────────────────────────────────────────────────
   sources.forEach((src, i) => {
     const y = cardTop + i * (cardH + cardGap);
-    const accent = src.active ? BRAND : [90, 98, 112, 255];
+    const accent = src.active ? BRAND : SURF.grey2;
 
-    glassPanel(png, 48, y, W - 96, cardH, {
-      radius: 18, tint: accent, tintAlpha: src.active ? 0.09 : 0.04,
-      border: accent, borderAlpha: src.active ? 0.5 : 0.22,
+    darkCard(png, 48, y, W - 96, cardH, {
+      radius: 18, fill: SURF.raised,
+      border: accent, borderAlpha: src.active ? 0.6 : 0.3,
     });
 
     const icx = 118, icy = y + cardH / 2;
@@ -101,7 +102,7 @@ function generateNewsfeedPanelImage(opts) {
     const blurbLines = wrapText(src.blurb.toUpperCase(), 2, W - tx - 220);
     let by = y + 30 + 3 * GLYPH_H + 12;
     for (const l of blurbLines.slice(0, 2)) {
-      drawText(png, l, tx, by, 2, src.active ? [176, 188, 206, 255] : [110, 118, 132, 255]);
+      drawText(png, l, tx, by, 2, src.active ? SURF.grey1 : SURF.grey2);
       by += 2 * GLYPH_H + 6;
     }
 
@@ -109,8 +110,8 @@ function generateNewsfeedPanelImage(opts) {
     const chip = src.active ? 'ON' : 'OFF';
     const chipW = 30 + textWidth(chip, 2);
     const chipX = W - 74 - chipW;
-    fillRoundedRectBlend(png, chipX, y + 26, chipW, 36, 9, src.active ? ON : [70, 76, 88, 255], 0.92);
-    drawText(png, chip, chipX + 15, y + 36, 2, src.active ? DARK : [190, 196, 208, 255]);
+    fillRoundedRectBlend(png, chipX, y + 26, chipW, 36, 9, src.active ? ON : SURF.raised, 0.92);
+    drawText(png, chip, chipX + 15, y + 36, 2, src.active ? DARK : SURF.grey1);
     const cad = src.cadence.toUpperCase();
     drawText(png, cad, W - 74 - textWidth(cad, 2), y + 84, 2, DIM);
   });

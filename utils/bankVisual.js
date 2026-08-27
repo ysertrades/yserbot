@@ -3,26 +3,31 @@
 /**
  * bankVisual.js
  *
- * Two visuals for the consolidated /bank panel, in the same flat-
- * glassmorphism house style as the welcome card — a gold "wealth" accent
- * instead of jade/amber, with the member's real avatar composited into a
+ * Two visuals for the consolidated /bank panel, in QuantLab's dark Phantom
+ * house style — purple "wealth" accent (economy's own colour, matching the
+ * embed catalogue), with the member's real avatar composited into a
  * circle: `generateBankCardImage` for the account view (your own account,
  * or checking another member's), and `generateLeaderboardImage` for the
  * top-richest ranking. Both are generated fresh per interaction since they
  * bake in live per-account data — not seeded as static dynamic-embed
  * templates like nyse-open/risk-guide/....
+ *
+ * The leaderboard's podium reads as depth of purple (1st deepest, 3rd
+ * lightest) rather than gold/silver/bronze — the same "significance
+ * deepens the colour" idea used for rank tiers and moderation severity.
  */
 
 const {
-  PNG, setPxBlend, glassPanel, flatBg, dotBlend, ringStroke, line,
+  PNG, setPxBlend, dotBlend, ringStroke,
   fillRoundedRectBlend, drawText, drawTextCentered, textWidth, GLYPH_H,
 } = require('./pixelArt');
 const { drawAvatarCircle } = require('./avatarUtil');
+const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
 
-const GOLD  = [241, 196, 15, 255];
-const WHITE = [255, 255, 255, 255];
-const GOOD  = [46, 204, 113, 255];
-const DIM   = [150, 160, 172, 255];
+const ACCENT = LIGHT.purple;
+const TEXT   = DARK.ink;
+const SUBTLE = DARK.grey1;
+const GOOD   = LIGHT.cyan; // "interest ready" reads as cyan, not neon green
 
 function truncate(text, scale, maxWidth) {
   if (textWidth(text, scale) <= maxWidth) return text;
@@ -52,25 +57,25 @@ function generateBankCardImage(opts) {
   const W = 1000, H = 460;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
-  flatBg(png, [16, 14, 8, 255]);
-  ringStroke(png, W - 60, 60, 140, GOLD, 3);
-  ringStroke(png, W - 60, 60, 190, GOLD, 2);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 28, tint: GOLD, tintAlpha: 0.06, border: GOLD, borderAlpha: 0.4 });
+  fillCanvas(png, DARK.bg);
+  ringStroke(png, W - 60, 60, 140, ACCENT, 3);
+  ringStroke(png, W - 60, 60, 190, ACCENT, 2);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 28 });
 
   // ── Avatar circle, left ────────────────────────────────────────────────────
   const acx = 190, acy = 230, aradius = 108;
-  dotBlend(png, acx, acy, aradius + 22, GOLD, 0.12);
-  drawAvatarCircle(png, acx, acy, aradius, avatarPng, (username[0] || '?').toUpperCase(), GOLD);
-  ringStroke(png, acx, acy, aradius + 6, GOLD, 5);
+  dotBlend(png, acx, acy, aradius + 22, ACCENT, 0.14);
+  drawAvatarCircle(png, acx, acy, aradius, avatarPng, (username[0] || '?').toUpperCase(), ACCENT);
+  ringStroke(png, acx, acy, aradius + 6, ACCENT, 5);
 
   // ── Header, right ──────────────────────────────────────────────────────────
   const contentLeft = 360, contentRight = W - 44, contentW = contentRight - contentLeft;
 
-  drawText(png, viewingOther ? 'CHECKING BALANCE' : 'YOUR ACCOUNT', contentLeft, 66, 2, GOLD);
-  drawText(png, 'BANK', contentLeft, 94, 6, WHITE);
-  drawText(png, truncate(username, 4, contentW), contentLeft, 152, 4, GOLD);
+  drawText(png, viewingOther ? 'CHECKING BALANCE' : 'YOUR ACCOUNT', contentLeft, 66, 2, ACCENT);
+  drawText(png, 'BANK', contentLeft, 94, 6, TEXT);
+  drawText(png, truncate(username, 4, contentW), contentLeft, 152, 4, ACCENT);
 
-  for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 206, GOLD, 0.3);
+  for (let x = contentLeft; x < contentRight; x++) setPxBlend(png, x, 206, ACCENT, 0.35);
 
   // ── Chips: wallet / bank / total ─────────────────────────────────────────────
   const total = wallet + bank;
@@ -83,9 +88,9 @@ function generateBankCardImage(opts) {
   const chipW = (contentW - gap * 2) / 3;
   chips.forEach((c, i) => {
     const cx = contentLeft + i * (chipW + gap);
-    fillRoundedRectBlend(png, cx, chipY, chipW, chipH, 10, WHITE, 0.08);
-    drawText(png, c.label, cx + 14, chipY + 10, 1, DIM);
-    drawText(png, c.value.toLocaleString(), cx + 14, chipY + 24, 2, i === 2 ? GOLD : WHITE);
+    fillRoundedRectBlend(png, cx, chipY, chipW, chipH, 10, DARK.raised, 1);
+    drawText(png, c.label, cx + 14, chipY + 10, 1, SUBTLE);
+    drawText(png, c.value.toLocaleString(), cx + 14, chipY + 24, 2, i === 2 ? ACCENT : TEXT);
   });
 
   // ── Interest status line (own account only) ─────────────────────────────────
@@ -94,7 +99,7 @@ function generateBankCardImage(opts) {
     const statusText = interestReady > 0
       ? `+${interestReady.toLocaleString()} COINS INTEREST READY TO COLLECT`
       : `INTEREST ACCRUES ${interestPercent}% EVERY ${periodHours} HOUR${periodHours === 1 ? '' : 'S'}`;
-    drawText(png, statusText, contentLeft, statusY, 2, interestReady > 0 ? GOOD : DIM);
+    drawText(png, statusText, contentLeft, statusY, 2, interestReady > 0 ? GOOD : SUBTLE);
   }
 
   return PNG.sync.write(png);
@@ -113,37 +118,39 @@ function generateLeaderboardImage(opts) {
   const W = 1000, H = rowTop + rows * rowH + 40;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
-  flatBg(png, [16, 14, 8, 255]);
-  glassPanel(png, 20, 20, W - 40, H - 40, { radius: 26, tint: GOLD, tintAlpha: 0.06, border: GOLD, borderAlpha: 0.4 });
+  fillCanvas(png, DARK.bg);
+  darkCard(png, 20, 20, W - 40, H - 40, { radius: 26 });
 
-  drawTextCentered(png, 'TOP RICHEST MEMBERS', W / 2, 40, 4, WHITE);
-  drawTextCentered(png, truncate(guildName.toUpperCase(), 2, W - 120), W / 2, 40 + 4 * GLYPH_H + 14, 2, GOLD);
-  for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 128, GOLD, 0.3);
+  drawTextCentered(png, 'TOP RICHEST MEMBERS', W / 2, 40, 4, TEXT);
+  drawTextCentered(png, truncate(guildName.toUpperCase(), 2, W - 120), W / 2, 40 + 4 * GLYPH_H + 14, 2, ACCENT);
+  for (let x = 60; x < W - 60; x++) setPxBlend(png, x, 128, ACCENT, 0.35);
 
   if (entries.length === 0) {
-    drawTextCentered(png, 'NO BALANCES YET', W / 2, rowTop + 20, 2, DIM);
+    drawTextCentered(png, 'NO BALANCES YET', W / 2, rowTop + 20, 2, SUBTLE);
   }
 
-  const medalColor = [GOLD, [200, 205, 212, 255], [180, 130, 70, 255]];
+  // Podium as depth of purple — 1st deepest, 3rd lightest — rather than
+  // gold/silver/bronze.
+  const medalColor = [LIGHT.purpleDeep, LIGHT.purple, LIGHT.purpleLight];
 
   entries.forEach((e, i) => {
     const cy = rowTop + i * rowH + rowH / 2;
-    const rankColor = medalColor[i] || DIM;
+    const rankColor = medalColor[i] || DARK.grey2;
 
     drawTextCentered(png, `${i + 1}`, 84, cy - 10, 2, rankColor);
-    dotBlend(png, 150, cy, 30, GOLD, 0.12);
-    drawAvatarCircle(png, 150, cy, 28, e.avatarPng, (e.username[0] || '?').toUpperCase(), GOLD);
+    dotBlend(png, 150, cy, 30, ACCENT, 0.14);
+    drawAvatarCircle(png, 150, cy, 28, e.avatarPng, (e.username[0] || '?').toUpperCase(), ACCENT);
     ringStroke(png, 150, cy, 30, rankColor, 3);
 
-    drawText(png, truncate(e.username.toUpperCase(), 2, 420), 200, cy - 8, 2, WHITE);
+    drawText(png, truncate(e.username.toUpperCase(), 2, 420), 200, cy - 8, 2, TEXT);
 
     const balText = `${e.balance.toLocaleString()} COINS`;
     const balW = 24 + textWidth(balText, 2);
-    fillRoundedRectBlend(png, W - 60 - balW, cy - 20, balW, 40, 10, GOLD, 0.16);
-    drawTextCentered(png, balText, W - 60 - balW / 2, cy - 8, 2, GOLD);
+    fillRoundedRectBlend(png, W - 60 - balW, cy - 20, balW, 40, 10, ACCENT, 0.2);
+    drawTextCentered(png, balText, W - 60 - balW / 2, cy - 8, 2, ACCENT);
 
     if (i < entries.length - 1) {
-      for (let x = 60; x < W - 60; x++) setPxBlend(png, x, rowTop + (i + 1) * rowH, WHITE, 0.05);
+      for (let x = 60; x < W - 60; x++) setPxBlend(png, x, rowTop + (i + 1) * rowH, DARK.border, 1);
     }
   });
 

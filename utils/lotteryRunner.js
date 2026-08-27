@@ -14,6 +14,7 @@ const { readJson, writeJson } = require('./jsonStorage');
 const { addCoins } = require('./economyManager');
 const { getEffect } = require('./effectsManager');
 const { createEmbed } = require('./embedBuilder');
+const { isFeatureEnabled } = require('./featureToggles');
 
 const TICK_INTERVAL_MS = 30_000;
 const DRAW_HOUR_UTC    = 4; // 00:00 UTC-4
@@ -135,6 +136,7 @@ function isPaused(guildId) {
  */
 function drawStatus(guildId) {
   const settings = readJson('config.json', {})[guildId]?.lotterySettings;
+  if (!isFeatureEnabled(guildId, 'economy')) return { open: false, reason: 'economy_off' };
   if (settings?.paused === true) return { open: false, reason: 'paused' };
   if (!settings?.channelId) return { open: false, reason: 'no_channel' };
   return { open: true, reason: null };

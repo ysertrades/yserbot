@@ -180,6 +180,57 @@ function lightCard(png, px, py, w, h, opts = {}) {
   }
 }
 
+/* ─── Dark surface ─────────────────────────────────────────────────────────
+ * Most people read Discord in its dark theme, so a card that's a bright
+ * white rectangle every time reads as pasted-on rather than native to the
+ * app it lives in. The brand book allows exactly one dark tone —
+ * "Dark Neutral #15161D... never purple-navy" — so DARK below is that hex
+ * used as the card surface, a near-black neutral behind it, and text
+ * inverted to the brand's own light Background hex rather than plain white.
+ * Accents (purple/purpleDeep/sky/cyan) are unchanged: only the surface and
+ * the text invert, never the palette itself. */
+
+const HEX_DARK = {
+  bg: '#0A0B0E',
+  card: '#15161D',
+  raised: '#1E2028',
+  ink: '#F5F7FB',
+  border: '#262832',
+  grey1: '#AEB4C0',
+  grey2: '#8A90A0',
+};
+const RGBA_DARK = Object.fromEntries(Object.entries(HEX_DARK).map(([k, v]) => [k, hexToRgb(v)]));
+
+/** The dark-surface equivalent of lightCard() — same shape, inverted tone. */
+function darkCard(png, px, py, w, h, opts = {}) {
+  const {
+    radius = 20,
+    fill = RGBA_DARK.card,
+    border = RGBA_DARK.border,
+    borderAlpha = 1,
+  } = opts;
+  fillRoundedRectBlend(png, px, py, w, h, radius, fill, 1);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!roundedMask(w, h, radius, x, y)) continue;
+      const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1
+        || !roundedMask(w, h, radius, x - 1, y) || !roundedMask(w, h, radius, x + 1, y)
+        || !roundedMask(w, h, radius, x, y - 1) || !roundedMask(w, h, radius, x, y + 1);
+      if (edge) setPxBlend(png, px + x, py + y, border, borderAlpha);
+    }
+  }
+}
+
+/** Flood-fills a full canvas with a flat colour — used for the page behind a card. */
+function fillCanvas(png, rgb) {
+  for (let y = 0; y < png.height; y++) {
+    for (let x = 0; x < png.width; x++) {
+      const i = (png.width * y + x) * 4;
+      png.data[i] = rgb[0]; png.data[i + 1] = rgb[1]; png.data[i + 2] = rgb[2]; png.data[i + 3] = 255;
+    }
+  }
+}
+
 /** A small pill/chip — solid tint, centered label — for currency/impact/time badges. */
 function pillChip(png, px, py, w, h, { fill, textColor, label, scale = 2 }) {
   fillRoundedRectBlend(png, px, py, w, h, Math.min(h / 2, 12), fill, 1);
@@ -188,6 +239,7 @@ function pillChip(png, px, py, w, h, { fill, textColor, label, scale = 2 }) {
 
 module.exports = {
   HEX, SEMANTIC, IMPACT, RGBA,
+  HEX_DARK, RGBA_DARK,
   GRADIENT_STOPS, gradientColorAt, gradientRect,
-  lightCard, pillChip,
+  lightCard, darkCard, fillCanvas, pillChip,
 };

@@ -6,6 +6,7 @@ const { createEmbed } = require('./embedBuilder');
 const messageStyle = require('./messageStyle');
 const { getWeekEvents, filterEvents } = require('./economicCalendar');
 const { generateEconEventCard } = require('./econEventVisual');
+const { isFeatureEnabled } = require('./featureToggles');
 
 const TICK_INTERVAL_MS   = 5_000;   // tight enough to hit the release post within a few seconds of the exact minute
 const REMINDER_OFFSETS   = [15]; // minutes before release
@@ -218,6 +219,9 @@ async function runTick(client) {
   for (const guildId of Object.keys(config)) {
     const settings = config[guildId]?.econCalSettings;
     if (!settings?.enabled || !settings.channelId) continue;
+    // The Settings-tab master switch — off means the scheduler stays quiet
+    // here too, not just the /econcal command.
+    if (!isFeatureEnabled(guildId, 'econ_calendar')) continue;
 
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
