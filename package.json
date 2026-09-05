@@ -8,6 +8,7 @@
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {
+    "dialkit": "^2.0.0",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
     "mongodb": "^7.5.0",
