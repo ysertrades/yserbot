@@ -186,6 +186,37 @@ const state = {
   gawBump: null,                        // redraw the giveaway preview on demand
 };
 
+let studioDialMounted = false;
+
+function mountStudioDialKit() {
+  if (studioDialMounted) return;
+  if (!window.DialKit?.createDialRoot || !window.DialKit?.createDialKit) return;
+
+  const frame = document.querySelector('.stage-frame');
+  const preview = $('#preview');
+  const busy = $('#stage-busy');
+  if (!frame || !preview || !busy) return;
+
+  window.DialKit.createDialRoot({ position: 'bottom-left', theme: 'dark' });
+  const panel = window.DialKit.createDialKit('Studio preview', {
+    cornerRadius: [14, 0, 32],
+    framePadding: [0, 0, 24],
+    background: '#08090B',
+    imageFit: { type: 'select', options: ['contain', 'cover', 'fill'] },
+    busyOpacity: [0.4, 0, 0.9, 0.05],
+  }, { id: 'studio-preview', persist: true });
+
+  panel.subscribe(values => {
+    frame.style.borderRadius = `${values.cornerRadius}px`;
+    frame.style.padding = `${values.framePadding}px`;
+    frame.style.background = values.background;
+    preview.style.objectFit = values.imageFit;
+    busy.style.background = `rgba(5, 5, 6, ${values.busyOpacity})`;
+  });
+
+  studioDialMounted = true;
+}
+
 /* ── dom helpers ───────────────────────────────────────────────────────── */
 
 function el(tag, className, text) {
@@ -6057,6 +6088,7 @@ async function main() {
     renderSocial();
   });
   root.dataset.state = 'panel';
+  mountStudioDialKit();
   offerStorageAccess();
 
   const params = new URLSearchParams(location.search);
