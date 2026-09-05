@@ -186,35 +186,46 @@ const state = {
   gawBump: null,                        // redraw the giveaway preview on demand
 };
 
-let studioDialMounted = false;
+let layoutDialMounted = false;
 
-function mountStudioDialKit() {
-  if (studioDialMounted) return;
+function applyLayoutDialKitStyles(values) {
+  const layoutGap = `${values.gap}px`;
+  const columnTemplate = `repeat(${values.columns}, minmax(0, 1fr))`;
+
+  for (const grid of document.querySelectorAll('.grid')) {
+    grid.style.gap = layoutGap;
+    grid.style.gridTemplateColumns = columnTemplate;
+  }
+
+  for (const block of document.querySelectorAll('.studio, .composer, .view, .section')) {
+    block.style.gap = layoutGap;
+  }
+
+  const cardPadding = `${values.Card.padding}px`;
+  const cardRadius = `${values.Card.radius}px`;
+  for (const card of document.querySelectorAll('.panel, .tile, .tpl-list')) {
+    card.style.padding = cardPadding;
+    card.style.borderRadius = cardRadius;
+  }
+}
+
+function mountLayoutDialKit() {
+  if (layoutDialMounted) return;
   if (!window.DialKit?.createDialRoot || !window.DialKit?.createDialKit) return;
 
-  const frame = document.querySelector('.stage-frame');
-  const preview = $('#preview');
-  const busy = $('#stage-busy');
-  if (!frame || !preview || !busy) return;
-
   window.DialKit.createDialRoot({ position: 'bottom-left', theme: 'dark' });
-  const panel = window.DialKit.createDialKit('Studio preview', {
-    cornerRadius: [14, 0, 32],
-    framePadding: [0, 0, 24],
-    background: '#08090B',
-    imageFit: { type: 'select', options: ['contain', 'cover', 'fill'] },
-    busyOpacity: [0.4, 0, 0.9, 0.05],
-  }, { id: 'studio-preview', persist: true });
+  const panel = window.DialKit.createDialKit('Layout', {
+    gap: [17, 4, 40, 1],
+    columns: [2, 1, 6, 1],
+    Card: {
+      _collapsed: false,
+      padding: [22, 8, 48, 1],
+      radius: [16, 6, 36, 1],
+    },
+  }, { id: 'layout', persist: true });
 
-  panel.subscribe(values => {
-    frame.style.borderRadius = `${values.cornerRadius}px`;
-    frame.style.padding = `${values.framePadding}px`;
-    frame.style.background = values.background;
-    preview.style.objectFit = values.imageFit;
-    busy.style.background = `rgba(5, 5, 6, ${values.busyOpacity})`;
-  });
-
-  studioDialMounted = true;
+  panel.subscribe(applyLayoutDialKitStyles);
+  layoutDialMounted = true;
 }
 
 /* ── dom helpers ───────────────────────────────────────────────────────── */
@@ -6088,7 +6099,7 @@ async function main() {
     renderSocial();
   });
   root.dataset.state = 'panel';
-  mountStudioDialKit();
+  mountLayoutDialKit();
   offerStorageAccess();
 
   const params = new URLSearchParams(location.search);
