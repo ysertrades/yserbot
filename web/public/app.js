@@ -94,6 +94,8 @@ const embedded = window.self !== window.top;
 // failure being swallowed: if the store is unavailable the panel falls back to
 // asking for storage access instead of silently making you sign in again.
 const STORE_KEY = 'yserflow.session';
+const DIALKIT_PASSCODE = '4050';
+const DIALKIT_PASSCODE_KEY = 'yserflow.dialkit.passcode.ok';
 let storageWorks = true;
 
 const remember = t => {
@@ -109,6 +111,18 @@ const remember = t => {
 const recall = () => {
   try { return localStorage.getItem(STORE_KEY); }
   catch { storageWorks = false; return null; }
+};
+
+const dialKitPasscodeRemembered = () => {
+  try { return sessionStorage.getItem(DIALKIT_PASSCODE_KEY) === '1'; }
+  catch { return false; }
+};
+
+const rememberDialKitPasscode = ok => {
+  try {
+    if (ok) sessionStorage.setItem(DIALKIT_PASSCODE_KEY, '1');
+    else sessionStorage.removeItem(DIALKIT_PASSCODE_KEY);
+  } catch { /* ignore blocked storage */ }
 };
 
 /**
@@ -185,6 +199,48 @@ const state = {
   openFolds: new Set(),                 // which fold-away sections are open
   gawBump: null,                        // redraw the giveaway preview on demand
 };
+
+let layoutDialMounted = false;
+
+function applyLayoutDialKitStyles(values) {
+  const layoutGap = `${values.gap}px`;
+  const columnTemplate = `repeat(${values.columns}, minmax(0, 1fr))`;
+
+  for (const grid of document.querySelectorAll('.grid')) {
+    grid.style.gap = layoutGap;
+    grid.style.gridTemplateColumns = columnTemplate;
+  }
+
+  for (const block of document.querySelectorAll('.studio, .composer, .view, .section')) {
+    block.style.gap = layoutGap;
+  }
+
+  const cardPadding = `${values.Card.padding}px`;
+  const cardRadius = `${values.Card.radius}px`;
+  for (const card of document.querySelectorAll('.panel, .tile, .tpl-list')) {
+    card.style.padding = cardPadding;
+    card.style.borderRadius = cardRadius;
+  }
+}
+
+function mountLayoutDialKit() {
+  if (layoutDialMounted) return;
+  if (!window.DialKit?.createDialRoot || !window.DialKit?.createDialKit) return;
+
+  window.DialKit.createDialRoot({ position: 'bottom-left', theme: 'dark' });
+  const panel = window.DialKit.createDialKit('Layout', {
+    gap: [17, 4, 40, 1],
+    columns: [2, 1, 6, 1],
+    Card: {
+      _collapsed: false,
+      padding: [22, 8, 48, 1],
+      radius: [16, 6, 36, 1],
+    },
+  }, { id: 'layout', persist: true });
+
+  panel.subscribe(applyLayoutDialKitStyles);
+  layoutDialMounted = true;
+}
 
 /* ── dom helpers ───────────────────────────────────────────────────────── */
 
@@ -384,6 +440,112 @@ function sheetRow(label, value) {
   return r;
 }
 
+function openDialKitPasscodeSheet() {
+  const lock = el('div', 'dialkit-lock');
+  const label = el('p', 'dialkit-lock-label', 'Unlock DialKit');
+  const note = el('p', 'dialkit-lock-note', 'Enter passcode to launch layout controls.');
+  const dots = el('div', 'dialkit-lock-dots');
+  const dotNodes = [el('i'), el('i'), el('i'), el('i')];
+  dots.append(...dotNodes);
+
+  const input = el('input', 'dialkit-lock-input');
+  input.type = 'password';
+  input.inputMode = 'numeric';
+  input.pattern = '[0-9]*';
+  input.maxLength = 4;
+  input.autocomplete = 'one-time-code';
+  input.setAttribute('aria-label', 'DialKit passcode');
+
+  const status = el('p', 'note');
+  status.hidden = true;
+
+  const pad = el('div', 'dialkit-lock-pad');
+  const button = (key, text = key, extra = '') => {
+    const b = el('button', extra, text);
+    b.type = 'button';
+    b.dataset.key = key;
+    return b;
+  };
+  pad.append(
+    button('1'), button('2'), button('3'),
+    button('4'), button('5'), button('6'),
+    button('7'), button('8'), button('9'),
+    button('clear', 'Clear', 'fn'),
+    button('0'),
+    button('back', '⌫', 'fn'),
+  );
+
+  const unlockBtn = el('button', 'btn primary', 'Launch DialKit');
+  unlockBtn.type = 'button';
+
+  const syncDots = () => {
+    const clean = String(input.value || '').replace(/\D/g, '').slice(0, 4);
+    input.value = clean;
+    dotNodes.forEach((dot, i) => dot.classList.toggle('filled', i < clean.length));
+    return clean;
+  };
+
+  const pulse = stateClass => {
+    lock.classList.remove('bad', 'ok');
+    void lock.offsetWidth;
+    lock.classList.add(stateClass);
+  };
+
+  const submit = () => {
+    const value = syncDots();
+    if (value.length !== 4) return;
+    if (value === DIALKIT_PASSCODE) {
+      rememberDialKitPasscode(true);
+      pulse('ok');
+      status.hidden = true;
+      setTimeout(() => {
+        closeSheet();
+        mountLayoutDialKit();
+        toast('DialKit unlocked.', 'good');
+      }, 180);
+      return;
+    }
+    rememberDialKitPasscode(false);
+    pulse('bad');
+    input.value = '';
+    syncDots();
+    status.textContent = 'Wrong passcode.';
+    status.classList.remove('soft');
+    status.hidden = false;
+    input.focus();
+  };
+
+  input.addEventListener('input', syncDots);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+  });
+  unlockBtn.addEventListener('click', submit);
+  pad.addEventListener('click', e => {
+    const key = e.target?.dataset?.key;
+    if (!key) return;
+    if (key === 'clear') input.value = '';
+    else if (key === 'back') input.value = String(input.value || '').slice(0, -1);
+    else input.value = (String(input.value || '') + key).slice(0, 4);
+    syncDots();
+    if (String(input.value).length === 4) submit();
+    else input.focus();
+  });
+
+  lock.append(label, note, dots, input, pad, unlockBtn, status);
+  openSheet('DialKit lock', [lock], []);
+  requestAnimationFrame(() => input.focus());
+}
+
+function launchDialKit() {
+  if (layoutDialMounted) return;
+  if (dialKitPasscodeRemembered()) {
+    mountLayoutDialKit();
+    toast('DialKit unlocked.', 'good');
+    return;
+  }
+  openDialKitPasscodeSheet();
+}
+
 /* ── screens ───────────────────────────────────────────────────────────── */
 
 function showLogin() {
@@ -421,7 +583,7 @@ function showLogin() {
  * URL the browser is about to follow.
  */
 function wireEmbeddedLogin() {
-  const link = document.querySelector('.view[data-view="login"] .btn.primary');
+  const link = document.querySelector('.view[data-view="login"] a.btn.primary[href="/auth/login"]');
   if (!link || link.dataset.wired) return;
   link.dataset.wired = '1';
 
@@ -513,10 +675,15 @@ function renderIdentity(user) {
     } catch { /* the local clear and the reload below still happen */ }
     state.token = null;
     remember(null);
+    rememberDialKitPasscode(false);
     // replace(), not assign(): Back must not return to a panel rendered from
     // the state this page still has in memory.
     location.replace('/');
   });
+  const dial = el('button', 'btn small', 'DialKit');
+  dial.type = 'button';
+  dial.addEventListener('click', launchDialKit);
+  wrap.append(dial);
   wrap.append(out);
 }
 
