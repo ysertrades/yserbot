@@ -94,8 +94,8 @@ const embedded = window.self !== window.top;
 // failure being swallowed: if the store is unavailable the panel falls back to
 // asking for storage access instead of silently making you sign in again.
 const STORE_KEY = 'yserflow.session';
-const PASSCODE = '4050';
-const PASSCODE_KEY = 'yserflow.passcode.ok';
+const DIALKIT_PASSCODE = '4050';
+const DIALKIT_PASSCODE_KEY = 'yserflow.dialkit.passcode.ok';
 let storageWorks = true;
 
 const remember = t => {
@@ -113,15 +113,15 @@ const recall = () => {
   catch { storageWorks = false; return null; }
 };
 
-const passcodeRemembered = () => {
-  try { return sessionStorage.getItem(PASSCODE_KEY) === '1'; }
+const dialKitPasscodeRemembered = () => {
+  try { return sessionStorage.getItem(DIALKIT_PASSCODE_KEY) === '1'; }
   catch { return false; }
 };
 
-const rememberPasscode = ok => {
+const rememberDialKitPasscode = ok => {
   try {
-    if (ok) sessionStorage.setItem(PASSCODE_KEY, '1');
-    else sessionStorage.removeItem(PASSCODE_KEY);
+    if (ok) sessionStorage.setItem(DIALKIT_PASSCODE_KEY, '1');
+    else sessionStorage.removeItem(DIALKIT_PASSCODE_KEY);
   } catch { /* ignore blocked storage */ }
 };
 
@@ -440,113 +440,115 @@ function sheetRow(label, value) {
   return r;
 }
 
-function syncPasscodeDots(value) {
-  const dots = document.querySelectorAll('#passcode-dots i');
-  dots.forEach((dot, i) => dot.classList.toggle('filled', i < value.length));
-}
+function openDialKitPasscodeSheet() {
+  const lock = el('div', 'dialkit-lock');
+  const label = el('p', 'dialkit-lock-label', 'Unlock DialKit');
+  const note = el('p', 'dialkit-lock-note', 'Enter passcode to launch layout controls.');
+  const dots = el('div', 'dialkit-lock-dots');
+  const dotNodes = [el('i'), el('i'), el('i'), el('i')];
+  dots.append(...dotNodes);
 
-function setPasscodeGate(unlocked) {
-  root.dataset.passcode = unlocked ? 'ok' : 'locked';
-  const lock = $('#passcode-lock');
-  if (lock) lock.hidden = unlocked;
-  const signIn = document.querySelector('.view[data-view="login"] a.btn.primary[href="/auth/login"]');
-  if (signIn) signIn.hidden = !unlocked;
-}
+  const input = el('input', 'dialkit-lock-input');
+  input.type = 'password';
+  input.inputMode = 'numeric';
+  input.pattern = '[0-9]*';
+  input.maxLength = 4;
+  input.autocomplete = 'one-time-code';
+  input.setAttribute('aria-label', 'DialKit passcode');
 
-function pulsePasscode(stateClass) {
-  const lock = $('#passcode-lock');
-  if (!lock) return;
-  lock.classList.remove('bad', 'ok');
-  void lock.offsetWidth;
-  lock.classList.add(stateClass);
-}
+  const status = el('p', 'note');
+  status.hidden = true;
 
-function submitPasscode() {
-  const input = $('#passcode-input');
-  if (!input) return false;
-  const value = String(input.value || '').replace(/\D/g, '').slice(0, 4);
-  input.value = value;
-  syncPasscodeDots(value);
-  if (value.length !== 4) return false;
-
-  if (value === PASSCODE) {
-    rememberPasscode(true);
-    pulsePasscode('ok');
-    setPasscodeGate(true);
-    $('#login-error').hidden = true;
-    if (embedded) wireEmbeddedLogin();
-    return true;
-  }
-
-  rememberPasscode(false);
-  pulsePasscode('bad');
-  input.value = '';
-  syncPasscodeDots('');
-  input.focus();
-  const p = $('#login-error');
-  p.textContent = 'Wrong passcode.';
-  p.classList.remove('soft');
-  p.hidden = false;
-  return false;
-}
-
-function wirePasscodeGate() {
-  const lock = $('#passcode-lock');
-  const input = $('#passcode-input');
-  const pad = $('#passcode-pad');
-  const enter = $('#passcode-enter');
-  if (!lock || !input || !pad || !enter || lock.dataset.wired) return;
-  lock.dataset.wired = '1';
-
-  const pushDigit = n => {
-    const next = (String(input.value || '').replace(/\D/g, '') + n).slice(0, 4);
-    input.value = next;
-    syncPasscodeDots(next);
-    if (next.length === 4) submitPasscode();
+  const pad = el('div', 'dialkit-lock-pad');
+  const button = (key, text = key, extra = '') => {
+    const b = el('button', extra, text);
+    b.type = 'button';
+    b.dataset.key = key;
+    return b;
   };
+  pad.append(
+    button('1'), button('2'), button('3'),
+    button('4'), button('5'), button('6'),
+    button('7'), button('8'), button('9'),
+    button('clear', 'Clear', 'fn'),
+    button('0'),
+    button('back', '⌫', 'fn'),
+  );
 
-  input.addEventListener('input', () => {
+  const unlockBtn = el('button', 'btn primary', 'Launch DialKit');
+  unlockBtn.type = 'button';
+
+  const syncDots = () => {
     const clean = String(input.value || '').replace(/\D/g, '').slice(0, 4);
     input.value = clean;
-    syncPasscodeDots(clean);
-  });
+    dotNodes.forEach((dot, i) => dot.classList.toggle('filled', i < clean.length));
+    return clean;
+  };
+
+  const pulse = stateClass => {
+    lock.classList.remove('bad', 'ok');
+    void lock.offsetWidth;
+    lock.classList.add(stateClass);
+  };
+
+  const submit = () => {
+    const value = syncDots();
+    if (value.length !== 4) return;
+    if (value === DIALKIT_PASSCODE) {
+      rememberDialKitPasscode(true);
+      pulse('ok');
+      status.hidden = true;
+      setTimeout(() => {
+        closeSheet();
+        mountLayoutDialKit();
+        toast('DialKit unlocked.', 'good');
+      }, 180);
+      return;
+    }
+    rememberDialKitPasscode(false);
+    pulse('bad');
+    input.value = '';
+    syncDots();
+    status.textContent = 'Wrong passcode.';
+    status.classList.remove('soft');
+    status.hidden = false;
+    input.focus();
+  };
+
+  input.addEventListener('input', syncDots);
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); submitPasscode(); }
+    if (e.key === 'Enter') { e.preventDefault(); submit(); }
   });
-  enter.addEventListener('click', submitPasscode);
+  unlockBtn.addEventListener('click', submit);
   pad.addEventListener('click', e => {
     const key = e.target?.dataset?.key;
     if (!key) return;
-    if (key === 'clear') {
-      input.value = '';
-      syncPasscodeDots('');
-      input.focus();
-      return;
-    }
-    if (key === 'back') {
-      input.value = String(input.value || '').slice(0, -1);
-      syncPasscodeDots(input.value);
-      input.focus();
-      return;
-    }
-    pushDigit(key);
+    if (key === 'clear') input.value = '';
+    else if (key === 'back') input.value = String(input.value || '').slice(0, -1);
+    else input.value = (String(input.value || '') + key).slice(0, 4);
+    syncDots();
+    if (String(input.value).length === 4) submit();
+    else input.focus();
   });
+
+  lock.append(label, note, dots, input, pad, unlockBtn, status);
+  openSheet('DialKit lock', [lock], []);
+  requestAnimationFrame(() => input.focus());
+}
+
+function launchDialKit() {
+  if (layoutDialMounted) return;
+  if (dialKitPasscodeRemembered()) {
+    mountLayoutDialKit();
+    toast('DialKit unlocked.', 'good');
+    return;
+  }
+  openDialKitPasscodeSheet();
 }
 
 /* ── screens ───────────────────────────────────────────────────────────── */
 
 function showLogin() {
-  wirePasscodeGate();
-  const unlocked = passcodeRemembered();
-  setPasscodeGate(unlocked);
-  const input = $('#passcode-input');
-  if (!unlocked) {
-    syncPasscodeDots(input?.value || '');
-    input?.focus();
-    root.dataset.state = 'login';
-    return;
-  }
-
   if (embedded) wireEmbeddedLogin();
 
   const code = new URLSearchParams(location.search).get('error');
@@ -673,11 +675,15 @@ function renderIdentity(user) {
     } catch { /* the local clear and the reload below still happen */ }
     state.token = null;
     remember(null);
-    rememberPasscode(false);
+    rememberDialKitPasscode(false);
     // replace(), not assign(): Back must not return to a panel rendered from
     // the state this page still has in memory.
     location.replace('/');
   });
+  const dial = el('button', 'btn small', 'DialKit');
+  dial.type = 'button';
+  dial.addEventListener('click', launchDialKit);
+  wrap.append(dial);
   wrap.append(out);
 }
 
@@ -6218,7 +6224,6 @@ async function main() {
     renderSocial();
   });
   root.dataset.state = 'panel';
-  mountLayoutDialKit();
   offerStorageAccess();
 
   const params = new URLSearchParams(location.search);
