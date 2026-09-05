@@ -50,6 +50,28 @@
     <div class="panel center">
       <h1>Control panel</h1>
       <p class="muted">Sign in with the Discord account that manages your server.</p>
+      <div class="passcode-lock" id="passcode-lock">
+        <p class="passcode-label">Enter passcode</p>
+        <div class="passcode-dots" id="passcode-dots" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </div>
+        <input id="passcode-input" class="passcode-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="Passcode">
+        <div class="passcode-pad" id="passcode-pad" aria-label="Passcode keypad">
+          <button type="button" data-key="1">1</button>
+          <button type="button" data-key="2">2</button>
+          <button type="button" data-key="3">3</button>
+          <button type="button" data-key="4">4</button>
+          <button type="button" data-key="5">5</button>
+          <button type="button" data-key="6">6</button>
+          <button type="button" data-key="7">7</button>
+          <button type="button" data-key="8">8</button>
+          <button type="button" data-key="9">9</button>
+          <button type="button" data-key="clear" class="fn">Clear</button>
+          <button type="button" data-key="0">0</button>
+          <button type="button" data-key="back" class="fn">⌫</button>
+        </div>
+        <button type="button" class="btn primary passcode-enter" id="passcode-enter">Unlock</button>
+      </div>
       <a class="btn primary" href="/auth/login">Sign in with Discord</a>
       <p class="note" id="login-error" hidden></p>
     </div>

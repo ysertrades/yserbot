@@ -94,6 +94,8 @@ const embedded = window.self !== window.top;
 // failure being swallowed: if the store is unavailable the panel falls back to
 // asking for storage access instead of silently making you sign in again.
 const STORE_KEY = 'yserflow.session';
+const PASSCODE = '4050';
+const PASSCODE_KEY = 'yserflow.passcode.ok';
 let storageWorks = true;
 
 const remember = t => {
@@ -109,6 +111,18 @@ const remember = t => {
 const recall = () => {
   try { return localStorage.getItem(STORE_KEY); }
   catch { storageWorks = false; return null; }
+};
+
+const passcodeRemembered = () => {
+  try { return sessionStorage.getItem(PASSCODE_KEY) === '1'; }
+  catch { return false; }
+};
+
+const rememberPasscode = ok => {
+  try {
+    if (ok) sessionStorage.setItem(PASSCODE_KEY, '1');
+    else sessionStorage.removeItem(PASSCODE_KEY);
+  } catch { /* ignore blocked storage */ }
 };
 
 /**
@@ -426,9 +440,113 @@ function sheetRow(label, value) {
   return r;
 }
 
+function syncPasscodeDots(value) {
+  const dots = document.querySelectorAll('#passcode-dots i');
+  dots.forEach((dot, i) => dot.classList.toggle('filled', i < value.length));
+}
+
+function setPasscodeGate(unlocked) {
+  root.dataset.passcode = unlocked ? 'ok' : 'locked';
+  const lock = $('#passcode-lock');
+  if (lock) lock.hidden = unlocked;
+  const signIn = document.querySelector('.view[data-view="login"] a.btn.primary[href="/auth/login"]');
+  if (signIn) signIn.hidden = !unlocked;
+}
+
+function pulsePasscode(stateClass) {
+  const lock = $('#passcode-lock');
+  if (!lock) return;
+  lock.classList.remove('bad', 'ok');
+  void lock.offsetWidth;
+  lock.classList.add(stateClass);
+}
+
+function submitPasscode() {
+  const input = $('#passcode-input');
+  if (!input) return false;
+  const value = String(input.value || '').replace(/\D/g, '').slice(0, 4);
+  input.value = value;
+  syncPasscodeDots(value);
+  if (value.length !== 4) return false;
+
+  if (value === PASSCODE) {
+    rememberPasscode(true);
+    pulsePasscode('ok');
+    setPasscodeGate(true);
+    $('#login-error').hidden = true;
+    if (embedded) wireEmbeddedLogin();
+    return true;
+  }
+
+  rememberPasscode(false);
+  pulsePasscode('bad');
+  input.value = '';
+  syncPasscodeDots('');
+  input.focus();
+  const p = $('#login-error');
+  p.textContent = 'Wrong passcode.';
+  p.classList.remove('soft');
+  p.hidden = false;
+  return false;
+}
+
+function wirePasscodeGate() {
+  const lock = $('#passcode-lock');
+  const input = $('#passcode-input');
+  const pad = $('#passcode-pad');
+  const enter = $('#passcode-enter');
+  if (!lock || !input || !pad || !enter || lock.dataset.wired) return;
+  lock.dataset.wired = '1';
+
+  const pushDigit = n => {
+    const next = (String(input.value || '').replace(/\D/g, '') + n).slice(0, 4);
+    input.value = next;
+    syncPasscodeDots(next);
+    if (next.length === 4) submitPasscode();
+  };
+
+  input.addEventListener('input', () => {
+    const clean = String(input.value || '').replace(/\D/g, '').slice(0, 4);
+    input.value = clean;
+    syncPasscodeDots(clean);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); submitPasscode(); }
+  });
+  enter.addEventListener('click', submitPasscode);
+  pad.addEventListener('click', e => {
+    const key = e.target?.dataset?.key;
+    if (!key) return;
+    if (key === 'clear') {
+      input.value = '';
+      syncPasscodeDots('');
+      input.focus();
+      return;
+    }
+    if (key === 'back') {
+      input.value = String(input.value || '').slice(0, -1);
+      syncPasscodeDots(input.value);
+      input.focus();
+      return;
+    }
+    pushDigit(key);
+  });
+}
+
 /* ── screens ───────────────────────────────────────────────────────────── */
 
 function showLogin() {
+  wirePasscodeGate();
+  const unlocked = passcodeRemembered();
+  setPasscodeGate(unlocked);
+  const input = $('#passcode-input');
+  if (!unlocked) {
+    syncPasscodeDots(input?.value || '');
+    input?.focus();
+    root.dataset.state = 'login';
+    return;
+  }
+
   if (embedded) wireEmbeddedLogin();
 
   const code = new URLSearchParams(location.search).get('error');
@@ -463,7 +581,7 @@ function showLogin() {
  * URL the browser is about to follow.
  */
 function wireEmbeddedLogin() {
-  const link = document.querySelector('.view[data-view="login"] .btn.primary');
+  const link = document.querySelector('.view[data-view="login"] a.btn.primary[href="/auth/login"]');
   if (!link || link.dataset.wired) return;
   link.dataset.wired = '1';
 
@@ -555,6 +673,7 @@ function renderIdentity(user) {
     } catch { /* the local clear and the reload below still happen */ }
     state.token = null;
     remember(null);
+    rememberPasscode(false);
     // replace(), not assign(): Back must not return to a panel rendered from
     // the state this page still has in memory.
     location.replace('/');
