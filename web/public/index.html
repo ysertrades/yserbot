@@ -1,1 +1,190 @@
-SEE_LOCAL_FILE
+<!doctype html>
+<html lang="en" data-state="loading" data-section="overview">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>QuantLab — Control Panel</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='26' y2='16' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%2394DFFC'/%3E%3Cstop offset='0.4' stop-color='%239EBFF4'/%3E%3Cstop offset='1' stop-color='%239397EE'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='26' height='26' rx='7' fill='url(%23g)'/%3E%3Cpath d='M7 15.5 11 11l3 3 5-6' stroke='%2312151B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="QuantLab">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#15161D">
+
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
+      <rect x="0.5" y="0.5" width="25" height="25" rx="7"></rect>
+      <g class="y"><path d="M7 15.5 11 11l3 3 5-6"></path></g>
+    </svg>
+    <span class="wordmark">quantlab</span>
+    <span class="here" id="here" aria-hidden="true"></span>
+  </div>
+  <div class="bar-right" id="bar-right"></div>
+</header>
+<main id="main">
+  <section class="view" data-view="loading">
+    <div class="panel center"><p class="muted">Loading…</p></div>
+  </section>
+  <section class="view" data-view="login">
+    <div class="panel center">
+      <h1>Control panel</h1>
+      <p class="muted">Sign in with the Discord account that manages your server.</p>
+      <a class="btn primary" href="/auth/login">Sign in with Discord</a>
+      <p class="note" id="login-error" hidden></p>
+    </div>
+    <p class="fineprint">
+      <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
+      <span aria-hidden="true">·</span>
+      <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+    </p>
+  </section>
+  <section class="view" data-view="setup">
+    <div class="panel">
+      <h1>Almost there</h1>
+      <p class="muted">Add these to the Env tab on your host, then restart the bot.</p>
+      <ul class="keys" id="setup-missing"></ul>
+    </div>
+  </section>
+  <section class="view" data-view="panel">
+    <div class="server" id="server">
+      <div class="server-id">
+        <div class="crest" id="crest"></div>
+        <div>
+          <h1 id="server-name">—</h1>
+          <p class="server-meta" id="server-meta"></p>
+        </div>
+      </div>
+      <nav class="guilds" id="guilds" aria-label="Servers"></nav>
+    </div>
+    <nav class="sections" id="sections" aria-label="Sections">
+      <button type="button" data-goto="overview" aria-current="true">Overview</button>
+      <button type="button" data-goto="composer">Composer</button>
+      <button type="button" data-goto="appearance">Appearance</button>
+      <button type="button" data-goto="studio">Studio</button>
+      <button type="button" data-goto="giveaways">Giveaways</button>
+      <button type="button" data-goto="feeds">Feeds</button>
+      <button type="button" data-goto="social">Social</button>
+      <button type="button" data-goto="economy">Economy</button>
+      <button type="button" data-goto="automation">Automation</button>
+      <button type="button" data-goto="engagement">Engagement</button>
+      <button type="button" data-goto="casino">Casino</button>
+      <button type="button" data-goto="tickets">Tickets</button>
+      <button type="button" data-goto="moderation">Moderation</button>
+      <button type="button" data-goto="settings">Settings</button>
+      <button type="button" data-goto="owner" id="nav-owner" hidden>Owner</button>
+    </nav>
+    <div class="section" data-section="overview">
+      <div class="tiles" id="tiles">
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+        <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
+      </div>
+      <div class="grid">
+        <article class="panel"><h2>Systems</h2><div id="card-systems" class="rows"></div></article>
+        <article class="panel" id="panel-leaderboard"><h2>Top balances <span class="tag">global</span></h2><ol class="board" id="board"></ol></article>
+        <article class="panel"><h2>Bot health</h2><div id="card-health" class="rows"></div></article>
+        <article class="panel"><h2>Content</h2><div id="card-counts" class="rows"></div></article>
+      </div>
+    </div>
+    <div class="section" data-section="studio">
+      <div class="studio">
+        <div class="stage">
+          <div class="stage-frame"><img id="preview" alt="Banner preview"><div class="stage-busy" id="stage-busy" hidden></div></div>
+          <div class="stage-foot"><span class="hint" id="preview-status">Live preview</span><a class="btn small" id="preview-download" download>Download PNG</a></div>
+        </div>
+        <div class="panel editor">
+          <h2>Banner copy</h2>
+          <label class="field"><span>Template</span><select id="tpl-select"></select></label>
+          <div id="tpl-fields"></div>
+          <div class="editor-foot">
+            <button type="button" class="btn primary small" id="tpl-save">Save to embeds</button>
+            <button type="button" class="btn small" id="tpl-revert">Revert</button>
+            <button type="button" class="btn small danger" id="tpl-reset">Reset to default</button>
+          </div>
+          <p class="hint" id="tpl-dirty" hidden>Unsaved — embeds still send the last saved wording.</p>
+        </div>
+      </div>
+    </div>
+    <div class="section" data-section="composer">
+      <div class="composer">
+        <aside class="tpl-list"><div class="tpl-list-head"><h2>Messages</h2><button type="button" class="btn small" id="tpl-new">New</button></div><div id="tpl-index"></div></aside>
+        <div id="composer-body" class="composer-body"></div>
+      </div>
+    </div>
+    <div class="section" data-section="appearance">
+      <div class="composer">
+        <aside class="tpl-list"><div class="tpl-list-head"><h2>Bot messages</h2><span class="tag" id="appearance-count"></span></div><div id="appearance-index"></div></aside>
+        <div id="appearance-body" class="composer-body"></div>
+      </div>
+    </div>
+    <div class="section" data-section="social">
+      <div class="grid">
+        <article class="panel"><h2>Where posts land <span class="pill" id="social-state"></span></h2><div id="form-social"></div></article>
+        <article class="panel"><h2>How often</h2><div id="form-social-bridge"></div></article>
+      </div>
+      <article class="panel"><div class="queue-head"><h2>Watched accounts</h2><button type="button" class="btn small" id="social-new">Watch an account</button></div><div id="social-accounts" class="items"></div></article>
+    </div>
+    <div class="section" data-section="giveaways">
+      <div class="grid">
+        <article class="panel"><h2>Running now</h2><div id="gaw-active" class="items"></div></article>
+        <article class="panel"><h2>Finished</h2><div id="gaw-ended" class="items"></div></article>
+      </div>
+      <div class="panel"><h2>Start a coins giveaway</h2><div class="studio"><div class="stage"><div class="stage-frame gaw-preview"><img id="gaw-preview" alt="Giveaway banner preview"></div></div><form id="form-gaw" class="form"></form></div></div>
+    </div>
+    <div class="section" data-section="casino">
+      <div class="grid">
+        <article class="panel"><h2>Table stakes</h2><form id="form-casino" class="form"></form></article>
+        <article class="panel"><h2>Quick bet buttons</h2><form id="form-casino-presets" class="form"></form></article>
+      </div>
+      <div class="panel"><h2>Games</h2><form id="form-casino-games" class="form"></form></div>
+    </div>
+    <div class="section" data-section="tickets">
+      <div class="grid">
+        <article class="panel"><h2>Open tickets</h2><div class="rows" id="ticket-open"></div></article>
+        <article class="panel"><h2>Ticket settings</h2><form id="form-tickets" class="form"></form></article>
+      </div>
+      <div class="panel"><h2>Post the ticket panel</h2><form id="form-ticketpanel" class="form"></form></div>
+    </div>
+    <div class="section" data-section="settings">
+      <div class="panel"><h2>Bot profile</h2><div id="bot-profile" class="form"></div></div>
+      <div class="panel"><h2>Server settings</h2><form id="form-settings" class="form"></form></div>
+      <div class="panel"><h2>Features</h2><div id="form-featuretoggles" class="form"></div></div>
+      <div class="panel"><h2>What the panel logs</h2><form id="form-panellog" class="form"></form></div>
+      <div class="panel" id="embed-link-card"><h2>Embed in Whop</h2><div class="embed-link-row" id="embed-link-row" hidden><input id="embed-link-value" type="text" readonly><button class="btn" id="embed-link-copy" type="button">Copy</button></div><div class="actions"><button class="btn primary" id="embed-link-get" type="button">Get my Whop link</button><button class="btn danger" id="embed-link-revoke" type="button" hidden>Replace it</button></div><p class="note soft" id="embed-link-note" hidden></p></div>
+      <div class="panel" id="legal-card"><h2>Terms &amp; privacy</h2><div class="legal-links"><a class="legal-link" id="legal-terms" href="/terms" target="_blank" rel="noopener">Terms of Service</a><a class="legal-link" id="legal-privacy" href="/privacy" target="_blank" rel="noopener">Privacy Policy</a></div></div>
+    </div>
+    <div class="section" data-section="feeds">
+      <div class="grid">
+        <article class="panel"><h2>News feed</h2><form id="form-newsfeed" class="form"></form></article>
+        <article class="panel"><h2>Economic calendar</h2><form id="form-econcal" class="form"></form></article>
+      </div>
+      <div class="panel" id="release-desk"><div class="queue-head"><h2>Release desk</h2><span class="hint" id="desk-source"></span></div><div class="scope-tabs" id="desk-scopes" role="tablist"></div><div class="agenda" id="desk-agenda"></div><form id="form-econpost" class="form"></form></div>
+    </div>
+    <div class="section" data-section="economy">
+      <div class="panel" id="payout-card"><div class="queue-head"><h2>Payouts</h2><span class="pill" id="boost-state" hidden></span></div><form id="form-econ-global" class="form"></form></div>
+      <div class="panel"><h2>Activities</h2><div class="grid" id="econ-activities"></div></div>
+      <div class="panel"><h2>Jobs board</h2><div id="econ-jobs"></div></div>
+    </div>
+    <div class="section" data-section="automation"><div class="panel"><h2>Automation</h2><div id="automation-body"></div></div></div>
+    <div class="section" data-section="engagement"><div class="panel"><h2>Engagement</h2><div id="engagement-body"></div></div></div>
+    <div class="section" data-section="moderation"><div class="panel"><h2>Moderation</h2><div id="moderation-body"></div></div></div>
+    <div class="section" data-section="owner"><div class="panel"><h2>Owner</h2><div id="owner-body"></div></div></div>
+  </section>
+</main>
+<div id="sheet" hidden><div class="sheet-backdrop"></div><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-head"><h2 id="sheet-title"></h2><button type="button" class="btn small" id="sheet-close" aria-label="Close">Close</button></div><div class="sheet-body" id="sheet-body"></div><div class="sheet-foot" id="sheet-foot"></div></div></div>
+<div id="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>
