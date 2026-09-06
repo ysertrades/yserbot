@@ -407,6 +407,29 @@ const CATALOGUE = {
   ...social('youtube', 'YouTube', '#FF0000',
     'Posted when a watched YouTube channel publishes. {title} is the video title.'),
 
+  /* -- Whop courses -------------------------------------------------------- */
+
+  'whop.lesson': {
+    group: 'Feeds',
+    label: 'Whop lesson',
+    blurb: 'Posted when a tracked Whop course gets a new video lesson.',
+    shape: 'card',
+    parts: ['enabled', 'color', 'title', 'body', 'footer', 'thumbnail', 'timestamp'],
+    tokens: ['{title}', '{course}', '{type}'],
+    titleLabel: 'Heading',
+    bodyLabel: 'Body',
+    bodyHint: '{title} is the lesson name. {course} is the course.',
+    defaults: {
+      enabled: true,
+      color: BRAND.purple,
+      title: 'new lesson',
+      body: '**{title}**\n\ncourse · {course}',
+      footer: 'whop · {type}',
+      thumbnail: false,
+      timestamp: true,
+    },
+  },
+
   /* -- market news --------------------------------------------------------- */
 
   ...news('headline', 'Market headline',
