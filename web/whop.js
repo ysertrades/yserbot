@@ -1,9 +1,5 @@
 'use strict';
 
-/**
- * web/whop.js — Feeds tab handlers for Whop course tracker.
- */
-
 const whop = require('../utils/whopFeed');
 
 function channelIn(guild, id) {
@@ -72,41 +68,57 @@ async function saveSettings(guildId, body, { guild }) {
 
   if ('apiKey' in body) {
     const key = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
-    if (key === '') {
-      // ignore empty when a key is already locked — client should not clear by accident
-    } else if (key.length >= 20) {
+    if (key.length >= 20) {
       patch.apiKey = key;
       changed.push('api key saved');
+      // Best-effort company resolve — never block save if it fails
       try {
         const resolved = await whop.resolveCompany(key);
         if (resolved?.companyId) {
           patch.companyId = resolved.companyId;
           patch.companyRoute = resolved.companyRoute || null;
           changed.push(`company ${resolved.companyId}`);
-        } else {
-          return { error: 'company_resolve_failed', detail: 'Could not resolve company from this API key. Use a Company/Account API key from Whop Developer dashboard.' };
         }
       } catch (err) {
-        return { error: 'company_resolve_failed', detail: err.message || String(err) };
+        console.warn('[WHOP] resolve on save:', err.detail || err.message);
+        // leave company for manual entry
       }
-    } else {
+    } else if (key !== '') {
       return { error: 'bad_api_key', detail: 'API key looks too short.' };
     }
   }
 
-  if ('companyId' in body && typeof body.companyId === 'string' && body.companyId.startsWith('biz_')) {
-    if (body.companyId !== current.companyId) {
-      patch.companyId = body.companyId.trim();
-      changed.push('company set');
+  if ('companyId' in body) {
+    const raw = typeof body.companyId === 'string' ? body.companyId.trim() : '';
+    if (raw === '') {
+      if (current.companyId) {
+        patch.companyId = null;
+        changed.push('company cleared');
+      }
+    } else if (raw.startsWith('biz_')) {
+      if (raw !== current.companyId) {
+        patch.companyId = raw;
+        changed.push(`company ${raw}`);
+      }
+    } else {
+      return { error: 'bad_company', detail: 'Company ID must start with biz_' };
+    }
+  }
+
+  if ('companyRoute' in body && typeof body.companyRoute === 'string') {
+    const route = body.companyRoute.trim().replace(/^\/+|\/+$/g, '') || null;
+    if (route !== current.companyRoute) {
+      patch.companyRoute = route;
+      changed.push(route ? `route ${route}` : 'route cleared');
     }
   }
 
   if ('experienceId' in body) {
     const exp = typeof body.experienceId === 'string' ? body.experienceId.trim() : '';
-    const next = exp.startsWith('exp_') ? exp : (exp === '' ? null : null);
+    const next = exp.startsWith('exp_') ? exp : null;
     if (next !== current.experienceId) {
       patch.experienceId = next;
-      changed.push(next ? 'experience scoped' : 'experience cleared');
+      changed.push(next ? `experience ${next}` : 'experience cleared');
     }
   }
 
@@ -176,9 +188,8 @@ async function saveSettings(guildId, body, { guild }) {
   }
 
   if (!changed.length) return { ok: true, unchanged: true };
-
   whop.setSettings(guildId, patch);
-  return { ok: true, changed, overview: null };
+  return { ok: true, changed };
 }
 
 async function scan(guildId) {
@@ -192,15 +203,16 @@ async function scan(guildId) {
     };
   } catch (err) {
     const msg = err.message || String(err);
-    whop.setSettings(guildId, { lastError: msg });
+    const detail = err.detail || msg;
+    whop.setSettings(guildId, { lastError: detail });
     if (msg === 'no_api_key') return { error: 'no_api_key', detail: 'Save your Whop API key first.' };
     if (msg === 'could_not_resolve_company' || msg === 'missing_company_or_experience') {
       return {
         error: 'scan_failed',
-        detail: 'Could not resolve company. Save a Company/Account API key again, or set company id (biz_…).',
+        detail: detail || 'Paste Company ID (biz_…) from your Whop dashboard URL / developer page, Save, then Scan.',
       };
     }
-    return { error: 'scan_failed', detail: msg };
+    return { error: 'scan_failed', detail };
   }
 }
 
