@@ -21,9 +21,8 @@ const DEFAULTS = {
   pollMinutes: 10,
   onlyVideos: true,
   maxPerCheck: 5,
-  // Link button (editable in Feeds panel)
   buttonLabel: 'open lesson',
-  buttonUrl: null,          // fixed URL, or leave null to skip button
+  buttonUrl: null,
   buttonEmoji: null,
   courses: [],
   known: {},
@@ -152,7 +151,6 @@ async function scanCourses(guildId) {
     };
   });
 
-  // Baseline known lessons for selected courses so we don't dump the library.
   const known = { ...s.known };
   for (const c of nextCourses.filter(x => x.selected)) {
     try {
@@ -205,6 +203,7 @@ async function newLessons(guildId) {
         ...lesson,
         courseId: course.id,
         courseTitle: course.title,
+        courseCover: course.cover || null,
       });
     }
   }
