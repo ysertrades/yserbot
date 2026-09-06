@@ -1,10 +1,7 @@
 'use strict';
 
 /**
- * web/whop.js
- *
- * Feeds tab \u2014 Whop course tracker.
- * API key once, scan courses, pick which to track, channel + link button.
+ * web/whop.js — Feeds tab handlers for Whop course tracker.
  */
 
 const whop = require('../utils/whopFeed');
@@ -24,15 +21,6 @@ function roleIn(guild, id) {
   return { ok: true, value: String(id) };
 }
 
-function httpUrl(v) {
-  try {
-    const u = new URL(v);
-    return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
 function read(guildId, guild) {
   const s = whop.getSettings(guildId);
   const channelName = id => (id && guild?.channels?.cache?.get(id)?.name) || null;
@@ -42,6 +30,9 @@ function read(guildId, guild) {
     enabled: !!s.enabled,
     hasKey: !!s.apiKey,
     keyMask: whop.maskKey(s.apiKey),
+    companyId: s.companyId,
+    companyRoute: s.companyRoute,
+    experienceId: s.experienceId,
     channelId: s.channelId,
     channel: channelName(s.channelId),
     mentionRoleId: s.mentionRoleId,
@@ -50,8 +41,6 @@ function read(guildId, guild) {
     onlyVideos: !!s.onlyVideos,
     maxPerCheck: s.maxPerCheck,
     buttonLabel: s.buttonLabel,
-    buttonUrl: s.buttonUrl,
-    buttonEmoji: s.buttonEmoji,
     courses: s.courses.map(c => ({
       id: c.id,
       title: c.title,
@@ -60,6 +49,7 @@ function read(guildId, guild) {
       lessonsCount: c.lessonsCount,
       selected: !!c.selected,
       cover: c.cover,
+      experienceId: c.experienceId || null,
     })),
     lastScanAt: s.lastScanAt || 0,
     lastError: s.lastError,
@@ -67,7 +57,7 @@ function read(guildId, guild) {
   };
 }
 
-function saveSettings(guildId, body, { guild }) {
+async function saveSettings(guildId, body, { guild }) {
   const current = whop.getSettings(guildId);
   const patch = {};
   const changed = [];
@@ -83,16 +73,40 @@ function saveSettings(guildId, body, { guild }) {
   if ('apiKey' in body) {
     const key = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
     if (key === '') {
-      // empty = clear
-      if (current.apiKey) {
-        patch.apiKey = null;
-        changed.push('api key cleared');
-      }
+      // ignore empty when a key is already locked — client should not clear by accident
     } else if (key.length >= 20) {
       patch.apiKey = key;
       changed.push('api key saved');
+      try {
+        const resolved = await whop.resolveCompany(key);
+        if (resolved?.companyId) {
+          patch.companyId = resolved.companyId;
+          patch.companyRoute = resolved.companyRoute || null;
+          changed.push(`company ${resolved.companyId}`);
+        } else {
+          return { error: 'company_resolve_failed', detail: 'Could not resolve company from this API key. Use a Company/Account API key from Whop Developer dashboard.' };
+        }
+      } catch (err) {
+        return { error: 'company_resolve_failed', detail: err.message || String(err) };
+      }
     } else {
-      return { error: 'bad_api_key' };
+      return { error: 'bad_api_key', detail: 'API key looks too short.' };
+    }
+  }
+
+  if ('companyId' in body && typeof body.companyId === 'string' && body.companyId.startsWith('biz_')) {
+    if (body.companyId !== current.companyId) {
+      patch.companyId = body.companyId.trim();
+      changed.push('company set');
+    }
+  }
+
+  if ('experienceId' in body) {
+    const exp = typeof body.experienceId === 'string' ? body.experienceId.trim() : '';
+    const next = exp.startsWith('exp_') ? exp : (exp === '' ? null : null);
+    if (next !== current.experienceId) {
+      patch.experienceId = next;
+      changed.push(next ? 'experience scoped' : 'experience cleared');
     }
   }
 
@@ -120,69 +134,51 @@ function saveSettings(guildId, body, { guild }) {
     const v = Math.round(n);
     if (v !== current.pollMinutes) {
       patch.pollMinutes = v;
-      changed.push(`checks every ${v} min`);
+      changed.push(`every ${v}m`);
     }
   }
 
   if ('onlyVideos' in body) {
-    const v = !!body.onlyVideos;
-    if (v !== current.onlyVideos) {
-      patch.onlyVideos = v;
-      changed.push(v ? 'videos only' : 'all lesson types');
+    const on = !!body.onlyVideos;
+    if (on !== current.onlyVideos) {
+      patch.onlyVideos = on;
+      changed.push(on ? 'videos only' : 'all lesson types');
     }
   }
 
   if ('maxPerCheck' in body) {
     const n = Number(body.maxPerCheck);
-    if (!Number.isFinite(n) || n < 1 || n > 15) return { error: 'bad_batch' };
+    if (!Number.isFinite(n) || n < 1 || n > 15) return { error: 'bad_max' };
     const v = Math.round(n);
     if (v !== current.maxPerCheck) {
       patch.maxPerCheck = v;
-      changed.push(`at most ${v} per check`);
+      changed.push(`cap ${v}`);
     }
   }
 
-  if ('buttonLabel' in body) {
-    const label = typeof body.buttonLabel === 'string' ? body.buttonLabel.trim().slice(0, 80) : '';
+  if ('buttonLabel' in body && typeof body.buttonLabel === 'string') {
+    const label = body.buttonLabel.trim().slice(0, 80) || 'open course';
     if (label !== current.buttonLabel) {
-      patch.buttonLabel = label || 'open lesson';
-      changed.push('button label updated');
+      patch.buttonLabel = label;
+      changed.push('button label');
     }
   }
 
-  if ('buttonUrl' in body) {
-    const raw = typeof body.buttonUrl === 'string' ? body.buttonUrl.trim() : '';
-    if (raw && !httpUrl(raw)) return { error: 'bad_button_url' };
-    const v = raw || null;
-    if (v !== current.buttonUrl) {
-      patch.buttonUrl = v;
-      changed.push(v ? 'button url set' : 'button url cleared');
-    }
-  }
-
-  if ('buttonEmoji' in body) {
-    const emoji = typeof body.buttonEmoji === 'string' ? body.buttonEmoji.trim().slice(0, 32) : '';
-    const v = emoji || null;
-    if (v !== current.buttonEmoji) {
-      patch.buttonEmoji = v;
-      changed.push('button emoji updated');
-    }
-  }
-
-  // Course selection: array of course ids that should be selected
   if ('selectedCourseIds' in body && Array.isArray(body.selectedCourseIds)) {
-    const want = new Set(body.selectedCourseIds.map(String));
-    const next = current.courses.map(c => ({
-      ...c,
-      selected: want.has(c.id),
-    }));
-    patch.courses = next;
-    changed.push(`${want.size} course(s) selected`);
+    const set = new Set(body.selectedCourseIds.map(String));
+    const next = current.courses.map(c => ({ ...c, selected: set.has(c.id) }));
+    const before = current.courses.filter(c => c.selected).map(c => c.id).sort().join(',');
+    const after = next.filter(c => c.selected).map(c => c.id).sort().join(',');
+    if (before !== after) {
+      patch.courses = next;
+      changed.push(`${next.filter(c => c.selected).length} course(s) selected`);
+    }
   }
 
   if (!changed.length) return { ok: true, unchanged: true };
+
   whop.setSettings(guildId, patch);
-  return { ok: true, changed };
+  return { ok: true, changed, overview: null };
 }
 
 async function scan(guildId) {
@@ -192,11 +188,19 @@ async function scan(guildId) {
       ok: true,
       courses: s.courses.length,
       selected: s.courses.filter(c => c.selected).length,
-      lastScanAt: s.lastScanAt,
+      companyId: s.companyId,
     };
   } catch (err) {
-    if (err.message === 'no_api_key') return { error: 'no_api_key' };
-    return { error: 'scan_failed', detail: (err.message || String(err)).slice(0, 200) };
+    const msg = err.message || String(err);
+    whop.setSettings(guildId, { lastError: msg });
+    if (msg === 'no_api_key') return { error: 'no_api_key', detail: 'Save your Whop API key first.' };
+    if (msg === 'could_not_resolve_company' || msg === 'missing_company_or_experience') {
+      return {
+        error: 'scan_failed',
+        detail: 'Could not resolve company. Save a Company/Account API key again, or set company id (biz_…).',
+      };
+    }
+    return { error: 'scan_failed', detail: msg };
   }
 }
 
