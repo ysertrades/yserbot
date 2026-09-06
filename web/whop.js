@@ -50,6 +50,7 @@ function read(guildId, guild) {
       mentionRole: roleName(e.mentionRoleId),
       addedAt: e.addedAt,
       knownCount: Object.keys(e.known || {}).length,
+      baselined: !!e.baselined,
     })),
     lastScanAt: s.lastScanAt || 0,
     lastError: s.lastError,
@@ -60,11 +61,13 @@ async function saveSettings(guildId, body, { guild }) {
   const current = whop.getSettings(guildId);
   const patch = {};
   const changed = [];
+  let turningOn = false;
 
   if ('enabled' in body) {
     const on = !!body.enabled;
     if (on !== current.enabled) {
       patch.enabled = on;
+      turningOn = on;
       changed.push(on ? 'tracking on' : 'tracking off');
     }
   }
@@ -99,14 +102,6 @@ async function saveSettings(guildId, body, { guild }) {
     }
   }
 
-  if ('companyRoute' in body && typeof body.companyRoute === 'string') {
-    const route = body.companyRoute.trim().replace(/^\/+|\/+$/g, '') || null;
-    if (route !== current.companyRoute) {
-      patch.companyRoute = route;
-      changed.push(route ? `route ${route}` : 'route cleared');
-    }
-  }
-
   if ('pollMinutes' in body) {
     const n = Number(body.pollMinutes);
     if (!Number.isFinite(n) || n < 2 || n > 120) return { error: 'bad_interval' };
@@ -133,7 +128,6 @@ async function saveSettings(guildId, body, { guild }) {
     }
   }
 
-  /* -- log ops ----------------------------------------------------------- */
   if (body.op === 'add' && body.courseId) {
     const ch = channelIn(guild, body.channelId);
     if (!ch.ok || !ch.value) return { error: 'bad_channel', detail: 'Pick a channel before adding.' };
@@ -144,7 +138,7 @@ async function saveSettings(guildId, body, { guild }) {
       mentionRoleId: role.value,
     });
     if (r.error) return r;
-    return { ok: true, changed: r.already ? ['already in log'] : [`added to log`] };
+    return { ok: true, changed: r.already ? ['already in log'] : ['added to log (baselined — no flood)'] };
   }
 
   if (body.op === 'remove' && body.courseId) {
@@ -172,6 +166,17 @@ async function saveSettings(guildId, body, { guild }) {
 
   if (!changed.length) return { ok: true, unchanged: true };
   whop.setSettings(guildId, patch);
+
+  // Turning tracking ON → baseline everything so Save never dumps the library
+  if (turningOn) {
+    try {
+      await whop.baselineAll(guildId);
+      changed.push('baselined existing lessons');
+    } catch (err) {
+      console.warn('[WHOP] baseline on enable:', err.message);
+    }
+  }
+
   return { ok: true, changed };
 }
 
