@@ -5,7 +5,7 @@ const whop = require('./whopFeed');
 const messageStyle = require('./messageStyle');
 
 const TICK_MS = 60_000;
-const GAP_MS = 2_000;
+const GAP_MS = 2_500;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function buildLessonEmbed(guildId, lesson) {
@@ -23,19 +23,31 @@ function buildLessonEmbed(guildId, lesson) {
   });
   if (!embed) return null;
 
-  if (lesson.courseCover) {
+  const banner = lesson.courseCover;
+  if (banner && /^https?:\/\//i.test(banner)) {
     try {
-      if (style && !style.thumbnail) embed.setImage(lesson.courseCover);
-      else embed.setThumbnail(lesson.courseCover);
-    } catch { /* */ }
+      // Full-width course banner
+      if (!style || style.thumbnail === false) embed.setImage(banner);
+      else embed.setThumbnail(banner);
+    } catch { /* bad url */ }
   }
   return embed;
 }
 
 function buildButtonRow(settings, lesson) {
-  const url = lesson.lessonUrl
-    || (settings.companyRoute ? `https://whop.com/${encodeURIComponent(settings.companyRoute)}` : null);
+  let url = lesson.lessonUrl
+    || (settings.companyRoute ? `https://whop.com/${encodeURIComponent(settings.companyRoute)}` : null)
+    || (settings.companyId ? `https://whop.com/${encodeURIComponent(settings.companyId)}` : null);
+
   if (!url || !/^https?:\/\//i.test(url)) return null;
+
+  try {
+    // Discord rejects some malformed URLs silently
+    // eslint-disable-next-line no-new
+    new URL(url);
+  } catch {
+    return null;
+  }
 
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -53,24 +65,30 @@ async function postLesson(guild, settings, lesson) {
   if (!embed) return false;
 
   const roleId = lesson.mentionRoleId || null;
+  const row = buildButtonRow(settings, lesson);
+
   await channel.send({
     content: roleId ? `<@&${roleId}>` : undefined,
     embeds: [embed],
-    components: (() => {
-      const row = buildButtonRow(settings, lesson);
-      return row ? [row] : [];
-    })(),
+    components: row ? [row] : [],
     allowedMentions: roleId ? { roles: [roleId] } : { parse: [] },
   });
   return true;
 }
 
 async function checkGuild(client, guildId) {
-  const settings = whop.getSettings(guildId);
+  let settings = whop.getSettings(guildId);
   if (!settings.enabled || !settings.apiKey || !settings.log.length) return;
 
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
+
+  // Safety: baseline anything not ready before considering posts
+  const needsBaseline = settings.log.some(e => !e.baselined);
+  if (needsBaseline) {
+    await whop.baselineAll(guildId);
+    settings = whop.getSettings(guildId);
+  }
 
   let result;
   try {
@@ -107,7 +125,7 @@ let timer = null;
 
 function startWhopRunner(client) {
   const tick = () => runTick(client).catch(err => console.error('[WHOP RUNNER]', err));
-  setTimeout(tick, 8_000);
+  setTimeout(tick, 12_000);
   timer = setInterval(tick, TICK_MS);
   return timer;
 }
