@@ -917,6 +917,8 @@ function actions(onSave, { label = 'Save changes', busyLabel = null } = {}) {
 }
 
 
+
+
 function renderWhop() {
   const d = state.overview?.whop;
   const form = $("#form-whop");
@@ -936,56 +938,65 @@ function renderWhop() {
   const draft = {
     enabled: !!d.enabled,
     apiKey: "",
+    unlockKey: false,
     channelId: d.channelId || null,
     mentionRoleId: d.mentionRoleId || null,
     pollMinutes: d.pollMinutes || 10,
     onlyVideos: d.onlyVideos !== false,
     maxPerCheck: d.maxPerCheck || 5,
-    buttonLabel: d.buttonLabel || "open lesson",
-    buttonUrl: d.buttonUrl || "",
-    buttonEmoji: d.buttonEmoji || "",
+    buttonLabel: d.buttonLabel || "open course",
     selectedCourseIds: (d.courses || []).filter(c => c.selected).map(c => c.id),
   };
 
-  const keyHint = d.hasKey
-    ? el("p", "hint", `Key saved: ${d.keyMask || "••••"}. Leave blank to keep it.`)
-    : el("p", "hint", "Paste your Whop API key once. It is stored for this server.");
+  const children = [];
+  children.push(toggle("Tracking on", draft.enabled, v => { draft.enabled = v; }));
 
-  form.replaceChildren(
-    toggle("Tracking on", draft.enabled, v => { draft.enabled = v; }),
-    textField("Whop API key", draft.apiKey, v => { draft.apiKey = v; }, { placeholder: d.hasKey ? "(saved — leave blank to keep)" : "whop_..." }),
-    keyHint,
-    pickOne("Post channel", "channel", draft.channelId, v => { draft.channelId = v; }),
-    pickOne("Ping role (optional)", "role", draft.mentionRoleId, v => { draft.mentionRoleId = v; }),
-    textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 10; }),
-    textField("At most this many new lessons per check", String(draft.maxPerCheck), v => { draft.maxPerCheck = Number(v) || 5; }),
-    toggle("Only video lessons", draft.onlyVideos, v => { draft.onlyVideos = v; }),
-    textField("Link button label", draft.buttonLabel, v => { draft.buttonLabel = v; }, { placeholder: "open lesson" }),
-    textField("Link button URL", draft.buttonUrl, v => { draft.buttonUrl = v; }, { placeholder: "https://..." }),
-    textField("Link button emoji (optional)", draft.buttonEmoji, v => { draft.buttonEmoji = v; }, { placeholder: "" }),
-    el("p", "hint", d.lastError ? `Last error: ${d.lastError}` : (d.lastScanAt ? `Last scan: ${new Date(d.lastScanAt).toLocaleString()}` : "Scan courses after saving your API key.")),
-    actions(async () => {
-      const body = {
-        enabled: draft.enabled,
-        channelId: draft.channelId,
-        mentionRoleId: draft.mentionRoleId,
-        pollMinutes: draft.pollMinutes,
-        onlyVideos: draft.onlyVideos,
-        maxPerCheck: draft.maxPerCheck,
-        buttonLabel: draft.buttonLabel,
-        buttonUrl: draft.buttonUrl || null,
-        buttonEmoji: draft.buttonEmoji || null,
-        selectedCourseIds: draft.selectedCourseIds,
-      };
-      if (draft.apiKey.trim()) body.apiKey = draft.apiKey.trim();
-      await post("whop", body);
-    }),
-  );
+  if (d.hasKey && !draft.unlockKey) {
+    children.push(el("p", "hint", `API key locked · ${d.keyMask || "••••"}${d.companyId ? " · " + d.companyId : ""}`));
+    const unlock = el("button", "btn small", "Change API key");
+    unlock.type = "button";
+    unlock.addEventListener("click", () => {
+      draft.unlockKey = true;
+      renderWhop();
+    });
+    const row = el("div", "actions");
+    row.append(unlock);
+    children.push(row);
+  } else {
+    children.push(textField("Whop API key", draft.apiKey, v => { draft.apiKey = v; }, { placeholder: "Company API key from Whop Developer" }));
+    children.push(el("p", "hint", "Saved once and locked. Uses your company automatically for course scans."));
+  }
+
+  children.push(pickOne("Post channel", "channel", draft.channelId, v => { draft.channelId = v; }));
+  children.push(pickOne("Ping role (optional)", "role", draft.mentionRoleId, v => { draft.mentionRoleId = v; }));
+  children.push(textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 10; }));
+  children.push(toggle("Only video lessons", draft.onlyVideos, v => { draft.onlyVideos = v; }));
+  children.push(textField("Button label", draft.buttonLabel, v => { draft.buttonLabel = v; }, { placeholder: "open course" }));
+  children.push(el("p", "hint", "Link on each post opens your Whop automatically — no URL to paste."))
+
+  if (d.lastError) children.push(el("p", "hint bad", "Last error: " + d.lastError));
+  else if (d.lastScanAt) children.push(el("p", "hint", "Last scan: " + new Date(d.lastScanAt).toLocaleString()));
+
+  children.push(actions(async () => {
+    const body = {
+      enabled: draft.enabled,
+      channelId: draft.channelId,
+      mentionRoleId: draft.mentionRoleId,
+      pollMinutes: draft.pollMinutes,
+      onlyVideos: draft.onlyVideos,
+      maxPerCheck: draft.maxPerCheck,
+      buttonLabel: draft.buttonLabel,
+    };
+    if (draft.apiKey.trim()) body.apiKey = draft.apiKey.trim();
+    await post("whop", body);
+  }));
+
+  form.replaceChildren(...children);
 
   if (list) {
     const courses = d.courses || [];
     if (!courses.length) {
-      list.replaceChildren(el("p", "muted", "No courses yet. Save your API key, then press Scan courses."));
+      list.replaceChildren(el("p", "muted", "No courses yet. Save API key, then Scan courses."));
     } else {
       const selected = new Set(draft.selectedCourseIds);
       const rows = courses.map(c => {
@@ -993,16 +1004,22 @@ function renderWhop() {
         const input = el("input");
         input.type = "checkbox";
         input.checked = selected.has(c.id);
-        input.addEventListener("change", () => {
+        input.addEventListener("change", async () => {
           if (input.checked) selected.add(c.id);
           else selected.delete(c.id);
-          draft.selectedCourseIds = [...selected];
+          input.disabled = true;
+          try {
+            await post("whop", { selectedCourseIds: [...selected] }, { quiet: true });
+            toast(input.checked ? "Tracking " + (c.title || c.id) : "Stopped " + (c.title || c.id), "good");
+          } finally {
+            input.disabled = false;
+          }
         });
         const title = el("span", null, c.title || c.id);
-        const metaBits = [];
-        if (c.lessonsCount != null) metaBits.push(c.lessonsCount + " lessons");
-        if (c.tagline) metaBits.push(c.tagline);
-        const meta = el("span", "hint", metaBits.join(" · "));
+        const bits = [];
+        if (c.lessonsCount != null) bits.push(c.lessonsCount + " lessons");
+        if (c.tagline) bits.push(c.tagline);
+        const meta = el("span", "hint", bits.join(" · "));
         const right = el("span");
         right.style.display = "flex";
         right.style.flexDirection = "column";
@@ -1011,19 +1028,9 @@ function renderWhop() {
         row.append(right, input);
         return row;
       });
-      const saveCourses = el("div", "actions");
-      const btn = el("button", "btn primary small", "Save course selection");
-      btn.type = "button";
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        try { await post("whop", { selectedCourseIds: draft.selectedCourseIds }); }
-        finally { btn.disabled = false; }
-      });
-      saveCourses.append(btn);
       list.replaceChildren(
-        el("p", "hint", courses.length + " course(s) · " + selected.size + " selected"),
+        el("p", "hint", courses.length + " course(s) · tick to track — saves immediately"),
         ...rows,
-        saveCourses,
       );
     }
   }

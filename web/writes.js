@@ -513,7 +513,7 @@ Object.assign(OPS, {
 
   /* -- Whop courses ------------------------------------------------------- */
   async whop(guildId, body, ctx) {
-    const r = whopPanel.saveSettings(guildId, body, ctx);
+    const r = await whopPanel.saveSettings(guildId, body, ctx);
     if (r.ok && !r.unchanged) {
       await announce(ctx.client, guildId, ctx.session, `📚 **Whop** — ${r.changed.join('; ')}`, 'social');
     }
