@@ -1,8 +1,11 @@
 'use strict';
 
 /**
- * whopFeed.js — Whop course tracker storage + API.
- * List courses needs company_id OR experience_id.
+ * whopFeed.js
+ *
+ * Global: apiKey + companyId (saved once).
+ * Tracking log: each entry is a course with its own Discord channel.
+ * Remove an entry to stop tracking it — no silent toggles.
  */
 
 const { readJson, writeJson } = require('./jsonStorage');
@@ -16,26 +19,48 @@ const DEFAULTS = {
   apiKey: null,
   companyId: null,
   companyRoute: null,
-  experienceId: null,
-  channelId: null,
-  mentionRoleId: null,
   pollMinutes: 10,
   onlyVideos: true,
   maxPerCheck: 5,
   buttonLabel: 'open course',
-  courses: [],
-  known: {},
+  /** Catalog from last scan (not tracked until added to log). */
+  catalog: [],
+  /**
+   * Tracking log — each item posts to its own channel.
+   * { id, title, cover, experienceId, channelId, mentionRoleId, known: { [lessonId]: true }, addedAt }
+   */
+  log: [],
   lastScanAt: 0,
   lastError: null,
 };
 
 function getSettings(guildId) {
   const stored = readJson(FILE, {})[guildId] || {};
+  // Migrate old shape (courses[].selected + global channel) once
+  let log = Array.isArray(stored.log) ? stored.log : null;
+  if (!log && Array.isArray(stored.courses)) {
+    log = stored.courses
+      .filter(c => c.selected)
+      .map(c => ({
+        id: c.id,
+        title: c.title,
+        cover: c.cover || null,
+        experienceId: c.experienceId || null,
+        channelId: stored.channelId || null,
+        mentionRoleId: stored.mentionRoleId || null,
+        known: {},
+        addedAt: Date.now(),
+      }));
+  }
+  if (!log) log = [];
+
   return {
     ...DEFAULTS,
     ...stored,
-    courses: Array.isArray(stored.courses) ? stored.courses : [],
-    known: typeof stored.known === 'object' && stored.known ? stored.known : {},
+    catalog: Array.isArray(stored.catalog)
+      ? stored.catalog
+      : (Array.isArray(stored.courses) ? stored.courses : []),
+    log,
     pollMinutes: Math.min(120, Math.max(2, Number(stored.pollMinutes) || 10)),
     maxPerCheck: Math.min(15, Math.max(1, Number(stored.maxPerCheck) || 5)),
     buttonLabel: (stored.buttonLabel || DEFAULTS.buttonLabel).slice(0, 80),
@@ -70,66 +95,46 @@ async function whopFetch(apiKey, path, params = {}) {
   });
   const text = await res.text().catch(() => '');
   let json = null;
-  try { json = text ? JSON.parse(text) : null; } catch { /* not json */ }
+  try { json = text ? JSON.parse(text) : null; } catch { /* */ }
   if (!res.ok) {
     const msg = json?.error?.message || text.slice(0, 160) || res.statusText;
     const err = new Error(`Whop HTTP ${res.status}: ${msg}`);
     err.status = res.status;
-    err.body = json;
     throw err;
   }
   return json;
 }
 
 async function resolveCompany(apiKey) {
-  const attempts = [];
-
-  // 1) Official: GET /accounts/me
   try {
     const me = await whopFetch(apiKey, '/accounts/me');
     if (me?.id && String(me.id).startsWith('biz_')) {
       return { companyId: me.id, companyRoute: me.route || null, title: me.title || null };
     }
-    attempts.push('/accounts/me: no biz_ id in response');
-  } catch (err) {
-    attempts.push(`/accounts/me: ${err.message}`);
-  }
-
-  // 2) List accounts
+  } catch { /* */ }
   try {
     const list = await whopFetch(apiKey, '/accounts', { first: 10 });
     const first = (list?.data || []).find(a => a?.id && String(a.id).startsWith('biz_'));
-    if (first) {
-      return { companyId: first.id, companyRoute: first.route || null, title: first.title || null };
-    }
-    attempts.push('/accounts: no biz_ in list');
-  } catch (err) {
-    attempts.push(`/accounts: ${err.message}`);
-  }
-
-  const err = new Error('could_not_resolve_company');
-  err.detail = attempts.join(' | ');
-  throw err;
+    if (first) return { companyId: first.id, companyRoute: first.route || null, title: first.title || null };
+  } catch { /* */ }
+  return null;
 }
 
 async function listCourses(apiKey, settings) {
-  const companyId = settings.companyId;
-  const experienceId = settings.experienceId;
-
-  if (!companyId && !experienceId) {
-    throw new Error('missing_company_or_experience');
+  if (!settings.companyId && !settings.experienceId) {
+    throw Object.assign(new Error('missing_company'), {
+      detail: 'Set Company ID (biz_…) and Save before scanning.',
+    });
   }
 
-  // Whop has used both company_id and account_id in docs — try company first.
-  const scopeAttempts = [];
-  if (experienceId) scopeAttempts.push({ experience_id: experienceId });
-  if (companyId) {
-    scopeAttempts.push({ company_id: companyId });
-    scopeAttempts.push({ account_id: companyId });
+  const scopes = [];
+  if (settings.companyId) {
+    scopes.push({ company_id: settings.companyId });
+    scopes.push({ account_id: settings.companyId });
   }
 
   let lastErr = null;
-  for (const scope of scopeAttempts) {
+  for (const scope of scopes) {
     try {
       const out = [];
       let cursor = null;
@@ -144,8 +149,7 @@ async function listCourses(apiKey, settings) {
             tagline: c.tagline || null,
             chaptersCount: c.chapters_count ?? null,
             lessonsCount: c.total_lessons_count ?? null,
-            latestLessonAt: c.latest_lesson_created_at || null,
-            cover: c.cover_image || c.thumbnail?.optimized_url || c.thumbnail?.source_url || null,
+            cover: c.cover_image || c.thumbnail?.optimized_url || null,
             experienceId: c.experience?.id || c.experience_id || null,
           });
         }
@@ -155,7 +159,6 @@ async function listCourses(apiKey, settings) {
       return out;
     } catch (err) {
       lastErr = err;
-      // try next scope style
     }
   }
   throw lastErr || new Error('list_courses_failed');
@@ -174,8 +177,6 @@ async function listLessons(apiKey, courseId) {
         title: l.title || 'Untitled lesson',
         lessonType: l.lesson_type || 'text',
         createdAt: l.created_at || null,
-        thumbnail: l.thumbnail?.url || null,
-        order: l.order ?? 0,
         visibility: l.visibility || 'visible',
       });
     }
@@ -185,90 +186,105 @@ async function listLessons(apiKey, courseId) {
   return out;
 }
 
-function lessonLink(settings, course) {
+function lessonLink(settings, entry) {
   if (settings.companyRoute) return `https://whop.com/${encodeURIComponent(settings.companyRoute)}`;
-  if (course?.experienceId) return `https://whop.com/experiences/${course.experienceId}`;
-  if (settings.experienceId) return `https://whop.com/experiences/${settings.experienceId}`;
+  if (entry?.experienceId) return `https://whop.com/experiences/${entry.experienceId}`;
   return null;
 }
 
 async function scanCourses(guildId) {
-  let s = getSettings(guildId);
-  if (!s.apiKey) throw Object.assign(new Error('no_api_key'), { detail: 'Save your API key first.' });
+  const s = getSettings(guildId);
+  if (!s.apiKey) throw Object.assign(new Error('no_api_key'), { detail: 'API key missing.' });
+  if (!s.companyId) throw Object.assign(new Error('missing_company'), { detail: 'Company ID (biz_…) required.' });
 
-  // Resolve company if missing
-  if (!s.companyId && !s.experienceId) {
-    try {
-      const resolved = await resolveCompany(s.apiKey);
-      setSettings(guildId, {
-        companyId: resolved.companyId,
-        companyRoute: resolved.companyRoute || null,
-      });
-      s = getSettings(guildId);
-    } catch (err) {
-      const detail = err.detail || err.message || String(err);
-      throw Object.assign(new Error('could_not_resolve_company'), {
-        detail: `${detail}. Paste your Company ID (biz_…) in the panel and Save, then Scan again.`,
-      });
-    }
-  }
-
-  s = getSettings(guildId);
-  const courses = await listCourses(s.apiKey, s);
-  const existing = new Map(s.courses.map(c => [c.id, c]));
-
-  const nextCourses = courses.map(c => {
-    const prev = existing.get(c.id);
-    return {
-      id: c.id,
-      title: c.title,
-      tagline: c.tagline,
-      chaptersCount: c.chaptersCount,
-      lessonsCount: c.lessonsCount,
-      latestLessonAt: c.latestLessonAt,
-      cover: c.cover,
-      experienceId: c.experienceId,
-      selected: prev ? !!prev.selected : false,
-    };
-  });
-
-  const known = { ...s.known };
-  for (const c of nextCourses.filter(x => x.selected)) {
-    try {
-      const lessons = await listLessons(s.apiKey, c.id);
-      for (const l of lessons) known[l.id] = true;
-    } catch (err) {
-      console.warn(`[WHOP] baseline ${c.id}:`, err.message);
-    }
-  }
-
+  const catalog = await listCourses(s.apiKey, s);
   setSettings(guildId, {
-    courses: nextCourses,
-    known,
+    catalog,
     lastScanAt: Date.now(),
     lastError: null,
   });
   return getSettings(guildId);
 }
 
+/** Add a course from the catalog into the tracking log. */
+async function addToLog(guildId, courseId, { channelId = null, mentionRoleId = null } = {}) {
+  const s = getSettings(guildId);
+  if (s.log.some(e => e.id === courseId)) return { ok: true, already: true, settings: s };
+
+  const fromCatalog = s.catalog.find(c => c.id === courseId);
+  if (!fromCatalog) return { error: 'unknown_course' };
+
+  // Baseline known lessons so we don't dump the whole library
+  const known = {};
+  if (s.apiKey) {
+    try {
+      const lessons = await listLessons(s.apiKey, courseId);
+      for (const l of lessons) known[l.id] = true;
+    } catch (err) {
+      console.warn('[WHOP] baseline on add:', err.message);
+    }
+  }
+
+  const entry = {
+    id: fromCatalog.id,
+    title: fromCatalog.title,
+    cover: fromCatalog.cover || null,
+    experienceId: fromCatalog.experienceId || null,
+    channelId: channelId || null,
+    mentionRoleId: mentionRoleId || null,
+    known,
+    addedAt: Date.now(),
+  };
+
+  const log = [...s.log, entry];
+  setSettings(guildId, { log, lastError: null });
+  return { ok: true, settings: getSettings(guildId) };
+}
+
+function removeFromLog(guildId, courseId) {
+  const s = getSettings(guildId);
+  const log = s.log.filter(e => e.id !== courseId);
+  if (log.length === s.log.length) return { ok: true, unchanged: true };
+  setSettings(guildId, { log });
+  return { ok: true, settings: getSettings(guildId) };
+}
+
+function updateLogEntry(guildId, courseId, patch) {
+  const s = getSettings(guildId);
+  let found = false;
+  const log = s.log.map(e => {
+    if (e.id !== courseId) return e;
+    found = true;
+    return {
+      ...e,
+      channelId: 'channelId' in patch ? patch.channelId : e.channelId,
+      mentionRoleId: 'mentionRoleId' in patch ? patch.mentionRoleId : e.mentionRoleId,
+    };
+  });
+  if (!found) return { error: 'not_in_log' };
+  setSettings(guildId, { log });
+  return { ok: true, settings: getSettings(guildId) };
+}
+
 async function newLessons(guildId) {
   const s = getSettings(guildId);
-  if (!s.apiKey || !s.enabled) return { fresh: [], known: s.known };
+  if (!s.apiKey || !s.enabled || !s.log.length) return { posts: [] };
 
-  const selected = s.courses.filter(c => c.selected);
-  if (!selected.length) return { fresh: [], known: s.known };
+  const posts = [];
 
-  const fresh = [];
-  const known = { ...s.known };
+  for (const entry of s.log) {
+    if (!entry.channelId) continue;
 
-  for (const course of selected) {
     let lessons;
     try {
-      lessons = await listLessons(s.apiKey, course.id);
+      lessons = await listLessons(s.apiKey, entry.id);
     } catch (err) {
-      console.warn(`[WHOP] listLessons ${course.id}:`, err.message);
+      console.warn(`[WHOP] listLessons ${entry.id}:`, err.message);
       continue;
     }
+
+    const known = { ...(entry.known || {}) };
+    const fresh = [];
 
     for (const lesson of lessons) {
       if (known[lesson.id]) continue;
@@ -280,18 +296,32 @@ async function newLessons(guildId) {
         known[lesson.id] = true;
         continue;
       }
-      fresh.push({
-        ...lesson,
-        courseId: course.id,
-        courseTitle: course.title,
-        courseCover: course.cover || null,
-        lessonUrl: lessonLink(s, course),
-      });
+      fresh.push(lesson);
     }
+
+    fresh.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+    const batch = fresh.slice(0, s.maxPerCheck);
+
+    for (const lesson of batch) {
+      posts.push({
+        ...lesson,
+        courseId: entry.id,
+        courseTitle: entry.title,
+        courseCover: entry.cover || null,
+        lessonUrl: lessonLink(s, entry),
+        channelId: entry.channelId,
+        mentionRoleId: entry.mentionRoleId || null,
+      });
+      known[lesson.id] = true;
+    }
+
+    // Persist known for this entry
+    entry.known = known;
   }
 
-  fresh.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-  return { fresh: fresh.slice(0, s.maxPerCheck), known };
+  // Write back updated known maps
+  setSettings(guildId, { log: s.log });
+  return { posts };
 }
 
 module.exports = {
@@ -304,6 +334,9 @@ module.exports = {
   listCourses,
   listLessons,
   scanCourses,
+  addToLog,
+  removeFromLog,
+  updateLogEntry,
   newLessons,
   lessonLink,
 };

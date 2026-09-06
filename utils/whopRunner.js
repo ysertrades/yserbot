@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * whopRunner.js — poll + post new Whop lessons.
- * Embed image = course banner. Link button URL is auto from company/course.
- */
-
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const whop = require('./whopFeed');
 const messageStyle = require('./messageStyle');
@@ -12,13 +7,6 @@ const messageStyle = require('./messageStyle');
 const TICK_MS = 60_000;
 const GAP_MS = 2_000;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-function targetFor(guild, settings) {
-  if (!settings.channelId) return null;
-  const channel = guild.channels.cache.get(settings.channelId);
-  if (!channel || !channel.isTextBased?.()) return null;
-  return { channel, roleId: settings.mentionRoleId || null };
-}
 
 function buildLessonEmbed(guildId, lesson) {
   const style = messageStyle.styleFor(guildId, 'whop.lesson');
@@ -35,12 +23,11 @@ function buildLessonEmbed(guildId, lesson) {
   });
   if (!embed) return null;
 
-  const banner = lesson.courseCover || null;
-  if (banner) {
+  if (lesson.courseCover) {
     try {
-      if (style && !style.thumbnail) embed.setImage(banner);
-      else embed.setThumbnail(banner);
-    } catch { /* ignore */ }
+      if (style && !style.thumbnail) embed.setImage(lesson.courseCover);
+      else embed.setThumbnail(lesson.courseCover);
+    } catch { /* */ }
   }
   return embed;
 }
@@ -50,36 +37,37 @@ function buildButtonRow(settings, lesson) {
     || (settings.companyRoute ? `https://whop.com/${encodeURIComponent(settings.companyRoute)}` : null);
   if (!url || !/^https?:\/\//i.test(url)) return null;
 
-  const btn = new ButtonBuilder()
-    .setStyle(ButtonStyle.Link)
-    .setURL(url)
-    .setLabel((settings.buttonLabel || 'open course').slice(0, 80));
-
-  return new ActionRowBuilder().addComponents(btn);
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setStyle(ButtonStyle.Link)
+      .setURL(url)
+      .setLabel((settings.buttonLabel || 'open course').slice(0, 80)),
+  );
 }
 
 async function postLesson(guild, settings, lesson) {
-  const target = targetFor(guild, settings);
-  if (!target) return false;
+  const channel = guild.channels.cache.get(lesson.channelId);
+  if (!channel || !channel.isTextBased?.()) return false;
 
   const embed = buildLessonEmbed(guild.id, lesson);
   if (!embed) return false;
 
-  const content = target.roleId ? `<@&${target.roleId}>` : undefined;
-  const row = buildButtonRow(settings, lesson);
-
-  await target.channel.send({
-    content,
+  const roleId = lesson.mentionRoleId || null;
+  await channel.send({
+    content: roleId ? `<@&${roleId}>` : undefined,
     embeds: [embed],
-    components: row ? [row] : [],
-    allowedMentions: target.roleId ? { roles: [target.roleId] } : { parse: [] },
+    components: (() => {
+      const row = buildButtonRow(settings, lesson);
+      return row ? [row] : [];
+    })(),
+    allowedMentions: roleId ? { roles: [roleId] } : { parse: [] },
   });
   return true;
 }
 
 async function checkGuild(client, guildId) {
   const settings = whop.getSettings(guildId);
-  if (!settings.enabled || !settings.apiKey) return;
+  if (!settings.enabled || !settings.apiKey || !settings.log.length) return;
 
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
@@ -89,35 +77,26 @@ async function checkGuild(client, guildId) {
     result = await whop.newLessons(guildId);
   } catch (err) {
     whop.setSettings(guildId, { lastError: err.message || String(err) });
-    console.error(`[WHOP] ${guildId} check failed:`, err.message);
+    console.error(`[WHOP] ${guildId}:`, err.message);
     return;
   }
 
-  const { fresh, known } = result;
-  if (!fresh.length) {
-    whop.setSettings(guildId, { known, lastError: null });
-    return;
-  }
-
-  for (const lesson of fresh) {
+  for (const lesson of result.posts || []) {
     try {
       await postLesson(guild, settings, lesson);
     } catch (err) {
-      console.error(`[WHOP] post failed ${lesson.id}:`, err.message);
+      console.error(`[WHOP] post ${lesson.id}:`, err.message);
     }
     await sleep(GAP_MS);
   }
 
-  const nextKnown = { ...known };
-  for (const l of fresh) nextKnown[l.id] = true;
-  whop.setSettings(guildId, { known: nextKnown, lastError: null });
+  whop.setSettings(guildId, { lastError: null });
 }
 
 async function runTick(client) {
   const stored = require('./jsonStorage').readJson(whop.FILE, {});
   for (const guildId of Object.keys(stored)) {
-    const s = whop.getSettings(guildId);
-    if (!s.enabled) continue;
+    if (!whop.getSettings(guildId).enabled) continue;
     if (!client.guilds.cache.has(guildId)) continue;
     await checkGuild(client, guildId);
     await sleep(GAP_MS);
@@ -138,13 +117,4 @@ function stopWhopRunner() {
   timer = null;
 }
 
-module.exports = {
-  startWhopRunner,
-  stopWhopRunner,
-  runTick,
-  checkGuild,
-  postLesson,
-  buildLessonEmbed,
-  buildButtonRow,
-  targetFor,
-};
+module.exports = { startWhopRunner, stopWhopRunner, runTick, checkGuild, postLesson };

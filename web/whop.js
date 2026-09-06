@@ -28,28 +28,31 @@ function read(guildId, guild) {
     keyMask: whop.maskKey(s.apiKey),
     companyId: s.companyId,
     companyRoute: s.companyRoute,
-    experienceId: s.experienceId,
-    channelId: s.channelId,
-    channel: channelName(s.channelId),
-    mentionRoleId: s.mentionRoleId,
-    mentionRole: roleName(s.mentionRoleId),
     pollMinutes: s.pollMinutes,
     onlyVideos: !!s.onlyVideos,
     maxPerCheck: s.maxPerCheck,
     buttonLabel: s.buttonLabel,
-    courses: s.courses.map(c => ({
+    catalog: (s.catalog || []).map(c => ({
       id: c.id,
       title: c.title,
       tagline: c.tagline,
-      chaptersCount: c.chaptersCount,
       lessonsCount: c.lessonsCount,
-      selected: !!c.selected,
       cover: c.cover,
-      experienceId: c.experienceId || null,
+      inLog: s.log.some(e => e.id === c.id),
+    })),
+    log: s.log.map(e => ({
+      id: e.id,
+      title: e.title,
+      cover: e.cover,
+      channelId: e.channelId,
+      channel: channelName(e.channelId),
+      mentionRoleId: e.mentionRoleId,
+      mentionRole: roleName(e.mentionRoleId),
+      addedAt: e.addedAt,
+      knownCount: Object.keys(e.known || {}).length,
     })),
     lastScanAt: s.lastScanAt || 0,
     lastError: s.lastError,
-    selectedCount: s.courses.filter(c => c.selected).length,
   };
 }
 
@@ -62,7 +65,7 @@ async function saveSettings(guildId, body, { guild }) {
     const on = !!body.enabled;
     if (on !== current.enabled) {
       patch.enabled = on;
-      changed.push(on ? 'switched on' : 'switched off');
+      changed.push(on ? 'tracking on' : 'tracking off');
     }
   }
 
@@ -71,37 +74,28 @@ async function saveSettings(guildId, body, { guild }) {
     if (key.length >= 20) {
       patch.apiKey = key;
       changed.push('api key saved');
-      // Best-effort company resolve — never block save if it fails
       try {
         const resolved = await whop.resolveCompany(key);
-        if (resolved?.companyId) {
+        if (resolved?.companyId && !body.companyId) {
           patch.companyId = resolved.companyId;
-          patch.companyRoute = resolved.companyRoute || null;
+          patch.companyRoute = resolved.companyRoute || current.companyRoute;
           changed.push(`company ${resolved.companyId}`);
         }
-      } catch (err) {
-        console.warn('[WHOP] resolve on save:', err.detail || err.message);
-        // leave company for manual entry
-      }
+      } catch { /* manual company ok */ }
     } else if (key !== '') {
-      return { error: 'bad_api_key', detail: 'API key looks too short.' };
+      return { error: 'bad_api_key', detail: 'API key too short.' };
     }
   }
 
   if ('companyId' in body) {
     const raw = typeof body.companyId === 'string' ? body.companyId.trim() : '';
-    if (raw === '') {
-      if (current.companyId) {
-        patch.companyId = null;
-        changed.push('company cleared');
-      }
-    } else if (raw.startsWith('biz_')) {
-      if (raw !== current.companyId) {
-        patch.companyId = raw;
-        changed.push(`company ${raw}`);
-      }
-    } else {
+    if (raw && !raw.startsWith('biz_')) {
       return { error: 'bad_company', detail: 'Company ID must start with biz_' };
+    }
+    const next = raw || null;
+    if (next !== current.companyId) {
+      patch.companyId = next;
+      changed.push(next ? `company ${next}` : 'company cleared');
     }
   }
 
@@ -110,33 +104,6 @@ async function saveSettings(guildId, body, { guild }) {
     if (route !== current.companyRoute) {
       patch.companyRoute = route;
       changed.push(route ? `route ${route}` : 'route cleared');
-    }
-  }
-
-  if ('experienceId' in body) {
-    const exp = typeof body.experienceId === 'string' ? body.experienceId.trim() : '';
-    const next = exp.startsWith('exp_') ? exp : null;
-    if (next !== current.experienceId) {
-      patch.experienceId = next;
-      changed.push(next ? `experience ${next}` : 'experience cleared');
-    }
-  }
-
-  if ('channelId' in body) {
-    const ch = channelIn(guild, body.channelId);
-    if (!ch.ok) return { error: 'bad_channel' };
-    if (ch.value !== current.channelId) {
-      patch.channelId = ch.value;
-      changed.push(ch.value ? `posts to <#${ch.value}>` : 'channel cleared');
-    }
-  }
-
-  if ('mentionRoleId' in body) {
-    const role = roleIn(guild, body.mentionRoleId);
-    if (!role.ok) return { error: 'bad_role' };
-    if (role.value !== current.mentionRoleId) {
-      patch.mentionRoleId = role.value;
-      changed.push(role.value ? `pings <@&${role.value}>` : 'ping cleared');
     }
   }
 
@@ -154,17 +121,7 @@ async function saveSettings(guildId, body, { guild }) {
     const on = !!body.onlyVideos;
     if (on !== current.onlyVideos) {
       patch.onlyVideos = on;
-      changed.push(on ? 'videos only' : 'all lesson types');
-    }
-  }
-
-  if ('maxPerCheck' in body) {
-    const n = Number(body.maxPerCheck);
-    if (!Number.isFinite(n) || n < 1 || n > 15) return { error: 'bad_max' };
-    const v = Math.round(n);
-    if (v !== current.maxPerCheck) {
-      patch.maxPerCheck = v;
-      changed.push(`cap ${v}`);
+      changed.push(on ? 'videos only' : 'all types');
     }
   }
 
@@ -176,15 +133,41 @@ async function saveSettings(guildId, body, { guild }) {
     }
   }
 
-  if ('selectedCourseIds' in body && Array.isArray(body.selectedCourseIds)) {
-    const set = new Set(body.selectedCourseIds.map(String));
-    const next = current.courses.map(c => ({ ...c, selected: set.has(c.id) }));
-    const before = current.courses.filter(c => c.selected).map(c => c.id).sort().join(',');
-    const after = next.filter(c => c.selected).map(c => c.id).sort().join(',');
-    if (before !== after) {
-      patch.courses = next;
-      changed.push(`${next.filter(c => c.selected).length} course(s) selected`);
+  /* -- log ops ----------------------------------------------------------- */
+  if (body.op === 'add' && body.courseId) {
+    const ch = channelIn(guild, body.channelId);
+    if (!ch.ok || !ch.value) return { error: 'bad_channel', detail: 'Pick a channel before adding.' };
+    const role = roleIn(guild, body.mentionRoleId);
+    if (!role.ok) return { error: 'bad_role' };
+    const r = await whop.addToLog(guildId, String(body.courseId), {
+      channelId: ch.value,
+      mentionRoleId: role.value,
+    });
+    if (r.error) return r;
+    return { ok: true, changed: r.already ? ['already in log'] : [`added to log`] };
+  }
+
+  if (body.op === 'remove' && body.courseId) {
+    const r = whop.removeFromLog(guildId, String(body.courseId));
+    if (r.unchanged) return { ok: true, unchanged: true };
+    return { ok: true, changed: ['removed from log'] };
+  }
+
+  if (body.op === 'update' && body.courseId) {
+    const patchEntry = {};
+    if ('channelId' in body) {
+      const ch = channelIn(guild, body.channelId);
+      if (!ch.ok) return { error: 'bad_channel' };
+      patchEntry.channelId = ch.value;
     }
+    if ('mentionRoleId' in body) {
+      const role = roleIn(guild, body.mentionRoleId);
+      if (!role.ok) return { error: 'bad_role' };
+      patchEntry.mentionRoleId = role.value;
+    }
+    const r = whop.updateLogEntry(guildId, String(body.courseId), patchEntry);
+    if (r.error) return r;
+    return { ok: true, changed: ['log entry updated'] };
   }
 
   if (!changed.length) return { ok: true, unchanged: true };
@@ -195,23 +178,10 @@ async function saveSettings(guildId, body, { guild }) {
 async function scan(guildId) {
   try {
     const s = await whop.scanCourses(guildId);
-    return {
-      ok: true,
-      courses: s.courses.length,
-      selected: s.courses.filter(c => c.selected).length,
-      companyId: s.companyId,
-    };
+    return { ok: true, courses: s.catalog.length, log: s.log.length, companyId: s.companyId };
   } catch (err) {
-    const msg = err.message || String(err);
-    const detail = err.detail || msg;
+    const detail = err.detail || err.message || String(err);
     whop.setSettings(guildId, { lastError: detail });
-    if (msg === 'no_api_key') return { error: 'no_api_key', detail: 'Save your Whop API key first.' };
-    if (msg === 'could_not_resolve_company' || msg === 'missing_company_or_experience') {
-      return {
-        error: 'scan_failed',
-        detail: detail || 'Paste Company ID (biz_…) from your Whop dashboard URL / developer page, Save, then Scan.',
-      };
-    }
     return { error: 'scan_failed', detail };
   }
 }
