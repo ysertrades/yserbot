@@ -39,6 +39,7 @@ const links = require('./links');
 const moderation = require('./moderation');
 const appearance = require('./appearance');
 const socialPanel = require('./social');
+const whopPanel = require('./whop');
 const cardsPanel = require('./cards');
 const botProfile = require('./botProfile');
 
@@ -228,6 +229,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     mod: moderation.read(guildId, guild),
     appearance: appearance.read(guildId),
     social: socialPanel.read(guildId, guild),
+    whop: whopPanel.read(guildId, guild),
     botProfile: session ? botProfile.read(guildId, client, session) : null,
     counts: {
       shopItems: Object.keys(shop).length,
