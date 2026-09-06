@@ -1,12 +1,8 @@
 'use strict';
 
 /**
- * whopRunner.js
- *
- * Polls selected Whop courses and posts new video lessons with a calm
- * QuantLab-style embed + optional Link button.
- * Embed image = course banner (cover), not the lesson video thumbnail.
- * Role ping from settings.mentionRoleId.
+ * whopRunner.js — poll + post new Whop lessons.
+ * Embed image = course banner. Link button URL is auto from company/course.
  */
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -39,31 +35,25 @@ function buildLessonEmbed(guildId, lesson) {
   });
   if (!embed) return null;
 
-  // Course banner (card image on Whop), not the video frame.
   const banner = lesson.courseCover || null;
   if (banner) {
     try {
       if (style && !style.thumbnail) embed.setImage(banner);
       else embed.setThumbnail(banner);
-    } catch { /* ignore bad urls */ }
+    } catch { /* ignore */ }
   }
   return embed;
 }
 
-function buildButtonRow(settings) {
-  const url = settings.buttonUrl && /^https?:\/\//i.test(settings.buttonUrl)
-    ? settings.buttonUrl
-    : null;
-  if (!url) return null;
+function buildButtonRow(settings, lesson) {
+  const url = lesson.lessonUrl
+    || (settings.companyRoute ? `https://whop.com/${encodeURIComponent(settings.companyRoute)}` : null);
+  if (!url || !/^https?:\/\//i.test(url)) return null;
 
   const btn = new ButtonBuilder()
     .setStyle(ButtonStyle.Link)
     .setURL(url)
-    .setLabel((settings.buttonLabel || 'open lesson').slice(0, 80));
-
-  if (settings.buttonEmoji) {
-    try { btn.setEmoji(settings.buttonEmoji); } catch { /* ignore */ }
-  }
+    .setLabel((settings.buttonLabel || 'open course').slice(0, 80));
 
   return new ActionRowBuilder().addComponents(btn);
 }
@@ -76,7 +66,7 @@ async function postLesson(guild, settings, lesson) {
   if (!embed) return false;
 
   const content = target.roleId ? `<@&${target.roleId}>` : undefined;
-  const row = buildButtonRow(settings);
+  const row = buildButtonRow(settings, lesson);
 
   await target.channel.send({
     content,
