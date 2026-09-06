@@ -5,6 +5,8 @@
  *
  * Polls selected Whop courses and posts new video lessons with a calm
  * QuantLab-style embed + optional Link button.
+ * Embed image = course banner (cover), not the lesson video thumbnail.
+ * Role ping from settings.mentionRoleId.
  */
 
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
@@ -37,15 +39,17 @@ function buildLessonEmbed(guildId, lesson) {
   });
   if (!embed) return null;
 
-  if (lesson.thumbnail && style && !style.thumbnail) {
-    try { embed.setImage(lesson.thumbnail); } catch { /* ignore */ }
-  } else if (lesson.thumbnail) {
-    try { embed.setThumbnail(lesson.thumbnail); } catch { /* ignore */ }
+  // Course banner (card image on Whop), not the video frame.
+  const banner = lesson.courseCover || null;
+  if (banner) {
+    try {
+      if (style && !style.thumbnail) embed.setImage(banner);
+      else embed.setThumbnail(banner);
+    } catch { /* ignore bad urls */ }
   }
   return embed;
 }
 
-/** Optional Link button from Whop settings. */
 function buildButtonRow(settings) {
   const url = settings.buttonUrl && /^https?:\/\//i.test(settings.buttonUrl)
     ? settings.buttonUrl
@@ -58,7 +62,7 @@ function buildButtonRow(settings) {
     .setLabel((settings.buttonLabel || 'open lesson').slice(0, 80));
 
   if (settings.buttonEmoji) {
-    try { btn.setEmoji(settings.buttonEmoji); } catch { /* ignore bad emoji */ }
+    try { btn.setEmoji(settings.buttonEmoji); } catch { /* ignore */ }
   }
 
   return new ActionRowBuilder().addComponents(btn);
