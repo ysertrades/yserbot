@@ -939,6 +939,8 @@ function renderWhop() {
     enabled: !!d.enabled,
     apiKey: "",
     unlockKey: false,
+    companyId: d.companyId || "",
+    companyRoute: d.companyRoute || "",
     channelId: d.channelId || null,
     mentionRoleId: d.mentionRoleId || null,
     pollMinutes: d.pollMinutes || 10,
@@ -967,6 +969,9 @@ function renderWhop() {
     children.push(el("p", "hint", "Saved once and locked. Uses your company automatically for course scans."));
   }
 
+  children.push(textField("Company ID (biz_…)", draft.companyId, v => { draft.companyId = v; }, { placeholder: "biz_xxxxxxxxxxxxxx" }));
+  children.push(el("p", "hint", "Required for Scan. Find it in Whop Developer dashboard or your company URL."));
+  children.push(textField("Whop route (optional)", draft.companyRoute, v => { draft.companyRoute = v; }, { placeholder: "your-whop-slug" }));
   children.push(pickOne("Post channel", "channel", draft.channelId, v => { draft.channelId = v; }));
   children.push(pickOne("Ping role (optional)", "role", draft.mentionRoleId, v => { draft.mentionRoleId = v; }));
   children.push(textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 10; }));
@@ -980,6 +985,8 @@ function renderWhop() {
   children.push(actions(async () => {
     const body = {
       enabled: draft.enabled,
+      companyId: draft.companyId || null,
+      companyRoute: draft.companyRoute || null,
       channelId: draft.channelId,
       mentionRoleId: draft.mentionRoleId,
       pollMinutes: draft.pollMinutes,
