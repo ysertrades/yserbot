@@ -3,6 +3,7 @@
 /**
  * Structured economic-calendar embeds (text only — no PNG).
  * No generic "News Update" title, no footer — just the event block.
+ * Forecast / Previous use Discord inline code (`like this`).
  */
 
 const { EmbedBuilder } = require('discord.js');
@@ -39,6 +40,11 @@ function formatWhen(timestampMs) {
   };
 }
 
+/** Escape backticks inside values so Discord markdown stays intact. */
+function code(s) {
+  return '`' + String(s).replace(/`/g, "'") + '`';
+}
+
 function eventBlock(e) {
   const flag = FLAG[e.currency] || '🏳️';
   const when = formatWhen(e.timestamp);
@@ -49,24 +55,18 @@ function eventBlock(e) {
     `🕐 ${when.timeLine}`,
     `${impact} **${String(e.impact || 'Low').toUpperCase()}** impact`,
   ];
-  const forecast = e.forecast != null && String(e.forecast).trim() !== '' ? String(e.forecast) : null;
-  const previous = e.previous != null && String(e.previous).trim() !== '' ? String(e.previous) : null;
+  const forecast = e.forecast != null && String(e.forecast).trim() !== '' ? String(e.forecast).trim() : null;
+  const previous = e.previous != null && String(e.previous).trim() !== '' ? String(e.previous).trim() : null;
   if (forecast || previous) {
     const box = [
-      forecast != null ? `Forecast: ${forecast}` : null,
-      previous != null ? `Previous: ${previous}` : null,
-    ].filter(Boolean).map(l => `> ${l}`).join('\n');
+      forecast != null ? code(`Forecast: ${forecast}`) : null,
+      previous != null ? code(`Previous: ${previous}`) : null,
+    ].filter(Boolean).join('\n');
     lines.push('', box);
   }
   return lines.join('\n');
 }
 
-/**
- * @param {string} guildId
- * @param {object} e event
- * @param {{ title?: string|null, footer?: string|null }} [opts]
- *   title/footer default off (null). Pass a string only if a caller needs one.
- */
 function buildSingleEventEmbed(guildId, e, opts = {}) {
   const title = opts.title === undefined ? null : opts.title;
   const footer = opts.footer === undefined ? null : opts.footer;
