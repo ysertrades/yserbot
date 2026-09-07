@@ -107,12 +107,12 @@ function eventTokens(e, guild) {
  */
 function buildEventEmbed(key, e, guild, tokens, timeLabel) {
   if (e.impact === 'High' || e.impact === 'Medium') {
-    const embed = econEmbed.buildSingleEventEmbed(guild.id, e);
+    const mode = key === 'econ.reminder' ? 'reminder' : key === 'econ.release' ? 'release' : 'day';
+    const embed = econEmbed.buildSingleEventEmbed(guild.id, e, {
+      mode,
+      minutes: tokens && tokens.minutes,
+    });
     if (!embed) return null;
-    try {
-      const c = impactColor(guild.id, e.impact);
-      if (c) embed.setColor(c);
-    } catch { /* */ }
     return { embed, files: [] };
   }
   const embed = messageStyle.build(guild.id, key, {
@@ -180,32 +180,29 @@ function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
     curFiles  = [];
   }
 
+  // High / Medium → one grid embed (max 3 per row). Low stays as cards.
+  const gridEvents = [];
   for (const e of capped) {
-    const dayKey     = dayKeyOf(e);
-    const dayChanged = multiDay && dayKey !== lastDayKey;
-    const needed     = (dayChanged ? 1 : 0) + 1; // day header (maybe) + the event card itself
+    if (e.impact === 'High' || e.impact === 'Medium') gridEvents.push(e);
+  }
+  const lowEvents = capped.filter(e => e.impact !== 'High' && e.impact !== 'Medium');
 
-    if (curEmbeds.length + needed > MAX_EMBEDS_PER_MSG) flush();
-
-    if (dayChanged) {
-      const divider = buildDayHeaderEmbed(e, guild);
-      if (divider) curEmbeds.push(divider);
-      lastDayKey = dayKey;
+  if (gridEvents.length) {
+    const mode = scope === 'week' ? 'week' : 'day';
+    const grids = econEmbed.buildGridEmbeds(guild.id, gridEvents, { mode });
+    for (const g of grids) {
+      if (curEmbeds.length >= MAX_EMBEDS_PER_MSG) flush();
+      curEmbeds.push(g);
     }
+  }
 
-    if (e.impact === 'High' || e.impact === 'Medium') {
-      const te = econEmbed.buildSingleEventEmbed(guild.id, e);
-      if (te) {
-        try { te.setColor(impactColor(guild.id, e.impact)); } catch { /* */ }
-        curEmbeds.push(te);
-      }
-    } else {
-      const attachment = buildEventCard(e, fmtEventTime(e));
-      curFiles.push(attachment);
-      const embed = createEmbed('info', { color: cardColor, image: `attachment://${attachment.name}` });
-      embed.setTimestamp(null);
-      curEmbeds.push(embed);
-    }
+  for (const e of lowEvents) {
+    if (curEmbeds.length >= MAX_EMBEDS_PER_MSG) flush();
+    const attachment = buildEventCard(e, fmtEventTime(e));
+    curFiles.push(attachment);
+    const embed = createEmbed('info', { color: cardColor, image: `attachment://${attachment.name}` });
+    embed.setTimestamp(null);
+    curEmbeds.push(embed);
   }
   flush();
 
