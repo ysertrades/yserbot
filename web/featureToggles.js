@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * Panel feature toggles. On save, also updates Discord command permissions
- * for this guild so disabled features' commands cannot be used.
- * Does not touch global command registration or ready.js deploy.
+ * Panel feature toggles. On save, updates Discord command permissions for
+ * this guild so disabled features' commands cannot be used.
+ * Does not touch global command registration or ready.js.
  */
 
 const { FEATURE_GROUPS, readFlags, setFeatures } = require('../utils/featureToggles');
