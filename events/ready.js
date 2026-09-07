@@ -1,4 +1,4 @@
-const { Events, REST, Routes } = require('discord.js');
+const { Events, REST, Routes, ApplicationCommandType } = require('discord.js');
 const { startScheduleRunner } = require('../utils/scheduleRunner');
 const { startNewsFeedRunner } = require('../utils/newsFeed');
 const { startEconCalRunner } = require('../utils/econCalRunner');
@@ -10,21 +10,47 @@ const { restoreGiveaways } = require('../commands/utility/giveaway');
 const { restoreCoinsGiveaways } = require('../commands/economy/coinsgiveaway');
 const botProfile = require('../web/botProfile');
 
-// Registers every command in client.commands with Discord on every boot, so
-// a newly added or edited command is live the moment the bot restarts —
-// nobody has to remember to run `npm run deploy` by hand.
+/**
+ * Bulk PUT of global commands must keep Discord's Primary Entry Point
+ * command (type 4) or Discord returns 50240.
+ */
 async function syncSlashCommands(client) {
     if (!process.env.CLIENT_ID) {
         console.warn('[DEPLOY] CLIENT_ID not set — skipping automatic slash command sync.');
         return;
     }
     try {
+        const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+        const clientId = process.env.CLIENT_ID;
         const body = client.commands.map(cmd => cmd.data.toJSON());
-        const rest = new REST().setToken(process.env.TOKEN);
-        const data = await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body });
+
+        try {
+            const existing = await rest.get(Routes.applicationCommands(clientId));
+            const entryPoints = (Array.isArray(existing) ? existing : []).filter(
+                c => c.type === ApplicationCommandType.PrimaryEntryPoint || c.type === 4,
+            );
+            for (const ep of entryPoints) {
+                body.push({
+                    id: ep.id,
+                    name: ep.name,
+                    type: ep.type,
+                    description: ep.description || undefined,
+                    ...(ep.integration_types ? { integration_types: ep.integration_types } : {}),
+                    ...(ep.contexts != null ? { contexts: ep.contexts } : {}),
+                    ...(ep.handler != null ? { handler: ep.handler } : {}),
+                });
+            }
+            if (entryPoints.length) {
+                console.log(`[DEPLOY] Preserving ${entryPoints.length} Entry Point command(s).`);
+            }
+        } catch (fetchErr) {
+            console.warn('[DEPLOY] Could not fetch existing commands:', fetchErr.message);
+        }
+
+        const data = await rest.put(Routes.applicationCommands(clientId), { body });
         console.log(`[DEPLOY] Synced ${data.length} global application (/) commands.`);
     } catch (err) {
-        console.error('[DEPLOY] Failed to sync slash commands on startup:', err);
+        console.error('[DEPLOY] Failed to sync slash commands on startup:', err.message || err);
     }
 }
 
@@ -34,13 +60,10 @@ module.exports = {
     async execute(client) {
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
-        // Restore status + activity from the panel (falls back to a sensible default
-        // the first time, before anything has been saved).
         try {
             await botProfile.applyStoredPresence(client);
             const p = botProfile.flags().presence;
             if (!p.activityText) {
-                // First boot / nothing saved yet — set a default and persist it.
                 await botProfile.applyPresence({
                     status: 'online',
                     activityType: 'watching',
