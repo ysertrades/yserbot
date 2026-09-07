@@ -393,19 +393,93 @@ function hasGlyph(ch) {
   return Object.prototype.hasOwnProperty.call(FONT, ch.toUpperCase());
 }
 
+// ─── HQ_CANVAS_TEXT ─────────────────────────────────────────────────────────
+// When `canvas` is installed, text is drawn anti-aliased with a real UI font.
+// Layout still uses the same scale units so existing cards keep their spacing.
+// If canvas is missing (or fails), the original 5×7 pixel font is used.
+let _Canvas = null;
+try { _Canvas = require('canvas'); } catch { /* optional dependency */ }
+
+function hqFontSize(scale) {
+  return Math.max(11, Math.round(GLYPH_H * scale * 1.25));
+}
+
+function hqFont(scale) {
+  const px = hqFontSize(scale);
+  // QuantLab-like UI stack — system fonts, no extra font files required
+  return `600 ${px}px "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", sans-serif`;
+}
+
+function hqMeasure(text, scale) {
+  if (!_Canvas) return null;
+  try {
+    const c = _Canvas.createCanvas(1, 1);
+    const ctx = c.getContext('2d');
+    ctx.font = hqFont(scale);
+    const m = ctx.measureText(String(text));
+    return {
+      width: Math.ceil(m.width),
+      height: Math.ceil(hqFontSize(scale) * 1.35),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function textWidth(text, scale) {
+  const hq = hqMeasure(String(text), scale);
+  if (hq) return hq.width;
   const chars = [...normalizeForFont(text)].filter(hasGlyph);
   if (chars.length === 0) return 0;
   return chars.length * (GLYPH_W + GLYPH_GAP) * scale - GLYPH_GAP * scale;
 }
 
-function drawText(png, text, x, y, scale, color, alpha = 1) {
+function drawTextBitmap(png, text, x, y, scale, color, alpha = 1) {
   let cx = x;
   for (const ch of normalizeForFont(text)) {
     if (!hasGlyph(ch)) continue;
     drawChar(png, ch, cx, y, scale, color, alpha);
     cx += (GLYPH_W + GLYPH_GAP) * scale;
   }
+}
+
+function drawTextHQ(png, text, x, y, scale, color, alpha = 1) {
+  if (!_Canvas) return false;
+  try {
+    const str = String(text);
+    const cMeasure = _Canvas.createCanvas(1, 1);
+    const ctx0 = cMeasure.getContext('2d');
+    ctx0.font = hqFont(scale);
+    const metrics = ctx0.measureText(str);
+    const w = Math.max(1, Math.ceil(metrics.width) + 2);
+    const h = Math.max(1, Math.ceil(hqFontSize(scale) * 1.4));
+    const c = _Canvas.createCanvas(w, h);
+    const ctx = c.getContext('2d');
+    ctx.font = hqFont(scale);
+    ctx.textBaseline = 'top';
+    ctx.imageSmoothingEnabled = true;
+    const a = alpha == null ? 1 : alpha;
+    ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${a})`;
+    ctx.fillText(str, 0, 0);
+    const img = ctx.getImageData(0, 0, w, h);
+    const ox = Math.round(x), oy = Math.round(y);
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        const i = (py * w + px) * 4;
+        const pa = img.data[i + 3] / 255;
+        if (pa < 0.02) continue;
+        setPxBlend(png, ox + px, oy + py, [img.data[i], img.data[i + 1], img.data[i + 2], 255], pa);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function drawText(png, text, x, y, scale, color, alpha = 1) {
+  if (drawTextHQ(png, text, x, y, scale, color, alpha)) return;
+  drawTextBitmap(png, text, x, y, scale, color, alpha);
 }
 
 function drawTextCentered(png, text, cx, y, scale, color, alpha = 1) {
