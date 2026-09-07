@@ -6,6 +6,7 @@ const { createEmbed } = require('./embedBuilder');
 const messageStyle = require('./messageStyle');
 const { getWeekEvents, filterEvents } = require('./economicCalendar');
 const { generateEconEventCard } = require('./econEventVisual');
+const econEmbed = require('./econEmbed');
 const { isFeatureEnabled } = require('./featureToggles');
 
 const TICK_INTERVAL_MS   = 5_000;   // tight enough to hit the release post within a few seconds of the exact minute
@@ -105,13 +106,28 @@ function eventTokens(e, guild) {
  * should not pay for one it is never going to send.
  */
 function buildEventEmbed(key, e, guild, tokens, timeLabel) {
+  if (e.impact === 'High' || e.impact === 'Medium') {
+    const title = key === 'econ.reminder'
+      ? ('Reminder · in ' + tokens.minutes + 'm')
+      : 'News Update';
+    const embed = econEmbed.buildSingleEventEmbed(guild.id, e, {
+      title,
+      footer: 'quantlab · economic calendar',
+    });
+    if (!embed) return null;
+    try {
+      const c = impactColor(guild.id, e.impact);
+      if (c) embed.setColor(c);
+    } catch { /* */ }
+    return { embed, files: [] };
+  }
   const embed = messageStyle.build(guild.id, key, {
     color: impactColor(guild.id, e.impact),
     tokens,
   });
   if (!embed) return null;
   const attachment = buildEventCard(e, timeLabel);
-  try { embed.setImage(`attachment://${attachment.name}`); } catch { /* card still sends without it */ }
+  try { embed.setImage(`attachment://${attachment.name}`); } catch { /* */ }
   return { embed, files: [attachment] };
 }
 
@@ -183,11 +199,22 @@ function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
       lastDayKey = dayKey;
     }
 
-    const attachment = buildEventCard(e, fmtEventTime(e));
-    curFiles.push(attachment);
-    const embed = createEmbed('info', { color: cardColor, image: `attachment://${attachment.name}` });
-    embed.setTimestamp(null);
-    curEmbeds.push(embed);
+    if (e.impact === 'High' || e.impact === 'Medium') {
+      const te = econEmbed.buildSingleEventEmbed(guild.id, e, {
+        title: 'News Update',
+        footer: 'quantlab · economic calendar',
+      });
+      if (te) {
+        try { te.setColor(impactColor(guild.id, e.impact)); } catch { /* */ }
+        curEmbeds.push(te);
+      }
+    } else {
+      const attachment = buildEventCard(e, fmtEventTime(e));
+      curFiles.push(attachment);
+      const embed = createEmbed('info', { color: cardColor, image: `attachment://${attachment.name}` });
+      embed.setTimestamp(null);
+      curEmbeds.push(embed);
+    }
   }
   flush();
 

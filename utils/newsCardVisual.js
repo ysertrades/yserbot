@@ -69,13 +69,8 @@ function generateNewsCard({ headline, source, urlLabel, breaking = false }) {
   roundedBorder(png, fx, fy, fw, fh, radius, DARK.border, 1);
 
   // Chrome bar — dots, then the URL pill.
-  const chromeH = 46;
-  for (let i = 0; i < 3; i++) dot(png, fx + 22 + i * 18, fy + chromeH / 2, 5, TRAFFIC[i]);
-
-  const urlText = (urlLabel || 'financialjuice.com').toLowerCase();
-  const urlPillX = fx + 76, urlPillW = Math.min(fw - 96, textWidth(urlText, 1) + 28);
-  fillRoundedRectBlend(png, urlPillX, fy + 12, urlPillW, chromeH - 24, 11, DARK.raised, 1);
-  drawText(png, urlText, urlPillX + 14, fy + 12 + (chromeH - 24 - GLYPH_H) / 2, 1, SUBTLE);
+  const chromeH = 8; // no window traffic-lights
+  
 
   for (let x = fx + 1; x < fx + fw - 1; x++) setPxBlend(png, x, fy + chromeH, DARK.border, 1);
 

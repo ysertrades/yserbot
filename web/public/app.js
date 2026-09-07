@@ -638,7 +638,6 @@ function renderOverview() {
   if (!state.overview) return;
   renderOverviewCards();
   renderFeedForms();
-  renderWhop();
   renderModerationForm();
   renderShop();
   renderComposer();
@@ -1180,6 +1179,7 @@ function renderFeedForms() {
   );
 
   renderReleaseDesk();
+  renderWhop();
 }
 
 /* ── release desk ──────────────────────────────────────────────────────────

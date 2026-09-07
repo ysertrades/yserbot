@@ -553,7 +553,7 @@ Object.assign(OPS, {
   },
 
   async featuretoggles(guildId, body, ctx) {
-    const r = featureToggles.save(guildId, body);
+    const r = await featureToggles.save(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `🧩 **Features** — ${r.changed.join('; ')}`, 'settings');
     return r;
   },
