@@ -483,16 +483,28 @@ function showSetup(missing) {
   root.dataset.state = 'setup';
 }
 
+function discordAvatarUrl(user) {
+  if (user?.avatar) {
+    return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`;
+  }
+  let idx = 0;
+  try { idx = Number(BigInt(user.id) >> 22n) % 6; }
+  catch { idx = Number(String(user?.id || '0').slice(-1)) % 6; }
+  return `https://cdn.discordapp.com/embed/avatars/${idx}.png`;
+}
+
 function renderIdentity(user) {
   const wrap = $('#bar-right');
   wrap.replaceChildren();
-  if (user.avatar) {
+  if (user) {
     const img = el('img');
-    img.src = `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`;
+    img.src = discordAvatarUrl(user);
     img.alt = '';
+    img.referrerPolicy = 'no-referrer';
+    img.onerror = () => { img.style.display = 'none'; };
     wrap.append(img);
   }
-  wrap.append(el('span', 'who', user.name));
+  wrap.append(el('span', 'who', user?.name || 'You'));
   const out = el('a', 'btn small', 'Sign out');
   // Still an anchor, so a browser with no JavaScript can sign out of a cookie
   // session by following it. With JavaScript the click is taken over below,

@@ -514,22 +514,8 @@ async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = n
   let attachment = null;
   if (picture && !messageStyle.styleFor(guildId, key).thumbnail) {
     try { embed.setImage(picture); } catch { /* a URL Discord refuses is not worth the card */ }
-  } else if (!picture) {
-    // Most headlines carry no picture at all — a live feed is mostly plain
-    // text — so those get QuantLab's own browser-frame card instead of
-    // going out as a bare colour bar. Built fresh per headline (title and
-    // breaking-state both vary), unlike the other banners in the bot, which
-    // stay the same until Studio changes them.
-    try {
-      const buf = generateNewsCard({
-        headline: item.title,
-        source: source.label,
-        urlLabel: item.source?.host || 'financialjuice.com',
-        breaking: isBreaking,
-      });
-      attachment = new AttachmentBuilder(buf, { name: 'news-card.png' });
-      embed.setImage('attachment://news-card.png');
-    } catch { /* the text embed alone still carries the headline */ }
+    } else if (!picture) {
+    // No external photo — text embed only (no pixel-font card).
   }
   return { embed, attachment };
 }
