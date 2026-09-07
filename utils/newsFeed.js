@@ -488,15 +488,8 @@ async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = n
     : item.source ? `via ${item.source.host}`
     : 'Live Market News';
 
-  // Banner priority: the video's thumbnail, then the linked page's own share
-  // image, then whatever picture the article itself carries — so a link that
-  // turns out to have no banner never loses the image slot. Capped, because
-  // none of it is worth making the headline late; see PICTURE_BUDGET_MS.
-  const pictureUrl = await withBudget(resolvePicture(item, source), PICTURE_BUDGET_MS);
-  const picture = isValidUrl(pictureUrl) ? pictureUrl : null;
-
+  // Text-only embeds — no image or thumbnail (brand decision).
   const embed = messageStyle.build(guildId, key, {
-    thumbnailURL: picture,
     tokens: {
       headline: item.title,
       text: item.body && item.body !== item.title ? item.body : '',
@@ -507,17 +500,9 @@ async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = n
     },
   });
   if (!embed) return null;
-
-  // The picture belongs across the card unless the catalogue's thumbnail
-  // switch says otherwise — a chart or a video still is the story, not
-  // decoration in the corner.
-  let attachment = null;
-  if (picture && !messageStyle.styleFor(guildId, key).thumbnail) {
-    try { embed.setImage(picture); } catch { /* a URL Discord refuses is not worth the card */ }
-    } else if (!picture) {
-    // No external photo — text embed only (no pixel-font card).
-  }
-  return { embed, attachment };
+  try { if (typeof embed.setImage === 'function') embed.setImage(null); } catch { /* */ }
+  try { if (typeof embed.setThumbnail === 'function') embed.setThumbnail(null); } catch { /* */ }
+  return { embed, attachment: null };
 }
 
 // Picking topics via /newsfeed topics is the only filter — no picked topics

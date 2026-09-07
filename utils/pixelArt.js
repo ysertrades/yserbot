@@ -398,7 +398,10 @@ function hasGlyph(ch) {
 // Layout still uses the same scale units so existing cards keep their spacing.
 // If canvas is missing (or fails), the original 5×7 pixel font is used.
 let _Canvas = null;
-try { _Canvas = require('canvas'); } catch { /* optional dependency */ }
+try { _Canvas = require('@napi-rs/canvas'); }
+catch {
+  try { _Canvas = require('canvas'); } catch { /* optional */ }
+}
 
 function hqFontSize(scale) {
   return Math.max(11, Math.round(GLYPH_H * scale * 1.25));

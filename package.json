@@ -8,7 +8,7 @@
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.65",
+    "@napi-rs/canvas": "^0.1.100",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
     "mongodb": "^7.5.0",
