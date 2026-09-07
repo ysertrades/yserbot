@@ -2,7 +2,7 @@
 
 /**
  * Structured economic-calendar embeds (text only — no PNG).
- * Used for High / Medium impact events.
+ * No generic "News Update" title, no footer — just the event block.
  */
 
 const { EmbedBuilder } = require('discord.js');
@@ -17,7 +17,6 @@ const IMPACT_DOT = {
   High: '🔴', Medium: '🟠', Low: '🟡', Holiday: '⚪',
 };
 
-const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function impactColor(guildId, impact) {
@@ -62,13 +61,23 @@ function eventBlock(e) {
   return lines.join('\n');
 }
 
-function buildSingleEventEmbed(guildId, e, { title = 'News Update', footer = 'quantlab · economic calendar' } = {}) {
+/**
+ * @param {string} guildId
+ * @param {object} e event
+ * @param {{ title?: string|null, footer?: string|null }} [opts]
+ *   title/footer default off (null). Pass a string only if a caller needs one.
+ */
+function buildSingleEventEmbed(guildId, e, opts = {}) {
+  const title = opts.title === undefined ? null : opts.title;
+  const footer = opts.footer === undefined ? null : opts.footer;
+
   const embed = new EmbedBuilder()
     .setColor(impactColor(guildId, e.impact))
-    .setTitle(title)
-    .setDescription(eventBlock(e).slice(0, 4090))
-    .setFooter({ text: footer })
-    .setTimestamp(new Date());
+    .setDescription(eventBlock(e).slice(0, 4090));
+
+  if (title) embed.setTitle(String(title));
+  if (footer) embed.setFooter({ text: String(footer) });
+
   return embed;
 }
 
