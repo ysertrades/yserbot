@@ -643,7 +643,7 @@ async function runTick(client) {
 }
 
 // Safe to call once after the client is ready.
-function startNewsFeedRunner(client) {
+function startNewsFeedRunner_DISABLED(client) {
   // Said out loud, because the cadence is the single biggest thing standing
   // between a headline being published and it being in a channel — and
   // because it silently ran at half this for a long time without anything
@@ -658,3 +658,10 @@ module.exports = {
   startNewsFeedRunner, runTick, parseFeedItems, buildNewsEmbed,
   SOURCES, listSources, DEFAULT_SOURCES,
 };
+
+
+/** @deprecated Financial Juice news feed removed */
+function startNewsFeedRunner() {
+  console.log('[newsFeed] retired — Financial Juice live feed is off');
+}
+module.exports.startNewsFeedRunner = startNewsFeedRunner;

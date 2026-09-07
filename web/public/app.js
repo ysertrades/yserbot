@@ -618,20 +618,18 @@ function renderOverviewCards() {
   $('#server-meta').textContent = `${num(d.guild.members)} members · ${num(d.guild.channels)} channels`;
 
   paintTiles([
-    { value: d.newsfeed.enabled ? 'LIVE' : 'OFF', label: 'News feed', kind: d.newsfeed.enabled ? 'live' : 'idle' },
     { value: d.econcal.enabled ? 'LIVE' : 'OFF', label: 'Calendar', kind: d.econcal.enabled ? 'live' : 'idle' },
     { value: num(d.counts.activeGiveaways), label: 'Giveaways', kind: d.counts.activeGiveaways ? 'live' : 'idle' },
     { value: num(d.counts.embedTemplates), label: 'Templates', kind: '' },
     { value: num(d.counts.shopItems), label: 'Shop items', kind: '' },
     { value: num(d.counts.moderationCases), label: 'Mod cases', kind: '' },
+    { value: d.whop?.enabled ? 'ON' : 'OFF', label: 'Whop', kind: d.whop?.enabled ? 'live' : 'idle' },
   ]);
 
   $('#card-systems').replaceChildren(
-    row('News feed', pill(d.newsfeed.enabled, 'Running', 'Stopped')),
-    row('Feed channel', d.newsfeed.channel ? `#${d.newsfeed.channel}` : 'not set', { dim: !d.newsfeed.channel }),
-    row('Sources', chips(d.newsfeed.sources)),
     row('Calendar', pill(d.econcal.enabled, 'Running', 'Stopped')),
     row('Calendar channel', d.econcal.channel ? `#${d.econcal.channel}` : 'not set', { dim: !d.econcal.channel }),
+    row('Whop tracker', pill(!!d.whop?.enabled, 'On', 'Off')),
     row('Mod log', d.modlog.channel ? `#${d.modlog.channel}` : 'not set', { dim: !d.modlog.channel }),
   );
 
@@ -1135,20 +1133,7 @@ function renderWhop() {
 function renderFeedForms() {
   const d = state.overview;
 
-  const nf = { enabled: d.newsfeed.enabled, filterTopics: d.newsfeed.topics.slice() };
-  $('#form-newsfeed').replaceChildren(
-    toggle('Feed running', nf.enabled, v => { nf.enabled = v; }),
-    // Picked, not typed. The filter works off each topic's bundle of
-    // keywords, so only one of these keys means anything — and the box that
-    // used to be here took any words at all, stored them, and then matched
-    // nothing, which looked identical to a filter that was simply strict.
-    pickValues('Topics', d.newsfeed.topicOptions || [], nf.filterTopics,
-      v => { nf.filterTopics = v; },
-      { allNote: 'Nothing picked — every headline is posted.' }),
-    pickOne('Channel', 'channel', d.newsfeed.channelId, v => { nf.channelId = v; }),
-    row('Sources', chips(d.newsfeed.sources)),
-    actions(() => post('newsfeed', nf)),
-  );
+  // News feed removed — Financial Juice live feed retired.
 
   const ec = {
     enabled: d.econcal.enabled,

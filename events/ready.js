@@ -1,6 +1,5 @@
 const { Events, REST, Routes, ApplicationCommandType } = require('discord.js');
 const { startScheduleRunner } = require('../utils/scheduleRunner');
-const { startNewsFeedRunner } = require('../utils/newsFeed');
 const { startEconCalRunner } = require('../utils/econCalRunner');
 const { startLotteryRunner } = require('../utils/lotteryRunner');
 const { startSocialRunner } = require('../utils/socialRunner');
@@ -77,7 +76,7 @@ module.exports = {
 
         await syncSlashCommands(client);
         startScheduleRunner(client);
-        startNewsFeedRunner(client);
+        // News feed runner removed (Financial Juice retired)
         startEconCalRunner(client);
         startLotteryRunner(client);
         startSocialRunner(client);
