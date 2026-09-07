@@ -107,13 +107,7 @@ function eventTokens(e, guild) {
  */
 function buildEventEmbed(key, e, guild, tokens, timeLabel) {
   if (e.impact === 'High' || e.impact === 'Medium') {
-    const title = key === 'econ.reminder'
-      ? ('Reminder · in ' + tokens.minutes + 'm')
-      : 'News Update';
-    const embed = econEmbed.buildSingleEventEmbed(guild.id, e, {
-      title,
-      footer: 'quantlab · economic calendar',
-    });
+    const embed = econEmbed.buildSingleEventEmbed(guild.id, e);
     if (!embed) return null;
     try {
       const c = impactColor(guild.id, e.impact);
@@ -200,10 +194,7 @@ function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
     }
 
     if (e.impact === 'High' || e.impact === 'Medium') {
-      const te = econEmbed.buildSingleEventEmbed(guild.id, e, {
-        title: 'News Update',
-        footer: 'quantlab · economic calendar',
-      });
+      const te = econEmbed.buildSingleEventEmbed(guild.id, e);
       if (te) {
         try { te.setColor(impactColor(guild.id, e.impact)); } catch { /* */ }
         curEmbeds.push(te);
