@@ -1,15 +1,13 @@
 'use strict';
 
 /**
- * web/featureToggles.js
- *
- * The panel's view onto utils/featureToggles.js: every group, its current
- * state, and a save that goes through the same setFeatures() the bot itself
- * reads — so a toggle flipped here takes effect on the very next command or
- * scheduler tick, not on some separate copy of the config.
+ * Panel feature toggles. On save, also updates Discord command permissions
+ * for this guild so disabled features' commands cannot be used.
+ * Does not touch global command registration or ready.js deploy.
  */
 
 const { FEATURE_GROUPS, readFlags, setFeatures } = require('../utils/featureToggles');
+const { applyFeatureCommandPermissions } = require('../utils/commandVisibility');
 
 function read(guildId) {
   const flags = readFlags(guildId);
@@ -23,11 +21,7 @@ function read(guildId) {
   };
 }
 
-/**
- * @param {string} guildId
- * @param {Record<string, boolean>} body - group key -> desired state
- */
-function save(guildId, body) {
+async function save(guildId, body, ctx = {}) {
   const updates = {};
   const known = new Set(FEATURE_GROUPS.map(g => g.key));
   for (const [key, value] of Object.entries(body || {})) {
@@ -35,7 +29,18 @@ function save(guildId, body) {
     updates[key] = !!value;
   }
   if (Object.keys(updates).length === 0) return { unchanged: true };
-  return setFeatures(guildId, updates);
+
+  const result = setFeatures(guildId, updates);
+  if (result.unchanged) return result;
+
+  if (ctx.client) {
+    try {
+      await applyFeatureCommandPermissions(ctx.client, guildId);
+    } catch (err) {
+      console.warn('[featureToggles] command visibility:', err.message);
+    }
+  }
+  return result;
 }
 
 module.exports = { read, save };
