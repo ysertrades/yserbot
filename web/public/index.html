@@ -405,13 +405,30 @@
 
     <div class="section" data-section="automation">
       <div class="panel">
-        <h2>Scheduled posts</h2>
-        <div id="sched-list" class="items"></div>
-        <p class="hint">New schedules are created with <code>/schedule</code> — picking a time needs your timezone, which Discord knows and a web page does not.</p>
+        <h2>Automation</h2>
+        <p class="muted">Two desks, one place. <strong>Scheduled posts</strong> deliver a Studio template on a clock. <strong>Auto-replies</strong> answer a phrase in chat with a template. Everything is created and edited here — no slash command required.</p>
       </div>
-      <div class="panel">
-        <h2>Auto-replies</h2>
-        <div id="reply-list" class="items"></div>
+
+      <div class="grid">
+        <article class="panel" id="sched-panel">
+          <div class="queue-head">
+            <h2>Scheduled posts</h2>
+            <span class="pill" id="sched-count"></span>
+          </div>
+          <p class="muted">Pick a message, a channel, how often, and a time in <em>your</em> timezone. One-shot or repeating — the next run is always visible on each row.</p>
+          <div id="sched-list" class="items"></div>
+          <div id="sched-composer"></div>
+        </article>
+
+        <article class="panel" id="reply-panel">
+          <div class="queue-head">
+            <h2>Auto-replies</h2>
+            <span class="pill" id="reply-count"></span>
+          </div>
+          <p class="muted">When a member’s message matches a trigger, the bot posts a template. Use exact match for commands-style phrases; leave it off for keywords inside longer messages.</p>
+          <div id="reply-list" class="items"></div>
+          <div id="reply-composer"></div>
+        </article>
       </div>
     </div>
 

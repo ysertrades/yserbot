@@ -5356,47 +5356,76 @@ const DATE_NOTE = {
 
 function renderSchedules() {
   const list = $('#sched-list');
+  const composer = $('#sched-composer');
+  const countPill = $('#sched-count');
   const items = state.overview?.features?.schedules || [];
-  if (!items.length) { list.replaceChildren(el('p', 'muted', 'No scheduled posts.')); return; }
+  if (countPill) {
+    countPill.textContent = items.length
+      ? `${items.length} active`
+      : 'none yet';
+  }
 
-  list.replaceChildren(...items.map(s => {
-    const draft = { id: s.id, channelId: s.channelId, embedName: s.embedName, frequency: s.frequency };
+  const nodes = [];
+  if (!items.length) {
+    const empty = el('div', 'empty-desk');
+    empty.append(
+      el('p', 'muted', 'No clocks running yet.'),
+      el('p', 'hint', 'Compose one below — template, channel, cadence, time. The bot posts for you.'),
+    );
+    nodes.push(empty);
+  }
+
+  for (const s of items) {
+    const draft = {
+      id: s.id,
+      embedName: s.embedName,
+      channelId: s.channelId,
+      frequency: s.frequency,
+      time: s.time || '',
+      dayOfWeek: s.dayOfWeek,
+      date: s.date || '',
+      mention: s.mention || null,
+      enabled: s.enabled !== false,
+    };
     const d = el('details', 'item');
     const sum = el('summary');
+    const on = s.enabled !== false;
     sum.append(
-      el('span', 'bstyle secondary', cadenceLabel(s)),
-      el('span', 'nm', s.embedName),
-      el('span', 'pr', s.channelName ? `#${s.channelName}` : 'channel gone'),
+      el('span', `bstyle ${on ? 'success' : 'secondary'}`, on ? 'live' : 'paused'),
+      el('span', 'nm', s.embedName || 'Untitled'),
+      el('span', 'pr', cadenceLabel(s)),
     );
+    const meta = el('p', 'hint');
+    meta.textContent = [
+      s.channelName ? `#${s.channelName}` : (s.channelId ? `channel ${s.channelId}` : 'no channel'),
+      s.nextRun ? `next ${fmtTime(s.nextRun)}` : null,
+      s.time ? `at ${s.time}` : null,
+    ].filter(Boolean).join(' · ');
+    sum.append(meta);
+
     const body = el('div', 'body');
-    // Only a weekly schedule has a day to pick, so the picker appears with it
-    // rather than sitting there greyed out on the other cadences.
-    const dayPick = select('Day of the week', s.dayOfWeek ?? '', dayOptions(),
-      v => { draft.dayOfWeek = v; }, { blank: 'Leave it on its current day' });
-    // The date starts on whatever day this schedule already runs, so the
-    // picker opens on it — but it only joins the draft once it is touched.
-    // Sending it every time would make an untouched date look like an edit and
-    // quietly take precedence over a day that was the thing being changed.
-    const datePick = dateField(DATE_LABEL[s.frequency] || 'Date', s.date || '',
-      v => { draft.date = v; draft.offsetMinutes = tzOffset(); });
+    const dayPick = select('Weekday', draft.dayOfWeek, dayOptions(), v => { draft.dayOfWeek = v === '' ? null : Number(v); }, { blank: 'Same as first-post date' });
+    dayPick.style.display = draft.frequency === 'weekly' ? '' : 'none';
+    const datePick = dateField(DATE_LABEL[draft.frequency] || 'Date', draft.date, v => { draft.date = v; }, { note: DATE_NOTE[draft.frequency] || '' });
+
     const syncCadence = f => {
       dayPick.style.display = f === 'weekly' ? '' : 'none';
       datePick.retitle(DATE_LABEL[f] || 'Date', DATE_NOTE[f] || '');
     };
-    syncCadence(s.frequency);
+
     body.append(
-      select('Message to post', s.embedName, templateOptions(), v => { draft.embedName = v; }),
-      pickOne('Channel', 'channel', s.channelId, v => { draft.channelId = v; }),
-      select('How often', s.frequency, freqOptions(), v => { draft.frequency = v; syncCadence(v); }),
+      select('Message to post', draft.embedName, templateOptions(), v => { draft.embedName = v; }, { blank: 'Pick a message' }),
+      pickOne('Channel', 'channel', draft.channelId, v => { draft.channelId = v; }, { blank: 'Pick a channel' }),
+      select('How often', draft.frequency, freqOptions(), v => { draft.frequency = v; syncCadence(v); }),
       dayPick,
-      textField('Time (HH:MM, or "2h" from now)', '', v => { draft.time = v; draft.offsetMinutes = tzOffset(); },
-        { placeholder: fmtTime(s.time) }),
+      textField('Time', draft.time, v => { draft.time = v; }, { placeholder: '09:30' }),
       datePick,
-      mentionPicker('Ping with the post', s.mention, v => { draft.mention = v; }),
-      el('p', 'hint', `Next: ${fmtTime(s.time)}${s.lastRun ? ` · last posted ${new Date(s.lastRun).toLocaleString()}` : ''}`),
+      mentionPicker('Ping with the post', draft.mention, v => { draft.mention = v; }),
+      toggle('Schedule enabled', on, v => { draft.enabled = v; }),
     );
+
     const act = el('div', 'actions');
-    const save = el('button', 'btn primary small', 'Save');
+    const save = el('button', 'btn primary small', 'Save schedule');
     save.type = 'button';
     save.addEventListener('click', () => post('schedule', draft));
     const del = el('button', 'btn small danger', 'Delete');
@@ -5404,7 +5433,7 @@ function renderSchedules() {
     del.addEventListener('click', async () => {
       if (!await askConfirm({
         title: 'Delete this schedule?',
-        message: 'It stops posting from now on. Anything it has already posted stays.',
+        message: `“${s.embedName}” will stop posting on its clock.`,
         confirmLabel: 'Delete it', danger: true,
       })) return;
       await post('schedule', { id: s.id, remove: true });
@@ -5412,65 +5441,85 @@ function renderSchedules() {
     act.append(save, del);
     body.append(act);
     d.append(sum, body);
-    return d;
-  }));
+    nodes.push(d);
+  }
+  list.replaceChildren(...nodes);
 
-  // Creating a schedule works here because the browser knows your UTC offset,
-  // so a typed "09:30" means the same instant it would from /schedule.
-  const add = el('details', 'item');
-  const addSum = el('summary');
-  addSum.append(el('span', 'nm', '+ Schedule a post'));
-  const nb = { embedName: '', channelId: '', frequency: 'everyday', time: '', mention: null, offsetMinutes: tzOffset() };
-  const addBody = el('div', 'body');
-  const newDayPick = select('Day of the week', '', dayOptions(),
-    v => { nb.dayOfWeek = v; }, { blank: 'Whichever day the time lands on' });
-  const newDatePick = dateField(DATE_LABEL[nb.frequency] || 'Date', '', v => { nb.date = v; },
-    { note: DATE_NOTE[nb.frequency] });
-  const syncNewCadence = f => {
+  // Composer — always visible so an empty desk still invites a first schedule
+  if (!composer) return;
+  const nb = {
+    embedName: '', channelId: '', frequency: 'everyday',
+    time: '', dayOfWeek: null, date: '', mention: null,
+  };
+  const wrap = el('div', 'desk-composer');
+  wrap.append(el('h3', null, 'New schedule'));
+  wrap.append(el('p', 'hint', `Times use your local zone (UTC${tzOffset() >= 0 ? '+' : ''}${(tzOffset() / 60).toFixed(2).replace(/\.00$/, '')}).`));
+
+  const newDayPick = select('Weekday', '', dayOptions(), v => { nb.dayOfWeek = v === '' ? null : Number(v); }, { blank: 'Same as first-post date' });
+  newDayPick.style.display = 'none';
+  const newDatePick = dateField(DATE_LABEL.everyday, '', v => { nb.date = v; }, { note: DATE_NOTE.everyday });
+  const syncNew = f => {
     newDayPick.style.display = f === 'weekly' ? '' : 'none';
     newDatePick.retitle(DATE_LABEL[f] || 'Date', DATE_NOTE[f] || '');
   };
-  syncNewCadence(nb.frequency);
-  addBody.append(
-    select('Message to post', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a message' }),
-    pickOne('Channel', 'channel', '', v => { nb.channelId = v; }, { blank: 'Pick a channel' }),
-    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; syncNewCadence(v); }),
+
+  wrap.append(
+    select('Message to post', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a Studio template' }),
+    pickOne('Channel', 'channel', '', v => { nb.channelId = v; }, { blank: 'Where it posts' }),
+    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; syncNew(v); }),
     newDayPick,
-    textField('Time', '', v => { nb.time = v; }, { placeholder: '09:30, or 2h from now' }),
+    textField('Time', '', v => { nb.time = v; }, { placeholder: '09:30 or 2h from now' }),
     newDatePick,
-    mentionPicker('Ping with the post', null, v => { nb.mention = v; }),
-    el('p', 'hint', `Times are read in your timezone (UTC${tzOffset() >= 0 ? '+' : ''}${(tzOffset() / 60).toFixed(2).replace(/\.00$/, '')}).`),
-    actions(() => post('schedulenew', nb)),
+    mentionPicker('Optional ping', null, v => { nb.mention = v; }),
+    actions(() => post('schedulenew', nb), { label: 'Create schedule' }),
   );
-  add.append(addSum, addBody);
-  list.append(add);
+  composer.replaceChildren(wrap);
 }
 
 function renderAutoreplies() {
   const list = $('#reply-list');
+  const composer = $('#reply-composer');
+  const countPill = $('#reply-count');
   const items = state.overview?.features?.autoreplies || [];
-  const nodes = [];
+  const enabledN = items.filter(r => r.enabled).length;
+  if (countPill) {
+    countPill.textContent = items.length
+      ? `${enabledN}/${items.length} on`
+      : 'none yet';
+  }
 
-  if (!items.length) nodes.push(el('p', 'muted', 'No auto-replies yet.'));
+  const nodes = [];
+  if (!items.length) {
+    const empty = el('div', 'empty-desk');
+    empty.append(
+      el('p', 'muted', 'No phrase watchers yet.'),
+      el('p', 'hint', 'Add a trigger below and pick the template the bot should post back.'),
+    );
+    nodes.push(empty);
+  }
+
   for (const r of items) {
-    const draft = { key: r.key, trigger: r.trigger, embedName: r.embedName, exact: r.exact, cooldown: r.cooldown, enabled: r.enabled };
+    const draft = {
+      key: r.key, trigger: r.trigger, embedName: r.embedName,
+      exact: r.exact, cooldown: r.cooldown, enabled: r.enabled,
+    };
     const d = el('details', 'item');
     const sum = el('summary');
     sum.append(
       el('span', `bstyle ${r.enabled ? 'success' : 'secondary'}`, r.enabled ? 'on' : 'off'),
       el('span', 'nm', r.trigger),
-      el('span', 'pr', r.embedName),
+      el('span', 'pr', r.embedName || '—'),
     );
     const body = el('div', 'body');
     body.append(
       textField('Trigger phrase', r.trigger, v => { draft.trigger = v; }),
-      select('Reply with', r.embedName, templateOptions(), v => { draft.embedName = v; }),
-      textField('Cooldown (seconds)', String(r.cooldown), v => { draft.cooldown = Number(v); }),
-      toggle('Whole message must match exactly', r.exact, v => { draft.exact = v; }),
-      toggle('Enabled', r.enabled, v => { draft.enabled = v; }),
+      select('Reply with', r.embedName, templateOptions(), v => { draft.embedName = v; }, { blank: 'Pick a template' }),
+      textField('Cooldown (seconds)', String(r.cooldown ?? 5), v => { draft.cooldown = Number(v); }),
+      toggle('Whole message must match exactly', !!r.exact, v => { draft.exact = v; }),
+      toggle('Enabled', !!r.enabled, v => { draft.enabled = v; }),
     );
     const act = el('div', 'actions');
-    const save = el('button', 'btn primary small', 'Save');
+    const save = el('button', 'btn primary small', 'Save reply');
     save.type = 'button';
     save.addEventListener('click', () => post('autoreply', draft));
     const del = el('button', 'btn small danger', 'Remove');
@@ -5488,23 +5537,22 @@ function renderAutoreplies() {
     d.append(sum, body);
     nodes.push(d);
   }
+  list.replaceChildren(...nodes);
 
-  const add = el('details', 'item');
-  const addSum = el('summary');
-  addSum.append(el('span', 'nm', '+ Add an auto-reply'));
+  if (!composer) return;
   const nb = { key: '', trigger: '', embedName: '', cooldown: 5, exact: false, enabled: true };
-  const addBody = el('div', 'body');
-  addBody.append(
-    textField('Trigger phrase', '', v => { nb.key = v.toLowerCase(); nb.trigger = v; }),
-    select('Reply with', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a message' }),
+  const wrap = el('div', 'desk-composer');
+  wrap.append(el('h3', null, 'New auto-reply'));
+  wrap.append(el('p', 'hint', 'Trigger is matched in chat. Exact mode requires the full message to be only that phrase.'));
+  wrap.append(
+    textField('Trigger phrase', '', v => { nb.key = v.toLowerCase().trim(); nb.trigger = v; }, { placeholder: 'e.g. rules' }),
+    select('Reply with', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a Studio template' }),
     textField('Cooldown (seconds)', '5', v => { nb.cooldown = Number(v); }),
     toggle('Whole message must match exactly', false, v => { nb.exact = v; }),
-    actions(() => post('autoreply', nb)),
+    toggle('Enabled', true, v => { nb.enabled = v; }),
+    actions(() => post('autoreply', nb), { label: 'Create auto-reply' }),
   );
-  add.append(addSum, addBody);
-  nodes.push(add);
-
-  list.replaceChildren(...nodes);
+  composer.replaceChildren(wrap);
 }
 
 /* ── engagement ────────────────────────────────────────────────────────── */
