@@ -48,15 +48,14 @@ python3 << 'PY'
 from pathlib import Path
 p = Path('web/public/index.html')
 t = p.read_text()
-src = '/quantbot.png' if Path('web/public/quantbot.png').exists() else '/quantbot.png'
 old = '''  <div class="brand">
     <svg class="mark" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
       <rect x="0.5" y="0.5" width="25" height="25" rx="7"></rect>
       <g class="y"><path d="M7 15.5 11 11l3 3 5-6"></path></g>
     </svg>
     <span class="wordmark">quantlab</span>'''
-new = f'''  <div class="brand">
-    <img class="mark" src="{src}" width="26" height="26" alt="" decoding="async">
+new = '''  <div class="brand">
+    <img class="mark" src="/quantbot.png" width="26" height="26" alt="" decoding="async">
     <span class="wordmark">quantlab</span>'''
 if old in t:
     t = t.replace(old, new, 1)
@@ -74,12 +73,8 @@ from pathlib import Path
 import re
 p = Path('web/public/index.html')
 t = p.read_text()
-t, n1 = re.subn(
-    r'\s*<article class="panel">\s*<h2>Verification</h2>[\s\S]*?<form id="form-verify"[\s\S]*?</article>',
-    '', t, count=1)
-t, n2 = re.subn(
-    r'\s*<div class="panel">\s*<h2>Post the verification panel</h2>[\s\S]*?<form id="form-verifypanel"[\s\S]*?</div>',
-    '', t, count=1)
+t, n1 = re.subn(r'\s*<article class="panel">\s*<h2>Verification</h2>[\s\S]*?<form id="form-verify"[\s\S]*?</article>', '', t, count=1)
+t, n2 = re.subn(r'\s*<div class="panel">\s*<h2>Post the verification panel</h2>[\s\S]*?<form id="form-verifypanel"[\s\S]*?</div>', '', t, count=1)
 Path('web/public/index.html').write_text(t)
 print('removed verify blocks', n1, n2)
 PY
@@ -90,7 +85,7 @@ from pathlib import Path
 import re
 p = Path('utils/featureToggles.js')
 t = p.read_text()
-t2, n = re.subn(r"\s*\{{\s*key: 'verification'[\s\S]*?\}},", '', t, count=1)
+t2, n = re.subn(r"\s*\{\s*key: 'verification'[\s\S]*?\},", '', t, count=1)
 if n:
     Path('utils/featureToggles.js').write_text(t2)
     print('toggle removed')
@@ -100,13 +95,13 @@ v = Path('commands/utility/verify.js')
 if v.exists():
     v.write_text(
         "'use strict';\n"
-        "const {{ SlashCommandBuilder, MessageFlags }} = require('discord.js');\n"
-        "module.exports = {{\n"
+        "const { SlashCommandBuilder, MessageFlags } = require('discord.js');\n"
+        "module.exports = {\n"
         "  data: new SlashCommandBuilder().setName('verify').setDescription('(Retired) Verification removed.'),\n"
-        "  async execute(i) {{\n"
-        "    await i.reply({{ content: 'Member verification has been removed from this bot.', flags: MessageFlags.Ephemeral }});\n"
-        "  }},\n"
-        "}};\n"
+        "  async execute(i) {\n"
+        "    await i.reply({ content: 'Member verification has been removed from this bot.', flags: MessageFlags.Ephemeral });\n"
+        "  },\n"
+        "};\n"
     )
     print('verify command retired')
 PY
@@ -132,8 +127,9 @@ from pathlib import Path
 p = Path('utils/contentSeed.js')
 t = p.read_text()
 for key in ["'tradingview-banner':", "'whop-banner':"]:
-    if key in t and '// retired' not in t[t.find(key)-20:t.find(key)]:
-        t = t.replace(key, '// retired ' + key + ' ')
+    pos = t.find(key)
+    if pos >= 0 and '// retired' not in t[max(0, pos-30):pos]:
+        t = t.replace(key, '// retired ' + key + ' ', 1)
 p.write_text(t)
 print('seed updated')
 PY
@@ -183,7 +179,7 @@ function strokeCircleAA(png, cx, cy, r, color, alpha = 1, thickness = 2) {
     print('AA added')
 PY
 
-echo "== 8. Prize banner: quantbot under gift =="
+echo "== 8. Prize banner quantbot under gift =="
 python3 << 'PY'
 from pathlib import Path
 import re
@@ -223,7 +219,7 @@ else:
 Path('utils/prizeGiveawayVisual.js').write_text(t)
 PY
 
-echo "== 9. CSS crisp previews + img.mark =="
+echo "== 9. CSS =="
 python3 << 'PY'
 from pathlib import Path
 p = Path('web/public/app.css')
