@@ -70,14 +70,42 @@ function maskKey(key) {
 }
 
 function pickCover(c) {
-  // Prefer real course card art (thumbnail), then cover_image string.
-  const urls = [
-    c?.thumbnail?.optimized_url,
+  // Prefer the largest / cleanest course art so Discord can show a real
+  // full-width banner. Order: high-res source → optimized → explicit cover
+  // fields → nested image objects the API sometimes nests under `images`.
+  const candidates = [
     c?.thumbnail?.source_url,
+    c?.thumbnail?.url,
+    c?.thumbnail?.optimized_url,
     typeof c?.cover_image === 'string' ? c.cover_image : null,
-    c?.cover,
-  ].filter(u => typeof u === 'string' && /^https?:\/\//i.test(u.trim()));
-  return urls[0] || null;
+    c?.cover_image?.source_url,
+    c?.cover_image?.url,
+    c?.cover_image?.optimized_url,
+    typeof c?.cover === 'string' ? c.cover : null,
+    c?.cover?.source_url,
+    c?.cover?.url,
+    c?.image?.source_url,
+    c?.image?.url,
+    c?.image?.optimized_url,
+    typeof c?.image === 'string' ? c.image : null,
+    ...(Array.isArray(c?.images) ? c.images.flatMap(img => [
+      typeof img === 'string' ? img : null,
+      img?.source_url,
+      img?.url,
+      img?.optimized_url,
+    ]) : []),
+  ];
+  const urls = candidates
+    .filter(u => typeof u === 'string' && /^https:\/\//i.test(u.trim()))
+    .map(u => u.trim());
+  // Prefer non-tiny CDN variants when the same asset is listed multiple ways.
+  const ranked = urls.sort((a, b) => {
+    const score = u => (/w=\d{3,}|width=\d{3,}|original|source|large|full/i.test(u) ? 2 : 0)
+      + (/optimized|thumb|small|64|128|256/i.test(u) ? -1 : 0)
+      + Math.min(u.length, 200) / 200;
+    return score(b) - score(a);
+  });
+  return ranked[0] || null;
 }
 
 async function whopFetch(apiKey, path, params = {}) {
@@ -351,10 +379,17 @@ async function newLessons(guildId) {
       continue;
     }
 
-    // Refresh cover if missing
-    if (!e.cover) {
+    // Refresh cover if missing, or if it still looks like a tiny thumb CDN
+    // path (common when an older pickCover preferred optimized_url).
+    const coverLooksWeak = !e.cover
+      || /\/(thumb|small|64|128|256)[/.]/i.test(e.cover)
+      || /[?&](w|width)=(64|128|256)\b/i.test(e.cover);
+    if (coverLooksWeak) {
       const full = await retrieveCourse(s.apiKey, e.id);
-      if (full) e = { ...e, cover: pickCover(full) };
+      if (full) {
+        const next = pickCover(full);
+        if (next) e = { ...e, cover: next };
+      }
     }
 
     let lessons;
