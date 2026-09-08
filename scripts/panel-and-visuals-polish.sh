@@ -32,13 +32,13 @@ else:
     buf = io.BytesIO()
     im.resize((128, 128), Image.Resampling.LANCZOS).save(buf, format='PNG', optimize=True)
     b64 = base64.b64encode(buf.getvalue()).decode()
-    out.write_text(
-        "'use strict';\n/** Quantbot mascot (embedded PNG). */\n"
-        f"const BUF = Buffer.from('{b64}', 'base64');\n"
-        "module.exports = { png64: BUF, png256: BUF, "
-        f"dataUri64: 'data:image/png;base64,{b64}' };\n"
+    content = (
+        "'use strict';\n"
+        "/** Quantbot mascot (embedded PNG). */\n"
+        "const BUF = Buffer.from('" + b64 + "', 'base64');\n"
+        "module.exports = { png64: BUF, png256: BUF, dataUri64: 'data:image/png;base64," + b64 + "' };\n"
     )
-    # also write web public png
+    out.write_text(content)
     Path('web/public/quantbot.png').write_bytes(buf.getvalue())
     print('logo embedded from', src)
 PY
@@ -48,12 +48,7 @@ python3 << 'PY'
 from pathlib import Path
 p = Path('web/public/index.html')
 t = p.read_text()
-uri = ''
-mod = Path('utils/quantbotLogo.js')
-if mod.exists() and "dataUri64: 'data:" in mod.read_text():
-    uri = mod.read_text().split("dataUri64: '")[1].split("'")[0]
-# Prefer static file if written
-src = '/quantbot.png' if Path('web/public/quantbot.png').exists() else (uri or '/quantbot.png')
+src = '/quantbot.png' if Path('web/public/quantbot.png').exists() else '/quantbot.png'
 old = '''  <div class="brand">
     <svg class="mark" viewBox="0 0 26 26" aria-hidden="true" focusable="false">
       <rect x="0.5" y="0.5" width="25" height="25" rx="7"></rect>
@@ -93,40 +88,42 @@ echo "== 4. Skip verify command + feature toggle =="
 python3 << 'PY'
 from pathlib import Path
 import re
-# feature toggle
 p = Path('utils/featureToggles.js')
 t = p.read_text()
-t2, n = re.subn(r"\s*\{\s*key: 'verification'[\s\S]*?\},", '', t, count=1)
-if n: Path('utils/featureToggles.js').write_text(t2); print('toggle removed')
-# index skip verify file if we load utility folder wholesale - rename not needed; command can stay retired
+t2, n = re.subn(r"\s*\{{\s*key: 'verification'[\s\S]*?\}},", '', t, count=1)
+if n:
+    Path('utils/featureToggles.js').write_text(t2)
+    print('toggle removed')
+else:
+    print('toggle skip')
 v = Path('commands/utility/verify.js')
 if v.exists():
-    v.write_text("'''use strict''';\nconst { SlashCommandBuilder, MessageFlags } = require('discord.js');\nmodule.exports = {\n  data: new SlashCommandBuilder().setName('verify').setDescription('(Retired) Verification removed.'),\n  async execute(i) { await i.reply({ content: 'Member verification has been removed from this bot.', flags: MessageFlags.Ephemeral }); },\n};\n".replace("'''", "'") )
+    v.write_text(
+        "'use strict';\n"
+        "const {{ SlashCommandBuilder, MessageFlags }} = require('discord.js');\n"
+        "module.exports = {{\n"
+        "  data: new SlashCommandBuilder().setName('verify').setDescription('(Retired) Verification removed.'),\n"
+        "  async execute(i) {{\n"
+        "    await i.reply({{ content: 'Member verification has been removed from this bot.', flags: MessageFlags.Ephemeral }});\n"
+        "  }},\n"
+        "}};\n"
+    )
     print('verify command retired')
 PY
 
 echo "== 5. Studio banners prize-only =="
 python3 << 'PY'
 from pathlib import Path
+import re
 p = Path('utils/bannerCopy.js')
 t = p.read_text()
-old = """const BANNERS = {
-  tradingview: { label: 'TradingView indicator', dynamicKey: 'tradingViewBanner', defaults: TV_DEFAULTS },
-  whop:        { label: 'Whop membership',       dynamicKey: 'whopBanner',        defaults: WHOP_DEFAULTS },
-  prize:       { label: 'Prize giveaway',        dynamicKey: 'prizeGiveawayBanner', defaults: PRIZE_DEFAULTS },
-};"""
-new = """const BANNERS = {
-  prize: { label: 'Prize giveaway', dynamicKey: 'prizeGiveawayBanner', defaults: PRIZE_DEFAULTS },
-};"""
-if old in t:
-    p.write_text(t.replace(old, new, 1)); print('BANNERS prize-only')
-elif 'tradingview' not in t:
-    print('already')
+new = "const BANNERS = {\n  prize: { label: 'Prize giveaway', dynamicKey: 'prizeGiveawayBanner', defaults: PRIZE_DEFAULTS },\n};"
+t2, n = re.subn(r'const BANNERS = \{[\s\S]*?\};', new, t, count=1)
+if n:
+    p.write_text(t2)
+    print('BANNERS prize-only')
 else:
-    # force
-    import re
-    t2 = re.sub(r'const BANNERS = \{[\s\S]*?\};', new, t, count=1)
-    p.write_text(t2); print('BANNERS forced')
+    print('WARN banners')
 PY
 
 echo "== 6. contentSeed stop TV/whop =="
@@ -135,8 +132,8 @@ from pathlib import Path
 p = Path('utils/contentSeed.js')
 t = p.read_text()
 for key in ["'tradingview-banner':", "'whop-banner':"]:
-    if key in t and f'// retired {key}' not in t:
-        t = t.replace(key, f'// retired {key} ')
+    if key in t and '// retired' not in t[t.find(key)-20:t.find(key)]:
+        t = t.replace(key, '// retired ' + key + ' ')
 p.write_text(t)
 print('seed updated')
 PY
@@ -182,7 +179,8 @@ function strokeCircleAA(png, cx, cy, r, color, alpha = 1, thickness = 2) {
         'fillRect, fillRectBlend, line, dot, dotBlend, ringBlend, ringStroke, fillCircleAA, strokeCircleAA,',
         1,
     )
-    p.write_text(t); print('AA added')
+    p.write_text(t)
+    print('AA added')
 PY
 
 echo "== 8. Prize banner: quantbot under gift =="
@@ -216,14 +214,12 @@ function blitLogo(dest, dx, dy, size) {
 }
 '''
     t = t.replace('function giftBox', helper + 'function giftBox', 1)
-t2, n = re.subn(
-    r'drawFlowSignature\([^;]+;',
-    'blitLogo(png, 140, 300, 72);',
-    t,
-    count=1,
-)
-if n: t = t2; print('logo under gift')
-else: print('signature replace skip', n)
+t2, n = re.subn(r'drawFlowSignature\([^;]+;', 'blitLogo(png, 140, 300, 72);', t, count=1)
+if n:
+    t = t2
+    print('logo under gift')
+else:
+    print('signature replace skip')
 Path('utils/prizeGiveawayVisual.js').write_text(t)
 PY
 
@@ -243,12 +239,13 @@ if 'img.mark' not in t:
   image-rendering: high-quality;
 }
 '''
-    p.write_text(t); print('css ok')
+    p.write_text(t)
+    print('css ok')
 else:
     print('css already')
 PY
 
 echo ""
-echo "Done. If logo WARN, copy Quantbot.jpg to repo root and re-run step 1."
+echo "Done."
 echo "  git add -A && git commit -m 'Panel Quantbot logo, verification off, prize-only studio, AA shapes'"
 echo "  git push && restart"
