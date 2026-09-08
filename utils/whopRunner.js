@@ -1,13 +1,22 @@
 'use strict';
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
 const whop = require('./whopFeed');
 const messageStyle = require('./messageStyle');
+const { generateWhopBannerImage } = require('./whopVisual');
 
 const TICK_MS = 60_000;
 const GAP_MS = 2_500;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/**
+ * Lesson alert embed.
+ *
+ * The course cover is always the full-width banner (setImage), not the small
+ * corner thumbnail — that is what makes the course art read as a real banner
+ * in Discord. If the cover URL is missing or Discord refuses it, we fall back
+ * to a generated QuantLab banner that still carries the course name.
+ */
 function buildLessonEmbed(guildId, lesson) {
   const style = messageStyle.styleFor(guildId, 'whop.lesson');
   const embed = messageStyle.build(guildId, 'whop.lesson', {
@@ -21,17 +30,42 @@ function buildLessonEmbed(guildId, lesson) {
       user: '',
     },
   });
-  if (!embed) return null;
+  if (!embed) return { embed: null, files: [] };
 
-  const banner = lesson.courseCover;
-  if (banner && /^https?:\/\//i.test(banner)) {
+  const files = [];
+  const banner = typeof lesson.courseCover === 'string' ? lesson.courseCover.trim() : '';
+
+  if (banner && /^https:\/\//i.test(banner)) {
     try {
-      // Full-width course banner
-      if (!style || style.thumbnail === false) embed.setImage(banner);
-      else embed.setThumbnail(banner);
-    } catch { /* bad url */ }
+      // Always full-width so the course art reads as a banner, not a chip.
+      // The Appearance "thumbnail" toggle is intentionally ignored here —
+      // a 80×80 corner image is never a course banner.
+      embed.setImage(banner);
+    } catch {
+      // Bad URL — fall through to generated banner.
+    }
   }
-  return embed;
+
+  // No usable cover (or setImage failed silently): draw a branded banner so
+  // the alert still looks finished instead of a bare text card.
+  if (!embed.data?.image?.url) {
+    try {
+      const courseName = (lesson.courseTitle || 'COURSE').toUpperCase().slice(0, 28);
+      const png = generateWhopBannerImage({
+        pill: 'NEW LESSON',
+        heading: courseName,
+        subtitle: (lesson.title || 'NEW LESSON').toUpperCase().slice(0, 40),
+        tagline: 'A NEW LESSON JUST DROPPED IN THIS COURSE.',
+      });
+      const name = 'whop-lesson.png';
+      files.push(new AttachmentBuilder(png, { name }));
+      embed.setImage(`attachment://${name}`);
+    } catch (err) {
+      console.warn('[WHOP] generated banner failed:', err.message);
+    }
+  }
+
+  return { embed, files };
 }
 
 function buildButtonRow(settings, lesson) {
@@ -61,7 +95,7 @@ async function postLesson(guild, settings, lesson) {
   const channel = guild.channels.cache.get(lesson.channelId);
   if (!channel || !channel.isTextBased?.()) return false;
 
-  const embed = buildLessonEmbed(guild.id, lesson);
+  const { embed, files } = buildLessonEmbed(guild.id, lesson);
   if (!embed) return false;
 
   const roleId = lesson.mentionRoleId || null;
@@ -71,6 +105,7 @@ async function postLesson(guild, settings, lesson) {
     content: roleId ? `<@&${roleId}>` : undefined,
     embeds: [embed],
     components: row ? [row] : [],
+    files: files.length ? files : undefined,
     allowedMentions: roleId ? { roles: [roleId] } : { parse: [] },
   });
   return true;
