@@ -40,7 +40,10 @@ process.on('uncaughtException', (err) => console.error('[UNCAUGHT EXCEPTION]', e
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
+// Coin economy + casino commands retired (folder kept on disk for history only).
+const SKIP_COMMAND_FOLDERS = new Set(['economy']);
 for (const folder of commandFolders) {
+    if (SKIP_COMMAND_FOLDERS.has(folder)) continue;
     const commandsPath = path.join(foldersPath, folder);
     const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
     for (const file of commandFiles) {
@@ -55,7 +58,9 @@ for (const folder of commandFolders) {
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
+const SKIP_EVENT_FILES = new Set(['casinoInteraction.js', 'jobsInteraction.js']);
 for (const file of eventFiles) {
+    if (SKIP_EVENT_FILES.has(file)) continue;
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {

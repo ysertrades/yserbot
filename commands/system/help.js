@@ -15,19 +15,14 @@ const ADMIN_CATALOGUE = [
   ['autoreply',      'Set automatic keyword replies'],
   ['button',         'Create & manage button link panels'],
   ['cardsettings',   'Set how many messages between card drops (server-wide)'],
-  ['casino-settings','Set bet limits & cooldowns for casino'],
   ['cmd',            'Set which roles can use mod/admin commands'],
-  ['coinsgiveaway',  'Create, end, reroll & list casino coins giveaways (auto-credited to winners)'],
   ['config',         'Server-wide settings (prefix, channels, roles…)'],
-  ['econcal',        'Weekly economic calendar with release reminders (ForexFactory data)'],
+  ['econcal',        'Economic calendar with release reminders'],
   ['embed',          'Create & manage embed templates'],
-  ['give-coins',     'Grant coins to a member'],
   ['giveaway',       'Create, end, reroll & list giveaways'],
   ['levelsettings',  'Configure XP & leveling system'],
   ['modlog',         'Toggle which events get logged to the mod-log channel'],
-  ['newsfeed',       'Live market news to a channel — sources, topics & on/off in one panel'],
   ['schedule',       'Schedule embed templates to send automatically'],
-  ['shopsettings',   'Add / remove items from the server shop'],
   ['ticket',         'Configure the support ticket system'],
   ['verify',         'Set up member verification (memory challenge + role)'],
 ];
@@ -42,20 +37,8 @@ const COMMUNITY_CMDS = [
   ['userinfo',   'View info about a member'],
 ];
 
-const ECONOMY_CMDS = [
-  ['bank',       'View your bank account, deposit, withdraw, check balances & the leaderboard'],
-  ['casino',     'Play casino games (slots, crash, BJ, roulette, wheel…)'],
-  ['daily',      'Claim your daily coins'],
-  ['fish',       'Cast a line and see what you reel in'],
-  ['jobs',       'Work multiple jobs with separate cooldowns'],
-  ['lottery',    'Buy tickets for the daily lottery draw'],
-  ['mine',       'Swing your pickaxe and see what you dig up'],
-  ['rob',        'Attempt to steal coins from another user'],
-  ['shop',       'Browse and buy items from the server shop'],
-  ['transfer',   'Send coins to another member'],
-  ['trivia',     'Answer a trivia question for coins'],
-  ['work',       'Earn coins by working'],
-];
+const ECONOMY_CMDS = []; // retired — coin economy removed
+
 
 const FUTURES_CMDS = [
   ['risk', 'Calculate position size & risk for futures contracts'],

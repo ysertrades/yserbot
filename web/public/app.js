@@ -621,7 +621,7 @@ function renderOverviewCards() {
     { value: d.econcal.enabled ? 'LIVE' : 'OFF', label: 'Calendar', kind: d.econcal.enabled ? 'live' : 'idle' },
     { value: num(d.counts.activeGiveaways), label: 'Giveaways', kind: d.counts.activeGiveaways ? 'live' : 'idle' },
     { value: num(d.counts.embedTemplates), label: 'Templates', kind: '' },
-    { value: num(d.counts.shopItems), label: 'Shop items', kind: '' },
+    { value: num(d.counts.embedTemplates), label: 'Templates', kind: '' },
     { value: num(d.counts.moderationCases), label: 'Mod cases', kind: '' },
     { value: d.whop?.enabled ? 'ON' : 'OFF', label: 'Whop', kind: d.whop?.enabled ? 'live' : 'idle' },
   ]);
@@ -634,7 +634,6 @@ function renderOverviewCards() {
   );
 
   $('#card-counts').replaceChildren(
-    row('Shop items', num(d.counts.shopItems)),
     row('Embed templates', num(d.counts.embedTemplates)),
     row('Moderation cases', num(d.counts.moderationCases)),
     row('Word filter', pill(d.automod.badWords)),
@@ -649,7 +648,7 @@ function renderOverview() {
   renderOverviewCards();
   renderFeedForms();
   renderModerationForm();
-  renderShop();
+  /* renderShop retired */
   renderComposer();
   renderAppearance();
   renderSocial();
@@ -661,14 +660,14 @@ function renderOverview() {
   renderLegalLinks();
   renderTickets();
   renderPolls();
-  renderCasino();
+  /* renderCasino retired */
   renderLinkRequests();
   renderModeration();
   renderGroupForm('#form-lottery', 'lottery');
   renderCards();
   renderGroupForm('#form-verify', 'verify');
   renderVerifyPanel();
-  renderEconomy();
+  /* renderEconomy retired */
   renderCoins();
   renderSchedules();
   renderAutoreplies();
