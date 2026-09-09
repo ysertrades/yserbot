@@ -655,7 +655,7 @@ function renderOverview() {
   /* renderShop retired */
   renderComposer();
   renderAppearance();
-  renderSocial();
+  /* Social removed from panel */
   renderGiveaways();
   renderSettings();
   renderFeatureToggles();
@@ -1006,29 +1006,27 @@ function renderWhop() {
   if (!list) return;
   const blocks = [];
 
-  /* ---- Tracking log ---- */
+  /* ---- Tracking log (responsive up to 3 / row) ---- */
   blocks.push(el("h3", null, "Tracking log"));
   if (!log.length) {
-    blocks.push(el("p", "muted", "Empty. Add a course from the library below (course + channel)."))
+    blocks.push(el("p", "muted", "Empty. Add a course from the library below (course + channel)."));
   } else {
+    const grid = el("div", "track-grid");
     for (const e of log) {
-      const card = el("div", "panel");
-      card.style.cssText = "padding:0.75rem 1rem;margin:0.5rem 0;";
-      const head = el("div", "queue-head");
-      head.append(el("strong", null, e.title || e.id));
-      head.append(el("span", "hint", e.channel ? ("#" + e.channel) : "no channel"));
-      card.append(head);
-      card.append(el("p", "hint",
-        (e.knownCount || 0) + " lessons remembered"
-        + (e.baselined ? " · baselined" : " · not baselined yet")
-        + (e.addedAt ? (" · " + new Date(e.addedAt).toLocaleDateString()) : "")
-      ));
-
+      const card = el("div", "track-card");
+      card.append(
+        el("p", "track-title", e.title || e.id),
+        el("p", "track-meta",
+          (e.channel ? ("#" + e.channel + " · ") : "")
+          + (e.knownCount || 0) + " lessons"
+          + (e.baselined ? " · baselined" : " · warming up")
+          + (e.addedAt ? (" · " + new Date(e.addedAt).toLocaleDateString()) : "")
+        )
+      );
       let ch = e.channelId || null;
       let role = e.mentionRoleId || null;
       card.append(pickOne("Channel", "channel", ch, v => { ch = v; }));
       card.append(pickOne("Ping role", "role", role, v => { role = v; }));
-
       const acts = el("div", "actions");
       const save = el("button", "btn small primary", "Save");
       save.type = "button";
@@ -1049,8 +1047,9 @@ function renderWhop() {
       });
       acts.append(save, remove);
       card.append(acts);
-      blocks.push(card);
+      grid.append(card);
     }
+    blocks.push(grid);
   }
 
   /* ---- Course library from scan ---- */
@@ -6034,9 +6033,7 @@ function renderLive() {
   if (_sigChanged('mod', o.mod)) renderModeration();
   if (_sigChanged('links', o.linkRequests || o.links)) renderLinkRequests();
   if (_sigChanged('tickets', o.tickets)) renderTickets();
-  if (!state.socialDraft && !(state.socialOpen?.size) && _sigChanged('social', o.social)) {
-    renderSocial();
-  }
+  /* Social removed from panel */
   startTicking();
 }
 
