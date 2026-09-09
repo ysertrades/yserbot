@@ -2297,6 +2297,10 @@ function wordsField(label, values, onChange, hint) {
 }
 
 function renderSocial() {
+  /* Social feature removed — no-op */
+  return;
+  /* dead code below kept only so structure stays valid until a later cleanup */
+
   const d = state.overview?.social;
   if (!d) return;
 
