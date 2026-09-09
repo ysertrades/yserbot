@@ -646,6 +646,10 @@ function renderOverviewCards() {
 function renderOverview() {
   if (!state.overview) return;
   renderOverviewCards();
+  if (isEditing() || sheetIsOpen()) {
+    liveMissed = true;
+    return;
+  }
   renderFeedForms();
   renderModerationForm();
   /* renderShop retired */
@@ -5949,12 +5953,51 @@ let live = null;
 let liveMissed = false;
 
 /** Is the person in the middle of typing something, or has a native menu open? */
+let uiBusy = false;
+let uiBusyTimer = null;
+function markUiBusy() {
+  uiBusy = true;
+  if (uiBusyTimer) clearTimeout(uiBusyTimer);
+  uiBusyTimer = null;
+}
+function clearUiBusySoon() {
+  if (uiBusyTimer) clearTimeout(uiBusyTimer);
+  uiBusyTimer = setTimeout(() => {
+    uiBusy = false;
+    uiBusyTimer = null;
+    if (typeof liveMissed !== 'undefined' && liveMissed && typeof renderLive === 'function') {
+      try { renderLive(); } catch (_) {}
+    }
+  }, 200);
+}
+document.addEventListener('mousedown', (e) => {
+  const t = e.target;
+  if (!t) return;
+  if (t.tagName === 'SELECT' || (t.closest && t.closest('select'))) markUiBusy();
+}, true);
+document.addEventListener('focusin', (e) => {
+  if (e.target && e.target.tagName === 'SELECT') markUiBusy();
+}, true);
+document.addEventListener('focusout', (e) => {
+  if (e.target && e.target.tagName === 'SELECT') clearUiBusySoon();
+}, true);
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.tagName === 'SELECT') clearUiBusySoon();
+}, true);
+document.addEventListener('toggle', (e) => {
+  if (e.target && e.target.tagName === 'DETAILS') {
+    if (e.target.open) markUiBusy();
+    else clearUiBusySoon();
+  }
+}, true);
+
 function isEditing() {
+  if (uiBusy) return true;
   const a = document.activeElement;
   if (!a) return false;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
   if (a.isContentEditable === true) return true;
-  if (document.querySelector('select:focus, select[size], details[open] summary:focus')) return true;
+  if (document.querySelector('select:focus, details[open] summary:focus')) return true;
   return false;
 }
 
@@ -5968,21 +6011,32 @@ function isEditing() {
  * Social is a special case: its account list is read-only once collapsed, but
  * an open card is a form, so it is only redrawn when none is open.
  */
+const _liveSig = Object.create(null);
+function _sigChanged(key, value) {
+  let next;
+  try { next = JSON.stringify(value); } catch (_) { next = String(value); }
+  if (_liveSig[key] === next) return false;
+  _liveSig[key] = next;
+  return true;
+}
+
 function renderLive() {
   if (!state.overview) return;
-  // Deferred rather than dropped: whatever arrived is already in state, and
-  // the next tick — or the moment the field loses focus — will show it.
   if (isEditing() || sheetIsOpen()) { liveMissed = true; return; }
   liveMissed = false;
 
   renderOverviewCards();
-  revealOverviewChrome();
-  renderGiveaways();
-  renderLottery();
-  renderModeration();
-  renderLinkRequests();
-  renderTickets();
-  if (!state.socialDraft && !(state.socialOpen?.size)) renderSocial();
+  if (!root.dataset.entered) revealOverviewChrome();
+
+  const o = state.overview;
+  if (_sigChanged('giveaways', o.giveaways)) renderGiveaways();
+  if (_sigChanged('lottery', o.lottery)) renderLottery();
+  if (_sigChanged('mod', o.mod)) renderModeration();
+  if (_sigChanged('links', o.linkRequests || o.links)) renderLinkRequests();
+  if (_sigChanged('tickets', o.tickets)) renderTickets();
+  if (!state.socialDraft && !(state.socialOpen?.size) && _sigChanged('social', o.social)) {
+    renderSocial();
+  }
   startTicking();
 }
 
@@ -6204,6 +6258,7 @@ async function refreshOverview() {
 
 /** After paint, pin opacity so a cancelled animation cannot leave cards invisible. */
 function revealOverviewChrome() {
+  if (root.dataset.entered) return;
   requestAnimationFrame(() => {
     document.querySelectorAll(
       '.tiles > *:not(.ph), .section[data-active] .panel, .section[data-active]'
@@ -6212,9 +6267,7 @@ function revealOverviewChrome() {
       node.style.transform = 'none';
     });
   });
-  if (!root.dataset.entered) {
-    setTimeout(() => { root.dataset.entered = '1'; }, 700);
-  }
+  setTimeout(() => { root.dataset.entered = '1'; }, 700);
 }
 
 /**

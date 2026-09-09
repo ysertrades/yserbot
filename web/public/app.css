@@ -1014,3 +1014,47 @@ html[data-entered] .embed-box[open] .body { animation: none; }
 #reply-panel .queue-head {
   align-items: center;
 }
+
+
+/* === stability hard-fix (dropdowns + hover shake) ===================== */
+.section, .section .panel, .form, .field, .items, .item, .gaw,
+select, input, textarea, label.field, .chipset, .actions {
+  transform: none !important;
+  filter: none !important;
+  will-change: auto !important;
+}
+
+.gaw.tappable,
+.gaw.tappable .chev,
+.tpl-entry,
+.chip-toggle,
+.guilds button,
+.legal-link,
+.btn {
+  transition-property: background, border-color, color, opacity !important;
+}
+
+.gaw.tappable:hover .chev {
+  transform: translateY(-50%) !important;
+}
+.legal-link:hover {
+  transform: none !important;
+}
+.btn:active:not(:disabled),
+.tpl-entry:active,
+.chip-toggle:active,
+.guilds button:active {
+  transform: none !important;
+}
+
+html[data-entered] .bar,
+html[data-entered] .server,
+html[data-entered] .sections,
+html[data-entered] .tiles > *,
+html[data-entered] .section,
+html[data-entered] .section .panel,
+html[data-entered] .grid > *,
+html[data-entered] .item[open] .body,
+html[data-entered] .embed-box[open] .body {
+  animation: none !important;
+}
