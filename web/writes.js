@@ -44,7 +44,6 @@ const moderationPanel = require('./moderation');
 const economyPanel = require('./economy');
 const cardsPanel = require('./cards');
 const appearance = require('./appearance');
-const socialPanel = require('./social');
 const whopPanel = require('./whop');
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -479,43 +478,11 @@ Object.assign(OPS, {
     }
     return r;
   },
-  /* -- watched social accounts ------------------------------------------- */
-  async social(guildId, body, ctx) {
-    const r = socialPanel.saveSettings(guildId, body, ctx);
-    if (r.ok && !r.unchanged) {
-      await announce(ctx.client, guildId, ctx.session, `📡 **Social** — ${r.changed.join('; ')}`, 'social');
-    }
-    return r;
-  },
-  async socialaccount(guildId, body, ctx) {
-    const r = socialPanel.saveAccount(guildId, body, ctx);
-    if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session, r.removed
-        ? `📡 Stopped watching **${r.removed}**`
-        : `📡 ${r.isNew ? 'Now watching' : 'Updated'} **${r.label}** on ${r.platformLabel}`, 'social');
-    }
-    return r;
-  },
-  async socialtest(guildId, body, ctx) {
-    // No audit line: this reads a feed and posts nothing, so a mod-log entry
-    // every time somebody presses Test would be noise in a channel people
-    // need to be able to read.
-    return socialPanel.testAccount(guildId, body, ctx);
-  },
-  async socialpost(guildId, body, ctx) {
-    const r = await socialPanel.postLatest(guildId, body, ctx);
-    if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session, `📡 Posted the latest from **${r.label}** by hand`, 'social');
-    }
-    return r;
-  },
-
-
   /* -- Whop courses ------------------------------------------------------- */
   async whop(guildId, body, ctx) {
     const r = await whopPanel.saveSettings(guildId, body, ctx);
     if (r.ok && !r.unchanged) {
-      await announce(ctx.client, guildId, ctx.session, `📚 **Whop** — ${r.changed.join('; ')}`, 'social');
+      await announce(ctx.client, guildId, ctx.session, `📚 **Whop** — ${r.changed.join('; ')}`, 'whop');
     }
     return r;
   },
@@ -523,7 +490,7 @@ Object.assign(OPS, {
     const r = await whopPanel.scan(guildId);
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session,
-        `📚 **Whop** scanned — ${r.courses} course(s), ${r.selected} selected`, 'social');
+        `📚 **Whop** scanned — ${r.courses} course(s), ${r.selected} selected`, 'whop');
     }
     return r;
   },
