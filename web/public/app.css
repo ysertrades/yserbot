@@ -1,1 +1,5 @@
-PLACEHOLDER
+/* QuantLab control panel — split for deploy size limits.
+   Load order is fixed; do not reorder. */
+@import url("/app.part0.css");
+@import url("/app.part1.css");
+@import url("/app.part2.css");
