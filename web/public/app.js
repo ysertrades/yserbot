@@ -669,8 +669,6 @@ function renderOverview() {
   renderModeration();
   renderGroupForm('#form-lottery', 'lottery');
   renderCards();
-  renderGroupForm('#form-verify', 'verify');
-  renderVerifyPanel();
   /* renderEconomy retired */
   renderCoins();
   renderSchedules();
