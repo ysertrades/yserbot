@@ -228,10 +228,6 @@ async function route(req, res, client) {
   // The platform marks, on the same terms as the icons and for the same
   // reason: Discord's CDN fetches the author icon on a posted card from
   // outside any session, so these cannot sit behind the auth gate.
-    return send(res, 200, socialMark(key, size), {
-      'content-type': 'image/png',
-      'cache-control': 'public, max-age=604800',
-    });
   }
 
   const iconMatch = /^\/icon-(\d{2,4})\.png$/.exec(p);
