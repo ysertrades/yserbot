@@ -6353,14 +6353,7 @@ async function main() {
     state.draft = { ...newDraft(''), isNew: true };
     renderComposer();
   });
-  $('#social-new').addEventListener('click', () => {
-    state.socialDraft = {
-      id: '', platform: 'youtube', handle: '', label: '', feedUrl: '',
-      postChannelId: null, mentionRoleId: null,
-      includeKeywords: [], excludeKeywords: [], enabled: true,
-    };
-    renderSocial();
-  });
+  // Social feature removed — no #social-new button.
   root.dataset.state = 'panel';
   offerStorageAccess();
 
