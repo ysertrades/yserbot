@@ -225,10 +225,6 @@ async function route(req, res, client) {
   // Home-screen icons. Public on purpose: iOS and Android fetch these from
   // outside any session — often before one exists — so putting them behind the
   // auth gate would mean an installed app with a blank icon.
-  // The platform marks, on the same terms as the icons and for the same
-  // reason: Discord's CDN fetches the author icon on a posted card from
-  // outside any session, so these cannot sit behind the auth gate.
-  }
 
   const iconMatch = /^\/icon-(\d{2,4})\.png$/.exec(p);
   if (iconMatch) {
