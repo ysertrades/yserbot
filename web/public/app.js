@@ -259,6 +259,14 @@ async function get(path) {
  *           endpoint, and telling somebody their change was saved when they
  *           pressed Test is simply untrue.
  */
+
+async function sendDropPrize(shortId, text) {
+  const body = { shortId, text: String(text || '').trim() };
+  if (!body.text) { toast('Enter the prize message or code first.', 'bad'); return; }
+  const res = await post('giveawaysendprize', body);
+  if (res?.ok) toast(`Prize DM sent (${res.sent}/${res.total}).`, 'good');
+}
+
 async function post(op, body, { quiet = false } = {}) {
   const res = await fetch(`/api/guild/${state.guildId}/${op}`, {
     method: 'POST',

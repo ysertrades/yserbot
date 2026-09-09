@@ -599,27 +599,14 @@ const CATALOGUE = {
     bodyHint: '{id} is the short code for reroll.',
     defaults: {
       enabled: true, color: BRAND.purple, title: '',
-      body: '## winners drawn
-
-'
-        + '**{prize}**
-
-'
-        + '{rule}
-
-'
-        + '**Winner**
-'
-        + '{winners}
-
-'
-        + '{rule}
-
-'
-        + '**Wait for a DM from quantlab.**
-'
-        + 'Your prize is sent privately —
-'
+      body: '## winners drawn\n\n'
+        + '**{prize}**\n\n'
+        + '{rule}\n\n'
+        + '**Winner**\n'
+        + '{winners}\n\n'
+        + '{rule}\n\n'
+        + '**Wait for a DM from quantlab.**\n'
+        + 'Your prize is sent privately —\n'
         + 'codes stay out of the channel.',
       footer: 'quantlab · id {id}', thumbnail: false, timestamp: true,
     },
