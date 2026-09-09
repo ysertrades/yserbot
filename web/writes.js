@@ -470,6 +470,14 @@ Object.assign(OPS, {
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎲 Rerolled giveaway \`${r.shortId}\``, 'giveaways');
     return r;
   },
+  async giveawaysendprize(guildId, body, ctx) {
+    const r = await giveaways.sendPrize(guildId, body, ctx);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🎁 Prize DM sent for drop \`${body.shortId || body.id}\` — ${r.sent}/${r.total} delivered`, 'giveaways');
+    }
+    return r;
+  },
   async giveawaydelete(guildId, body, ctx) {
     const r = giveaways.remove(guildId, body);
     if (r.ok) {

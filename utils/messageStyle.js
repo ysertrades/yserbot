@@ -543,38 +543,85 @@ const CATALOGUE = {
   'giveaway.live': {
     group: 'Giveaways',
     label: 'Giveaway card',
-    blurb: 'The card that sits in the channel while a prize giveaway is running, with the Enter button under it. {entries} counts up on its own as people enter — leave it in and it stays live.',
+    blurb: 'Live quantlab drop card. {rule} is a solid separator sized to the longest line. Enter drop sits under the embed.',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer', 'buttons'],
-    tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}'],
-    bodyHint: '{ends} becomes a countdown Discord keeps updating; {endsAt} is the plain date. {requirements} is whatever entry conditions were set, or nothing.',
+    tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}', '{rule}'],
+    bodyHint: '{rule} is built from the longest content line so separators align. {ends} is a live countdown.',
     buttons: [
-      { id: 'giveaway_enter', label: 'Enter', emoji: '🎟️', style: 'Secondary', does: 'Enters the member into the draw' },
-      { id: 'giveaway_participants', label: 'Participants', emoji: '🏅', style: 'Secondary', does: 'Shows who has entered so far' },
+      { id: 'giveaway_enter', label: 'Enter drop', emoji: '🎁', style: 'Primary', does: 'Enters the member into the draw' },
     ],
     defaults: {
-      enabled: true, color: BRAND.purpleLight, title: '🎟️  {prize}',
-      body: '✨ Click **Enter** below to participate!\n\n'
-        + '🏆 **Winners:** {winners}\n'
-        + '👤 **Hosted by:** {host}\n'
-        + '⏰ **Ends:** {ends}\n'
-        + '📊 **Entries:** {entries}{requirements}',
-      footer: 'Ends at | {endsAt}', thumbnail: true, timestamp: true,
+      enabled: true, color: BRAND.purple, title: '',
+      body: '## quantlab drop\n\n'
+        + '**{prize}**\n\n'
+        + '{rule}\n\n'
+        + '**Prize** · **{prize}**\n'
+        + '**Winners** · **{winners}**\n'
+        + '**Ends** · {ends}\n\n'
+        + '{rule}\n\n'
+        + 'Tap **Enter drop** below.\n'
+        + 'One entry each. Luck does the rest.{requirements}',
+      footer: 'quantlab · ends {endsAt}', thumbnail: true, timestamp: true,
+    },
+  },
+
+  'giveaway.closed': {
+    group: 'Giveaways',
+    label: 'Drop closed',
+    blurb: 'Shown when entries lock. One button only: Reveal.',
+    shape: 'card',
+    parts: ['color', 'title', 'body', 'footer', 'buttons'],
+    tokens: ['{prize}', '{entries}', '{rule}'],
+    buttons: [
+      { id: 'giveaway_reveal', label: 'Reveal', style: 'Primary', does: 'Shows the winners on the same message' },
+    ],
+    defaults: {
+      enabled: true, color: BRAND.purple, title: '',
+      body: '## drop closed\n\n'
+        + '**{prize}**\n\n'
+        + '{rule}\n\n'
+        + 'Entries locked.\n'
+        + '**{entries}** in the draw.\n\n'
+        + '{rule}\n\n'
+        + 'Press **Reveal** when you are ready.',
+      footer: 'quantlab drop', thumbnail: false, timestamp: true,
     },
   },
 
   'giveaway.ended': {
     group: 'Giveaways',
-    label: 'Giveaway result',
-    blurb: 'Replaces the card above when the giveaway finishes and somebody has won.',
+    label: 'Winners drawn',
+    blurb: 'After Reveal — winners public, prize comes by quantlab DM.',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer'],
-    tokens: ['{prize}', '{winners}', '{host}', '{entries}', '{id}'],
-    bodyHint: '{id} is the short code /giveaway reroll takes.',
+    tokens: ['{prize}', '{winners}', '{host}', '{entries}', '{id}', '{rule}'],
+    bodyHint: '{id} is the short code for reroll.',
     defaults: {
-      enabled: true, color: BRAND.purpleLight, title: '🎟️  {prize} — Ended',
-      body: '🏆 **Winners:** {winners}\n\n👤 **Hosted by:** {host}\n📊 **Total entries:** {entries}\n\n🔁 To reroll, use `/giveaway reroll` or `g.reroll {id}`',
-      footer: 'Congratulations! 🎉 • ID: {id}', thumbnail: false, timestamp: true,
+      enabled: true, color: BRAND.purple, title: '',
+      body: '## winners drawn
+
+'
+        + '**{prize}**
+
+'
+        + '{rule}
+
+'
+        + '**Winner**
+'
+        + '{winners}
+
+'
+        + '{rule}
+
+'
+        + '**Wait for a DM from quantlab.**
+'
+        + 'Your prize is sent privately —
+'
+        + 'codes stay out of the channel.',
+      footer: 'quantlab · id {id}', thumbnail: false, timestamp: true,
     },
   },
 
@@ -601,7 +648,7 @@ const CATALOGUE = {
     tokens: ['{prize}', '{host}'],
     defaults: {
       enabled: true, color: BRAND.cyan, title: '🎉 You Won a Giveaway!',
-      body: 'You won **{prize}** in **{server}**!\nContact the host, {host}, to claim your prize.',
+      body: '## your quantlab prize\n\nYou won **{prize}** in **{server}**!\nContact the host, {host}, to claim your prize.',
       footer: '', thumbnail: false, timestamp: true,
     },
   },

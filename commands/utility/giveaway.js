@@ -10,6 +10,7 @@ const {
 } = require('discord.js');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { randomInt } = require('node:crypto');
+const { solidRule, BRAND_PURPLE } = require('../../utils/dropFormat');
 const { parseDuration } = require('../../utils/duration');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 const messageStyle = require('../../utils/messageStyle');
@@ -470,9 +471,9 @@ async function endGiveaway(message, meta) {
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   const entrants = global.giveawayEntrants.get(message.id);
 
-  const disabledRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('giveaway_ended').setLabel('Ended').setStyle(ButtonStyle.Secondary).setDisabled(true).setEmoji('🎟️'),
-    new ButtonBuilder().setCustomId('giveaway_participants').setLabel('Participants').setStyle(ButtonStyle.Secondary).setEmoji('🏅'),
+  const closedRow = buildRevealRow();
+  const disabledEmptyRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('giveaway_ended').setLabel('Drop ended').setStyle(ButtonStyle.Secondary).setDisabled(true),
   );
 
   if (giveawayTimers.has(message.id)) { clearTimeout(giveawayTimers.get(message.id)); giveawayTimers.delete(message.id); }
@@ -486,7 +487,7 @@ async function endGiveaway(message, meta) {
     });
     const endFiles = applyEmbedImage(embed, imageUrl, guildId);
     try {
-      await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles(endFiles) });
+      await message.edit({ embeds: [embed], components: [disabledEmptyRow], ...replaceFiles(endFiles) });
     } catch (err) {
       console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);
     }
@@ -514,16 +515,12 @@ async function endGiveaway(message, meta) {
     currentWinners: winnerIds,
     createdAt: createdAt || null,
     endedAt: Date.now(),
+    revealed: false,
+    prizeDmSent: false,
   };
   writeJson('giveaways_ended.json', allEnded);
 
-  const embed = messageStyle.build(guildId, 'giveaway.ended', {
-    tokens: {
-      server: message.guild?.name || '',
-      prize, winners: winnerMentions, host: `<@${hostId}>`,
-      entries: String(entrants.size), id: shortId,
-    },
-  });
+  const embed = buildClosedCard(message.guild, { prize, entries: entrantIds.length });
   const endFiles = applyEmbedImage(embed, imageUrl, guildId);
 
   // The edit is the only part of ending that can fail — a deleted message, a
@@ -533,7 +530,7 @@ async function endGiveaway(message, meta) {
   // running forever and every fresh attempt to end it drew a new set of
   // winners and wrote another finished record.
   try {
-    await message.edit({ embeds: [embed], components: [disabledRow], ...replaceFiles(endFiles) });
+    await message.edit({ embeds: [embed], components: [closedRow], ...replaceFiles(endFiles) });
   } catch (err) {
     console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);
   }
@@ -555,6 +552,8 @@ async function endGiveaway(message, meta) {
  * counter would have stopped moving with nothing to say why.
  */
 function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, requirements = [] }) {
+  const entryLine = `${entries} participant${entries === 1 ? '' : 's'}`;
+  const rule = solidRule(prize, `Prize · ${prize}`, `Winners · ${winnersCount}`, 'Ends · in 2 hours', entryLine);
   const embed = messageStyle.build(guild.id, 'giveaway.live', {
     at: new Date(endTime),
     tokens: {
@@ -564,12 +563,44 @@ function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, r
       host: `<@${hostId}>`,
       ends: `<t:${Math.floor(endTime / 1000)}:R>`,
       endsAt: dateStr(endTime),
-      entries: `${entries} participant${entries === 1 ? '' : 's'}`,
+      entries: entryLine,
+      rule,
       requirements: requirements.length ? `\n\n${requirements.join('\n')}` : '',
     },
   });
   if (!embed) return null;
   return embed;
+}
+
+function buildClosedCard(guild, { prize, entries }) {
+  const entryLine = `${entries} participant${entries === 1 ? '' : 's'}`;
+  const rule = solidRule(prize, 'Entries locked.', entryLine + ' in the draw.');
+  return messageStyle.build(guild.id, 'giveaway.closed', {
+    tokens: { prize, entries: entryLine, rule },
+  });
+}
+
+function buildRevealRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('giveaway_reveal')
+      .setLabel('Reveal')
+      .setStyle(ButtonStyle.Primary),
+  );
+}
+
+function buildEndedCard(guild, { prize, winners, hostId, entries, id }) {
+  const rule = solidRule(prize, 'Winner', winners, 'Wait for a DM from quantlab.');
+  return messageStyle.build(guild.id, 'giveaway.ended', {
+    tokens: {
+      prize,
+      winners,
+      host: `<@${hostId}>`,
+      entries: String(entries),
+      id,
+      rule,
+    },
+  });
 }
 
 /** The row under it, with whatever the two buttons have been renamed to. */
@@ -597,6 +628,88 @@ async function earlyEndGiveaway(interaction, msgId) {
     createdAt: record.createdAt,
   });
 }
+
+
+async function revealGiveaway(message, interaction) {
+  const guildId = message.guild?.id;
+  if (!guildId) return { error: 'no_guild' };
+  const allEnded = readJson('giveaways_ended.json', {});
+  const guildEnded = allEnded[guildId] || {};
+  const entry = Object.entries(guildEnded).find(([, d]) => d.messageId === message.id);
+  if (!entry) return { error: 'unknown_giveaway' };
+  const [shortId, data] = entry;
+  if (data.revealed) return { error: 'already_revealed' };
+
+  const hostOrMod = interaction.user.id === data.hostId
+    || interaction.memberPermissions?.has?.('ManageGuild')
+    || interaction.member?.permissions?.has?.('ManageGuild');
+  if (!hostOrMod) return { error: 'not_allowed' };
+
+  data.revealed = true;
+  allEnded[guildId][shortId] = data;
+  writeJson('giveaways_ended.json', allEnded);
+
+  const winners = (data.currentWinners || []).map(id => `<@${id}>`).join(', ') || '—';
+  const embed = buildEndedCard(message.guild, {
+    prize: data.prize,
+    winners,
+    hostId: data.hostId,
+    entries: (data.entrants || []).length,
+    id: shortId,
+  });
+  const doneRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('giveaway_ended').setLabel('Drop ended').setStyle(ButtonStyle.Secondary).setDisabled(true),
+  );
+  const files = applyEmbedImage(embed, data.imageUrl, guildId);
+  await message.edit({ embeds: [embed], components: [doneRow], ...replaceFiles(files) }).catch(() => {});
+
+  // Channel ping
+  try {
+    await message.channel.send({
+      content: `**quantlab** · winners for **${data.prize}**: ${winners}\nWait for a DM from quantlab for your prize.`,
+      allowedMentions: { users: data.currentWinners || [] },
+    });
+  } catch { /* ignore */ }
+
+  return { ok: true, shortId, data };
+}
+
+async function sendPrizeDm(guild, shortId, text) {
+  const allEnded = readJson('giveaways_ended.json', {});
+  const data = allEnded[guild.id]?.[String(shortId).toLowerCase()];
+  if (!data) return { error: 'unknown_giveaway' };
+  if (!data.revealed) return { error: 'not_revealed' };
+  const body = String(text || '').trim();
+  if (!body) return { error: 'empty_prize' };
+  const winners = data.currentWinners || [];
+  if (!winners.length) return { error: 'no_winners' };
+
+  let sent = 0;
+  for (const id of winners) {
+    try {
+      const user = await guild.client.users.fetch(id);
+      const rule = solidRule(data.prize, body.slice(0, 80));
+      const embed = new EmbedBuilder()
+        .setColor(BRAND_PURPLE)
+        .setDescription(
+          `## your quantlab prize\n\n`
+          + `You won **${data.prize}**.\n\n`
+          + `${rule}\n\n`
+          + `${body}\n\n`
+          + `${rule}\n\n`
+          + `Keep this DM private.`,
+        );
+      await user.send({ embeds: [embed] });
+      sent += 1;
+    } catch { /* DMs closed */ }
+  }
+  data.prizeDmSent = true;
+  data.prizeDmText = body.slice(0, 1000);
+  allEnded[guild.id][String(shortId).toLowerCase()] = data;
+  writeJson('giveaways_ended.json', allEnded);
+  return { ok: true, sent, total: winners.length };
+}
+
 
 // ── Reroll (shared by the slash subcommand and the g.reroll text command) ─────
 
@@ -978,6 +1091,10 @@ module.exports.reroll = async function(message, shortId) {
 module.exports.postGiveaway = postGiveaway;
 module.exports.performReroll = performReroll;
 module.exports.endGiveaway = endGiveaway;
+module.exports.revealGiveaway = revealGiveaway;
+module.exports.sendPrizeDm = sendPrizeDm;
+module.exports.buildClosedCard = buildClosedCard;
+module.exports.buildEndedCard = buildEndedCard;
 module.exports.ACTIVE_FILE = ACTIVE_FILE;
 // So the entry handler can rebuild the card from the catalogue rather than
 // patching the count into whatever text happens to be on screen.

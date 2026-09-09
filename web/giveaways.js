@@ -261,4 +261,13 @@ async function create(guildId, body, { guild, session, client }) {
   }
 }
 
-module.exports = { list, create, endNow, reroll, remove };
+async function sendPrize(guildId, body, { guild }) {
+  const shortId = String(body?.shortId || body?.id || '').toLowerCase();
+  const text = String(body?.text || body?.message || '').trim();
+  if (!shortId) return { error: 'unknown_giveaway' };
+  if (!text) return { error: 'empty_prize' };
+  return giveawayCmd().sendPrizeDm(guild, shortId, text);
+}
+
+module.exports = {
+  sendPrize, list, create, endNow, reroll, remove };

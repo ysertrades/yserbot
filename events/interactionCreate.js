@@ -377,6 +377,21 @@ module.exports = {
           return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 
+        // Giveaway — Reveal (host / manage server only)
+        if (id === 'giveaway_reveal') {
+          const giveawayCmd = client.commands.get('giveaway');
+          const r = await giveawayCmd?.revealGiveaway?.(interaction.message, interaction);
+          if (!r?.ok) {
+            const why = {
+              unknown_giveaway: 'This drop is not in the closed list.',
+              already_revealed: 'Winners were already revealed.',
+              not_allowed: 'Only the host or a mod can press Reveal.',
+            }[r?.error] || 'Could not reveal.';
+            return interaction.reply({ content: why, flags: EPHEMERAL_FLAG });
+          }
+          return interaction.reply({ content: 'Winners revealed.', flags: EPHEMERAL_FLAG });
+        }
+
         // Giveaway — participants (first page)
         if (id === 'giveaway_participants') {
           const giveawayMsgId = interaction.message.id;
