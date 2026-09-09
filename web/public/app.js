@@ -621,9 +621,9 @@ function renderOverviewCards() {
     { value: d.econcal.enabled ? 'LIVE' : 'OFF', label: 'Calendar', kind: d.econcal.enabled ? 'live' : 'idle' },
     { value: num(d.counts.activeGiveaways), label: 'Giveaways', kind: d.counts.activeGiveaways ? 'live' : 'idle' },
     { value: num(d.counts.embedTemplates), label: 'Templates', kind: '' },
-    { value: num(d.counts.embedTemplates), label: 'Templates', kind: '' },
     { value: num(d.counts.moderationCases), label: 'Mod cases', kind: '' },
     { value: d.whop?.enabled ? 'ON' : 'OFF', label: 'Whop', kind: d.whop?.enabled ? 'live' : 'idle' },
+    { value: num(d.guild?.members) || '—', label: 'Members', kind: '' },
   ]);
 
   $('#card-systems').replaceChildren(
@@ -5948,12 +5948,14 @@ function dismissKeyboardOnOutsideTap() {
 let live = null;
 let liveMissed = false;
 
-/** Is the person in the middle of typing something? */
+/** Is the person in the middle of typing something, or has a native menu open? */
 function isEditing() {
   const a = document.activeElement;
   if (!a) return false;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
-  return a.isContentEditable === true;
+  if (a.isContentEditable === true) return true;
+  if (document.querySelector('select:focus, select[size], details[open] summary:focus')) return true;
+  return false;
 }
 
 /**
@@ -6026,9 +6028,11 @@ function startLive() {
 // A field losing focus is the moment a deferred repaint becomes safe.
 document.addEventListener('focusout', () => {
   if (!liveMissed) return;
-  // A tick of delay: focusout fires before focus lands on the next field, and
-  // repainting in between would take that field out from under it.
-  setTimeout(() => { if (liveMissed) renderLive(); }, 60);
+  setTimeout(() => {
+    if (!liveMissed) return;
+    if (isEditing() || sheetIsOpen()) return;
+    renderLive();
+  }, 120);
 });
 
 // Nothing is pushed to a page nobody is looking at, and a phone suspends the
@@ -6069,10 +6073,7 @@ function showSection(name) {
   for (const s of document.querySelectorAll('.section')) {
     const active = s.dataset.section === name;
     s.toggleAttribute('data-active', active);
-    // Restart the entrance animation for the section that just appeared.
-    // Reading offsetWidth between clearing and restoring it is what forces the
-    // browser to acknowledge the reset.
-    if (active) { s.style.animation = 'none'; void s.offsetWidth; s.style.animation = ''; }
+    // Do not restart entrance animations on every tab switch.
   }
   for (const b of document.querySelectorAll('#sections button')) {
     if (b.dataset.goto === name) b.setAttribute('aria-current', 'true');
@@ -6211,6 +6212,9 @@ function revealOverviewChrome() {
       node.style.transform = 'none';
     });
   });
+  if (!root.dataset.entered) {
+    setTimeout(() => { root.dataset.entered = '1'; }, 700);
+  }
 }
 
 /**
