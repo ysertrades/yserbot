@@ -1,0 +1,39 @@
+/* stability.css — loaded after app.css
+ *
+ * Hover shake came from transform transitions on list cards that live-render
+ * replaces under the cursor, plus entrance animations re-applied on ticks.
+ */
+
+.gaw.tappable,
+.gaw.tappable .chev,
+.tpl-entry,
+.chip-toggle,
+.guilds button,
+.legal-link {
+  transition-property: background, border-color, color, opacity, filter !important;
+}
+
+.gaw.tappable:hover .chev {
+  transform: translateY(-50%) !important;
+}
+
+.legal-link:hover {
+  transform: none !important;
+}
+
+.field, .form, select, input, textarea, .chipset, .actions, label.field {
+  transform: none !important;
+  filter: none !important;
+}
+
+html[data-entered] .bar,
+html[data-entered] .server,
+html[data-entered] .sections,
+html[data-entered] .tiles > *,
+html[data-entered] .section,
+html[data-entered] .section .panel,
+html[data-entered] .grid > *,
+html[data-entered] .item[open] .body,
+html[data-entered] .embed-box[open] .body {
+  animation: none !important;
+}
