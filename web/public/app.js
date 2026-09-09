@@ -654,7 +654,18 @@ function renderOverview() {
   renderModerationForm();
   /* renderShop retired */
   renderComposer();
-  renderAppearance();
+  /* Appearance editor is sticky — only rebuilt when opening the tab or
+     changing which message is selected. Rebuilding it on every overview
+     refresh is what made the Appearance tab flash. */
+  if (root.dataset.section !== 'appearance') renderAppearance();
+  else {
+    const count = document.getElementById('appearance-count');
+    const data = state.overview?.appearance;
+    if (count && data) {
+      count.textContent = data.changedCount ? `${data.changedCount} changed` : 'all default';
+      count.classList.toggle('on', data.changedCount > 0);
+    }
+  }
   /* Social removed from panel */
   renderGiveaways();
   renderSettings();
@@ -3105,6 +3116,7 @@ function renderAppearance() {
           [b.id, { label: b.label, emoji: b.emoji, style: b.style }]));
       }
       const res = await post('appearance', payload);
+      /* post() may call renderOverview; editor is sticky via section guard */
       if (res?.ok) {
         state.overview = await get(`/api/guild/${state.guildId}`);
         renderOverview();
@@ -5450,15 +5462,17 @@ function renderSchedules() {
   }
   list.replaceChildren(...nodes);
 
-  // Composer — always visible so an empty desk still invites a first schedule
+  // Composer — skip rebuild while the user is typing in it
   if (!composer) return;
+  if (composer.contains(document.activeElement)) return;
+
   const nb = {
     embedName: '', channelId: '', frequency: 'everyday',
-    time: '', dayOfWeek: null, date: '', mention: null,
+    time: '09:30', dayOfWeek: null, date: '', mention: null,
   };
   const wrap = el('div', 'desk-composer');
   wrap.append(el('h3', null, 'New schedule'));
-  wrap.append(el('p', 'hint', `Times use your local zone (UTC${tzOffset() >= 0 ? '+' : ''}${(tzOffset() / 60).toFixed(2).replace(/\.00$/, '')}).`));
+  wrap.append(el('p', 'hint', `Times use your local zone (UTC${tzOffset() >= 0 ? '+' : ''}${(tzOffset() / 60).toFixed(2).replace(/\.00$/, '')}). Pick a Studio message, where it posts, how often, and a clock time.`));
 
   const newDayPick = select('Weekday', '', dayOptions(), v => { nb.dayOfWeek = v === '' ? null : Number(v); }, { blank: 'Same as first-post date' });
   newDayPick.style.display = 'none';
@@ -5468,12 +5482,49 @@ function renderSchedules() {
     newDatePick.retitle(DATE_LABEL[f] || 'Date', DATE_NOTE[f] || '');
   };
 
+  // Cadence chips
+  const cadence = el('div', 'field');
+  cadence.append(el('label', null, 'How often'));
+  const chipRow = el('div', 'chipset cadence-chips');
+  const freqs = freqOptions().length ? freqOptions() : [
+    { value: 'once', label: 'Once' },
+    { value: 'everyday', label: 'Every day' },
+    { value: 'weekdays', label: 'Weekdays' },
+    { value: 'weekly', label: 'Weekly' },
+  ];
+  const paintChips = () => {
+    chipRow.replaceChildren();
+    for (const f of freqs) {
+      const b = el('button', 'chip-toggle' + (nb.frequency === f.value ? ' on' : ''), f.label);
+      b.type = 'button';
+      b.addEventListener('click', () => { nb.frequency = f.value; syncNew(f.value); paintChips(); });
+      chipRow.append(b);
+    }
+  };
+  paintChips();
+  cadence.append(chipRow);
+
+  // Time presets
+  const timeField = textField('Time', nb.time, v => { nb.time = v; }, { placeholder: '09:30 or 2h from now' });
+  const presets = el('div', 'time-presets');
+  for (const [label, val] of [['Morning 9:30', '09:30'], ['Noon', '12:00'], ['Evening 18:00', '18:00'], ['In 1 hour', '1h'], ['In 2 hours', '2h']]) {
+    const b = el('button', 'chip-toggle', label);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      nb.time = val;
+      const input = timeField.querySelector('input');
+      if (input) { input.value = val; input.dispatchEvent(new Event('input', { bubbles: true })); }
+    });
+    presets.append(b);
+  }
+  timeField.append(presets);
+
   wrap.append(
     select('Message to post', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a Studio template' }),
     pickOne('Channel', 'channel', '', v => { nb.channelId = v; }, { blank: 'Where it posts' }),
-    select('How often', 'everyday', freqOptions(), v => { nb.frequency = v; syncNew(v); }),
+    cadence,
     newDayPick,
-    textField('Time', '', v => { nb.time = v; }, { placeholder: '09:30 or 2h from now' }),
+    timeField,
     newDatePick,
     mentionPicker('Optional ping', null, v => { nb.mention = v; }),
     actions(() => post('schedulenew', nb), { label: 'Create schedule' }),
@@ -5545,16 +5596,34 @@ function renderAutoreplies() {
   list.replaceChildren(...nodes);
 
   if (!composer) return;
+  if (composer.contains(document.activeElement)) return;
+
   const nb = { key: '', trigger: '', embedName: '', cooldown: 5, exact: false, enabled: true };
   const wrap = el('div', 'desk-composer');
   wrap.append(el('h3', null, 'New auto-reply'));
-  wrap.append(el('p', 'hint', 'Trigger is matched in chat. Exact mode requires the full message to be only that phrase.'));
+  wrap.append(el('p', 'hint', 'When a member’s message matches the trigger, the bot posts a Studio template. Use exact match for command-style phrases; leave it off for keywords inside longer messages.'));
+
+  const cd = el('div', 'field');
+  cd.append(el('label', null, 'Cooldown'));
+  const cdRow = el('div', 'chipset');
+  for (const sec of [0, 5, 15, 30, 60, 300]) {
+    const label = sec === 0 ? 'None' : sec < 60 ? `${sec}s` : `${sec / 60}m`;
+    const b = el('button', 'chip-toggle' + (nb.cooldown === sec ? ' on' : ''), label);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      nb.cooldown = sec;
+      for (const x of cdRow.children) x.classList.toggle('on', x === b);
+    });
+    cdRow.append(b);
+  }
+  cd.append(cdRow);
+
   wrap.append(
-    textField('Trigger phrase', '', v => { nb.key = v.toLowerCase().trim(); nb.trigger = v; }, { placeholder: 'e.g. rules' }),
+    textField('Trigger phrase', '', v => { nb.key = v.toLowerCase().trim(); nb.trigger = v; }, { placeholder: 'e.g. rules, price, link' }),
     select('Reply with', '', templateOptions(), v => { nb.embedName = v; }, { blank: 'Pick a Studio template' }),
-    textField('Cooldown (seconds)', '5', v => { nb.cooldown = Number(v); }),
+    cd,
     toggle('Whole message must match exactly', false, v => { nb.exact = v; }),
-    toggle('Enabled', true, v => { nb.enabled = v; }),
+    toggle('Enabled immediately', true, v => { nb.enabled = v; }),
     actions(() => post('autoreply', nb), { label: 'Create auto-reply' }),
   );
   composer.replaceChildren(wrap);
@@ -6036,6 +6105,10 @@ function renderLive() {
   if (_sigChanged('links', o.linkRequests || o.links)) renderLinkRequests();
   if (_sigChanged('tickets', o.tickets)) renderTickets();
   /* Social removed from panel */
+  if (root.dataset.section === 'automation') {
+    if (_sigChanged('schedules', o.features?.schedules)) renderSchedules();
+    if (_sigChanged('autoreplies', o.features?.autoreplies)) renderAutoreplies();
+  }
   startTicking();
 }
 
@@ -6122,15 +6195,21 @@ window.addEventListener('pageshow', (e) => {
  * there is no second list anywhere that has to be kept in step.
  */
 function showSection(name) {
+  const prev = root.dataset.section;
   root.dataset.section = name;
   for (const s of document.querySelectorAll('.section')) {
     const active = s.dataset.section === name;
     s.toggleAttribute('data-active', active);
-    // Do not restart entrance animations on every tab switch.
   }
   for (const b of document.querySelectorAll('#sections button')) {
     if (b.dataset.goto === name) b.setAttribute('aria-current', 'true');
     else b.removeAttribute('aria-current');
+  }
+  // Paint heavy editors only when their tab is opened (stops flash + lag).
+  if (name === 'appearance' && prev !== 'appearance') renderAppearance();
+  if (name === 'automation' && prev !== 'automation') {
+    renderSchedules();
+    renderAutoreplies();
   }
 }
 

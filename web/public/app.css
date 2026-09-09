@@ -1106,3 +1106,41 @@ html[data-entered] .embed-box[open] .body {
 }
 .desk-composer h3 { margin: 0; font-size: 0.95rem; }
 .empty-desk { padding: 1.1rem 0.25rem 0.5rem; text-align: center; }
+
+/* Appearance: no entrance motion on the editor (stops perceived flash) */
+#appearance-body,
+#appearance-body .panel,
+#appearance-index,
+#appearance-index * {
+  animation: none !important;
+}
+#appearance-body .panel {
+  transition: border-color 0.15s ease;
+}
+
+/* Automation creative controls */
+.cadence-chips, .time-presets, .desk-composer .chipset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+}
+.time-presets { margin-top: 0.5rem; }
+.desk-composer .chip-toggle {
+  border: 1px solid var(--rule);
+  background: var(--raised);
+  color: var(--soft);
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.desk-composer .chip-toggle.on,
+.desk-composer .chip-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 12%, var(--raised));
+}
+.desk-composer .chip-toggle.on {
+  background: color-mix(in srgb, var(--accent) 22%, var(--raised));
+}
