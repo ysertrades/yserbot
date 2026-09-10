@@ -1,9 +1,8 @@
-'use strict';
+use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
-const { generateLockToggleImage } = require('../../utils/lockVisual');
 
 const LOCK_FILE = 'locked_channels.json';
 
@@ -21,36 +20,46 @@ module.exports = {
     const locks = readJson(LOCK_FILE, {});
     const record = locks[guildId]?.[channel.id];
     if (!record) {
-      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Locked', description: `${channel} is not currently locked.` }, interaction.guild)] });
+      return sendTempReply(interaction, {
+        content: `${channel} is not locked right now.`,
+      });
     }
 
     await interaction.deferReply();
 
     try {
-      await channel.permissionOverwrites.edit(interaction.guild.roles.everyone.id, record.snapshot.everyone, { reason: `Channel unlocked by ${interaction.user.tag}` });
-      for (const [roleId, perms] of Object.entries(record.snapshot.roles)) {
-        if (!channel.guild.roles.cache.has(roleId)) continue; // role deleted since lock — nothing to restore
-        await channel.permissionOverwrites.edit(roleId, perms, { reason: `Channel unlocked by ${interaction.user.tag}` });
+      await channel.permissionOverwrites.edit(
+        interaction.guild.roles.everyone.id,
+        record.snapshot.everyone,
+        { reason: `Channel unlocked by ${interaction.user.tag}` },
+      );
+      for (const [roleId, perms] of Object.entries(record.snapshot.roles || {})) {
+        if (!channel.guild.roles.cache.has(roleId)) continue;
+        await channel.permissionOverwrites.edit(roleId, perms, {
+          reason: `Channel unlocked by ${interaction.user.tag}`,
+        });
       }
     } catch (err) {
       console.error('[UNLOCK]', err);
-      return interaction.editReply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Missing permissions to edit this channel\'s overwrites.' }, interaction.guild)] });
+      return interaction.editReply({
+        content: 'Could not unlock this channel — check that I can manage channel permissions.',
+      });
     }
 
     delete locks[guildId][channel.id];
     writeJson(LOCK_FILE, locks);
 
-    const imageName  = `unlock_${Date.now()}.png`;
-    const attachment = new AttachmentBuilder(generateLockToggleImage({ locked: false, channelName: channel.name, reason: null }), { name: imageName });
-    const embed = new EmbedBuilder().setImage(`attachment://${imageName}`);
+    const msg =
+      `🔓 **Channel unlocked**\n` +
+      `${channel} is open again.\n` +
+      `Everyone can send messages as before.\n` +
+      `Unlocked by ${interaction.user}`;
 
-    await interaction.editReply({ embeds: [embed], files: [attachment] });
+    await interaction.editReply({ content: msg });
 
     if (channel.id !== interaction.channelId) {
       try {
-        const otherImageName  = `unlock_${Date.now()}.png`;
-        const otherAttachment = new AttachmentBuilder(generateLockToggleImage({ locked: false, channelName: channel.name, reason: null }), { name: otherImageName });
-        await channel.send({ embeds: [new EmbedBuilder().setImage(`attachment://${otherImageName}`)], files: [otherAttachment] });
+        await channel.send({ content: msg });
       } catch {}
     }
   },

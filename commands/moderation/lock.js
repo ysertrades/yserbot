@@ -1,15 +1,12 @@
-'use strict';
+use strict';
 
-const { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const { createServerEmbed, sendTempReply } = require('../../utils/embedBuilder');
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
-const { generateLockToggleImage } = require('../../utils/lockVisual');
 
 const LOCK_FILE = 'locked_channels.json';
 const LOCKABLE_PERMS = ['SendMessages', 'SendMessagesInThreads', 'CreatePublicThreads', 'CreatePrivateThreads'];
 
-// Snapshot of a role's current overwrite for the permissions we're about to
-// touch, so unlock can restore the exact prior state instead of guessing.
 function _snapshot(channel, roleId) {
   const ow = channel.permissionOverwrites.cache.get(roleId);
   const snap = {};
@@ -41,12 +38,16 @@ module.exports = {
     const guildId = interaction.guild.id;
 
     if (!channel.isTextBased() || channel.isThread()) {
-      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Only text/announcement channels can be locked.' }, interaction.guild)] });
+      return sendTempReply(interaction, {
+        content: 'Only text or announcement channels can be locked.',
+      });
     }
 
     const locks = readJson(LOCK_FILE, {});
     if (locks[guildId]?.[channel.id]) {
-      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Already Locked', description: `${channel} is already locked. Use \`/unlock\` first.` }, interaction.guild)] });
+      return sendTempReply(interaction, {
+        content: `${channel} is already locked. Use \`/unlock\` when you are ready to open it again.`,
+      });
     }
 
     await interaction.deferReply();
@@ -59,15 +60,21 @@ module.exports = {
 
     try {
       const denyAll = Object.fromEntries(LOCKABLE_PERMS.map(p => [p, false]));
-      await channel.permissionOverwrites.edit(everyoneId, denyAll, { reason: `Channel locked by ${interaction.user.tag}${reason ? `: ${reason}` : ''}` });
+      await channel.permissionOverwrites.edit(everyoneId, denyAll, {
+        reason: `Channel locked by ${interaction.user.tag}${reason ? `: ${reason}` : ''}`,
+      });
 
       for (const roleId of modAdminRoleIds) {
         const allowAll = Object.fromEntries(LOCKABLE_PERMS.map(p => [p, true]));
-        await channel.permissionOverwrites.edit(roleId, allowAll, { reason: `Channel locked by ${interaction.user.tag}: keep mod/admin access` });
+        await channel.permissionOverwrites.edit(roleId, allowAll, {
+          reason: `Channel locked by ${interaction.user.tag}: keep mod/admin access`,
+        });
       }
     } catch (err) {
       console.error('[LOCK]', err);
-      return interaction.editReply({ embeds: [createServerEmbed('error', { title: 'Error', description: 'Missing permissions to edit this channel\'s overwrites.' }, interaction.guild)] });
+      return interaction.editReply({
+        content: 'Could not lock this channel — check that I can manage channel permissions.',
+      });
     }
 
     if (!locks[guildId]) locks[guildId] = {};
@@ -76,18 +83,21 @@ module.exports = {
     };
     writeJson(LOCK_FILE, locks);
 
-    const imageName  = `lock_${Date.now()}.png`;
-    const attachment = new AttachmentBuilder(generateLockToggleImage({ locked: true, channelName: channel.name, reason }), { name: imageName });
-    const embed = new EmbedBuilder().setImage(`attachment://${imageName}`);
+    const who = interaction.user;
+    const why = reason ? `\nReason: **${reason}**` : '';
+    const msg =
+      `🔒 **Channel locked**\n` +
+      `${channel} is closed for regular members.\n` +
+      `Mods and admins can still talk.` +
+      why +
+      `\nLocked by ${who}`;
 
-    await interaction.editReply({ embeds: [embed], files: [attachment] });
+    await interaction.editReply({ content: msg });
 
     if (channel.id !== interaction.channelId) {
       try {
-        const otherImageName  = `lock_${Date.now()}.png`;
-        const otherAttachment = new AttachmentBuilder(generateLockToggleImage({ locked: true, channelName: channel.name, reason }), { name: otherImageName });
-        await channel.send({ embeds: [new EmbedBuilder().setImage(`attachment://${otherImageName}`)], files: [otherAttachment] });
-      } catch {}
+        await channel.send({ content: msg });
+      } catch { /* missing send perms in target */ }
     }
   },
 };
