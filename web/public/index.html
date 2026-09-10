@@ -93,6 +93,8 @@
       <button type="button" data-goto="appearance">Appearance</button>
       <button type="button" data-goto="studio">Studio</button>
       <button type="button" data-goto="giveaways">Giveaways</button>
+      <button type="button" data-goto="economy" id="nav-economy">Economy</button>
+      <button type="button" data-goto="casino" id="nav-casino">Casino</button>
       <button type="button" data-goto="feeds">Feeds</button>
             <button type="button" data-goto="automation">Automation</button>
       <button type="button" data-goto="engagement">Engagement</button>      <button type="button" data-goto="tickets">Tickets</button>
@@ -241,6 +243,78 @@
     </div>
 
     <!-- ── Lottery lives in Economy ─────────────────────────────────────── -->
+
+
+    <div class="section" data-section="economy">
+      <div class="panel" id="payout-card">
+        <div class="queue-head">
+          <h2>Payouts</h2>
+          <span class="pill" id="boost-state" hidden></span>
+        </div>
+        <p class="muted">One multiplier over the whole economy. Boost hour lifts payouts between the hours you pick.</p>
+        <form id="form-econ-global" class="form"></form>
+      </div>
+      <div class="panel">
+        <h2>Activities</h2>
+        <p class="muted">Every earning command. Switch one off and members are told it is closed.</p>
+        <div class="grid" id="econ-activities"></div>
+      </div>
+      <div class="panel">
+        <h2>Jobs board</h2>
+        <form id="form-econ-jobs" class="form"></form>
+      </div>
+      <div class="grid">
+        <article class="panel">
+          <h2>Adjust coins</h2>
+          <form id="form-coins" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Lottery</h2>
+          <div id="lottery-live" class="rows"></div>
+          <form id="form-lottery" class="form"></form>
+        </article>
+      </div>
+      <div class="panel">
+        <div class="queue-head">
+          <h2>Trading cards</h2>
+          <span class="pill" id="cards-count"></span>
+        </div>
+        <form id="form-cards" class="form"></form>
+      </div>
+      <div class="panel">
+        <h2>Rarity table</h2>
+        <form id="form-card-rarity" class="form"></form>
+      </div>
+      <div class="panel">
+        <div class="queue-head">
+          <h2>Card catalogue</h2>
+          <span class="pill" id="cards-collected"></span>
+        </div>
+        <div id="card-list" class="rows"></div>
+        <form id="form-card-list" class="form"></form>
+      </div>
+      <div class="panel">
+        <h2>Shop items</h2>
+        <div id="shop-list" class="items"></div>
+      </div>
+    </div>
+
+    <div class="section" data-section="casino">
+      <div class="grid">
+        <article class="panel">
+          <h2>Table stakes</h2>
+          <form id="form-casino" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Quick bet buttons</h2>
+          <form id="form-casino-presets" class="form"></form>
+        </article>
+      </div>
+      <div class="panel">
+        <h2>Games</h2>
+        <form id="form-casino-games" class="form"></form>
+      </div>
+    </div>
 
     <div class="section" data-section="tickets">
       <div class="grid">

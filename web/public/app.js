@@ -722,7 +722,6 @@ function renderBoard(data) {
   // rather than sitting there empty or explaining itself — an admin who
   // turned coins off doesn't need a panel telling them so a second time.
   if (panel) panel.style.display = data.economyOff ? 'none' : '';
-  if (data.economyOff) return;
 
   const list = $('#board');
   if (!data.entries.length) { list.replaceChildren(el('li', 'muted', 'No balances yet.')); return; }
@@ -3942,6 +3941,9 @@ function renderSettings() {
     } else if (f.type === 'choice') {
       nodes.push(select(f.label, value || f.choices[0], f.choices.map(c => ({ value: c, label: c })),
         v => { draft[f.key] = v; }));
+    } else if (f.type === 'string') {
+      nodes.push(textField(f.label, value == null ? '' : String(value),
+        v => { draft[f.key] = v; }, { placeholder: 'e.g. Quantlab' }));
     } else {
       nodes.push(textField(`${f.label}${f.min != null ? ` (${f.min}–${f.max})` : ''}`, value == null ? '' : String(value),
         v => { draft[f.key] = Number(v); }));
@@ -3957,6 +3959,24 @@ function renderSettings() {
  * commands (they reply saying so) and anything the feature does without one
  * — XP on messages, the news feed's own scheduler, join cards.
  */
+
+function syncFeatureNav() {
+  const groups = state.overview?.featureToggles?.groups || [];
+  const on = (key) => {
+    const g = groups.find(x => x.key === key);
+    return !g || g.enabled !== false;
+  };
+  const econ = document.getElementById('nav-economy') || document.querySelector('[data-goto="economy"]');
+  const cas = document.getElementById('nav-casino') || document.querySelector('[data-goto="casino"]');
+  if (econ) econ.hidden = !on('economy');
+  if (cas) cas.hidden = !on('casino');
+  // If current section was hidden, bounce to overview
+  const sec = root?.dataset?.section;
+  if ((sec === 'economy' && !on('economy')) || (sec === 'casino' && !on('casino'))) {
+    if (typeof showSection === 'function') showSection('overview');
+  }
+}
+
 function renderFeatureToggles() {
   const ft = state.overview?.featureToggles;
   const box = $('#form-featuretoggles');

@@ -37,7 +37,20 @@ const COMMUNITY_CMDS = [
   ['userinfo',   'View info about a member'],
 ];
 
-const ECONOMY_CMDS = []; // retired — coin economy removed
+const ECONOMY_CMDS = [
+  ['bank',       'View your bank account, deposit, withdraw, check balances & the leaderboard'],
+  ['casino',     'Play casino games (slots, crash, BJ, roulette, wheel…)'],
+  ['daily',      'Claim your daily coins'],
+  ['fish',       'Cast a line and see what you reel in'],
+  ['jobs',       'Work multiple jobs with separate cooldowns'],
+  ['lottery',    'Buy tickets for the daily lottery draw'],
+  ['mine',       'Swing your pickaxe and see what you dig up'],
+  ['rob',        'Attempt to steal coins from another user'],
+  ['shop',       'Browse and buy items from the server shop'],
+  ['transfer',   'Send coins to another member'],
+  ['trivia',     'Answer a trivia question for coins'],
+  ['work',       'Earn coins by working'],
+];
 
 
 const FUTURES_CMDS = [

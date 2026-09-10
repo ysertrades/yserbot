@@ -1,6 +1,8 @@
 const { Events, REST, Routes, ApplicationCommandType } = require('discord.js');
 const { startScheduleRunner } = require('../utils/scheduleRunner');
 const { startEconCalRunner } = require('../utils/econCalRunner');
+const { startLotteryRunner } = require('../utils/lotteryRunner');
+const { restoreCoinsGiveaways } = require('../commands/economy/coinsgiveaway');
 const { startWhopRunner } = require('../utils/whopRunner');
 const { seedDefaultContent } = require('../utils/contentSeed');
 const { restoreGiveaways } = require('../commands/utility/giveaway');
@@ -75,10 +77,10 @@ module.exports = {
         startScheduleRunner(client);
         // News feed runner removed (Financial Juice retired)
         startEconCalRunner(client);
-        // Lottery retired with economy system
+        startLotteryRunner(client);
         startWhopRunner(client);
         seedDefaultContent(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));
-        // Coins giveaways retired with economy system
+        await restoreCoinsGiveaways(client).catch(err => console.error('[COINS GIVEAWAY RESTORE]', err));
     },
 };

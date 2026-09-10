@@ -356,6 +356,12 @@ module.exports = {
             if (canRebuild) {
               try {
                 const { buildLiveV2 } = require('../utils/dropCardV2');
+                const conf = {};
+                try {
+                  const { readJson } = require('../utils/jsonStorage');
+                  Object.assign(conf, readJson('config.json', {})[interaction.guildId] || {});
+                } catch {}
+                const brand = String(conf.brandName || '').trim() || 'Quantlab';
                 const payload = buildLiveV2({
                   prize: meta.prize,
                   winnersCount: meta.winners ?? meta.winnersCount ?? 1,
@@ -366,6 +372,7 @@ module.exports = {
                   dropId,
                   iconUrl,
                   imageUrl: bannerUrl,
+                  brand,
                 });
                 await interaction.message.edit({
                   ...payload,

@@ -24,6 +24,7 @@ const WARN_ACTIONS = ['none', 'mute', 'kick', 'ban'];
  * label     — what the panel calls it
  */
 const FIELDS = [
+  { key: 'brandName', path: ['brandName'], type: 'string', label: 'Server brand name (giveaways)', max: 32 },
   { key: 'welcomeChannel', path: ['welcomeChannel'], type: 'channel', label: 'Welcome messages' },
   { key: 'leaveChannel',   path: ['leaveChannel'],   type: 'channel', label: 'Leave messages' },
   { key: 'logsChannel',    path: ['logsChannel'],    type: 'channel', label: 'Moderation log' },

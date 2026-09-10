@@ -15,6 +15,11 @@ const { parseDuration } = require('../../utils/duration');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 const messageStyle = require('../../utils/messageStyle');
 const { buildLiveV2, buildClosedV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
+function guildBrand(guildId) {
+  const conf = readJson('config.json', {})[guildId] || {};
+  const n = String(conf.brandName || '').trim();
+  return n || 'Quantlab';
+}
 
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
@@ -356,6 +361,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     dropId,
     iconUrl,
     imageUrl: bannerUrl,
+    brand: guildBrand(guildId),
   });
 
   const msg = await channel.send({
@@ -534,6 +540,7 @@ async function endGiveaway(message, meta) {
     dropId: shortId,
     iconUrl,
     imageUrl: bannerUrl,
+    brand: guildBrand(message.guild?.id),
   });
 
   try {

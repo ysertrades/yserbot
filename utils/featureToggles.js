@@ -34,6 +34,26 @@ const { readJson, writeJson } = require('./jsonStorage');
 
 const FEATURE_GROUPS = [
   {
+    key: 'economy', label: 'Economy',
+    description: 'Wallet, bank, daily/weekly pay, jobs, the shop, transfers, and /rob.',
+    commands: ['bank', 'daily', 'give-coins', 'rob', 'shop', 'shopsettings', 'transfer', 'work', 'jobs', 'lottery'],
+  },
+  {
+    key: 'casino', label: 'Casino',
+    description: 'Every casino game and the coin-giveaway wheel.',
+    commands: ['casino', 'casino-settings', 'coinsgiveaway'],
+  },
+  {
+    key: 'fishing_mining', label: 'Fishing & Mining',
+    description: '/fish and /mine.',
+    commands: ['fish', 'mine'],
+  },
+  {
+    key: 'trivia', label: 'Trivia',
+    description: 'The /trivia game.',
+    commands: ['trivia'],
+  },
+  {
     key: 'leveling', label: 'Leveling & Ranks',
     description: 'XP on messages, level-up announcements, /rank, /leaderboard, and level roles.',
     commands: ['rank', 'leaderboard', 'levelsettings'],
