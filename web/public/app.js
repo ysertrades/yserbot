@@ -2199,20 +2199,34 @@ function openEndedGiveaway(x) {
     body.push(customBox);
 
     const buildMessage = () => {
+      const dropRef = x.shortId ? `QL-${x.shortId}` : '—';
       if (mode === 'code') {
         if (!codeVal) return null;
         return (
-          `You won ${prizeName}.\n\n`
-          + `Your code: \`${codeVal}\`\n\n`
-          + `Redeem it where the host instructed. Keep this message private.`
+          `🎁 Your quantlab prize is ready!\n\n`
+          + `**Drop:** \`${dropRef}\`\n`
+          + `**Prize:** ${prizeName}\n`
+          + `**Your code:** \`${codeVal}\``
         );
       }
       if (mode === 'followup') {
         const extra = customVal.trim();
-        return extra || `You won ${prizeName}. A moderator will follow up with you shortly.`;
+        if (extra) return extra;
+        return (
+          `🎁 Your quantlab prize is ready!\n\n`
+          + `**Drop:** \`${dropRef}\`\n`
+          + `**Prize:** ${prizeName}\n`
+          + `A moderator will follow up with next steps.`
+        );
       }
       const extra = customVal.trim();
-      return extra || null;
+      if (!extra) return null;
+      return (
+        `🎁 Your quantlab prize is ready!\n\n`
+        + `**Drop:** \`${dropRef}\`\n`
+        + `**Prize:** ${prizeName}\n\n`
+        + extra
+      );
     };
 
     const sendPrize = el('button', 'btn primary', 'Send to winner');

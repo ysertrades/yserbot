@@ -340,9 +340,10 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const endTimestamp   = Math.floor(endTime / 1000);
   const reqLines      = requirementsLines(data);
 
+  const dropId = genId(guildId);
   const embed = buildLiveCard(guild, {
     prize, winnersCount: winners, hostId, endTime, entries: 0,
-    requirements: reqLines,
+    requirements: reqLines, dropId,
   });
 
   // A generated banner is not a URL — it has to be drawn, attached, and then
@@ -366,9 +367,8 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   global.giveawayMeta.set(msg.id, {
     prize, winners, imageUrl, hostId, endTime, guildId,
     requiredRoleId, bonusRoleId, minAccountAgeDays,
-    // Kept so the card can be rebuilt whole when the count changes. Without
-    // it every entry would quietly drop the entry conditions off the card.
     requirementLines: reqLines,
+    dropId,
   });
 
   // Persist so entries and the timer survive a bot restart
@@ -378,11 +378,12 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     hostId, endTime, guildId, channelId: msg.channelId, entrants: [],
     requiredRoleId: requiredRoleId || null, bonusRoleId: bonusRoleId || null,
     minAccountAgeDays: minAccountAgeDays || 0, createdAt,
+    dropId,
   });
 
   if (giveawayTimers.has(msg.id)) clearTimeout(giveawayTimers.get(msg.id));
   giveawayTimers.set(msg.id, setTimeout(
-    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId, guildId, bonusRoleId, createdAt })
+    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId, guildId, bonusRoleId, createdAt, dropId })
       .catch(err => console.error(`[GIVEAWAY ${msg.id}] ending failed:`, err)),
     durationMs,
   ));
@@ -502,7 +503,7 @@ async function endGiveaway(message, meta) {
   const winnerIds      = pickWinners(pool, winnersCount);
   const winnerMentions = winnerIds.map(id => `<@${id}>`).join(', ');
 
-  const shortId  = genId(guildId);
+  const shortId = (meta && meta.dropId) || genId(guildId);
   const allEnded = readJson('giveaways_ended.json', {});
   if (!allEnded[guildId]) allEnded[guildId] = {};
   allEnded[guildId][shortId] = {
@@ -521,7 +522,11 @@ async function endGiveaway(message, meta) {
   writeJson('giveaways_ended.json', allEnded);
 
   const embed = buildClosedCard(message.guild, {
-    prize, entries: entrantIds.length, id: shortId,
+    prize,
+    entries: entrantIds.length,
+    id: shortId,
+    winners: winnersCount,
+    hostId,
   });
   const thumb = message.guild?.iconURL?.({ dynamic: true }) || null;
   if (thumb && embed) try { embed.setThumbnail(thumb); } catch { /* ignore */ }
@@ -554,10 +559,8 @@ async function endGiveaway(message, meta) {
  * a server reworded the card — which is now something they can do — the
  * counter would have stopped moving with nothing to say why.
  */
-function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, requirements = [] }) {
-  const entryLine = `${entries} participant${entries === 1 ? '' : 's'}`;
-  const rule = solidRule(prize, `Prize · ${prize}`, `Winners · ${winnersCount}`, 'Ends · in 2 hours', entryLine);
-  const dropId = arguments[1]?.dropId || '••••••••';
+function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, requirements = [], dropId = '••••••••' }) {
+  const entryLine = String(entries);
   const embed = messageStyle.build(guild.id, 'giveaway.live', {
     at: new Date(endTime),
     tokens: {
@@ -568,7 +571,6 @@ function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, r
       ends: `<t:${Math.floor(endTime / 1000)}:R>`,
       endsAt: dateStr(endTime),
       entries: entryLine,
-      rule,
       id: dropId,
       requirements: requirements.length ? `\n\n${requirements.join('\n')}` : '',
     },
@@ -577,11 +579,15 @@ function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, r
   return embed;
 }
 
-function buildClosedCard(guild, { prize, entries, id }) {
-  const entryLine = String(entries);
-  const rule = solidRule(prize, 'Giveaway ended', 'Open the box to see your result.');
+function buildClosedCard(guild, { prize, entries, id, winners = 1, hostId }) {
   return messageStyle.build(guild.id, 'giveaway.closed', {
-    tokens: { prize, entries: entryLine, rule, id: id || '••••••••' },
+    tokens: {
+      prize,
+      entries: String(entries),
+      winners: String(winners),
+      host: hostId ? `<@${hostId}>` : 'quantlab',
+      id: id || '••••••••',
+    },
   });
 }
 

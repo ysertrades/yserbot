@@ -543,51 +543,42 @@ const CATALOGUE = {
   'giveaway.live': {
     group: 'Giveaways',
     label: 'Giveaway card',
-    blurb: 'Live quantlab drop card. {rule} is a solid separator sized to the longest line. Enter drop sits under the embed.',
+    blurb: 'Live quantlab drop. Clean hierarchy — no dashed rules. Enter drop is a real Discord button under the message (API limit).',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer', 'buttons'],
-    tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}', '{rule}', '{id}'],
-    bodyHint: '{rule} is built from the longest content line so separators align. {ends} is a live countdown.',
+    tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}', '{id}'],
     buttons: [
       { id: 'giveaway_enter', label: 'Enter drop', emoji: '🎁', style: 'Primary', does: 'Enters the member into the draw' },
     ],
     defaults: {
-      enabled: true, color: BRAND.purple, title: '',
-      body: '## Quantlab Giveaway\n\n'
-        + '**{prize}**\n\n'
-        + '{rule}\n\n'
-        + '**PRIZE** · {prize}\n'
-        + '**WINNERS** · {winners}\n'
-        + '**ENDS** · {ends}\n'
-        + '**ENTRIES** · {entries}\n\n'
-        + '{rule}\n\n'
-        + 'Press **Enter drop** below to join.'
+      enabled: true, color: BRAND.purple,
+      title: 'Quantlab Giveaway',
+      body: '**{prize}**\n\n'
+        + '**PRIZE** {prize}\n'
+        + '**WINNERS** {winners}\n'
+        + '**ENDS** {ends}\n'
+        + '**ENTRIES** {entries}'
         + '{requirements}',
-      footer: 'Drop ID · QL-{id} · ends {endsAt}', thumbnail: true, timestamp: true,
+      footer: 'Drop ID: QL-{id}  ·  ends {endsAt}', thumbnail: true, timestamp: true,
     },
   },
 
   'giveaway.closed': {
     group: 'Giveaways',
-    label: 'Drop closed',
-    blurb: 'Shown when entries lock. One button only: Reveal.',
+    label: 'Drop landed',
+    blurb: 'Entries locked. Open Box under the message for a private result.',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer', 'buttons'],
-    tokens: ['{prize}', '{entries}', '{rule}', '{id}'],
+    tokens: ['{prize}', '{entries}', '{winners}', '{host}', '{id}'],
     buttons: [
-      { id: 'giveaway_reveal', label: 'Reveal', style: 'Primary', does: 'Shows the winners on the same message' },
+      { id: 'giveaway_reveal', label: 'Open Box', emoji: '🎁', style: 'Success', does: 'Private win/lose result for the member' },
     ],
     defaults: {
-      enabled: true, color: BRAND.purple, title: '',
-      body: '## Giveaway ended\n\n'
-        + '**{prize}**\n\n'
-        + '{rule}\n\n'
-        + 'The winners have been selected.\n'
-        + 'Open the box to see **your** result.\n\n'
-        + '**ENTRIES** · {entries}\n\n'
-        + '{rule}\n\n'
-        + 'Only you will see the outcome.',
-      footer: 'Drop ID · QL-{id}', thumbnail: true, timestamp: true,
+      enabled: true, color: BRAND.purple,
+      title: 'THE DROP HAS LANDED 🎉',
+      body: 'The winners have been selected. Open the box to reveal your personal result.\n\n'
+        + '**VALID ENTRIES** {entries}  ·  **WINNERS** {winners}',
+      footer: 'Drop provided by {host}  ·  Drop ID: QL-{id}', thumbnail: true, timestamp: true,
     },
   },
 
