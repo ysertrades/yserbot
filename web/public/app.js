@@ -2035,7 +2035,39 @@ function openEndedGiveaway(x) {
   if (x.endedAt) body.push(sheetRow('Ended', new Date(x.endedAt).toLocaleString()));
   body.push(el('p', 'hint', 'Rerolling draws new winners. For a coins giveaway that pays them again, on top of what the first draw already paid out.'));
 
-  const reroll = el('button', 'btn primary', 'Reroll winners');
+  
+  // Prize DM — after Reveal, paste a code/note and DM winners
+  if (x.kind !== 'coins') {
+    body.push(el('p', 'hint', 'After Reveal, paste a code or prize note and send it to the winner by DM.'));
+    let prizeText = '';
+    body.push(textField('Prize message', '', v => { prizeText = v; }, {
+      placeholder: 'e.g. QL-WEEKEND-9K2M or Your role is ready',
+    }));
+    const sendPrize = el('button', 'btn primary', 'Send to winner');
+    sendPrize.type = 'button';
+    sendPrize.addEventListener('click', async () => {
+      const text = String(prizeText || '').trim();
+      if (!text) { toast('Enter the prize message or code first.', 'bad'); return; }
+      sendPrize.disabled = true;
+      sendPrize.textContent = 'Sending…';
+      try {
+        const out = await post('giveawaysendprize', { shortId: x.shortId, text });
+        if (out && out.ok !== false) {
+          toast(out.sent != null ? `Prize DM sent (${out.sent}/${out.total}).` : 'Prize DM sent.', 'good');
+          sendPrize.textContent = 'Sent';
+        } else {
+          sendPrize.disabled = false;
+          sendPrize.textContent = 'Send to winner';
+        }
+      } catch (e) {
+        sendPrize.disabled = false;
+        sendPrize.textContent = 'Send to winner';
+      }
+    });
+    body.push(sendPrize);
+  }
+
+const reroll = el('button', 'btn primary', 'Reroll winners');
   reroll.type = 'button';
   reroll.addEventListener('click', async () => {
     reroll.disabled = true;
