@@ -581,6 +581,12 @@ module.exports = {
 
         // Card grab
         if (id === 'card_grab') {
+          if (interaction.guild && !isFeatureEnabled(interaction.guild.id, 'cards')) {
+            return interaction.reply({
+              content: 'Collectible cards are switched off for this server.',
+              flags: EPHEMERAL_FLAG,
+            }).catch(() => {});
+          }
           if (!global.cardDrops) global.cardDrops = new Map();
           const drop = global.cardDrops.get(interaction.message.id);
           if (!drop || drop.grabbed) {

@@ -692,17 +692,18 @@ function renderOverview() {
   renderGiveaways();
   renderSettings();
   renderFeatureToggles();
+  try { syncFeatureNav(); } catch (e) { console.warn('[panel] syncFeatureNav', e); }
   renderBotProfile();
   renderPanelLog();
   renderLegalLinks();
   renderTickets();
   renderPolls();
-  /* renderCasino retired */
+  try { if (featureOn('casino')) renderCasino(); } catch (e) { console.warn('[panel] renderCasino', e); }
   renderLinkRequests();
   renderModeration();
   renderGroupForm('#form-lottery', 'lottery');
   renderCards();
-  /* renderEconomy retired */
+  try { if (featureOn('economy')) renderEconomy(); } catch (e) { console.warn('[panel] renderEconomy', e); }
   /* Drop form first — must not sit behind economy renders that can throw */
   renderGiveawayForm();
   try { renderCoins(); } catch (e) { console.warn('[panel] renderCoins', e); }
@@ -4018,19 +4019,27 @@ function renderSettings() {
  * — XP on messages, the news feed's own scheduler, join cards.
  */
 
-function syncFeatureNav() {
+function featureOn(key) {
   const groups = state.overview?.featureToggles?.groups || [];
-  const on = (key) => {
-    const g = groups.find(x => x.key === key);
-    return !g || g.enabled !== false;
+  const g = groups.find(x => x.key === key);
+  // Missing group → treat as on (default). Explicit enabled:false → off.
+  return !g || g.enabled !== false;
+}
+
+function syncFeatureNav() {
+  const hide = (el, off) => {
+    if (!el) return;
+    el.hidden = off;
+    el.style.display = off ? 'none' : '';
+    el.setAttribute('aria-hidden', off ? 'true' : 'false');
   };
-  const econ = document.getElementById('nav-economy') || document.querySelector('[data-goto="economy"]');
-  const cas = document.getElementById('nav-casino') || document.querySelector('[data-goto="casino"]');
-  if (econ) econ.hidden = !on('economy');
-  if (cas) cas.hidden = !on('casino');
-  // If current section was hidden, bounce to overview
+  const econOff = !featureOn('economy');
+  const casOff = !featureOn('casino');
+  hide(document.getElementById('nav-economy') || document.querySelector('[data-goto="economy"]'), econOff);
+  hide(document.getElementById('nav-casino') || document.querySelector('[data-goto="casino"]'), casOff);
+
   const sec = root?.dataset?.section;
-  if ((sec === 'economy' && !on('economy')) || (sec === 'casino' && !on('casino'))) {
+  if ((sec === 'economy' && econOff) || (sec === 'casino' && casOff)) {
     if (typeof showSection === 'function') showSection('overview');
   }
 }
@@ -4053,7 +4062,11 @@ function renderFeatureToggles() {
     return row;
   });
 
-  box.replaceChildren(...rows, actions(() => post('featuretoggles', draft)));
+  box.replaceChildren(...rows, actions(async () => {
+    const out = await post('featuretoggles', draft);
+    try { syncFeatureNav(); } catch {}
+    return out;
+  }));
 }
 
 /* ── bot profile ──────────────────────────────────────────────────────────

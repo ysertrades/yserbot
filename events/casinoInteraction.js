@@ -91,9 +91,21 @@ if (!global.crashSessions) global.crashSessions = new Map();
 if (!global.diceChallenges) global.diceChallenges = new Map();
 
 // ─────────────────────────────────────────────────────────────────────────────
+const { isFeatureEnabled } = require('../utils/featureToggles');
+
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction) {
+    if (interaction.guild && !isFeatureEnabled(interaction.guild.id, 'casino')) {
+      if (interaction.isButton() || interaction.isModalSubmit()) {
+        const msg = { content: 'Casino is switched off for this server.', flags: MessageFlags.Ephemeral };
+        try {
+          if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
+          else await interaction.reply(msg);
+        } catch {}
+      }
+      return;
+    }
     if (interaction.isButton()     && interaction.customId.startsWith('cs:'))
       return handleButton(interaction).catch(e => handleError(interaction, e));
     if (interaction.isModalSubmit() && interaction.customId.startsWith('cs:'))

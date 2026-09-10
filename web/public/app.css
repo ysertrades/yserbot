@@ -1360,3 +1360,9 @@ html[data-entered] .embed-box[open] .body {
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* Feature-gated section tabs */
+nav.sections button[hidden],
+nav.sections button[aria-hidden="true"] {
+  display: none !important;
+}
