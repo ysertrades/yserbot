@@ -49,17 +49,11 @@ module.exports = {
     delete locks[guildId][channel.id];
     writeJson(LOCK_FILE, locks);
 
-    const msg =
-      `🔓 **Channel unlocked**\n` +
-      `${channel} is open again.\n` +
-      `Everyone can send messages as before.\n` +
-      `Unlocked by ${interaction.user}`;
-
-    await interaction.editReply({ content: msg });
+    await interaction.editReply({ content: '🔓 Unlocked' });
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ content: msg });
+        await channel.send({ content: '🔓 Unlocked' });
       } catch {}
     }
   },

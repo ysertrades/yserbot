@@ -83,20 +83,11 @@ module.exports = {
     };
     writeJson(LOCK_FILE, locks);
 
-    const who = interaction.user;
-    const why = reason ? `\nReason: **${reason}**` : '';
-    const msg =
-      `🔒 **Channel locked**\n` +
-      `${channel} is closed for regular members.\n` +
-      `Mods and admins can still talk.` +
-      why +
-      `\nLocked by ${who}`;
-
-    await interaction.editReply({ content: msg });
+    await interaction.editReply({ content: '🔒 Locked' });
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ content: msg });
+        await channel.send({ content: '🔒 Locked' });
       } catch { /* missing send perms in target */ }
     }
   },
