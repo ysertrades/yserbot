@@ -3243,102 +3243,111 @@ function refreshGawPreview(draft, attempt = 0) {
 
 function renderGiveawayForm() {
   const form = $('#form-gaw');
-  const draft = { kind: 'coins', amount: 5000, prize: '', winners: 1, duration: '1h', channelId: '',
-                  mention: null, requiredRoleId: null, bonusRoleId: null, minAccountAgeDays: 0 };
+  if (!form) return;
 
-  const bump = () => refreshGawPreview(draft);
+  const draft = {
+    kind: 'prize',
+    prize: '',
+    winners: 1,
+    duration: '1h',
+    channelId: '',
+    mention: null,
+    requiredRoleId: null,
+    bonusRoleId: null,
+    minAccountAgeDays: 0,
+    imageUrl: null,
+  };
 
-  // Coins pay out automatically; a prize is announced and handed over by you.
-  // Only one of the two fields is ever relevant, so the other is hidden rather
-  // than left sitting there inert.
-  const amountField = textField('Coins each winner gets', '5000', v => { draft.amount = Number(v); bump(); });
-  const prizeField = textField('What you are giving away', '', v => { draft.prize = v; },
-    { placeholder: 'Blue Guardian $10k account' });
-  prizeField.style.display = 'none';
-
-  // Prize giveaways can carry a banner; coins ones already draw their own.
-  // Either a generated image — the Prize giveaway one is editable in Studio —
-  // or a link, with the picker winning if both are filled in.
-  const generated = (state.overview?.composerMeta?.dynamicImages || [])
-    .map(d => ({ value: d, label: `Generated · ${d.slice(8)}` }));
   let pickedImage = '', typedImage = '';
   const syncImage = () => { draft.imageUrl = pickedImage || typedImage || null; };
 
-  const imagePick = select('Banner', '', generated, v => { pickedImage = v; syncImage(); },
-    { blank: 'None, or paste a link below' });
-  const imageUrlField = textField('Image link (https)', '', v => { typedImage = v.trim(); syncImage(); },
-    { placeholder: 'https://…' });
-  const imageNote = el('p', 'hint', 'The Prize giveaway banner can be reworded in Studio, and every giveaway using it picks that up.');
-  for (const node of [imagePick, imageUrlField, imageNote]) node.style.display = 'none';
+  const generated = (state.overview?.composerMeta?.dynamicImages || [])
+    .map(d => ({ value: d, label: `Generated · ${d.slice(8)}` }));
 
-  const kindField = select('Type', 'coins', [
-    { value: 'coins', label: 'Coins — paid out automatically' },
-    { value: 'prize', label: 'Prize — announced, you hand it over' },
-  ], v => {
-    draft.kind = v;
-    amountField.style.display = v === 'coins' ? '' : 'none';
-    prizeField.style.display = v === 'prize' ? '' : 'none';
-    for (const node of [imagePick, imageUrlField, imageNote]) {
-      node.style.display = v === 'prize' ? '' : 'none';
-    }
-    // A prize giveaway does not use the coins banner, so its preview would be
-    // showing something that will not be posted.
-    $('#gaw-preview').closest('.stage').style.display = v === 'coins' ? '' : 'none';
-    if (v === 'coins') bump();
-  });
-
-  // Duration preset chips
-  const durWrap = el('div', 'field');
-  durWrap.append(el('label', null, 'Duration'));
+  // Duration chips
+  const durBox = el('div', 'field');
+  durBox.append(el('label', null, 'How long it runs'));
   const durChips = el('div', 'chipset drop-chips');
-  const durVal = { current: draft.duration || '1h' };
   const paintDur = () => {
     durChips.replaceChildren();
-    for (const [label, val] of [['1h', '1h'], ['6h', '6h'], ['24h', '24h'], ['7d', '7d']]) {
-      const b = el('button', 'chip-toggle' + (durVal.current === val ? ' on' : ''), label);
+    for (const val of ['30m', '1h', '6h', '24h', '7d']) {
+      const b = el('button', 'chip-toggle' + (draft.duration === val ? ' on' : ''), val);
       b.type = 'button';
-      b.addEventListener('click', () => { durVal.current = val; draft.duration = val; paintDur(); });
+      b.addEventListener('click', () => {
+        draft.duration = val;
+        const inp = durBox.querySelector('input');
+        if (inp) { inp.value = val; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+        paintDur();
+      });
       durChips.append(b);
     }
   };
   paintDur();
-  durWrap.append(durChips);
-  durWrap.append(durationField('Custom', draft.duration || '1h', v => { draft.duration = v; durVal.current = v; paintDur(); }));
+  durBox.append(durChips);
+  durBox.append(durationField('Custom duration', draft.duration, v => {
+    draft.duration = v;
+    paintDur();
+  }));
+
+  // Winners chips
+  const winBox = el('div', 'field');
+  winBox.append(el('label', null, 'Winners'));
+  const winChips = el('div', 'chipset drop-chips');
+  const paintWin = () => {
+    winChips.replaceChildren();
+    for (const n of [1, 2, 3, 5, 10]) {
+      const b = el('button', 'chip-toggle' + (draft.winners === n ? ' on' : ''), String(n));
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        draft.winners = n;
+        const inp = winBox.querySelector('input');
+        if (inp) inp.value = String(n);
+        paintWin();
+      });
+      winChips.append(b);
+    }
+  };
+  paintWin();
+  winBox.append(winChips);
+  winBox.append(textField('Or type a number', '1', v => {
+    const n = Number(v);
+    if (Number.isInteger(n) && n >= 1 && n <= 50) { draft.winners = n; paintWin(); }
+  }));
 
   form.replaceChildren(
-    kindField,
-    amountField,
-    prizeField,
-    imagePick,
-    imageUrlField,
-    imageNote,
-    textField('Winners', '1', v => { draft.winners = Number(v); bump(); }),
-    durWrap,
+    textField('Prize name', '', v => { draft.prize = v; }, {
+      placeholder: 'e.g. Weekend Coin Rain · VIP role · $50 credit',
+    }),
+    select('Banner (optional)', '', generated, v => { pickedImage = v; syncImage(); }, {
+      blank: 'None — or paste a link below',
+    }),
+    textField('Image link (optional)', '', v => { typedImage = v.trim(); syncImage(); }, {
+      placeholder: 'https://…',
+    }),
+    winBox,
+    durBox,
     pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Where it posts' }),
     mentionPicker('Optional ping', null, v => { draft.mention = v; }),
     pickOne('Required role', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone can enter' }),
     pickOne('Bonus entries role', 'role', '', v => { draft.bonusRoleId = v; }, { blank: 'No bonus' }),
-    textField('Min account age (days)', '0', v => { draft.minAccountAgeDays = Number(v); }),
+    textField('Min account age (days)', '0', v => { draft.minAccountAgeDays = Number(v) || 0; }),
     actions(async () => {
+      if (!String(draft.prize || '').trim()) { toast('Name the prize for this drop.', 'bad'); return; }
       if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
-      if (!parseDurationMs(draft.duration)) { toast('Duration must look like 30s, 10m, 6h or 2d.', 'bad'); return; }
-      if (draft.kind === 'prize' && !String(draft.prize || '').trim()) {
-        toast('Name the prize for this drop.', 'bad'); return;
+      if (!parseDurationMs(draft.duration)) {
+        toast('Duration must look like 30m, 1h, 6h or 2d.', 'bad');
+        return;
       }
-      const what = draft.kind === 'coins' ? `${num(draft.amount)} coins` : (draft.prize || 'a prize');
       if (!await askConfirm({
         title: 'Launch this drop?',
-        message: `${what} · ${draft.winners} winner${draft.winners === 1 ? '' : 's'} · ${humanDuration(draft.duration)}. Posts to the channel now.`,
+        message: `**${draft.prize}** · ${draft.winners} winner${draft.winners === 1 ? '' : 's'} · ${humanDuration(draft.duration)}. Posts to the channel with Enter drop.`,
         confirmLabel: 'Launch drop',
       })) return;
       await post('giveawaystart', draft);
     }, { label: 'Launch drop', busyLabel: 'Launching…' }),
   );
 
-  // Only draw it when that section is actually on screen. Rendering a preview
-  // for a panel nobody is looking at costs a blocked event loop for nothing.
-  state.gawBump = bump;
-  if (root.dataset.section === 'giveaways') bump();
+  state.gawBump = () => {};
 }
 
 /* ── lottery ───────────────────────────────────────────────────────────── */
@@ -5519,7 +5528,7 @@ function renderSchedules() {
     const act = el('div', 'actions');
     const save = el('button', 'btn primary small', 'Save schedule');
     save.type = 'button';
-    save.addEventListener('click', () => post('schedule', draft));
+    save.addEventListener('click', () => post('schedule', { ...draft, offsetMinutes: tzOffset() }));
     const del = el('button', 'btn small danger', 'Delete');
     del.type = 'button';
     del.addEventListener('click', async () => {
@@ -5602,7 +5611,7 @@ function renderSchedules() {
     timeField,
     newDatePick,
     mentionPicker('Optional ping', null, v => { nb.mention = v; }),
-    actions(() => post('schedulenew', nb), { label: 'Create schedule' }),
+    actions(() => post('schedulenew', { ...nb, offsetMinutes: tzOffset() }), { label: 'Create schedule' }),
   );
   composer.replaceChildren(wrap);
 }
