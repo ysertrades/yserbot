@@ -2001,7 +2001,65 @@ function renderGiveaways() {
   if (!cards.length) {
     activeWrap.replaceChildren(el('p', 'muted', 'No live drops. Launch one below.'));
   } else {
-    activeWrap.replaceChildren(...cards);
+    const pageSize = 3;
+    const total = cards.length;
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    let page = Math.max(0, state.gawLivePage || 0);
+    if (page >= pages) page = pages - 1;
+    state.gawLivePage = page;
+    const slice = cards.slice(page * pageSize, page * pageSize + pageSize);
+
+    const nodes = [...slice];
+
+    if (pages > 1) {
+      const pager = el('div', 'drop-pager');
+      const meta = el('div', 'drop-pager-meta');
+      meta.append(
+        el('span', 'drop-pager-label', 'Live desk'),
+        el('span', 'drop-pager-count', `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} of ${total}`),
+      );
+
+      const dots = el('div', 'drop-pager-dots');
+      for (let i = 0; i < pages; i++) {
+        const dot = el('button', 'drop-pager-dot' + (i === page ? ' on' : ''), String(i + 1));
+        dot.type = 'button';
+        dot.setAttribute('aria-label', `Page ${i + 1}`);
+        if (i === page) dot.setAttribute('aria-current', 'page');
+        dot.addEventListener('click', () => {
+          state.gawLivePage = i;
+          renderGiveaways();
+        });
+        dots.append(dot);
+      }
+
+      const nav = el('div', 'drop-pager-nav');
+      const prev = el('button', 'btn small drop-pager-btn', '←');
+      prev.type = 'button';
+      prev.disabled = page <= 0;
+      prev.title = 'Previous';
+      prev.addEventListener('click', () => {
+        if (state.gawLivePage > 0) {
+          state.gawLivePage -= 1;
+          renderGiveaways();
+        }
+      });
+      const next = el('button', 'btn small drop-pager-btn', '→');
+      next.type = 'button';
+      next.disabled = page >= pages - 1;
+      next.title = 'Next';
+      next.addEventListener('click', () => {
+        if (state.gawLivePage < pages - 1) {
+          state.gawLivePage += 1;
+          renderGiveaways();
+        }
+      });
+      nav.append(prev, dots, next);
+
+      pager.append(meta, nav);
+      nodes.push(pager);
+    }
+
+    activeWrap.replaceChildren(...nodes);
   }
 
   // Recent history — collapsed by default, 5 per page

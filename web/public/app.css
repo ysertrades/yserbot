@@ -1288,3 +1288,75 @@ html[data-entered] .embed-box[open] .body {
   font-family: var(--mono);
   letter-spacing: 0.02em;
 }
+
+/* Live drops pager — 3 per page */
+.drop-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+  background: color-mix(in srgb, var(--panel-2, var(--panel)) 88%, transparent);
+}
+.drop-pager-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.drop-pager-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.drop-pager-count {
+  font-size: 0.82rem;
+  color: var(--soft, var(--text));
+  font-variant-numeric: tabular-nums;
+}
+.drop-pager-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.drop-pager-dots {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.drop-pager-dot {
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+.drop-pager-dot:hover {
+  color: var(--text);
+  border-color: var(--rule);
+}
+.drop-pager-dot.on {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--rule));
+  color: var(--text);
+}
+.drop-pager-btn {
+  min-width: 2rem;
+  padding-inline: 0.55rem;
+}
+.drop-pager-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
