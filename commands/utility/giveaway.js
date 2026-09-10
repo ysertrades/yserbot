@@ -14,6 +14,7 @@ const { solidRule, BRAND_PURPLE } = require('../../utils/dropFormat');
 const { parseDuration } = require('../../utils/duration');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 const messageStyle = require('../../utils/messageStyle');
+const { buildLiveV2, buildClosedV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
 
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
@@ -341,23 +342,25 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const reqLines      = requirementsLines(data);
 
   const dropId = genId(guildId);
-  const embed = buildLiveCard(guild, {
-    prize, winnersCount: winners, hostId, endTime, entries: 0,
-    requirements: reqLines, dropId,
+  const iconUrl = guild.iconURL({ size: 256, dynamic: true }) || hostAvatarUrl || null;
+  // https image only for MediaGallery; dynamic: attachments stay on classic path later if needed
+  const bannerUrl = (imageUrl && /^https:\/\//i.test(String(imageUrl))) ? String(imageUrl) : null;
+
+  const v2 = buildLiveV2({
+    prize,
+    winnersCount: winners,
+    ends: `<t:${Math.floor(endTime / 1000)}:R>`,
+    endsAt: dateStr(endTime),
+    entries: 0,
+    requirements: reqLines,
+    dropId,
+    iconUrl,
+    imageUrl: bannerUrl,
   });
 
-  // A generated banner is not a URL — it has to be drawn, attached, and then
-  // referenced as attachment://. Anything else is treated as an ordinary link.
-  // The same helper the end and reroll paths use, so a banner that posts is a
-  // banner that can be put back on the result.
-  const files = applyEmbedImage(embed, imageUrl, guildId);
-  const thumb = guild.iconURL({ dynamic: true }) || hostAvatarUrl;
-  if (thumb) embed.setThumbnail(thumb);
-
-  const row = buildLiveRow(guildId);
-
   const msg = await channel.send({
-    content, embeds: [embed], components: row ? [row] : [], files, allowedMentions: mentionOpts,
+    ...v2,
+    allowedMentions: mentionOpts,
   });
 
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
@@ -521,25 +524,25 @@ async function endGiveaway(message, meta) {
   };
   writeJson('giveaways_ended.json', allEnded);
 
-  const embed = buildClosedCard(message.guild, {
+  const iconUrl = message.guild?.iconURL?.({ size: 256, dynamic: true }) || null;
+  const bannerUrl = (imageUrl && /^https:\/\//i.test(String(imageUrl))) ? String(imageUrl) : null;
+  const closed = buildClosedV2({
     prize,
     entries: entrantIds.length,
-    id: shortId,
-    winners: winnersCount,
+    winnersCount,
     hostId,
+    dropId: shortId,
+    iconUrl,
+    imageUrl: bannerUrl,
   });
-  const thumb = message.guild?.iconURL?.({ dynamic: true }) || null;
-  if (thumb && embed) try { embed.setThumbnail(thumb); } catch { /* ignore */ }
-  const endFiles = applyEmbedImage(embed, imageUrl, guildId);
 
-  // The edit is the only part of ending that can fail — a deleted message, a
-  // lost permission, an image Discord will not take. The draw has already
-  // happened and is already written down, so a failure here must not stop the
-  // giveaway from being marked finished: leaving it active meant it showed as
-  // running forever and every fresh attempt to end it drew a new set of
-  // winners and wrote another finished record.
   try {
-    await message.edit({ embeds: [embed], components: [closedRow], ...replaceFiles(endFiles) });
+    await message.edit({
+      ...closed,
+      // Required when switching a classic message to V2
+      content: null,
+      embeds: [],
+    });
   } catch (err) {
     console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);
   }

@@ -310,6 +310,8 @@ module.exports = {
                 hostId: saved.hostId, endTime: saved.endTime, guildId: saved.guildId,
                 requiredRoleId: saved.requiredRoleId || null, bonusRoleId: saved.bonusRoleId || null,
                 minAccountAgeDays: saved.minAccountAgeDays || 0,
+                requirementLines: saved.requirementLines || [],
+                dropId: saved.dropId || null,
               });
             }
           }
@@ -344,33 +346,36 @@ module.exports = {
             // "undefined" where the prize used to be, which is worse than the
             // patch it replaced.
             const canRebuild = meta?.prize && meta?.hostId && Number(meta?.endTime) > 0;
-            if (canRebuild && gawCmd?.buildLiveCard && interaction.guild) {
-              upd = gawCmd.buildLiveCard(interaction.guild, {
-                prize: meta.prize,
-                winnersCount: meta.winners ?? meta.winnersCount,
-                hostId: meta.hostId,
-                endTime: meta.endTime,
-                entries: entrants.size,
-                requirements: meta.requirementLines || [],
-              });
-            }
-            // A giveaway posted before this existed has no record to rebuild
-            // from; keeping the old patch for that case means those keep
-            // counting rather than freezing on the number they were at.
-            if (!upd) {
-              upd = EmbedBuilder.from(interaction.message.embeds[0]);
-              upd.setDescription((upd.data.description || '').replace(
-                /📊 \*\*Entries:\*\* \d+ participants?/,
-                `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`));
-            }
-            // The banner is re-uploaded rather than re-linked. A signed CDN URL
-            // copied out of the live embed is not something Discord can match
-            // back to the attachment, so it drew the picture twice — once
-            // inside the embed and once above it. See utils/embedAttachments.
             const stored = global.giveawayMeta?.get(interaction.message.id)
               ?? client.commands.get('giveaway')?.getActiveGiveaway?.(interaction.message.id);
-            const imageOpts = reattachEmbedImage(upd, stored?.imageUrl ?? null, interaction.guild?.id);
-            await interaction.message.edit({ embeds: [upd], ...imageOpts }).catch(() => {});
+            const dropId = meta?.dropId || stored?.dropId || '••••••••';
+            const iconUrl = interaction.guild?.iconURL?.({ size: 256, dynamic: true }) || null;
+            const bannerUrl = (stored?.imageUrl && /^https:\/\//i.test(String(stored.imageUrl)))
+              ? String(stored.imageUrl) : null;
+
+            if (canRebuild) {
+              try {
+                const { buildLiveV2 } = require('../utils/dropCardV2');
+                const payload = buildLiveV2({
+                  prize: meta.prize,
+                  winnersCount: meta.winners ?? meta.winnersCount ?? 1,
+                  ends: `<t:${Math.floor(Number(meta.endTime) / 1000)}:R>`,
+                  endsAt: new Date(Number(meta.endTime)).toLocaleString(),
+                  entries: entrants.size,
+                  requirements: meta.requirementLines || [],
+                  dropId,
+                  iconUrl,
+                  imageUrl: bannerUrl,
+                });
+                await interaction.message.edit({
+                  ...payload,
+                  content: null,
+                  embeds: [],
+                }).catch((e) => console.warn('[giveaway enter] edit', e.message));
+              } catch (e) {
+                console.warn('[giveaway enter] V2 rebuild failed', e.message);
+              }
+            }
           } catch {}
           // Persist the new entry so it survives future restarts
           client.commands.get('giveaway')?.persistGiveawayEntry?.(interaction.message.id, entrants);
