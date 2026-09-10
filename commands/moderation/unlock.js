@@ -1,4 +1,4 @@
-use strict';
+'use strict';
 
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { sendTempReply } = require('../../utils/embedBuilder');
