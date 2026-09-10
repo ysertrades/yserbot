@@ -1,5 +1,16 @@
 'use strict';
 
+function roleIdList(cfg, multiKey, singleKey) {
+  const multi = cfg?.[multiKey];
+  if (Array.isArray(multi) && multi.length) return multi.filter(Boolean);
+  if (cfg?.[singleKey]) return [cfg[singleKey]];
+  return [];
+}
+function rolePing(ids) {
+  return ids.map(id => `<@&${id}>`).join(' ');
+}
+
+
 const {
   SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder, UserSelectMenuBuilder,
@@ -128,7 +139,8 @@ module.exports = {
       const config     = readJson('config.json', {});
       const gCfg       = config[interaction.guild.id] || {};
       const reportChId = gCfg.reportChannel;
-      const reportRole = gCfg.reportRole;
+      const reportRoleIds = roleIdList(gCfg, 'reportRoles', 'reportRole');
+      const reportRole = reportRoleIds[0]; // legacy single for any leftover code
 
       if (!reportChId) return interaction.reply({ content: '❌ No report channel configured. Ask an admin to run `/config report-channel`.', flags: MessageFlags.Ephemeral });
       const reportCh = interaction.guild.channels.cache.get(reportChId);
@@ -160,7 +172,7 @@ module.exports = {
         ButtonBuilder, ActionRowBuilder, ButtonStyle,
       });
 
-      const content = reportRole ? `<@&${reportRole}>` : undefined;
+      const content = reportRoleIds.length ? rolePing(reportRoleIds) : undefined;
       const posted = await reportCh.send({ content, embeds: [embed], components: actionRow ? [actionRow] : [] });
 
       // Recorded as well as posted. The message used to be the only copy,

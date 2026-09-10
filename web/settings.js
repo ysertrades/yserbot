@@ -29,8 +29,8 @@ const FIELDS = [
   { key: 'leaveChannel',   path: ['leaveChannel'],   type: 'channel', label: 'Leave messages' },
   { key: 'logsChannel',    path: ['logsChannel'],    type: 'channel', label: 'Moderation log' },
   { key: 'reportChannel',  path: ['reportChannel'],  type: 'channel', label: 'Reports' },
-  { key: 'supportRole',    path: ['supportRole'],    type: 'role',    label: 'Support role' },
-  { key: 'reportRole',     path: ['reportRole'],     type: 'role',    label: 'Report handler role' },
+  { key: 'supportRoles',   path: ['supportRoles'],   type: 'roles',   label: 'Support roles' },
+  { key: 'reportRoles',    path: ['reportRoles'],    type: 'roles',   label: 'Report handler roles' },
   { key: 'modRoles',       path: ['cmdSetup', 'modRoles'],   type: 'roles', label: 'Moderator roles' },
   { key: 'adminRoles',     path: ['cmdSetup', 'adminRoles'], type: 'roles', label: 'Admin roles' },
   { key: 'warnThreshold',  path: ['warnSettings', 'threshold'],    type: 'int',    label: 'Warnings before action', min: 1, max: 50 },
@@ -66,9 +66,11 @@ function read(guildId, guild) {
   for (const f of FIELDS) {
     const raw = dig(conf, f.path);
     if (f.type === 'roles') {
-      values[f.key] = Array.isArray(raw) ? raw : [];
-      // Resolve to names so the panel can show what a snowflake actually is,
-      // and flag any that no longer exist rather than printing a bare number.
+      let ids = Array.isArray(raw) ? raw : [];
+      // Migrate legacy single-role keys into the multi arrays
+      if (!ids.length && f.key === 'supportRoles' && conf.supportRole) ids = [conf.supportRole];
+      if (!ids.length && f.key === 'reportRoles' && conf.reportRole) ids = [conf.reportRole];
+      values[f.key] = ids;
       resolved[f.key] = values[f.key].map(id => ({ id, name: guild.roles.cache.get(id)?.name || null }));
     } else if (f.type === 'channel') {
       values[f.key] = raw ?? null;
@@ -152,6 +154,11 @@ function save(guildId, body, { guild }) {
       case 'bool':
         value = !!incoming;
         break;
+      case 'string': {
+        const str = String(incoming ?? '').trim().slice(0, f.max || 64);
+        value = str || null;
+        break;
+      }
       default:
         continue;
     }

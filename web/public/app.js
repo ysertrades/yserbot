@@ -3981,36 +3981,74 @@ function renderVerifyPanel() {
 function renderSettings() {
   const s = state.overview?.settings;
   if (!s) return;
-  const draft = {};
   const form = $('#form-settings');
+  if (!form) return;
+  // Keep chips selectable — live overview refresh must not wipe in-progress picks
+  if (form.dataset.dirty === '1' && root.dataset.section === 'settings') return;
+
+  const draft = {};
+  for (const f of s.fields) draft[f.key] = s.values[f.key];
+
+  const markDirty = () => { form.dataset.dirty = '1'; };
   const nodes = [];
+  const roleItems = s.roles || roleList();
 
   for (const f of s.fields) {
-    const value = s.values[f.key];
+    const value = draft[f.key];
     if (f.type === 'bool') {
-      nodes.push(toggle(f.label, !!value, v => { draft[f.key] = v; }));
+      nodes.push(toggle(f.label, !!value, v => { draft[f.key] = v; markDirty(); }));
     } else if (f.type === 'channel') {
       nodes.push(select(f.label, value || '', s.channels.map(c => ({ value: c.id, label: `#${c.name}` })),
-        v => { draft[f.key] = v || null; }, { blank: 'Not set' }));
+        v => { draft[f.key] = v || null; markDirty(); }, { blank: 'Not set' }));
     } else if (f.type === 'role') {
-      nodes.push(select(f.label, value || '', s.roles.map(r => ({ value: r.id, label: r.name })),
-        v => { draft[f.key] = v || null; }, { blank: 'Not set' }));
+      nodes.push(select(f.label, value || '', roleItems.map(r => ({ value: r.id, label: r.name })),
+        v => { draft[f.key] = v || null; markDirty(); }, { blank: 'Not set' }));
     } else if (f.type === 'roles') {
-      nodes.push(pickMany(f.label, 'role', value || [], v => { draft[f.key] = v; }));
+      nodes.push(pickManyRoles(f.label, roleItems, value || [], v => { draft[f.key] = v; markDirty(); }));
     } else if (f.type === 'choice') {
       nodes.push(select(f.label, value || f.choices[0], f.choices.map(c => ({ value: c, label: c })),
-        v => { draft[f.key] = v; }));
+        v => { draft[f.key] = v; markDirty(); }));
     } else if (f.type === 'string') {
       nodes.push(textField(f.label, value == null ? '' : String(value),
-        v => { draft[f.key] = v; }, { placeholder: 'e.g. Quantlab' }));
+        v => { draft[f.key] = v; markDirty(); }, { placeholder: 'e.g. Quantlab' }));
     } else {
       nodes.push(textField(`${f.label}${f.min != null ? ` (${f.min}–${f.max})` : ''}`, value == null ? '' : String(value),
-        v => { draft[f.key] = Number(v); }));
+        v => { draft[f.key] = Number(v); markDirty(); }));
     }
   }
 
-  nodes.push(actions(() => post('settings', draft)));
+  nodes.push(actions(async () => {
+    const out = await post('settings', draft);
+    if (out) form.dataset.dirty = '0';
+    return out;
+  }));
   form.replaceChildren(...nodes);
+  form.dataset.dirty = '0';
+}
+
+/** Multi role chips using an explicit list (settings.roles), not a stale roleList(). */
+function pickManyRoles(label, items, values, onChange) {
+  const list = items || [];
+  const chosen = new Set(values || []);
+  const wrap = el('div', 'field');
+  wrap.append(el('span', null, label));
+  const box = el('div', 'chipset');
+  if (!list.length) box.append(el('span', 'muted', 'No roles found.'));
+  for (const i of list) {
+    const b = el('button', 'chip-toggle', i.name);
+    b.type = 'button';
+    if (chosen.has(i.id)) b.setAttribute('aria-pressed', 'true');
+    b.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (chosen.has(i.id)) { chosen.delete(i.id); b.removeAttribute('aria-pressed'); }
+      else { chosen.add(i.id); b.setAttribute('aria-pressed', 'true'); }
+      onChange([...chosen]);
+    });
+    box.append(b);
+  }
+  wrap.append(box);
+  return wrap;
 }
 
 /**

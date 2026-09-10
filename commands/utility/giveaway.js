@@ -664,16 +664,16 @@ async function revealGiveaway(message, interaction) {
 
   const uid = interaction.user.id;
   const opened = new Set(data.openedBy || []);
-  if (opened.has(uid)) return { error: 'already_opened', shortId };
-
+  // Allow re-open any time — same personal result, no lock-out
   const winners = new Set(data.currentWinners || []);
   const isWinner = winners.has(uid);
-  opened.add(uid);
-  data.openedBy = [...opened];
-  // Mark fully revealed only for panel logic once any open happened; winners stay private
-  data.revealed = true;
-  allEnded[guildId][shortId] = data;
-  writeJson('giveaways_ended.json', allEnded);
+  if (!opened.has(uid)) {
+    opened.add(uid);
+    data.openedBy = [...opened];
+    data.revealed = true;
+    allEnded[guildId][shortId] = data;
+    writeJson('giveaways_ended.json', allEnded);
+  }
 
   const prize = data.prize || 'this drop';
   if (isWinner) {

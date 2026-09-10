@@ -1,5 +1,16 @@
 'use strict';
 
+function roleIdList(cfg, multiKey, singleKey) {
+  const multi = cfg?.[multiKey];
+  if (Array.isArray(multi) && multi.length) return multi.filter(Boolean);
+  if (cfg?.[singleKey]) return [cfg[singleKey]];
+  return [];
+}
+function rolePing(ids) {
+  return ids.map(id => `<@&${id}>`).join(' ');
+}
+
+
 const { SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags } = require('discord.js');
 const { createServerEmbed, sendTempReply: sendTempEphemeralReply } = require('../../utils/embedBuilder');
 const messageStyle = require('../../utils/messageStyle');
@@ -196,7 +207,8 @@ module.exports = {
       }
 
       // Ping support role in the channel so staff are notified
-      const supportRoleId = gCfg.supportRole;
+      const supportRoleIds = roleIdList(gCfg, 'supportRoles', 'supportRole');
+      const supportRoleId = supportRoleIds[0];
       const pingContent   = supportRoleId
         ? `<@&${supportRoleId}> — ${interaction.user} is still here and needs help!`
         : `A support member is needed — ${interaction.user} is still here!`;
@@ -235,7 +247,8 @@ module.exports = {
     const config  = readJson('config.json', {});
     const guildId = guild.id;
     const gCfg    = config[guildId] || {};
-    const supportRoleId = gCfg.supportRole;
+    const supportRoleIds = roleIdList(gCfg, 'supportRoles', 'supportRole');
+    const supportRoleId = supportRoleIds[0];
 
     const existing = guild.channels.cache.find(c =>
       c.topic === `ticket-owner:${interaction.user.id}`
@@ -256,7 +269,9 @@ module.exports = {
       { id: interaction.user.id,      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
       { id: guild.members.me.id,      allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
     ];
-    if (supportRoleId) overwrites.push({ id: supportRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] });
+    for (const rid of supportRoleIds) {
+      overwrites.push({ id: rid, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] });
+    }
 
     const channelName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 90) || `ticket-${interaction.user.id}`;
 
@@ -271,13 +286,13 @@ module.exports = {
       { ButtonBuilder, ActionRowBuilder, ButtonStyle });
 
     await channel.send({
-      content: supportRoleId ? `<@&${supportRoleId}>` : undefined,
+      content: supportRoleIds.length ? rolePing(supportRoleIds) : undefined,
       embeds: [messageStyle.build(guild.id, 'ticket.opened', {
-        fields: supportRoleId ? [{ name: 'Support Team', value: `<@&${supportRoleId}>`, inline: false }] : [],
+        fields: supportRoleIds.length ? [{ name: 'Support Team', value: rolePing(supportRoleIds), inline: false }] : [],
         tokens: {
           user: `${interaction.user}`,
           server: guild.name,
-          support: supportRoleId ? `<@&${supportRoleId}>` : '',
+          support: supportRoleIds.length ? rolePing(supportRoleIds) : '',
           channel: `${channel}`,
         },
       })],
