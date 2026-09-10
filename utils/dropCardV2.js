@@ -1,4 +1,4 @@
-'use strict';
+use strict';
 
 /**
  * Components V2 drop cards (Syncie-style).
@@ -48,6 +48,11 @@ function container(children, accent = ACCENT) {
   };
 }
 
+/** Label plain, value bold, always "Label: **value**" */
+function line(label, value) {
+  return `${label}: **${value}**`;
+}
+
 function buildLiveV2({
   prize,
   winnersCount,
@@ -60,12 +65,12 @@ function buildLiveV2({
   imageUrl = null,
 }) {
   const req = requirements.length ? `\n\n${requirements.join('\n')}` : '';
+  // No duplicate prize under the title — only the labeled rows
   const body =
-    `**${prize}**\n\n` +
-    `**PRIZE** ${prize}\n` +
-    `**WINNERS** ${winnersCount}\n` +
-    `**ENDS** ${ends}\n` +
-    `**ENTRIES** ${entries}` +
+    `${line('Prize', prize)}\n` +
+    `${line('Winners', winnersCount)}\n` +
+    `${line('Ends', ends)}\n` +
+    `${line('Entries', entries)}` +
     req;
 
   const kids = [];
@@ -100,7 +105,7 @@ function buildClosedV2({
 }) {
   const body =
     `The winners have been selected. Open the box to reveal your personal result.\n\n` +
-    `**VALID ENTRIES** ${entries}  ·  **WINNERS** ${winnersCount}`;
+    `${line('Valid entries', entries)}  ·  ${line('Winners', winnersCount)}`;
   const host = hostId ? `<@${hostId}>` : 'quantlab';
 
   const kids = [];
@@ -110,7 +115,7 @@ function buildClosedV2({
   kids.push(separator(true));
   kids.push(row(button({
     customId: 'giveaway_reveal',
-    label: 'Open Box',
+    label: 'Reveal',
     style: 3,
     emoji: '🎁',
   })));
