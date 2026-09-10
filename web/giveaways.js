@@ -243,14 +243,25 @@ async function create(guildId, body, { guild, session, client }) {
     minAccountAgeDays,
   };
 
+  // Host: optional admin from the panel; must have Manage Guild / Administrator.
+  let hostId = session.uid;
+  if (body.hostId) {
+    const hostMember = guild.members.cache.get(String(body.hostId));
+    const ok = hostMember
+      && !hostMember.user?.bot
+      && (hostMember.permissions?.has?.('Administrator')
+        || hostMember.permissions?.has?.('ManageGuild'));
+    if (!ok) return { error: 'bad_host' };
+    hostId = hostMember.id;
+  }
+
   try {
     const out = kind === 'coins'
-      ? await coinsCmd().postGiveaway(guild, session.uid, { ...shared, amount })
-      : await giveawayCmd().postGiveaway(guild, session.uid,
-          // The host avatar is only a fallback thumbnail when the server has no
-          // icon, and the panel has no member object to ask — the bot's own
-          // avatar keeps the embed from looking broken in that case.
-          client?.user?.displayAvatarURL?.() || null,
+      ? await coinsCmd().postGiveaway(guild, hostId, { ...shared, amount })
+      : await giveawayCmd().postGiveaway(guild, hostId,
+          // Prefer the chosen host's avatar; fall back to the bot.
+          guild.members.cache.get(hostId)?.user?.displayAvatarURL?.({ size: 128 })
+            || client?.user?.displayAvatarURL?.() || null,
           { ...shared, prize, imageUrl });
 
     return {

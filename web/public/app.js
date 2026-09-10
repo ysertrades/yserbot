@@ -3359,6 +3359,7 @@ function renderGiveawayForm() {
 
   const draft = {
     kind: 'prize',
+    hostId: null,
     prize: '',
     winners: 1,
     duration: '1h',
@@ -3438,6 +3439,17 @@ function renderGiveawayForm() {
     }),
     winBox,
     durBox,
+    (() => {
+      const admins = state.overview?.features?.admins || [];
+      if (!draft.hostId && admins.length) draft.hostId = admins[0].id;
+      return select(
+        'Host (admin)',
+        draft.hostId || '',
+        admins.map(a => ({ value: a.id, label: a.name })),
+        v => { draft.hostId = v || null; },
+        { blank: admins.length ? 'Pick an admin' : 'No admins loaded — refresh the panel' },
+      );
+    })(),
     pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Where it posts' }),
     mentionPicker('Optional ping', null, v => { draft.mention = v; }),
     pickOne('Required role', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone can enter' }),
@@ -3490,6 +3502,7 @@ function renderGiveawayForm() {
     actions(async () => {
       if (!String(draft.prize || '').trim()) { toast('Name the prize for this drop.', 'bad'); return; }
       if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
+      if (!draft.hostId) { toast('Pick a host (admin) for this drop.', 'bad'); return; }
       if (!parseDurationMs(draft.duration)) {
         toast('Duration must look like 30m, 1h, 6h or 2d.', 'bad');
         return;

@@ -231,6 +231,23 @@ function read(guildId, guild) {
         .sort((a, b) => a.name.localeCompare(b.name))
     : [];
 
+  // Admins for Drop Desk host picker — Manage Guild or Administrator, non-bots.
+  out.admins = guild.members?.cache
+    ? [...guild.members.cache.values()]
+        .filter(m => {
+          if (m.user?.bot) return false;
+          try {
+            return m.permissions?.has?.('Administrator')
+              || m.permissions?.has?.('ManageGuild');
+          } catch { return false; }
+        })
+        .map(m => ({
+          id: m.id,
+          name: m.displayName || m.user?.username || m.id,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
   // Today's lottery pool, resolved to names. The draw itself is run by
   // utils/lotteryRunner on its own schedule; this is the window onto it.
   const lot = readJson('lottery.json', {})[guildId] || { pool: {}, lastDrawAt: 0, history: [] };
