@@ -1144,3 +1144,75 @@ html[data-entered] .embed-box[open] .body {
 .desk-composer .chip-toggle.on {
   background: color-mix(in srgb, var(--accent) 22%, var(--raised));
 }
+
+/* ── Drop Desk ───────────────────────────────────────────────────────── */
+.drop-desk-head { margin: 0 0 1rem; }
+.drop-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.drop-live-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 0.75rem;
+}
+.drop-card {
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--sunken);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.drop-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.drop-card .live-dot {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--good);
+}
+.drop-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.drop-card-time {
+  font-family: var(--mono);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.drop-card.kind-coins { border-color: color-mix(in srgb, var(--good) 35%, var(--rule)); }
+.drop-card.kind-prize { border-color: color-mix(in srgb, var(--accent) 40%, var(--rule)); }
+.drop-compose-grid { align-items: start; }
+.drop-chips, .desk-composer .chipset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.35rem 0;
+}
+.drop-chips .chip-toggle, .form .chip-toggle {
+  border: 1px solid var(--rule);
+  background: var(--raised);
+  color: var(--soft);
+  border-radius: 999px;
+  padding: 0.28rem 0.75rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.form .chip-toggle.on, .form .chip-toggle:hover,
+.drop-chips .chip-toggle.on, .drop-chips .chip-toggle:hover {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 16%, var(--raised));
+}

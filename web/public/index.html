@@ -212,27 +212,41 @@
 
     <!-- ── Giveaways ───────────────────────────────────────────────────── -->
     <div class="section" data-section="giveaways">
-      <div class="grid">
-        <article class="panel">
-          <h2>Running now</h2>
-          <div id="gaw-active" class="items"></div>
-        </article>
-        <article class="panel">
-          <h2>Finished</h2>
-          <div id="gaw-ended" class="items"></div>
-        </article>
+      <div class="drop-desk-head">
+        <h1 class="drop-title">Drop Desk</h1>
+        <p class="muted">Launch, watch, and close drops without leaving the panel.</p>
       </div>
+
       <div class="panel">
-        <h2>Start a coins giveaway</h2>
-        <div class="studio">
+        <div class="queue-head">
+          <h2>Live drops</h2>
+          <span class="tag" id="gaw-live-count">0</span>
+        </div>
+        <div id="gaw-active" class="drop-live-grid"></div>
+      </div>
+
+      <div class="grid drop-compose-grid">
+        <article class="panel">
+          <h2>New drop</h2>
+          <p class="muted">Coins pay automatically. Prize drops use Reveal, then Send to winner.</p>
+          <form id="form-gaw" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Banner preview</h2>
+          <p class="muted">Coins drops only — prize drops use the image URL you set, or none.</p>
           <div class="stage">
             <div class="stage-frame gaw-preview"><img id="gaw-preview" alt="Giveaway banner preview"></div>
-            <p class="hint">This is the banner members will see.</p>
           </div>
-          <form id="form-gaw" class="form"></form>
-        </div>
+        </article>
       </div>
-      <p class="hint">The banner preview above is for coins giveaways — a prize giveaway uses the image URL you give it, or none.</p>
+
+      <div class="panel">
+        <div class="queue-head">
+          <h2>Recent drops</h2>
+          <span class="tag" id="gaw-ended-count"></span>
+        </div>
+        <div id="gaw-ended" class="items"></div>
+      </div>
     </div>
 
     <!-- ── Lottery lives in Economy ─────────────────────────────────────── -->

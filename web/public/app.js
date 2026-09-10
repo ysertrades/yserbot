@@ -1961,40 +1961,54 @@ function renderGiveaways() {
   ticking.clear();
   const g = state.overview?.giveaways || { active: [], ended: [] };
 
+  const liveCount = $('#gaw-live-count');
+  if (liveCount) {
+    liveCount.textContent = g.active.length ? String(g.active.length) : '0';
+    liveCount.classList.toggle('on', g.active.length > 0);
+  }
+
   const activeWrap = $('#gaw-active');
-  if (!g.active.length) activeWrap.replaceChildren(el('p', 'muted', 'Nothing running.'));
-  else activeWrap.replaceChildren(...g.active.map(x => {
-    const d = el('div', 'gaw');
-    const top = el('div', 'gaw-top');
-    top.append(
-      el('span', `kind ${x.kind}`, x.kind === 'coins' ? 'COINS' : 'PRIZE'),
-      el('span', 'nm', x.title || 'Giveaway'),
-    );
-    d.append(top);
-    d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
-    if (x.endsAt) {
-      const c = countdownEl(x.endsAt, x.startedAt);
-      const line = el('div', 'row');
-      line.append(el('span', 'k', 'Ends in'), c.node);
-      d.append(line, c.bar);
-    }
-    const act = el('div', 'actions');
-    const end = el('button', 'btn small danger', 'End now');
-    end.type = 'button';
-    end.addEventListener('click', async () => {
-      if (!await askConfirm({
-        title: 'End it now?',
-        message: 'Winners are drawn immediately and announced, as if the timer had run out.',
-        confirmLabel: 'End and draw',
-      })) return;
-      end.disabled = true;
-      await post('giveawayend', { messageId: x.messageId, kind: x.kind });
-      end.disabled = false;
-    });
-    act.append(end);
-    d.append(act);
-    return d;
-  }));
+  if (!g.active.length) {
+    activeWrap.replaceChildren(el('p', 'muted', 'No live drops. Launch one below.'));
+  } else {
+    activeWrap.replaceChildren(...g.active.map(x => {
+      const d = el('div', `drop-card kind-${x.kind || 'prize'}`);
+      const top = el('div', 'drop-card-top');
+      top.append(
+        el('span', `kind ${x.kind}`, x.kind === 'coins' ? 'COINS' : 'PRIZE'),
+        el('span', 'live-dot', 'LIVE'),
+      );
+      d.append(top);
+      d.append(el('div', 'drop-card-title', x.title || 'Drop'));
+      if (x.endsAt) {
+        const c = countdownEl(x.endsAt, x.startedAt);
+        d.append(el('div', 'drop-card-time', c.node));
+        d.append(c.bar);
+      }
+      d.append(el('p', 'hint', `${num(x.entrants)} entrants · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
+      const act = el('div', 'actions');
+      const end = el('button', 'btn small danger', 'End now');
+      end.type = 'button';
+      end.addEventListener('click', async () => {
+        if (!await askConfirm({
+          title: 'End this drop?',
+          message: x.kind === 'coins'
+            ? 'Winners are drawn and paid immediately.'
+            : 'Entries lock and Reveal appears on the Discord message.',
+          confirmLabel: 'End drop',
+        })) return;
+        end.disabled = true;
+        await post('giveawayend', { messageId: x.messageId, kind: x.kind });
+        end.disabled = false;
+      });
+      act.append(end);
+      d.append(act);
+      return d;
+    }));
+  }
+
+  const endedCount = $('#gaw-ended-count');
+  if (endedCount) endedCount.textContent = g.ended?.length ? `${g.ended.length}` : '';
 
   const endedWrap = $('#gaw-ended');
   if (!g.ended.length) endedWrap.replaceChildren(el('p', 'muted', 'Nothing finished yet.'));
@@ -3273,6 +3287,24 @@ function renderGiveawayForm() {
     if (v === 'coins') bump();
   });
 
+  // Duration preset chips
+  const durWrap = el('div', 'field');
+  durWrap.append(el('label', null, 'Duration'));
+  const durChips = el('div', 'chipset drop-chips');
+  const durVal = { current: draft.duration || '1h' };
+  const paintDur = () => {
+    durChips.replaceChildren();
+    for (const [label, val] of [['1h', '1h'], ['6h', '6h'], ['24h', '24h'], ['7d', '7d']]) {
+      const b = el('button', 'chip-toggle' + (durVal.current === val ? ' on' : ''), label);
+      b.type = 'button';
+      b.addEventListener('click', () => { durVal.current = val; draft.duration = val; paintDur(); });
+      durChips.append(b);
+    }
+  };
+  paintDur();
+  durWrap.append(durChips);
+  durWrap.append(durationField('Custom', draft.duration || '1h', v => { draft.duration = v; durVal.current = v; paintDur(); }));
+
   form.replaceChildren(
     kindField,
     amountField,
@@ -3281,23 +3313,26 @@ function renderGiveawayForm() {
     imageUrlField,
     imageNote,
     textField('Winners', '1', v => { draft.winners = Number(v); bump(); }),
-    durationField('Runs for', '1h', v => { draft.duration = v; }),
-    pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Pick a channel' }),
-    mentionPicker('Ping with the post', null, v => { draft.mention = v; }),
-    pickOne('Only this role may enter', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone' }),
-    pickOne('Extra entries for', 'role', '', v => { draft.bonusRoleId = v; }, { blank: 'No bonus role' }),
-    textField('Minimum account age (days)', '0', v => { draft.minAccountAgeDays = Number(v); }),
+    durWrap,
+    pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Where it posts' }),
+    mentionPicker('Optional ping', null, v => { draft.mention = v; }),
+    pickOne('Required role', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone can enter' }),
+    pickOne('Bonus entries role', 'role', '', v => { draft.bonusRoleId = v; }, { blank: 'No bonus' }),
+    textField('Min account age (days)', '0', v => { draft.minAccountAgeDays = Number(v); }),
     actions(async () => {
       if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
       if (!parseDurationMs(draft.duration)) { toast('Duration must look like 30s, 10m, 6h or 2d.', 'bad'); return; }
+      if (draft.kind === 'prize' && !String(draft.prize || '').trim()) {
+        toast('Name the prize for this drop.', 'bad'); return;
+      }
       const what = draft.kind === 'coins' ? `${num(draft.amount)} coins` : (draft.prize || 'a prize');
       if (!await askConfirm({
-        title: 'Launch this giveaway?',
-        message: `${what} to ${draft.winners} winner${draft.winners === 1 ? '' : 's'}, running for ${humanDuration(draft.duration)}. It posts to the channel straight away.`,
-        confirmLabel: 'Launch it',
+        title: 'Launch this drop?',
+        message: `${what} · ${draft.winners} winner${draft.winners === 1 ? '' : 's'} · ${humanDuration(draft.duration)}. Posts to the channel now.`,
+        confirmLabel: 'Launch drop',
       })) return;
       await post('giveawaystart', draft);
-    }, { label: 'Launch giveaway', busyLabel: 'Launching…' }),
+    }, { label: 'Launch drop', busyLabel: 'Launching…' }),
   );
 
   // Only draw it when that section is actually on screen. Rendering a preview
