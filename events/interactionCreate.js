@@ -390,11 +390,10 @@ module.exports = {
             }[r?.error] || 'Could not open the box.';
             return interaction.reply({ content: why, flags: EPHEMERAL_FLAG });
           }
-          const { EmbedBuilder } = require('discord.js');
-          const embed = new EmbedBuilder()
-            .setColor(0x9397EE)
-            .setDescription(r.body || r.title || 'Result');
-          return interaction.reply({ embeds: [embed], flags: EPHEMERAL_FLAG });
+          return interaction.reply({
+            content: r.content || r.body || 'Result',
+            flags: EPHEMERAL_FLAG,
+          });
         }
 
         // Giveaway — participants (first page)

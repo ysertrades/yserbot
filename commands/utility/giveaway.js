@@ -665,30 +665,20 @@ async function revealGiveaway(message, interaction) {
       ok: true,
       shortId,
       ephemeral: true,
-      title: 'You won',
-      body:
-        `## you won\n\n`
-        + `**${prize}**\n\n`
-        + `──────────────\n\n`
-        + `quantlab picked you.\n`
-        + `**Wait for a DM** with your prize details.\n\n`
-        + `──────────────\n\n`
-        + `Drop \`QL-${shortId}\``,
+      content:
+        `You won **${prize}**.\n`
+        + `A prize message will be sent to your DMs shortly.\n`
+        + `Drop ID: \`QL-${shortId}\``,
     };
   }
   return {
     ok: true,
     shortId,
     ephemeral: true,
-    title: 'Not this time',
-    body:
-      `## not this time\n\n`
-      + `**${prize}** went to someone else.\n\n`
-      + `──────────────\n\n`
-      + `Better luck on the next quantlab drop.\n`
-      + `Stay sharp.\n\n`
-      + `──────────────\n\n`
-      + `Drop \`QL-${shortId}\``,
+    content:
+      `Not this time — **${prize}** went to someone else.\n`
+      + `Better luck on the next drop.\n`
+      + `Drop ID: \`QL-${shortId}\``,
   };
 }
 
@@ -707,18 +697,8 @@ async function sendPrizeDm(guild, shortId, text) {
   for (const id of winners) {
     try {
       const user = await guild.client.users.fetch(id);
-      const rule = solidRule(data.prize, body.slice(0, 80));
-      const embed = new EmbedBuilder()
-        .setColor(BRAND_PURPLE)
-        .setDescription(
-          `## your quantlab prize\n\n`
-          + `You won **${data.prize}**.\n\n`
-          + `${rule}\n\n`
-          + `${body}\n\n`
-          + `${rule}\n\n`
-          + `Keep this DM private.`,
-        );
-      await user.send({ embeds: [embed] });
+      // Plain text only — no embed, no separator lines
+      await user.send({ content: body.slice(0, 1800) });
       sent += 1;
     } catch { /* DMs closed */ }
   }

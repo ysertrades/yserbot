@@ -2141,37 +2141,88 @@ function openEndedGiveaway(x) {
   body.push(el('p', 'hint', 'Rerolling draws new winners. For a coins giveaway that pays them again, on top of what the first draw already paid out.'));
 
   
-  // Prize DM — after Reveal, paste a code/note and DM winners
+  // Prize DM — template system (code / follow-up / custom)
   if (x.kind !== 'coins') {
-    body.push(el('p', 'hint', 'Choose a template or write a custom prize message, then Send to winner.'));
-    const templates = [
-      'Your code: {CODE} — redeem it in the shop.',
-      'You won **{PRIZE}**. A mod will follow up in tickets.',
-      'Congrats — **{PRIZE}** is yours. Reply here if anything looks wrong.',
-    ];
-    const tplRow = el('div', 'chipset drop-chips');
-    for (const t of templates) {
-      const b = el('button', 'chip-toggle', t.slice(0, 28) + '…');
-      b.type = 'button';
-      b.title = t;
-      b.addEventListener('click', () => {
-        prizeText = t.replace('{PRIZE}', x.title || 'your prize').replace('{CODE}', 'QL-XXXX');
-        const inp = prizeField.querySelector('input, textarea');
-        if (inp) { inp.value = prizeText; inp.dispatchEvent(new Event('input', { bubbles: true })); }
-      });
-      tplRow.append(b);
-    }
-    body.push(tplRow);
+    const prizeName = x.title || 'your prize';
+    let mode = 'code'; // code | followup | custom
+    let codeVal = '';
+    let customVal = '';
 
-    let prizeText = '';
-    body.push(textField('Prize message', '', v => { prizeText = v; }, {
-      placeholder: 'e.g. QL-WEEKEND-9K2M or Your role is ready',
-    }));
+    body.push(el('p', 'hint', 'Pick how the prize is delivered. Code templates put the code in `backticks` in the DM.'));
+
+    const modeRow = el('div', 'chipset drop-chips');
+    const codeBox = el('div', 'field prize-code-box');
+    const customBox = el('div', 'field prize-custom-box');
+    customBox.style.display = 'none';
+
+    const paintModes = () => {
+      modeRow.replaceChildren();
+      for (const [id, label] of [['code', 'Checkout code'], ['followup', 'Mod follow-up'], ['custom', 'Custom message']]) {
+        const b = el('button', 'chip-toggle' + (mode === id ? ' on' : ''), label);
+        b.type = 'button';
+        b.addEventListener('click', () => {
+          mode = id;
+          codeBox.style.display = mode === 'code' ? '' : 'none';
+          customBox.style.display = mode === 'custom' || mode === 'followup' ? '' : 'none';
+          if (mode === 'followup') {
+            const ta = customBox.querySelector('textarea, input');
+            if (ta && !customVal) {
+              customVal = `You won ${prizeName}. A moderator will follow up with you shortly.`;
+              ta.value = customVal;
+            }
+          }
+          paintModes();
+        });
+        modeRow.append(b);
+      }
+    };
+    paintModes();
+    body.push(modeRow);
+
+    codeBox.append(el('label', null, 'Checkout / redeem code'));
+    const codeInput = el('input');
+    codeInput.type = 'text';
+    codeInput.placeholder = 'e.g. SAVE50-WEEKEND';
+    codeInput.autocomplete = 'off';
+    codeInput.spellcheck = false;
+    codeInput.addEventListener('input', () => { codeVal = codeInput.value.trim(); });
+    codeBox.append(codeInput);
+    codeBox.append(el('p', 'hint', 'Only the code is wrapped in backticks in the DM. Not the giveaway ID.'));
+    body.push(codeBox);
+
+    customBox.append(el('label', null, 'Message'));
+    const customInput = el('textarea');
+    customInput.rows = 3;
+    customInput.placeholder = 'Optional custom wording for the winner…';
+    customInput.addEventListener('input', () => { customVal = customInput.value; });
+    customBox.append(customInput);
+    body.push(customBox);
+
+    const buildMessage = () => {
+      if (mode === 'code') {
+        if (!codeVal) return null;
+        return (
+          `You won ${prizeName}.\n\n`
+          + `Your code: \`${codeVal}\`\n\n`
+          + `Redeem it where the host instructed. Keep this message private.`
+        );
+      }
+      if (mode === 'followup') {
+        const extra = customVal.trim();
+        return extra || `You won ${prizeName}. A moderator will follow up with you shortly.`;
+      }
+      const extra = customVal.trim();
+      return extra || null;
+    };
+
     const sendPrize = el('button', 'btn primary', 'Send to winner');
     sendPrize.type = 'button';
     sendPrize.addEventListener('click', async () => {
-      const text = String(prizeText || '').trim();
-      if (!text) { toast('Enter the prize message or code first.', 'bad'); return; }
+      const text = buildMessage();
+      if (!text) {
+        toast(mode === 'code' ? 'Enter the checkout code first.' : 'Write a prize message first.', 'bad');
+        return;
+      }
       sendPrize.disabled = true;
       sendPrize.textContent = 'Sending…';
       try {
@@ -2190,6 +2241,7 @@ function openEndedGiveaway(x) {
     });
     body.push(sendPrize);
   }
+
 
 const reroll = el('button', 'btn primary', 'Reroll winners');
   reroll.type = 'button';
@@ -3456,24 +3508,44 @@ function renderGiveawayForm() {
     (() => {
       const box = el('div', 'field');
       box.append(el('label', null, 'Bonus entry roles'));
-      draft.bonusRoleIds = draft.bonusRoleIds || [];
+      draft.bonusRoles = draft.bonusRoles || []; // [{ id, extra }]
       const log = el('div', 'bonus-role-log');
       const paint = () => {
         log.replaceChildren();
-        if (!draft.bonusRoleIds.length) {
+        if (!draft.bonusRoles.length) {
           log.append(el('p', 'muted', 'No bonus roles — everyone has 1 entry.'));
+          draft.bonusRoleId = null;
+          draft.bonusRoleIds = [];
           return;
         }
-        for (const id of draft.bonusRoleIds) {
-          const role = (state.overview?.settings?.roles || []).find(r => r.id === id);
+        draft.bonusRoleIds = draft.bonusRoles.map(r => r.id);
+        draft.bonusRoleId = draft.bonusRoles[0]?.id || null;
+        for (const entry of draft.bonusRoles) {
+          const role = (state.overview?.settings?.roles || []).find(r => r.id === entry.id);
           const row = el('div', 'bonus-role-row');
-          row.append(el('span', 'nm', role?.name || id));
-          row.append(el('span', 'pr', '+1 entry'));
+          row.append(el('span', 'nm', role?.name || entry.id));
+          const extraWrap = el('label', 'bonus-extra');
+          extraWrap.append(document.createTextNode('+'));
+          const numIn = el('input');
+          numIn.type = 'number';
+          numIn.min = '1';
+          numIn.max = '10';
+          numIn.value = String(entry.extra || 1);
+          numIn.title = 'Extra entries (on top of the base 1)';
+          numIn.addEventListener('input', () => {
+            let v = Number(numIn.value);
+            if (!Number.isInteger(v) || v < 1) v = 1;
+            if (v > 10) v = 10;
+            entry.extra = v;
+            numIn.value = String(v);
+          });
+          extraWrap.append(numIn);
+          extraWrap.append(document.createTextNode(' extra'));
+          row.append(extraWrap);
           const rm = el('button', 'btn small danger', 'Remove');
           rm.type = 'button';
           rm.addEventListener('click', () => {
-            draft.bonusRoleIds = draft.bonusRoleIds.filter(x => x !== id);
-            draft.bonusRoleId = draft.bonusRoleIds[0] || null;
+            draft.bonusRoles = draft.bonusRoles.filter(r => r.id !== entry.id);
             paint();
           });
           row.append(rm);
@@ -3481,17 +3553,18 @@ function renderGiveawayForm() {
         }
       };
       paint();
-      const addRow = el('div', 'actions');
-      const pick = pickOne('Add role', 'role', '', v => {}, { blank: 'Pick a role' });
+      const addRow = el('div', 'bonus-add-row');
+      const pick = pickOne('', 'role', '', v => {}, { blank: 'Pick a role' });
+      pick.classList.add('bonus-pick');
       const add = el('button', 'btn small', 'Add');
       add.type = 'button';
+      add.className = 'btn small bonus-add-btn';
       add.addEventListener('click', () => {
         const sel = pick.querySelector('select');
         const id = sel?.value;
         if (!id) { toast('Pick a role first.', 'bad'); return; }
-        if (draft.bonusRoleIds.includes(id)) { toast('Already added.', 'bad'); return; }
-        draft.bonusRoleIds.push(id);
-        draft.bonusRoleId = draft.bonusRoleIds[0];
+        if (draft.bonusRoles.some(r => r.id === id)) { toast('Already added.', 'bad'); return; }
+        draft.bonusRoles.push({ id, extra: 1 });
         paint();
       });
       addRow.append(pick, add);

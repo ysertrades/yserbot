@@ -1254,3 +1254,37 @@ html[data-entered] .embed-box[open] .body {
 .bonus-role-row .nm { flex: 1; font-weight: 600; }
 .bonus-role-row .pr { font-size: 0.75rem; color: var(--accent); }
 .hint.mono { font-family: var(--mono); font-size: 0.75rem; }
+
+.bonus-add-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+.bonus-add-row .bonus-pick {
+  flex: 1;
+  margin: 0;
+}
+.bonus-add-row .bonus-pick > span { display: none; }
+.bonus-add-btn {
+  flex: none;
+  height: 2.35rem;
+  align-self: flex-end;
+  padding: 0 0.9rem;
+}
+.bonus-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--soft);
+}
+.bonus-extra input {
+  width: 3.2rem;
+  padding: 0.2rem 0.35rem;
+  text-align: center;
+}
+.prize-code-box input {
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
