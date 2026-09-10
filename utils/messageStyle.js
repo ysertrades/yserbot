@@ -546,23 +546,24 @@ const CATALOGUE = {
     blurb: 'Live quantlab drop card. {rule} is a solid separator sized to the longest line. Enter drop sits under the embed.',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer', 'buttons'],
-    tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}', '{rule}'],
+    tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}', '{rule}', '{id}'],
     bodyHint: '{rule} is built from the longest content line so separators align. {ends} is a live countdown.',
     buttons: [
       { id: 'giveaway_enter', label: 'Enter drop', emoji: '🎁', style: 'Primary', does: 'Enters the member into the draw' },
     ],
     defaults: {
       enabled: true, color: BRAND.purple, title: '',
-      body: '## quantlab drop\n\n'
+      body: '## Quantlab Giveaway\n\n'
         + '**{prize}**\n\n'
         + '{rule}\n\n'
-        + '**Prize** · **{prize}**\n'
-        + '**Winners** · **{winners}**\n'
-        + '**Ends** · {ends}\n\n'
+        + '**PRIZE** · {prize}\n'
+        + '**WINNERS** · {winners}\n'
+        + '**ENDS** · {ends}\n'
+        + '**ENTRIES** · {entries}\n\n'
         + '{rule}\n\n'
-        + 'Tap **Enter drop** below.\n'
-        + 'One entry each. Luck does the rest.{requirements}',
-      footer: 'quantlab · ends {endsAt}', thumbnail: true, timestamp: true,
+        + 'Press **Enter drop** below to join.'
+        + '{requirements}',
+      footer: 'Drop ID · QL-{id} · ends {endsAt}', thumbnail: true, timestamp: true,
     },
   },
 
@@ -572,20 +573,21 @@ const CATALOGUE = {
     blurb: 'Shown when entries lock. One button only: Reveal.',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer', 'buttons'],
-    tokens: ['{prize}', '{entries}', '{rule}'],
+    tokens: ['{prize}', '{entries}', '{rule}', '{id}'],
     buttons: [
       { id: 'giveaway_reveal', label: 'Reveal', style: 'Primary', does: 'Shows the winners on the same message' },
     ],
     defaults: {
       enabled: true, color: BRAND.purple, title: '',
-      body: '## drop closed\n\n'
+      body: '## Giveaway ended\n\n'
         + '**{prize}**\n\n'
         + '{rule}\n\n'
-        + 'Entries locked.\n'
-        + '**{entries}** in the draw.\n\n'
+        + 'The winners have been selected.\n'
+        + 'Open the box to see **your** result.\n\n'
+        + '**ENTRIES** · {entries}\n\n'
         + '{rule}\n\n'
-        + 'Press **Reveal** when you are ready.',
-      footer: 'quantlab drop', thumbnail: false, timestamp: true,
+        + 'Only you will see the outcome.',
+      footer: 'Drop ID · QL-{id}', thumbnail: true, timestamp: true,
     },
   },
 

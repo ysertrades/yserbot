@@ -383,13 +383,18 @@ module.exports = {
           const r = await giveawayCmd?.revealGiveaway?.(interaction.message, interaction);
           if (!r?.ok) {
             const why = {
-              unknown_giveaway: 'This drop is not in the closed list.',
-              already_revealed: 'Winners were already revealed.',
-              not_allowed: 'Only the host or a mod can press Reveal.',
-            }[r?.error] || 'Could not reveal.';
+              unknown_giveaway: 'This drop is not open for results.',
+              already_opened: 'You already opened this box.',
+              already_revealed: 'You already opened this box.',
+              not_allowed: 'You cannot open this box.',
+            }[r?.error] || 'Could not open the box.';
             return interaction.reply({ content: why, flags: EPHEMERAL_FLAG });
           }
-          return interaction.reply({ content: 'Winners revealed.', flags: EPHEMERAL_FLAG });
+          const { EmbedBuilder } = require('discord.js');
+          const embed = new EmbedBuilder()
+            .setColor(0x9397EE)
+            .setDescription(r.body || r.title || 'Result');
+          return interaction.reply({ embeds: [embed], flags: EPHEMERAL_FLAG });
         }
 
         // Giveaway — participants (first page)

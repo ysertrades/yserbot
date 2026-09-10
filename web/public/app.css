@@ -1216,3 +1216,41 @@ html[data-entered] .embed-box[open] .body {
   color: var(--ink);
   background: color-mix(in srgb, var(--accent) 16%, var(--raised));
 }
+
+.drop-card.is-live { border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); }
+.drop-card.is-ended { border-color: color-mix(in srgb, var(--muted) 50%, var(--rule)); opacity: 0.95; }
+.live-dot {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--good);
+  animation: livePulse 1.8s ease-in-out infinite;
+}
+.ended-dot {
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--muted);
+}
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.drop-card-time {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.drop-winners { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.winner-chip {
+  border-radius: 999px; padding: 0.2rem 0.65rem; font-size: 0.78rem;
+  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--rule));
+}
+.bonus-role-log { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.4rem 0; }
+.bonus-role-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.45rem 0.65rem; border-radius: 10px;
+  background: var(--sunken); border: 1px solid var(--rule);
+}
+.bonus-role-row .nm { flex: 1; font-weight: 600; }
+.bonus-role-row .pr { font-size: 0.75rem; color: var(--accent); }
+.hint.mono { font-family: var(--mono); font-size: 0.75rem; }

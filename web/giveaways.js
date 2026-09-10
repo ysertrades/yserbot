@@ -83,6 +83,9 @@ function list(guildId) {
       kind: 'prize', shortId, title: d.prize ?? 'Giveaway',
       winners: d.winnersCount ?? 1, entrants: (d.entrants || []).length,
       endedAt: d.endedAt ?? d.createdAt ?? null,
+      prizeDmSent: !!d.prizeDmSent,
+      revealed: !!d.revealed,
+      winnersList: (d.currentWinners || []).map(id => ({ id })),
     })),
     ...Object.entries(coinsEnded).map(([shortId, d]) => ({
       kind: 'coins', shortId, title: `${Number(d.amount || 0).toLocaleString()} coins`,

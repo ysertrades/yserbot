@@ -1976,74 +1976,150 @@ function renderGiveaways() {
   ticking.clear();
   const g = state.overview?.giveaways || { active: [], ended: [] };
 
+  // Pending = ended prize drops waiting for prize DM (still shown in Live)
+  const pending = (g.ended || []).filter(x => x.kind === 'prize' && !x.prizeDmSent);
+  const history = (g.ended || []).filter(x => x.kind !== 'prize' || x.prizeDmSent);
+
   const liveCount = $('#gaw-live-count');
   if (liveCount) {
-    liveCount.textContent = g.active.length ? String(g.active.length) : '0';
-    liveCount.classList.toggle('on', g.active.length > 0);
+    const nLive = g.active.length + pending.length;
+    liveCount.textContent = String(nLive);
+    liveCount.classList.toggle('on', nLive > 0);
   }
 
   const activeWrap = $('#gaw-active');
-  if (!g.active.length) {
-    activeWrap.replaceChildren(el('p', 'muted', 'No live drops. Launch one below.'));
-  } else {
-    activeWrap.replaceChildren(...g.active.map(x => {
-      const d = el('div', `drop-card kind-${x.kind || 'prize'}`);
-      const top = el('div', 'drop-card-top');
-      top.append(
-        el('span', `kind ${x.kind}`, x.kind === 'coins' ? 'COINS' : 'PRIZE'),
-        el('span', 'live-dot', 'LIVE'),
-      );
-      d.append(top);
-      d.append(el('div', 'drop-card-title', x.title || 'Drop'));
-      if (x.endsAt) {
-        const c = countdownEl(x.endsAt, x.startedAt);
-        d.append(el('div', 'drop-card-time', c.node));
-        d.append(c.bar);
-      }
-      d.append(el('p', 'hint', `${num(x.entrants)} entrants · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
-      const act = el('div', 'actions');
-      const end = el('button', 'btn small danger', 'End now');
-      end.type = 'button';
-      end.addEventListener('click', async () => {
-        if (!await askConfirm({
-          title: 'End this drop?',
-          message: x.kind === 'coins'
-            ? 'Winners are drawn and paid immediately.'
-            : 'Entries lock and Reveal appears on the Discord message.',
-          confirmLabel: 'End drop',
-        })) return;
-        end.disabled = true;
-        await post('giveawayend', { messageId: x.messageId, kind: x.kind });
-        end.disabled = false;
-      });
-      act.append(end);
-      d.append(act);
-      return d;
-    }));
+  if (!activeWrap) return;
+
+  const cards = [];
+
+  for (const x of g.active) {
+    cards.push(buildLiveDropCard(x, { phase: 'live' }));
+  }
+  for (const x of pending) {
+    cards.push(buildLiveDropCard(x, { phase: 'ended' }));
   }
 
-  const endedCount = $('#gaw-ended-count');
-  if (endedCount) endedCount.textContent = g.ended?.length ? `${g.ended.length}` : '';
+  if (!cards.length) {
+    activeWrap.replaceChildren(el('p', 'muted', 'No live drops. Launch one below.'));
+  } else {
+    activeWrap.replaceChildren(...cards);
+  }
 
+  // Recent history — collapsed by default, 5 per page
   const endedWrap = $('#gaw-ended');
-  if (!g.ended.length) endedWrap.replaceChildren(el('p', 'muted', 'Nothing finished yet.'));
-  else endedWrap.replaceChildren(...g.ended.map(x => {
-    // A button rather than a div with a click handler, so it is reachable by
-    // keyboard and announces itself as something that does something.
+  const endedCount = $('#gaw-ended-count');
+  if (endedCount) endedCount.textContent = history.length ? String(history.length) : '';
+
+  if (!endedWrap) return;
+
+  if (!state.gawHistoryOpen) {
+    const btn = el('button', 'btn', 'Show recent drops');
+    btn.type = 'button';
+    btn.addEventListener('click', () => { state.gawHistoryOpen = true; state.gawHistoryPage = 0; renderGiveaways(); });
+    endedWrap.replaceChildren(
+      el('p', 'muted', history.length ? `${history.length} in history` : 'Nothing finished yet.'),
+      btn,
+    );
+    return;
+  }
+
+  const pageSize = 5;
+  const page = Math.max(0, state.gawHistoryPage || 0);
+  const pages = Math.max(1, Math.ceil(history.length / pageSize));
+  const slice = history.slice(page * pageSize, page * pageSize + pageSize);
+
+  const head = el('div', 'actions');
+  const hide = el('button', 'btn small', 'Hide history');
+  hide.type = 'button';
+  hide.addEventListener('click', () => { state.gawHistoryOpen = false; renderGiveaways(); });
+  head.append(hide);
+
+  const list = slice.map(x => {
     const d = el('button', 'gaw tappable');
     d.type = 'button';
     const top = el('div', 'gaw-top');
     top.append(
-      el('span', `kind ${x.kind}`, x.kind === 'coins' ? 'COINS' : 'PRIZE'),
-      el('span', 'nm', x.title || 'Giveaway'),
-      el('span', 'idtag', x.shortId),
+      el('span', 'kind prize', 'PRIZE'),
+      el('span', 'nm', x.title || 'Drop'),
+      el('span', 'idtag', x.shortId ? `QL-${x.shortId}` : ''),
     );
     d.append(top);
     d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
+    if (x.winnersList?.length) {
+      d.append(el('p', 'hint', `Winner${x.winnersList.length > 1 ? 's' : ''}: ${x.winnersList.map(w => w.name || w.id).join(', ')}`));
+    }
     d.append(el('span', 'chev', '›'));
     d.addEventListener('click', () => openEndedGiveaway(x));
     return d;
-  }));
+  });
+
+  const nav = el('div', 'actions');
+  const prev = el('button', 'btn small', 'Previous');
+  prev.type = 'button';
+  prev.disabled = page <= 0;
+  prev.addEventListener('click', () => { state.gawHistoryPage = page - 1; renderGiveaways(); });
+  const next = el('button', 'btn small', 'Next');
+  next.type = 'button';
+  next.disabled = page >= pages - 1;
+  next.addEventListener('click', () => { state.gawHistoryPage = page + 1; renderGiveaways(); });
+  nav.append(prev, el('span', 'muted', `Page ${page + 1} / ${pages}`), next);
+
+  endedWrap.replaceChildren(head, ...list, nav);
+}
+
+function buildLiveDropCard(x, { phase }) {
+  const d = el('div', `drop-card kind-prize ${phase === 'ended' ? 'is-ended' : 'is-live'}`);
+  const top = el('div', 'drop-card-top');
+  top.append(el('span', 'kind prize', 'PRIZE'));
+  const badge = el('span', phase === 'ended' ? 'ended-dot' : 'live-dot', phase === 'ended' ? 'ENDED' : 'LIVE');
+  top.append(badge);
+  d.append(top);
+  d.append(el('div', 'drop-card-title', x.title || 'Drop'));
+
+  if (phase === 'live' && x.endsAt) {
+    const c = countdownEl(x.endsAt, x.startedAt);
+    const timeBox = el('div', 'drop-card-time');
+    timeBox.append(c.node);
+    d.append(timeBox);
+    d.append(c.bar);
+  } else if (phase === 'ended') {
+    d.append(el('p', 'hint', 'Waiting for prize message → Send to winner'));
+    if (x.winnersList?.length) {
+      const w = el('div', 'drop-winners');
+      for (const win of x.winnersList) {
+        const chip = el('span', 'winner-chip', win.name || win.id || 'Winner');
+        w.append(chip);
+      }
+      d.append(w);
+    }
+  }
+
+  d.append(el('p', 'hint', `${num(x.entrants || 0)} entrants · ${x.winners || 1} winner${(x.winners || 1) === 1 ? '' : 's'}`));
+  if (x.shortId) d.append(el('p', 'hint mono', `QL-${x.shortId}`));
+
+  const act = el('div', 'actions');
+  if (phase === 'live') {
+    const end = el('button', 'btn small danger', 'End now');
+    end.type = 'button';
+    end.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: 'End this drop?',
+        message: 'Entries lock. Participants can Open Box to see if they won.',
+        confirmLabel: 'End drop',
+      })) return;
+      end.disabled = true;
+      await post('giveawayend', { messageId: x.messageId, kind: x.kind || 'prize' });
+      end.disabled = false;
+    });
+    act.append(end);
+  } else {
+    const open = el('button', 'btn small primary', 'Send prize');
+    open.type = 'button';
+    open.addEventListener('click', () => openEndedGiveaway(x));
+    act.append(open);
+  }
+  d.append(act);
+  return d;
 }
 
 /**
@@ -2067,7 +2143,26 @@ function openEndedGiveaway(x) {
   
   // Prize DM — after Reveal, paste a code/note and DM winners
   if (x.kind !== 'coins') {
-    body.push(el('p', 'hint', 'After Reveal, paste a code or prize note and send it to the winner by DM.'));
+    body.push(el('p', 'hint', 'Choose a template or write a custom prize message, then Send to winner.'));
+    const templates = [
+      'Your code: {CODE} — redeem it in the shop.',
+      'You won **{PRIZE}**. A mod will follow up in tickets.',
+      'Congrats — **{PRIZE}** is yours. Reply here if anything looks wrong.',
+    ];
+    const tplRow = el('div', 'chipset drop-chips');
+    for (const t of templates) {
+      const b = el('button', 'chip-toggle', t.slice(0, 28) + '…');
+      b.type = 'button';
+      b.title = t;
+      b.addEventListener('click', () => {
+        prizeText = t.replace('{PRIZE}', x.title || 'your prize').replace('{CODE}', 'QL-XXXX');
+        const inp = prizeField.querySelector('input, textarea');
+        if (inp) { inp.value = prizeText; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+      });
+      tplRow.append(b);
+    }
+    body.push(tplRow);
+
     let prizeText = '';
     body.push(textField('Prize message', '', v => { prizeText = v; }, {
       placeholder: 'e.g. QL-WEEKEND-9K2M or Your role is ready',
@@ -3346,7 +3441,51 @@ function renderGiveawayForm() {
     pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Where it posts' }),
     mentionPicker('Optional ping', null, v => { draft.mention = v; }),
     pickOne('Required role', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone can enter' }),
-    pickOne('Bonus entries role', 'role', '', v => { draft.bonusRoleId = v; }, { blank: 'No bonus' }),
+    (() => {
+      const box = el('div', 'field');
+      box.append(el('label', null, 'Bonus entry roles'));
+      draft.bonusRoleIds = draft.bonusRoleIds || [];
+      const log = el('div', 'bonus-role-log');
+      const paint = () => {
+        log.replaceChildren();
+        if (!draft.bonusRoleIds.length) {
+          log.append(el('p', 'muted', 'No bonus roles — everyone has 1 entry.'));
+          return;
+        }
+        for (const id of draft.bonusRoleIds) {
+          const role = (state.overview?.settings?.roles || []).find(r => r.id === id);
+          const row = el('div', 'bonus-role-row');
+          row.append(el('span', 'nm', role?.name || id));
+          row.append(el('span', 'pr', '+1 entry'));
+          const rm = el('button', 'btn small danger', 'Remove');
+          rm.type = 'button';
+          rm.addEventListener('click', () => {
+            draft.bonusRoleIds = draft.bonusRoleIds.filter(x => x !== id);
+            draft.bonusRoleId = draft.bonusRoleIds[0] || null;
+            paint();
+          });
+          row.append(rm);
+          log.append(row);
+        }
+      };
+      paint();
+      const addRow = el('div', 'actions');
+      const pick = pickOne('Add role', 'role', '', v => {}, { blank: 'Pick a role' });
+      const add = el('button', 'btn small', 'Add');
+      add.type = 'button';
+      add.addEventListener('click', () => {
+        const sel = pick.querySelector('select');
+        const id = sel?.value;
+        if (!id) { toast('Pick a role first.', 'bad'); return; }
+        if (draft.bonusRoleIds.includes(id)) { toast('Already added.', 'bad'); return; }
+        draft.bonusRoleIds.push(id);
+        draft.bonusRoleId = draft.bonusRoleIds[0];
+        paint();
+      });
+      addRow.append(pick, add);
+      box.append(log, addRow);
+      return box;
+    })(),
     textField('Min account age (days)', '0', v => { draft.minAccountAgeDays = Number(v) || 0; }),
     actions(async () => {
       if (!String(draft.prize || '').trim()) { toast('Name the prize for this drop.', 'bad'); return; }

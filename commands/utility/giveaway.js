@@ -123,8 +123,8 @@ function genId(guildId) {
   const existing = Object.keys(readJson('giveaways_ended.json', {})[guildId] || {});
   let id;
   do {
-    id = Array.from({ length: 5 }, () => ID_CHARS[randomInt(ID_CHARS.length)]).join('');
-  } while (existing.includes(id));
+    id = Array.from({ length: 8 }, () => ID_CHARS[randomInt(ID_CHARS.length)]).join('');
+  } while (existing.includes(id.toLowerCase()) || existing.includes(id));
   return id;
 }
 
@@ -520,7 +520,11 @@ async function endGiveaway(message, meta) {
   };
   writeJson('giveaways_ended.json', allEnded);
 
-  const embed = buildClosedCard(message.guild, { prize, entries: entrantIds.length });
+  const embed = buildClosedCard(message.guild, {
+    prize, entries: entrantIds.length, id: shortId,
+  });
+  const thumb = message.guild?.iconURL?.({ dynamic: true }) || null;
+  if (thumb && embed) try { embed.setThumbnail(thumb); } catch { /* ignore */ }
   const endFiles = applyEmbedImage(embed, imageUrl, guildId);
 
   // The edit is the only part of ending that can fail — a deleted message, a
@@ -538,8 +542,7 @@ async function endGiveaway(message, meta) {
   global.giveawayEntrants.delete(message.id);
   global.giveawayMeta?.delete(message.id);
 
-  // DM the winners — a small polish touch most giveaway bots skip.
-  await dmWinners(message.client, message.guild, winnerIds, prize, hostId);
+  // Prize DM is sent from the panel (templates / custom text), not automatically.
 }
 
 /**
@@ -554,6 +557,7 @@ async function endGiveaway(message, meta) {
 function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, requirements = [] }) {
   const entryLine = `${entries} participant${entries === 1 ? '' : 's'}`;
   const rule = solidRule(prize, `Prize · ${prize}`, `Winners · ${winnersCount}`, 'Ends · in 2 hours', entryLine);
+  const dropId = arguments[1]?.dropId || '••••••••';
   const embed = messageStyle.build(guild.id, 'giveaway.live', {
     at: new Date(endTime),
     tokens: {
@@ -565,6 +569,7 @@ function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, r
       endsAt: dateStr(endTime),
       entries: entryLine,
       rule,
+      id: dropId,
       requirements: requirements.length ? `\n\n${requirements.join('\n')}` : '',
     },
   });
@@ -572,11 +577,11 @@ function buildLiveCard(guild, { prize, winnersCount, hostId, endTime, entries, r
   return embed;
 }
 
-function buildClosedCard(guild, { prize, entries }) {
-  const entryLine = `${entries} participant${entries === 1 ? '' : 's'}`;
-  const rule = solidRule(prize, 'Entries locked.', entryLine + ' in the draw.');
+function buildClosedCard(guild, { prize, entries, id }) {
+  const entryLine = String(entries);
+  const rule = solidRule(prize, 'Giveaway ended', 'Open the box to see your result.');
   return messageStyle.build(guild.id, 'giveaway.closed', {
-    tokens: { prize, entries: entryLine, rule },
+    tokens: { prize, entries: entryLine, rule, id: id || '••••••••' },
   });
 }
 
@@ -584,8 +589,9 @@ function buildRevealRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('giveaway_reveal')
-      .setLabel('Reveal')
-      .setStyle(ButtonStyle.Primary),
+      .setLabel('Open Box')
+      .setEmoji('🎁')
+      .setStyle(ButtonStyle.Success),
   );
 }
 
@@ -631,6 +637,7 @@ async function earlyEndGiveaway(interaction, msgId) {
 
 
 async function revealGiveaway(message, interaction) {
+  /* Participant Open Box — ephemeral personal result, not a host broadcast */
   const guildId = message.guild?.id;
   if (!guildId) return { error: 'no_guild' };
   const allEnded = readJson('giveaways_ended.json', {});
@@ -638,47 +645,59 @@ async function revealGiveaway(message, interaction) {
   const entry = Object.entries(guildEnded).find(([, d]) => d.messageId === message.id);
   if (!entry) return { error: 'unknown_giveaway' };
   const [shortId, data] = entry;
-  if (data.revealed) return { error: 'already_revealed' };
 
-  const hostOrMod = interaction.user.id === data.hostId
-    || interaction.memberPermissions?.has?.('ManageGuild')
-    || interaction.member?.permissions?.has?.('ManageGuild');
-  if (!hostOrMod) return { error: 'not_allowed' };
+  const uid = interaction.user.id;
+  const opened = new Set(data.openedBy || []);
+  if (opened.has(uid)) return { error: 'already_opened', shortId };
 
+  const winners = new Set(data.currentWinners || []);
+  const isWinner = winners.has(uid);
+  opened.add(uid);
+  data.openedBy = [...opened];
+  // Mark fully revealed only for panel logic once any open happened; winners stay private
   data.revealed = true;
   allEnded[guildId][shortId] = data;
   writeJson('giveaways_ended.json', allEnded);
 
-  const winners = (data.currentWinners || []).map(id => `<@${id}>`).join(', ') || '—';
-  const embed = buildEndedCard(message.guild, {
-    prize: data.prize,
-    winners,
-    hostId: data.hostId,
-    entries: (data.entrants || []).length,
-    id: shortId,
-  });
-  const doneRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('giveaway_ended').setLabel('Drop ended').setStyle(ButtonStyle.Secondary).setDisabled(true),
-  );
-  const files = applyEmbedImage(embed, data.imageUrl, guildId);
-  await message.edit({ embeds: [embed], components: [doneRow], ...replaceFiles(files) }).catch(() => {});
-
-  // Channel ping
-  try {
-    await message.channel.send({
-      content: `**quantlab** · winners for **${data.prize}**: ${winners}\nWait for a DM from quantlab for your prize.`,
-      allowedMentions: { users: data.currentWinners || [] },
-    });
-  } catch { /* ignore */ }
-
-  return { ok: true, shortId, data };
+  const prize = data.prize || 'this drop';
+  if (isWinner) {
+    return {
+      ok: true,
+      shortId,
+      ephemeral: true,
+      title: 'You won',
+      body:
+        `## you won\n\n`
+        + `**${prize}**\n\n`
+        + `──────────────\n\n`
+        + `quantlab picked you.\n`
+        + `**Wait for a DM** with your prize details.\n\n`
+        + `──────────────\n\n`
+        + `Drop \`QL-${shortId}\``,
+    };
+  }
+  return {
+    ok: true,
+    shortId,
+    ephemeral: true,
+    title: 'Not this time',
+    body:
+      `## not this time\n\n`
+      + `**${prize}** went to someone else.\n\n`
+      + `──────────────\n\n`
+      + `Better luck on the next quantlab drop.\n`
+      + `Stay sharp.\n\n`
+      + `──────────────\n\n`
+      + `Drop \`QL-${shortId}\``,
+  };
 }
 
 async function sendPrizeDm(guild, shortId, text) {
   const allEnded = readJson('giveaways_ended.json', {});
   const data = allEnded[guild.id]?.[String(shortId).toLowerCase()];
   if (!data) return { error: 'unknown_giveaway' };
-  if (!data.revealed) return { error: 'not_revealed' };
+  /* prize can be sent from panel once winners are drawn (end), even if members have not opened yet */
+  if (!data.currentWinners?.length) return { error: 'no_winners' };
   const body = String(text || '').trim();
   if (!body) return { error: 'empty_prize' };
   const winners = data.currentWinners || [];
