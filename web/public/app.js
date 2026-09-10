@@ -289,8 +289,22 @@ async function post(op, body, { quiet = false } = {}) {
   if (!quiet) {
     toast(op.startsWith('bot-profile') ? 'Profile saved.' : 'Saved — logged to your mod channel.', 'good');
   }
-  if (data.overview) { state.overview = data.overview; renderOverview(); }
-  else if (state.overview?.botProfile) {
+  if (data.overview) {
+    state.overview = data.overview;
+    renderOverview();
+  } else if (/^giveaway/.test(op)) {
+    /* Fallback live update when the write op did not return a full overview */
+    try {
+      const fresh = await get(`/api/guild/${state.guildId}`);
+      if (fresh?.guild?.id === state.guildId) {
+        state.overview = fresh;
+        renderGiveaways();
+        if (root.dataset.section === 'giveaways' && !($('#form-gaw')?.contains(document.activeElement))) {
+          renderGiveawayForm();
+        }
+      }
+    } catch (e) { console.warn('[panel] giveaway refresh', e); }
+  } else if (state.overview?.botProfile) {
     // Lightweight profile responses without a full overview rebuild.
     if (data.global) state.overview.botProfile.global = { ...state.overview.botProfile.global, ...data.global };
     if (data.guild)  state.overview.botProfile.guild  = { ...state.overview.botProfile.guild,  ...data.guild };
@@ -689,15 +703,16 @@ function renderOverview() {
   renderGroupForm('#form-lottery', 'lottery');
   renderCards();
   /* renderEconomy retired */
-  renderCoins();
+  /* Drop form first — must not sit behind economy renders that can throw */
+  renderGiveawayForm();
+  try { renderCoins(); } catch (e) { console.warn('[panel] renderCoins', e); }
   renderSchedules();
   renderAutoreplies();
   renderLevels();
   renderLevelRoles();
   renderLevelBadges();
   renderLevelsReset();
-  renderLottery();
-  renderGiveawayForm();
+  try { renderLottery(); } catch (e) { console.warn('[panel] renderLottery', e); }
   startTicking();
 }
 
@@ -3244,6 +3259,8 @@ function refreshGawPreview(draft, attempt = 0) {
 function renderGiveawayForm() {
   const form = $('#form-gaw');
   if (!form) return;
+  /* Keep draft while focused inside the form — live overview must not erase it */
+  if (form.dataset.ready === '1' && form.contains(document.activeElement)) return;
 
   const draft = {
     kind: 'prize',
@@ -3353,8 +3370,9 @@ function renderGiveawayForm() {
 /* ── lottery ───────────────────────────────────────────────────────────── */
 
 function renderLottery() {
-  const l = state.overview?.features?.lottery;
   const wrap = $('#lottery-live');
+  if (!wrap) return; /* lottery panel removed with economy */
+  const l = state.overview?.features?.lottery;
   if (!l) { wrap.replaceChildren(); return; }
 
   const nodes = [
@@ -5372,6 +5390,7 @@ function renderGroupForm(target, groupName) {
 
 function renderCoins() {
   const form = $('#form-coins');
+  if (!form) return; /* economy UI removed — do not block the rest of the panel */
   const draft = { mode: 'give', amount: 0, userId: null, everyone: false };
 
   const summary = el('p', 'hint', 'Pick someone, or apply to everyone.');
@@ -6294,6 +6313,10 @@ function showSection(name) {
   if (name === 'automation' && prev !== 'automation') {
     renderSchedules();
     renderAutoreplies();
+  }
+  if (name === 'giveaways') {
+    renderGiveaways();
+    renderGiveawayForm();
   }
 }
 
