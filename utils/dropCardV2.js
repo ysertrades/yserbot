@@ -63,9 +63,14 @@ function buildLiveV2({
   if (gallery) kids.push(gallery);
   // 3) Divider + Enter
   kids.push(separator(true));
-  kids.push(row(button({
-    customId: 'giveaway_enter', label: 'Enter drop', style: 1, emoji: '🎁',
-  })));
+  kids.push(row(
+    button({
+      customId: 'giveaway_enter', label: 'ENTER DROP', style: 1, emoji: '🎁',
+    }),
+    button({
+      customId: 'giveaway_check', label: 'CHECK MY ENTRY', style: 2,
+    }),
+  ));
   // 4) Divider + footer
   kids.push(separator(true));
   kids.push(text('-# Drop ID: QL-' + dropId + '  ·  ends ' + endsAt));

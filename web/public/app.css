@@ -1210,11 +1210,22 @@ html[data-entered] .embed-box[open] .body {
   font-size: 0.78rem;
   cursor: pointer;
 }
-.form .chip-toggle.on, .form .chip-toggle:hover,
-.drop-chips .chip-toggle.on, .drop-chips .chip-toggle:hover {
+.form .chip-toggle.on,
+.form .chip-toggle[aria-pressed="true"],
+.form .chip-toggle:hover,
+.drop-chips .chip-toggle.on,
+.drop-chips .chip-toggle[aria-pressed="true"],
+.drop-chips .chip-toggle:hover {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--rule));
   color: var(--ink);
   background: color-mix(in srgb, var(--accent) 16%, var(--raised));
+}
+
+.form .chip-toggle[aria-pressed="true"],
+.drop-chips .chip-toggle[aria-pressed="true"],
+.form .chip-toggle.on,
+.drop-chips .chip-toggle.on {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .drop-card.is-live { border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); }

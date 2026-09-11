@@ -156,6 +156,7 @@ function save(guildId, body, { guild }) {
         break;
       case 'string': {
         const str = String(incoming ?? '').trim().slice(0, f.max || 64);
+        // Keep null vs "" consistent so brand name edits always save.
         value = str || null;
         break;
       }
@@ -163,7 +164,12 @@ function save(guildId, body, { guild }) {
         continue;
     }
 
-    const same = Array.isArray(value) ? JSON.stringify(value) === JSON.stringify(current) : value === current;
+    const norm = (v) => {
+      if (Array.isArray(v)) return JSON.stringify(v);
+      if (v == null || v === '') return null;
+      return v;
+    };
+    const same = norm(value) === norm(current);
     if (same) continue;
     put(conf[guildId], f.path, value);
     notes.push(f.label);

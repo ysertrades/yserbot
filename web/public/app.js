@@ -797,7 +797,7 @@ function humanDuration(str) {
  * A duration input that says what it understood, so a typo is visible before
  * the giveaway is launched rather than after the server rejects it.
  */
-function durationField(label, value, onInput) {
+function durationField(label, value, onInput, { hideChips = false } = {}) {
   const l = el('label', 'field');
   const head = el('div', 'field-head');
   const echo = el('span', 'count');
@@ -826,14 +826,17 @@ function durationField(label, value, onInput) {
   });
 
   l.append(input);
-  const chips = el('div', 'chipset');
-  for (const preset of ['30s', '10m', '1h', '6h', '1d', '7d']) {
-    const c = el('button', 'chip', preset);
-    c.type = 'button';
-    c.addEventListener('click', () => { input.value = preset; sync(); onInput(preset); });
-    chips.append(c);
+  // Giveaway form already has preset chips; hide these to avoid duplicates.
+  if (!hideChips) {
+    const chips = el('div', 'chipset');
+    for (const preset of ['30s', '10m', '1h', '6h', '1d', '7d']) {
+      const c = el('button', 'chip', preset);
+      c.type = 'button';
+      c.addEventListener('click', () => { input.value = preset; sync(); onInput(preset); });
+      chips.append(c);
+    }
+    l.append(chips);
   }
-  l.append(chips);
   return l;
 }
 
@@ -1386,7 +1389,8 @@ function paintDeskForm() {
   const draft = { scope: desk.scope, channelId: desk.postChannelId ?? desk.agenda?.channelId ?? null };
 
   const send = actions(async () => {
-    await post('econpost', { scope: desk.scope, channelId: draft.channelId }, { quiet: true });
+    // Show success toast like other panel actions
+    await post('econpost', { scope: desk.scope, channelId: draft.channelId });
   }, { label: `Post ${SCOPE_SEND[desk.scope]}`, busyLabel: 'Posting…' });
 
   const button = send.querySelector('button');
@@ -3524,7 +3528,7 @@ function renderGiveawayForm() {
   durBox.append(durationField('Custom duration', draft.duration, v => {
     draft.duration = v;
     paintDur();
-  }));
+  }, { hideChips: true }));
 
   // Winners chips
   const winBox = el('div', 'field');

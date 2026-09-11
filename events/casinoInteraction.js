@@ -96,19 +96,24 @@ const { isFeatureEnabled } = require('../utils/featureToggles');
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction) {
+    // Only casino (cs:...) interactions — do not answer giveaway/moderation buttons
+    const isCasino =
+      (interaction.isButton() || interaction.isModalSubmit()) &&
+      typeof interaction.customId === 'string' &&
+      interaction.customId.startsWith('cs:');
+    if (!isCasino) return;
+
     if (interaction.guild && !isFeatureEnabled(interaction.guild.id, 'casino')) {
-      if (interaction.isButton() || interaction.isModalSubmit()) {
-        const msg = { content: 'Casino is switched off for this server.', flags: MessageFlags.Ephemeral };
-        try {
-          if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
-          else await interaction.reply(msg);
-        } catch {}
-      }
+      const msg = { content: 'Casino is switched off for this server.', flags: MessageFlags.Ephemeral };
+      try {
+        if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
+        else await interaction.reply(msg);
+      } catch {}
       return;
     }
-    if (interaction.isButton()     && interaction.customId.startsWith('cs:'))
+    if (interaction.isButton())
       return handleButton(interaction).catch(e => handleError(interaction, e));
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('cs:'))
+    if (interaction.isModalSubmit())
       return handleModal(interaction).catch(e => handleError(interaction, e));
   },
 };

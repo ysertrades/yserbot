@@ -389,6 +389,42 @@ module.exports = {
           return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 
+        // Giveaway — Check my entry (private plain text, entry number only)
+        if (id === 'giveaway_check') {
+          if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
+          let entrants = global.giveawayEntrants.get(interaction.message.id);
+          if (!entrants) {
+            const giveawayCmd = client.commands.get('giveaway');
+            const saved = giveawayCmd?.getActiveGiveaway?.(interaction.message.id);
+            if (saved && saved.endTime > Date.now()) {
+              entrants = new Set(saved.entrants || []);
+              global.giveawayEntrants.set(interaction.message.id, entrants);
+            }
+          }
+          if (!entrants) {
+            return interaction.reply({ content: 'This drop has already closed.', flags: EPHEMERAL_FLAG });
+          }
+          if (!entrants.has(interaction.user.id)) {
+            return interaction.reply({
+              content: "You're not in this drop yet — hit **ENTER DROP** first.",
+              flags: EPHEMERAL_FLAG,
+            });
+          }
+          const list = Array.from(entrants);
+          const number = list.indexOf(interaction.user.id) + 1;
+          const total = list.length;
+          const gawMeta = global.giveawayMeta?.get(interaction.message.id);
+          const prize = gawMeta?.prize ? ` for **${gawMeta.prize}**` : '';
+          const lines = [
+            `🎟️ You're locked in${prize}.`,
+            ``,
+            `Your entry number is **#${number}** of ${total}.`,
+            ``,
+            `Stay sharp — winners are drawn when the timer hits zero.`,
+          ];
+          return interaction.reply({ content: lines.join('\n'), flags: EPHEMERAL_FLAG });
+        }
+
         // Giveaway — Reveal (host / manage server only)
         if (id === 'giveaway_reveal') {
           const giveawayCmd = client.commands.get('giveaway');
