@@ -1300,8 +1300,10 @@ html[data-entered] .embed-box[open] .body {
   letter-spacing: 0.02em;
 }
 
-/* Live drops pager — 3 per page */
+/* Live drops pager — always full width under the card grid, never a side cell */
 .drop-pager {
+  grid-column: 1 / -1;
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

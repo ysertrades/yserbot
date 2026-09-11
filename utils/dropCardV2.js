@@ -65,10 +65,10 @@ function buildLiveV2({
   kids.push(separator(true));
   kids.push(row(
     button({
-      customId: 'giveaway_enter', label: 'ENTER DROP', style: 1, emoji: '🎁',
+      customId: 'giveaway_enter', label: 'Enter', style: 1, emoji: '🎁',
     }),
     button({
-      customId: 'giveaway_check', label: 'CHECK MY ENTRY', style: 2,
+      customId: 'giveaway_check', label: 'Check entry', style: 2, emoji: '🎟️',
     }),
   ));
   // 4) Divider + footer

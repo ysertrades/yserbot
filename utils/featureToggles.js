@@ -81,12 +81,6 @@ const FEATURE_GROUPS = [
     commands: ['verify'],
   },
   {
-    key: 'newsfeed', label: 'Market News Feed',
-    description: 'Live Financial Juice headlines — the /newsfeed command and the scheduled poster both stop.',
-    commands: ['newsfeed'],
-    passive: true,
-  },
-  {
     key: 'econ_calendar', label: 'Economic Calendar',
     description: 'Release reminders — the /econcal command and the scheduled poster both stop.',
     commands: ['econcal'],

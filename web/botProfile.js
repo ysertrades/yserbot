@@ -30,7 +30,9 @@ const ACTIVITY_TYPES = {
 function flags() {
   const f = readJson(FLAG_FILE, {});
   return {
-    allowGuildNickname: !!f.allowGuildNickname,
+    // Default ON so server admins can set a per-server nickname without owner unlock.
+    // Owner can still flip this off from the owner console if needed.
+    allowGuildNickname: f.allowGuildNickname !== false,
     // Presence is kept so a restart does not wipe what the panel set.
     presence: {
       status: STATUS_MODES.includes(f.presence?.status) ? f.presence.status : 'online',

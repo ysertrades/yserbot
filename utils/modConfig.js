@@ -116,7 +116,6 @@ const PANEL_LOG_CATEGORIES = {
   features:   { label: 'Feature settings and levelling' },
   studio:     { label: 'Studio banner wording' },
   appearance: { label: 'Bot message wording and colour' },
-  social:     { label: 'Social accounts' },
   tickets:    { label: 'Tickets' },
   automation: { label: 'Schedules and auto-replies' },
 };
