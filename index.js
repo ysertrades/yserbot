@@ -35,7 +35,12 @@ client.on('shardReconnecting', (shardId) => console.warn(`[SHARD ${shardId} RECO
 client.on('shardResume', (shardId, replayed) => console.log(`[SHARD ${shardId} RESUMED] replayed ${replayed} events`));
 
 process.on('unhandledRejection', (err) => console.error('[UNHANDLED REJECTION]', err));
-process.on('uncaughtException', (err) => console.error('[UNCAUGHT EXCEPTION]', err));
+process.on('uncaughtException', (err) => {
+  console.error('[UNCAUGHT EXCEPTION]', err);
+  // Stay alive only long enough to flush logs, then exit so the host restarts
+  // a clean process instead of running in an unknown half-broken state.
+  setTimeout(() => process.exit(1), 1000).unref?.();
+});
 
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);

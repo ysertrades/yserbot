@@ -16,18 +16,27 @@ module.exports = {
   async execute(interaction) {
     const user   = interaction.options.getUser('user');
     const reason = interaction.options.getString('reason') || 'No reason provided';
-    const member = interaction.guild.members.cache.get(user.id);
+    let member   = interaction.guild.members.cache.get(user.id);
+    if (!member) {
+      try { member = await interaction.guild.members.fetch(user.id); } catch { member = null; }
+    }
 
     if (!member) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'User not found.' }, interaction.guild)] });
+    if (member.id === interaction.guild.ownerId)
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Cannot kick the server owner.' }, interaction.guild)] });
     if (member.roles.highest.position >= interaction.member.roles.highest.position)
       return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Cannot kick this user.' }, interaction.guild)] });
+    const me = interaction.guild.members.me;
+    if (me && member.roles.highest.position >= me.roles.highest.position)
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'My role is not high enough to kick that user.' }, interaction.guild)] });
 
     await dmUser(user, 'kick', interaction.guild, reason, {});
-    await member.kick(reason);
+    try {
+      await member.kick(reason);
+    } catch (err) {
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Could not kick that user. Check my permissions and role order.' }, interaction.guild)] });
+    }
 
-    // appendCase, not a hand-rolled row: it is the only thing that decides a
-    // case number, and two of them deciding separately is how two cases end
-    // up claiming to be the same one.
     const { id: caseId } = appendCase(interaction.guild.id, {
       type: 'kick', userId: user.id, userTag: user.tag,
       moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason,

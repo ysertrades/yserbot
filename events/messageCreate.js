@@ -53,7 +53,20 @@ module.exports = {
   },
 };
 
+// Serialize level writes per guild so concurrent messages cannot overwrite XP.
+const _levelQueues = new Map();
+function withLevelLock(guildId, fn) {
+  const prev = _levelQueues.get(guildId) || Promise.resolve();
+  const next = prev.then(fn, fn);
+  _levelQueues.set(guildId, next.catch(() => {}));
+  return next;
+}
+
 async function handleLeveling(message) {
+  return withLevelLock(message.guild.id, () => _handleLevelingBody(message));
+}
+
+async function _handleLevelingBody(message) {
   const levels    = readJson('levels.json', {});
   const guildData = levels[message.guild.id] || { users: {}, roles: {}, settings: { xpPerMessage: [15, 25], baseXp: 100, multiplier: 1.5 } };
   const userId    = message.author.id;

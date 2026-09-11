@@ -1,7 +1,7 @@
 'use strict';
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ChannelType, MessageFlags } = require('discord.js');
-const { getBalance, removeCoins } = require('../../utils/economyManager');
+const { getBalance, removeCoins, trySpend } = require('../../utils/economyManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { todaysSlotUTC, REWARD, drawStatus } = require('../../utils/lotteryRunner');
 
@@ -104,14 +104,23 @@ module.exports = {
       if (owned + qty > MAX_TICKETS_PER_DAY)
         return interaction.reply({ content: `❌ You can only hold **${MAX_TICKETS_PER_DAY}** tickets per day — you already have **${owned}**.`, flags: MessageFlags.Ephemeral });
 
-      const cost    = qty * TICKET_PRICE;
-      const balance = getBalance(userId);
-      if (balance < cost)
-        return interaction.reply({ content: `❌ You need **${fmt(cost)}** coins but only have **${fmt(balance)}**.`, flags: MessageFlags.Ephemeral });
+      const cost = qty * TICKET_PRICE;
+      const spent = trySpend(userId, cost);
+      if (!spent.ok)
+        return interaction.reply({ content: `❌ You need **${fmt(cost)}** coins but only have **${fmt(spent.balance)}**.`, flags: MessageFlags.Ephemeral });
 
-      removeCoins(userId, cost);
-      state.pool[userId] = owned + qty;
-      saveState(guildId, state);
+      // Re-read pool after spend so a concurrent buy cannot clobber tickets.
+      const fresh = getState(guildId);
+      const ownedNow = fresh.pool[userId] || 0;
+      if (ownedNow + qty > MAX_TICKETS_PER_DAY) {
+        // Refund — ticket cap lost the race.
+        const { addCoins } = require('../../utils/economyManager');
+        addCoins(userId, cost);
+        return interaction.reply({ content: `❌ You can only hold **${MAX_TICKETS_PER_DAY}** tickets per day — you already have **${ownedNow}**.`, flags: MessageFlags.Ephemeral });
+      }
+      fresh.pool[userId] = ownedNow + qty;
+      saveState(guildId, fresh);
+      state.pool = fresh.pool;
 
       const totalTickets = Object.values(state.pool).reduce((s, c) => s + c, 0);
       const drawTs = Math.floor(nextDrawTs() / 1000);

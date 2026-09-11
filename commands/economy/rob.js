@@ -2,7 +2,7 @@
 
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const { randomInt } = require('node:crypto');
-const { getBalance, addCoins, removeCoins, checkCooldown, setCooldown } = require('../../utils/economyManager');
+const { getBalance, addCoins, removeCoins, transferCoins, checkCooldown, setCooldown } = require('../../utils/economyManager');
 const { hasEffect, setEffect } = require('../../utils/effectsManager');
 const { activity, payoutMultiplier } = require('../../utils/economySettings');
 const { refuseIfOff } = require('../../utils/economyGate');
@@ -92,8 +92,11 @@ module.exports = {
       // what they actually hold.
       const cap    = Math.max(1, Math.floor(cfg.maxSteal * payoutMultiplier(guildId)));
       const stolen = Math.min(cap, Math.floor(targetBal * pct));
-      removeCoins(target.id, stolen);
-      addCoins(userId, stolen);
+      {
+        const moved = transferCoins(target.id, userId, stolen);
+        if (!moved.ok) stolen = 0; // target emptied by a concurrent action
+        else stolen = Math.min(stolen, moved.toBalance); // keep reported amount sane
+      }
       const line = WIN_LINES[randomInt(WIN_LINES.length)];
 
       return interaction.reply({ embeds: [new EmbedBuilder()

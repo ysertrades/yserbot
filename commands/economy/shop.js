@@ -6,7 +6,7 @@ const {
   StringSelectMenuBuilder, StringSelectMenuOptionBuilder,
   MessageFlags,
 } = require('discord.js');
-const { getBalance, addCoins, removeCoins } = require('../../utils/economyManager');
+const { getBalance, addCoins, removeCoins, trySpend } = require('../../utils/economyManager');
 const { EFFECT_TYPES, setEffect, getEffect, getActiveEffectsList } = require('../../utils/effectsManager');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { MAX_EQUIPPED, getEquipped, toggleEquip } = require('../../utils/badgeManager');
@@ -175,10 +175,9 @@ function purchaseItem(userId, guildId, itemId) {
   const item  = items[itemId];
   if (!item) return { embeds: [errorEmbed('Not Found', `No item \`${itemId}\` in this shop.`)] };
 
-  const balance = getBalance(userId);
-  if (balance < item.price) return { embeds: [errorEmbed('Insufficient Coins', `You need **${fmt(item.price)}** coins but only have **${fmt(balance)}**.`)] };
+  const spent = trySpend(userId, item.price);
+  if (!spent.ok) return { embeds: [errorEmbed('Insufficient Coins', `You need **${fmt(item.price)}** coins but only have **${fmt(spent.balance)}**.`)] };
 
-  removeCoins(userId, item.price);
   addToInv(userId, guildId, itemId, 1);
 
   return { embeds: [new EmbedBuilder()

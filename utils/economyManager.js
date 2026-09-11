@@ -30,6 +30,33 @@ function hasEnough(userId, amount) {
   return getBalance(userId) >= amount;
 }
 
+/**
+ * Single read→check→write so a spend cannot pass a stale balance check.
+ * Returns { ok, balance }.
+ */
+function trySpend(userId, amount) {
+  const data = readJson(ECONOMY_FILE, {});
+  const current = data[userId] || 0;
+  if (current < amount) return { ok: false, balance: current };
+  data[userId] = current - amount;
+  writeJson(ECONOMY_FILE, data);
+  return { ok: true, balance: data[userId] };
+}
+
+/**
+ * Move coins from → to in one write so a concurrent credit cannot be lost.
+ * Returns { ok, fromBalance, toBalance }.
+ */
+function transferCoins(fromId, toId, amount) {
+  const data = readJson(ECONOMY_FILE, {});
+  const from = data[fromId] || 0;
+  if (from < amount) return { ok: false, fromBalance: from, toBalance: data[toId] || 0 };
+  data[fromId] = from - amount;
+  data[toId] = (data[toId] || 0) + amount;
+  writeJson(ECONOMY_FILE, data);
+  return { ok: true, fromBalance: data[fromId], toBalance: data[toId] };
+}
+
 function getLeaderboard(limit = 10) {
   const data = readJson(ECONOMY_FILE, {});
   return Object.entries(data)
@@ -92,6 +119,8 @@ module.exports = {
   addCoins,
   removeCoins,
   hasEnough,
+  trySpend,
+  transferCoins,
   getLeaderboard,
   checkCooldown,
   setCooldown,

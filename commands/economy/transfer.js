@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const { getBalance, removeCoins, addCoins } = require('../../utils/economyManager');
+const { getBalance, transferCoins } = require('../../utils/economyManager');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -29,17 +29,14 @@ module.exports = {
       return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
 
-    const senderBalance = getBalance(sender.id);
-    if (senderBalance < amount) {
+    const result = transferCoins(sender.id, recipient.id, amount);
+    if (!result.ok) {
       const embed = new EmbedBuilder()
         .setColor(0xe74c3c)
         .setTitle('❌ Insufficient Balance')
-        .setDescription('You only have **' + senderBalance + '** coins.');
+        .setDescription('You only have **' + result.fromBalance + '** coins.');
       return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
     }
-
-    removeCoins(sender.id, amount);
-    addCoins(recipient.id, amount);
 
     const embed = new EmbedBuilder()
       .setColor(0x2ecc71)

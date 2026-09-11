@@ -1,0 +1,7 @@
+# Runtime / secrets (do not commit live server data)
+.env
+.env.*
+!.env.example
+data/*.json
+!data/.gitkeep
+node_modules/

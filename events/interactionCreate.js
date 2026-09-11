@@ -410,7 +410,14 @@ module.exports = {
               flags: EPHEMERAL_FLAG,
             });
           }
-          const list = Array.from(entrants);
+          // Prefer the persisted ordered array so entry numbers stay stable
+          // across restarts (Set insertion order alone is not enough if data
+          // was reloaded in a different shape).
+          const giveawayCmd = client.commands.get('giveaway');
+          const saved = giveawayCmd?.getActiveGiveaway?.(interaction.message.id);
+          const list = Array.isArray(saved?.entrants) && saved.entrants.length
+            ? saved.entrants
+            : Array.from(entrants);
           const number = list.indexOf(interaction.user.id) + 1;
           const total = list.length;
           const gawMeta = global.giveawayMeta?.get(interaction.message.id);
@@ -624,12 +631,16 @@ module.exports = {
             }).catch(() => {});
           }
           if (!global.cardDrops) global.cardDrops = new Map();
+          // Atomic claim: only the first click that deletes the entry wins.
+          // Checking grabbed then setting it allowed two users to both pass.
           const drop = global.cardDrops.get(interaction.message.id);
           if (!drop || drop.grabbed) {
             return await interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', flags: EPHEMERAL_FLAG });
           }
           drop.grabbed = true;
-          global.cardDrops.delete(interaction.message.id);
+          if (!global.cardDrops.delete(interaction.message.id)) {
+            return await interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', flags: EPHEMERAL_FLAG });
+          }
           const { writeJson } = require('../utils/jsonStorage');
           const { buildClaimedEmbed } = require('../utils/cardsManager');
           const allCards = readJson('cards.json', {});

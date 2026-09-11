@@ -18,15 +18,29 @@ module.exports = {
     const user   = interaction.options.getUser('user');
     const reason = interaction.options.getString('reason') || 'No reason provided';
     const days   = interaction.options.getInteger('days') || 0;
-    const member = interaction.guild.members.cache.get(user.id);
+    let member   = interaction.guild.members.cache.get(user.id);
+    if (!member) {
+      try { member = await interaction.guild.members.fetch(user.id); } catch { member = null; }
+    }
 
+    if (user.id === interaction.guild.ownerId)
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Cannot ban the server owner.' }, interaction.guild)] });
     if (member && member.roles.highest.position >= interaction.member.roles.highest.position)
       return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Cannot ban this user.' }, interaction.guild)] });
+    const me = interaction.guild.members.me;
+    if (member && me && member.roles.highest.position >= me.roles.highest.position)
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'My role is not high enough to ban that user.' }, interaction.guild)] });
 
-    // DM before ban (they get kicked so DM first)
     await dmUser(user, 'ban', interaction.guild, reason, {});
 
-    await interaction.guild.members.ban(user.id, { deleteMessageDays: days, reason });
+    try {
+      await interaction.guild.members.ban(user.id, {
+        deleteMessageSeconds: days * 24 * 60 * 60,
+        reason,
+      });
+    } catch (err) {
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Could not ban that user. Check my permissions and role order.' }, interaction.guild)] });
+    }
 
     const { id: caseId } = appendCase(interaction.guild.id, {
       type: 'ban', userId: user.id, userTag: user.tag,
