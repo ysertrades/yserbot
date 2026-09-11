@@ -463,6 +463,19 @@ async function route(req, res, client) {
         return json(res, 200, next);
       }
 
+      // Operator flips feature groups for any guild the bot is in.
+      if (p === '/api/owner/features') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
+        if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (err) { return json(res, err.message === 'body_too_large' ? 413 : 400, { error: err.message }); }
+        const guildId = String(body.guildId || '');
+        const result = await owner.saveFeatures(guildId, body.features || body, client);
+        if (result.error) return json(res, 400, result);
+        return json(res, 200, result);
+      }
+
       return json(res, 404, { error: 'unknown_endpoint' });
     }
 

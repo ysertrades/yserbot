@@ -20,6 +20,8 @@
 const auth = require('./auth');
 const api = require('./api');
 const { readJson } = require('../utils/jsonStorage');
+const { FEATURE_GROUPS, readFlags, setFeatures } = require('../utils/featureToggles');
+const { applyFeatureCommandPermissions } = require('../utils/commandVisibility');
 
 /**
  * Compact levels snapshot for the owner network view — enough to see who has
@@ -41,7 +43,17 @@ function levelsSnapshot(guildId) {
   };
 }
 
-/** Every guild the bot is in, with staff grants and a levels snapshot. */
+/** Feature flags snapshot for the owner network view. */
+function featuresSnapshot(guildId) {
+  const flags = readFlags(guildId);
+  return FEATURE_GROUPS.map(g => ({
+    key: g.key,
+    label: g.label,
+    enabled: flags[g.key] !== false,
+  }));
+}
+
+/** Every guild the bot is in, with staff grants, levels, and feature flags. */
 function listGuilds(client) {
   return [...client.guilds.cache.values()]
     .map(g => ({
@@ -52,6 +64,7 @@ function listGuilds(client) {
       joinedAt: g.joinedTimestamp,
       ownerId: g.ownerId || null,
       levels: levelsSnapshot(g.id),
+      features: featuresSnapshot(g.id),
       staff: auth.listStaff(g.id)
         .map(rec => ({
           userId: rec.userId,
@@ -139,4 +152,25 @@ async function leaveGuild(guildId, client) {
   return { ok: true, guilds: listGuilds(client) };
 }
 
-module.exports = { listGuilds, listMembers, grantStaff, revokeStaffGrant, signOut, leaveGuild };
+/**
+ * Operator sets any feature group on/off for a guild they may not own.
+ * Reuses the same storage + command permission path as the server Settings tab.
+ */
+async function saveFeatures(guildId, body, client) {
+  if (!/\d{5,25}/.test(String(guildId))) return { error: 'unknown_guild' };
+  if (!client.guilds.cache.has(guildId)) return { error: 'unknown_guild' };
+  const result = setFeatures(guildId, body || {});
+  if (result.unchanged) return result;
+  if (client) {
+    try {
+      await applyFeatureCommandPermissions(client, guildId);
+    } catch (err) {
+      console.warn('[owner] feature visibility:', err.message);
+    }
+  }
+  return { ok: true, guilds: listGuilds(client) };
+}
+
+module.exports = {
+  listGuilds, listMembers, grantStaff, revokeStaffGrant, signOut, leaveGuild, saveFeatures,
+};

@@ -5562,68 +5562,106 @@ function renderOwnerConsole() {
   const guilds = state.ownerGuilds || [];
   if (!guilds.length) { list.replaceChildren(el('p', 'muted', 'The bot is not in any server.')); return; }
 
-  // Master switch for per-server bot nicknames — lives above the guild list so
-  // it is never buried inside one server card.
   const flags = state.botProfileFlags || { allowGuildNickname: false };
-
-  // Every render below builds fresh <details> nodes, none of them open by
-  // default — so whichever ones were open a moment ago have to be reopened
-  // by hand afterward, or the very card just acted on snaps shut under you.
   const openIds = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.guildId));
 
-  const flagCard = el('div', 'gaw');
-  flagCard.append(el('div', 'gaw-top', el('span', 'nm', 'Bot profile access')));
-  flagCard.append(el('p', 'hint',
-    'When on, server owners can set the bot nickname in their own server. Global name, avatar and bio stay operator-only.'));
-  flagCard.append(toggle('Allow server owners to set bot nickname', !!flags.allowGuildNickname, async (v) => {
+  const totalMembers = guilds.reduce((n, g) => n + (g.members || 0), 0);
+  const nodes = [];
+
+  // ── Network summary ───────────────────────────────────────────────────
+  const summary = el('div', 'gaw');
+  summary.append(el('div', 'gaw-top', el('span', 'nm', 'Network')));
+  summary.append(el('p', 'hint',
+    `${guilds.length} server${guilds.length === 1 ? '' : 's'} · ${num(totalMembers)} members total. Top picker only shows servers you own or were granted. Open any other server from a card below.`));
+  nodes.push(summary);
+
+  // ── Global operator controls ──────────────────────────────────────────
+  const global = el('div', 'gaw');
+  global.append(el('div', 'gaw-top', el('span', 'nm', 'Global controls')));
+  global.append(el('p', 'hint',
+    'These affect the bot everywhere. Per-server nickname is separate and only changes that server’s display name.'));
+  global.append(toggle('Allow server admins to set bot nickname', !!flags.allowGuildNickname, async (v) => {
     const data = await ownerWrite('POST', '/api/owner/bot-profile', { allowGuildNickname: v });
     if (!data) return;
     state.botProfileFlags = data;
-    toast(v ? 'Server owners can set nicknames.' : 'Server nicknames locked.', 'good');
+    toast(v ? 'Server admins can set nicknames.' : 'Server nicknames locked.', 'good');
   }));
+  const resetAv = el('button', 'btn small danger', 'Reset global avatar');
+  resetAv.type = 'button';
+  resetAv.title = 'Clears the bot avatar back to the Discord application default';
+  resetAv.addEventListener('click', async () => {
+    if (!await askConfirm({
+      title: 'Reset global bot avatar?',
+      message: 'This removes the custom avatar for the whole bot (every server). Discord will show the default application icon until you upload a new one. This cannot be limited to one server — Discord only allows one bot avatar.',
+      confirmLabel: 'Reset avatar', danger: true,
+    })) return;
+    const res = await post('bot-profile-global', { avatar: null });
+    if (res?.ok || res?.global) toast('Avatar reset to Discord default.', 'good');
+  });
+  const gAct = el('div', 'actions');
+  gAct.append(resetAv);
+  global.append(gAct);
+  nodes.push(global);
 
-  list.replaceChildren(flagCard, ...guilds.map(g => {
+  // ── Per-server cards ──────────────────────────────────────────────────
+  for (const g of guilds) {
     const d = el('details', 'item');
     d.dataset.guildId = g.id;
     const sum = el('summary');
     if (g.icon) { const i = el('img'); i.src = g.icon; i.alt = ''; sum.append(i); }
-    const lv = g.levels || {};
-    const lvBits = lv.enabled
-      ? `Levels on · ${lv.xpMin}–${lv.xpMax} XP · ${lv.rewardRoles || 0} role${(lv.rewardRoles || 0) === 1 ? '' : 's'}`
-      : 'Levels off';
+    const onCount = (g.features || []).filter(f => f.enabled).length;
+    const featBits = g.features ? `${onCount}/${g.features.length} features on` : '';
     sum.append(
       el('span', 'nm', g.name),
-      el('span', 'pr', `${num(g.members)} member${g.members === 1 ? '' : 's'} · ${lvBits}`),
+      el('span', 'pr', `${num(g.members)} member${g.members === 1 ? '' : 's'}${featBits ? ' · ' + featBits : ''}`),
     );
     const body = el('div', 'body');
 
-    // Network glance: what this server is running for levelling, so you can
-    // scan every bot server without opening each one in the side nav.
-    const lvCard = el('div', 'gaw');
-    lvCard.append(el('div', 'gaw-top', el('span', 'nm', 'Levelling')));
-    if (lv.enabled) {
-      lvCard.append(el('p', 'hint',
-        `${lv.xpMin}–${lv.xpMax} XP per message · base ${lv.baseXp} · ×${lv.multiplier} · ${lv.rewardRoles || 0} reward role${(lv.rewardRoles || 0) === 1 ? '' : 's'}`));
-    } else {
-      lvCard.append(el('p', 'hint', 'Levelling is off on this server.'));
-    }
-    const openLevels = el('button', 'btn small', 'Open levels');
-    openLevels.type = 'button';
-    openLevels.addEventListener('click', async () => {
+    // Open this server's full panel (even if not in top picker)
+    const openBtn = el('button', 'btn primary small', 'Open panel');
+    openBtn.type = 'button';
+    openBtn.addEventListener('click', async () => {
+      if (!state.guilds.some(x => x.id === g.id)) {
+        state.guilds = [...state.guilds, { id: g.id, name: g.name, icon: g.icon, members: g.members }];
+      }
       await selectGuild(g.id).catch(reportLoadFailure);
-      showSection('engagement');
+      showSection('overview');
+      toast(`Opened ${g.name}.`, 'good');
     });
     const leaveBtn = el('button', 'btn small danger', 'Leave server');
     leaveBtn.type = 'button';
     leaveBtn.addEventListener('click', () => ownerLeaveGuild(g.id, g.name));
-    const lvAct = el('div', 'actions');
-    lvAct.append(openLevels, leaveBtn);
-    lvCard.append(lvAct);
-    body.append(lvCard);
+    const topAct = el('div', 'actions');
+    topAct.append(openBtn, leaveBtn);
+    body.append(topAct);
 
+    // Feature matrix for this guild
+    if (g.features && g.features.length) {
+      const featCard = el('div', 'gaw');
+      featCard.append(el('div', 'gaw-top', el('span', 'nm', 'Features')));
+      featCard.append(el('p', 'hint', 'Turn modules on or off for this server only. Same switches as Settings → Features.'));
+      const draft = {};
+      for (const f of g.features) draft[f.key] = f.enabled;
+      const rows = g.features.map(f => {
+        const row = el('div', 'toggle-row');
+        row.append(toggle(f.label, draft[f.key], v => { draft[f.key] = v; }));
+        return row;
+      });
+      featCard.append(...rows);
+      featCard.append(actions(async () => {
+        const data = await ownerWrite('POST', '/api/owner/features', { guildId: g.id, features: draft });
+        if (!data) return;
+        if (data.guilds) state.ownerGuilds = data.guilds;
+        renderOwnerConsole();
+        return data;
+      }, { label: 'Save features', busyLabel: 'Saving…' }));
+      body.append(featCard);
+    }
+
+    // Staff grants
     const staffList = el('div', 'rows');
     if (!g.staff.length) {
-      staffList.append(el('p', 'muted', 'Nobody has a staff grant here yet.'));
+      staffList.append(el('p', 'muted', 'No staff grants on this server yet.'));
     } else {
       staffList.append(...g.staff.map(s => {
         const card = el('div', 'gaw');
@@ -5645,11 +5683,6 @@ function renderOwnerConsole() {
     }
     body.append(staffList);
 
-    // Grant and sign-out share one picker: both start from the same
-    // question, which of this server's members, and the picker itself is
-    // the "no raw snowflake" rule every other picker in this panel follows —
-    // pasting a bare Discord id here would be exactly the kind of typo this
-    // whole feature exists to keep out of something as sensitive as access.
     const picker = el('select');
     const placeholder = el('option', null, 'Loading members…');
     placeholder.value = '';
@@ -5680,25 +5713,19 @@ function renderOwnerConsole() {
     act.append(grantBtn, signOutAnyBtn);
     body.append(pickerField, act);
 
-    // Loaded on open, not up front — a console listing every server the bot
-    // is in must not fetch every server's member list the moment it renders.
     d.addEventListener('toggle', () => {
       if (!d.open || picker.dataset.loaded) return;
       loadOwnerPicker(g.id, picker, placeholder, grantBtn, signOutAnyBtn);
     });
-
     d.append(sum, body);
     if (openIds.has(g.id)) {
       d.open = true;
-      // Not left for the 'toggle' event above: setting .open here is this
-      // guild's card coming back the way it was, not a user opening it, and
-      // depending on a browser dispatching 'toggle' for a scripted change
-      // would make the picker's refill a coin flip across browsers instead
-      // of something this function is actually in charge of.
       loadOwnerPicker(g.id, picker, placeholder, grantBtn, signOutAnyBtn);
     }
-    return d;
-  }));
+    nodes.push(d);
+  }
+
+  list.replaceChildren(...nodes);
 }
 
 /* ── terms & privacy ──────────────────────────────────────────────────────
