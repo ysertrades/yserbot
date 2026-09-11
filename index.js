@@ -5,6 +5,7 @@ const { Client, Collection, GatewayIntentBits, Partials, Events } = require('dis
 const { connect: connectMongo } = require('./utils/mongoStorage');
 const { warm: warmRenderCache } = require('./utils/dynamicEmbedImages');
 const { start: startPanel } = require('./web/server');
+const { configure: configureErrorReporter, reportAndLog } = require('./utils/errorReporter');
 
 const client = new Client({
     intents: [
@@ -19,6 +20,7 @@ const client = new Client({
 
 client.commands = new Collection();
 client.cooldowns = new Collection();
+configureErrorReporter(client);
 
 // ── Connection resilience ────────────────────────────────
 // discord.js retries dropped gateway connections on its own, but without
@@ -27,16 +29,16 @@ client.cooldowns = new Collection();
 // kill the whole process (looking "offline" until the workflow is restarted
 // by hand). Logging here plus process-level safety nets below keep the bot
 // alive and give us a trail to diagnose the next time it happens.
-client.on('error', (err) => console.error('[CLIENT ERROR]', err));
-client.on('shardError', (err, shardId) => console.error(`[SHARD ${shardId} ERROR]`, err));
+client.on('error', (err) => reportAndLog(err, { area: 'Discord client' }));
+client.on('shardError', (err, shardId) => reportAndLog(err, { area: 'Discord shard', shardId }));
 client.on('warn', (info) => console.warn('[CLIENT WARN]', info));
 client.on('shardDisconnect', (event, shardId) => console.warn(`[SHARD ${shardId} DISCONNECTED]`, event?.code));
 client.on('shardReconnecting', (shardId) => console.warn(`[SHARD ${shardId} RECONNECTING]`));
 client.on('shardResume', (shardId, replayed) => console.log(`[SHARD ${shardId} RESUMED] replayed ${replayed} events`));
 
-process.on('unhandledRejection', (err) => console.error('[UNHANDLED REJECTION]', err));
+process.on('unhandledRejection', (err) => reportAndLog(err, { area: 'Unhandled promise rejection' }));
 process.on('uncaughtException', (err) => {
-  console.error('[UNCAUGHT EXCEPTION]', err);
+  reportAndLog(err, { area: 'Uncaught exception' });
   // Stay alive only long enough to flush logs, then exit so the host restarts
   // a clean process instead of running in an unknown half-broken state.
   setTimeout(() => process.exit(1), 1000).unref?.();

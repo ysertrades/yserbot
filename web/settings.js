@@ -28,6 +28,7 @@ const FIELDS = [
   { key: 'welcomeChannel', path: ['welcomeChannel'], type: 'channel', label: 'Welcome messages' },
   { key: 'leaveChannel',   path: ['leaveChannel'],   type: 'channel', label: 'Leave messages' },
   { key: 'logsChannel',    path: ['logsChannel'],    type: 'channel', label: 'Moderation log' },
+  { key: 'errorLogChannel', path: ['errorLogChannel'], type: 'channel', label: 'Bot error logs' },
   { key: 'reportChannel',  path: ['reportChannel'],  type: 'channel', label: 'Reports' },
   { key: 'supportRoles',   path: ['supportRoles'],   type: 'roles',   label: 'Support roles' },
   { key: 'reportRoles',    path: ['reportRoles'],    type: 'roles',   label: 'Report handler roles' },

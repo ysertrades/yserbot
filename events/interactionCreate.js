@@ -33,6 +33,7 @@ const { MOD_COMMANDS, ADMIN_COMMANDS, PUBLIC_COMMANDS } = require('../commands/s
 const { reattachEmbedImage, reattachBuilt } = require('../utils/embedAttachments');
 const { memberAction, actionCard } = require('../utils/modEmbed');
 const { groupForCommand, isFeatureEnabled, FEATURE_GROUPS } = require('../utils/featureToggles');
+const { reportAndLog } = require('../utils/errorReporter');
 
 function checkCmdPermission(interaction) {
   if (!interaction.inGuild()) return true;
@@ -268,7 +269,7 @@ module.exports = {
         await command.execute(interaction, client);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        console.error(`[CMD ERROR] /${interaction.commandName}:`, err);
+        reportAndLog(err, { area: 'Slash command', command: interaction.commandName, guildId: interaction.guildId });
         const reply = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(reply).catch(() => {});
         else await interaction.reply(reply).catch(() => {});
@@ -833,7 +834,7 @@ module.exports = {
 
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        console.error(`[BTN ERROR] ${id}:`, err);
+        reportAndLog(err, { area: 'Button interaction', customId: id, guildId: interaction.guildId });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -907,7 +908,7 @@ module.exports = {
         }
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        console.error(`[MODAL ERROR] ${id}:`, err);
+        reportAndLog(err, { area: 'Modal interaction', customId: id, guildId: interaction.guildId });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -954,7 +955,7 @@ module.exports = {
         if (handler?.handleSelect) await handler.handleSelect(interaction, args, client);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        console.error(`[SEL ERROR] ${id}:`, err);
+        reportAndLog(err, { area: 'Select interaction', customId: id, guildId: interaction.guildId });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -971,7 +972,7 @@ module.exports = {
           return await client.commands.get('bank')?.handleUserSelect(interaction);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        console.error(`[USER SELECT ERROR] ${id}:`, err);
+        reportAndLog(err, { area: 'User select interaction', customId: id, guildId: interaction.guildId });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -990,7 +991,7 @@ module.exports = {
           return await client.commands.get('econcal')?.handleRoleSelect(interaction);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        console.error(`[ROLE SELECT ERROR] ${id}:`, err);
+        reportAndLog(err, { area: 'Role select interaction', customId: id, guildId: interaction.guildId });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -1012,7 +1013,7 @@ module.exports = {
           return await client.commands.get('econcal')?.handlePostChannelSelect(interaction);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        console.error(`[CHANNEL SELECT ERROR] ${id}:`, err);
+        reportAndLog(err, { area: 'Channel select interaction', customId: id, guildId: interaction.guildId });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
