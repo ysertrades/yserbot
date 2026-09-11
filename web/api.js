@@ -54,10 +54,11 @@ const botProfile = require('./botProfile');
  */
 function me(session, client) {
   const owner = auth.isOwner(session.uid);
-  // Top picker = servers this account owns or has a staff grant for.
-  // Bot owner still reaches every other guild from the Owner tab only —
-  // canAccessGuild still allows the operator through.
+  // Owned + staff grants for everyone. Bot operator also sees every guild
+  // the bot is in so the panel always has a server to open (empty picker
+  // left every tab blank).
   const ids = new Set([...(session.guilds || []), ...auth.staffGuildsFor(session.uid)]);
+  if (owner) for (const id of client.guilds.cache.keys()) ids.add(id);
 
   const guilds = [...ids]
     .filter(id => client.guilds.cache.has(id))
