@@ -593,6 +593,28 @@
         <p class="muted">Added on top of the built-in list. Messages containing any of them are removed and the sender warned.</p>
         <form id="form-badwords" class="form"></form>
       </div>
+
+      <div class="grid">
+        <article class="panel">
+          <h2>Quick action</h2>
+          <p class="muted">Warn, timeout, kick or ban from the panel. Same case log, DM and mod-log as the slash commands.</p>
+          <form id="form-modaction" class="form"></form>
+        </article>
+        <article class="panel">
+          <h2>Case filters</h2>
+          <p class="muted">Narrow the log below. Cleared warnings stay visible but are marked forgiven.</p>
+          <div class="chipset" id="case-filters"></div>
+        </article>
+      </div>
+
+      <div class="panel">
+        <div class="queue-head">
+          <h2>Case log <span class="tag" id="case-log-count" hidden></span></h2>
+          <span class="hint" id="case-log-hint"></span>
+        </div>
+        <p class="muted">Recent moderation cases for this server — who, what, why, and by whom. Tap a row for details and follow-up actions.</p>
+        <div class="rows" id="case-log"></div>
+      </div>
     </div>
 
   </section>

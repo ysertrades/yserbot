@@ -4695,7 +4695,57 @@ function openAvatarStudio(host, img, fileName, onReady) {
    Reports lead the section because they are the only thing here waiting on a
    person. Everything below is reference or settings. */
 
+
+function openCase(c) {
+  const kind = c.type === 'mute' ? 'timeout' : c.type;
+  const body = el('div');
+  body.append(el('p', null, `${c.icon} Case #${c.id} · ${String(c.type).toUpperCase()}`));
+  body.append(row('Member', c.userName || c.userTag || c.userId));
+  body.append(row('User ID', c.userId || '—'));
+  body.append(row('Moderator', c.moderator || '—'));
+  if (c.at) body.append(row('When', relativeTime(c.at)));
+  if (c.durationMs) body.append(row('Duration', `${Math.round(c.durationMs / 60000)} min`));
+  if (c.clearedAt) body.append(row('Status', 'Warning forgiven'));
+  else if (c.inServer === false) body.append(row('Status', 'No longer in the server'));
+  if (c.reason) body.append(el('p', 'hint', c.reason));
+
+  const acts = [];
+  if (c.type === 'warn' && !c.clearedAt && c.userId) {
+    acts.push({
+      label: 'Clear warnings',
+      danger: true,
+      run: async () => {
+        if (!await askConfirm({
+          title: `Clear warnings for ${c.userName || c.userId}?`,
+          message: 'Active warnings for this member are forgiven. The case log keeps the history.',
+          confirmLabel: 'Clear them', danger: true,
+        })) return;
+        await post('warnclear', { userId: c.userId });
+        closeSheet();
+      },
+    });
+  }
+  if (c.userId) {
+    acts.push({
+      label: 'Use in Quick action',
+      run: () => {
+        state.modQuick = state.modQuick || { userId: '', action: 'warn', reason: '', timeoutMinutes: 60 };
+        state.modQuick.userId = c.userId;
+        closeSheet();
+        renderModeration();
+        toast('User ID filled in Quick action.', 'good');
+      },
+    });
+  }
+  openSheet({
+    title: `Case #${c.id}`,
+    body,
+    actions: acts,
+  });
+}
+
 function renderModeration() {
+
   const m = state.overview?.mod;
   if (!m) return;
 
@@ -4756,9 +4806,119 @@ function renderModeration() {
     return r;
   }) : [el('p', 'muted', 'Nobody has a warning.')]));
 
-  // The case log itself lives in Discord, where it belongs — this is just the
-  // running total, so the number is still visible without a second list.
   $('#case-total').textContent = m.caseTotal ? `${num(m.caseTotal)} cases logged` : '';
+
+  /* -- case log + filters ------------------------------------------------ */
+  if (!state.caseFilter) state.caseFilter = 'all';
+  const CASE_FILTERS = [
+    { id: 'all', label: 'All' },
+    { id: 'warn', label: 'Warns' },
+    { id: 'timeout', label: 'Timeouts' },
+    { id: 'kick', label: 'Kicks' },
+    { id: 'ban', label: 'Bans' },
+  ];
+  const typeAlias = t => (t === 'mute' ? 'timeout' : t);
+  const allCases = m.cases || [];
+  const filtered = state.caseFilter === 'all'
+    ? allCases
+    : allCases.filter(c => typeAlias(c.type) === state.caseFilter);
+
+  const filtersEl = $('#case-filters');
+  if (filtersEl) {
+    filtersEl.replaceChildren(...CASE_FILTERS.map(f => {
+      const b = el('button', `chip-toggle${state.caseFilter === f.id ? ' on' : ''}`, f.label);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', state.caseFilter === f.id ? 'true' : 'false');
+      b.addEventListener('click', () => {
+        state.caseFilter = f.id;
+        renderModeration();
+      });
+      return b;
+    }));
+  }
+
+  const logCount = $('#case-log-count');
+  if (logCount) {
+    logCount.hidden = filtered.length === 0;
+    logCount.textContent = String(filtered.length);
+  }
+  const logHint = $('#case-log-hint');
+  if (logHint) {
+    logHint.textContent = m.caseTotal
+      ? `${num(m.caseTotal)} total on record · showing latest ${allCases.length}`
+      : 'No cases yet';
+  }
+
+  const logEl = $('#case-log');
+  if (logEl) {
+    logEl.replaceChildren(...(filtered.length ? filtered.map(c => {
+      const d = el('button', 'gaw tappable');
+      d.type = 'button';
+      const top = el('div', 'gaw-top');
+      const kind = typeAlias(c.type);
+      const sev = kind === 'ban' ? 'sev-warn' : kind === 'kick' ? 'sev-warn' : kind === 'warn' ? 'sev-clear' : '';
+      top.append(
+        el('span', `kind ${sev}`.trim(), `${c.icon} ${String(c.type).toUpperCase()}`),
+        el('span', 'nm', c.userName || c.userTag || c.userId),
+      );
+      d.append(top);
+      const when = c.at ? relativeTime(c.at) : '';
+      const cleared = c.clearedAt ? ' · forgiven' : '';
+      d.append(el('p', 'hint',
+        `#${c.id} · by ${c.moderator}${when ? ` · ${when}` : ''}${cleared}`));
+      if (c.reason) d.append(el('p', 'hint', c.reason.length > 120 ? c.reason.slice(0, 117) + '…' : c.reason));
+      d.append(el('span', 'chev', '›'));
+      d.addEventListener('click', () => openCase(c));
+      return d;
+    }) : [el('p', 'muted', state.caseFilter === 'all'
+      ? 'No cases logged yet.'
+      : 'No cases in this filter.')]));
+  }
+
+  /* -- quick action form ------------------------------------------------- */
+  const qa = state.modQuick || (state.modQuick = {
+    userId: '', action: 'warn', reason: '', timeoutMinutes: 60,
+  });
+  const qaForm = $('#form-modaction');
+  if (qaForm) {
+    const timeoutField = textField('Timeout minutes (timeout only)', String(qa.timeoutMinutes), v => {
+      qa.timeoutMinutes = Number(v) || 60;
+    });
+    timeoutField.style.display = qa.action === 'timeout' ? '' : 'none';
+    qaForm.replaceChildren(
+      textField('Discord user ID', qa.userId, v => { qa.userId = v.trim(); }),
+      select('Action', qa.action, [
+        { value: 'warn', label: 'Warn' },
+        { value: 'timeout', label: 'Timeout' },
+        { value: 'kick', label: 'Kick' },
+        { value: 'ban', label: 'Ban' },
+      ], v => {
+        qa.action = v;
+        timeoutField.style.display = v === 'timeout' ? '' : 'none';
+      }),
+      timeoutField,
+      areaField('Reason', qa.reason, v => { qa.reason = v; }, 2),
+      actions(async () => {
+        if (!/^\d{5,20}$/.test(qa.userId)) {
+          toast('Enter a valid Discord user ID.', 'bad');
+          return;
+        }
+        const label = qa.action === 'timeout' ? 'timeout' : qa.action;
+        if (!await askConfirm({
+          title: `${label[0].toUpperCase() + label.slice(1)} this member?`,
+          message: `User ID ${qa.userId} will be ${label === 'timeout' ? 'timed out' : label + 'ed'} from the panel. A case is logged and they are DMed when possible.`,
+          confirmLabel: 'Do it', danger: qa.action === 'ban' || qa.action === 'kick',
+        })) return;
+        await post('modaction', {
+          userId: qa.userId,
+          action: qa.action,
+          reason: qa.reason,
+          timeoutMinutes: qa.timeoutMinutes,
+        });
+        qa.reason = '';
+      }, { label: 'Run action', busyLabel: 'Working…' }),
+    );
+  }
 
   /* -- automatic punishment ---------------------------------------------- */
   const ws = { ...m.warnSettings };

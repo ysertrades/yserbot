@@ -560,6 +560,14 @@ Object.assign(OPS, {
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎭 **Auto-role** — ${r.changed.join('; ')}`, 'moderation');
     return r;
   },
+  async modaction(guildId, body, ctx) {
+    const r = await moderationPanel.modAction(guildId, body, ctx);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🛡️ **${r.label}** <@${r.targetId}> · case #${r.caseId}`, 'moderation');
+    }
+    return r;
+  },
 
   /* -- link approval requests -------------------------------------------- */
   async linkrequest(guildId, body, ctx) {

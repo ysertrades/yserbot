@@ -66,15 +66,20 @@ function read(guildId, guild) {
 
   // Newest first, and capped — the full log can run to thousands of entries
   // and nothing on screen can use them all.
-  const recentCases = cases.slice(-30).reverse().map(c => ({
+  const recentCases = cases.slice(-50).reverse().map(c => ({
     id: c.id,
     type: c.type,
     icon: CASE_ICON[c.type] || '•',
     userId: c.userId,
     userName: nameOf(guild, c.userId, c.userTag),
+    userTag: c.userTag || null,
     moderator: c.moderatorTag || 'unknown',
+    moderatorId: c.moderatorId || null,
     reason: c.reason || '',
     at: c.timestamp || null,
+    durationMs: c.durationMs || null,
+    clearedAt: c.clearedAt || null,
+    inServer: !!guild?.members?.cache?.get(c.userId),
   }));
 
   // Members with at least one warning, worst first — the list a moderator
@@ -272,4 +277,52 @@ function saveAutoRole(guildId, body, { guild }) {
   return { ok: true, roleId: value, roleName, changed: [value ? `auto-role: ${roleName}` : 'auto-role turned off'] };
 }
 
-module.exports = { read, act, clearWarnings, saveWarnSettings, saveAutoRole };
+
+/**
+ * Quick moderation from the panel (not tied to a report).
+ * Same path as slash commands / report buttons — case + DM + mod-log.
+ */
+async function modAction(guildId, body, { client, session, guild }) {
+  const action = String(body.action || '');
+  if (!Object.hasOwn(modActions.ACTIONS, action)) return { error: 'bad_action' };
+
+  const userId = String(body.userId || '').trim();
+  if (!/^\d{5,20}$/.test(userId)) return { error: 'bad_user' };
+
+  const reason = String(body.reason || '').trim().slice(0, 400)
+    || `Actioned from control panel by ${session.name}`;
+  const minutes = Number(body.timeoutMinutes);
+  const durationMs = Number.isInteger(minutes) && minutes > 0
+    ? Math.min(minutes, 40320) * 60000
+    : 60 * 60000;
+
+  const fetched = await client.users?.fetch?.(userId).catch(() => null);
+  if (!fetched) return { error: 'unknown_user' };
+  const member = guild?.members?.cache?.get(userId)
+    || await guild?.members?.fetch?.(userId).catch(() => null);
+
+  const by = `${session.name} (control panel)`;
+  const result = await modActions.apply({
+    guild,
+    moderator: { id: session.uid, tag: by },
+    targetUser: fetched,
+    member,
+    action,
+    reason,
+    durationMs,
+  });
+
+  if (!result.ok) return { error: result.error, detail: result.detail, caseId: result.caseId };
+  return {
+    ok: true,
+    action,
+    label: result.label,
+    caseId: result.caseId,
+    targetId: fetched.id,
+    targetTag: fetched.tag,
+    warnCount: result.warnCount,
+  };
+}
+
+module.exports = { read, act, clearWarnings, saveWarnSettings, saveAutoRole, modAction };
+
