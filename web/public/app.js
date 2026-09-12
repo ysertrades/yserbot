@@ -6976,6 +6976,8 @@ window.addEventListener('pageshow', (e) => {
 function showSection(name) {
   const prev = root.dataset.section;
   root.dataset.section = name;
+  const titleEl = document.getElementById('here');
+  if (titleEl) titleEl.textContent = (SECTION_NAMES && SECTION_NAMES[name]) || name;
   for (const s of document.querySelectorAll('.section')) {
     const active = s.dataset.section === name;
     s.toggleAttribute('data-active', active);

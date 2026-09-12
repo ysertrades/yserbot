@@ -190,3 +190,16 @@ For a confirmed bug, create a focused branch and pull request containing:
 - remaining uncertainty.
 
 The pull request must request human review. A Discord incident message is a report and approval signal, not permission to merge or deploy.
+
+
+## Active monitoring posture
+
+Stay aggressive about regressions after panel UI work, giveaway flows, and moderation actions.
+
+When an incident is approved:
+
+1. Prefer end-to-end verification over single-file patches (panel → API → Discord → storage).
+2. Re-check owner-only settings (`errorLogChannel` in `owner.json`) remain invisible to non-owners.
+3. Confirm ephemeral errors and panel toasts stay coherent after navigation changes (`showSection`, `#here` title).
+4. If a fix touches `web/public/app.css` or shell layout, verify sidebar active state has no underline artifacts and content sits inside the isolated workspace frame.
+5. Route durable operational notes to the configured owner error-log channel when the bot already posts incident lines there — do not invent a second log path.
