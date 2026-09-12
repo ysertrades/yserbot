@@ -2134,7 +2134,19 @@ function renderGiveaways() {
     d.append(top);
     d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
     if (x.winnersList?.length) {
-      d.append(el('p', 'hint', `Winner${x.winnersList.length > 1 ? 's' : ''}: ${x.winnersList.map(mention).join(', ')}`));
+      const row = el('div', null);
+      row.style.display = 'flex';
+      row.style.flexWrap = 'wrap';
+      row.style.gap = '0.35rem';
+      x.winnersList.forEach((w) => {
+        const name = String(w.name || '').trim();
+        const id = String(w.id || '');
+        const label = name && name !== id ? `@${name}` : (id ? `@${id}` : '@unknown');
+        const pill = el('span', 'win-inline');
+        pill.append(el('span', 'dot'), document.createTextNode(label));
+        row.append(pill);
+      });
+      d.append(row);
     }
     d.append(el('span', 'chev', '›'));
     d.addEventListener('click', () => openEndedGiveaway(x));
@@ -2225,16 +2237,30 @@ function openEndedGiveaway(x) {
     sheetRow('Winners', String(x.winners)),
     sheetRow('ID', el('span', 'v mono', x.shortId)),
   ];
-  if (x.winnersList?.length) {
-    body.push(sheetRow(
-      x.winnersList.length > 1 ? 'Winner list' : 'Winner',
-      x.winnersList.map(w => {
-        const label = w.name || w.id || '';
-        return label.startsWith('@') ? label : `@${label}`;
-      }).join(', '),
-    ));
-  }
   if (x.endedAt) body.push(sheetRow('Ended', new Date(x.endedAt).toLocaleString()));
+
+  const winners = Array.isArray(x.winnersList) ? x.winnersList : [];
+  if (winners.length) {
+    const podium = el('div', 'win-podium');
+    podium.append(el('div', 'win-podium-label',
+      winners.length === 1 ? 'Selected winner' : `${winners.length} selected winners`));
+    const list = el('div', 'win-podium-list');
+    winners.forEach((w, i) => {
+      const name = String(w.name || '').trim();
+      const id = String(w.id || '');
+      const display = name && name !== id ? `@${name}` : (id ? `@${id}` : 'Unknown');
+      const chip = el('div', 'win-chip');
+      chip.append(el('span', 'win-chip-rank', String(i + 1)));
+      chip.append(el('span', 'win-chip-name', display));
+      if (name && name !== id && id) chip.append(el('span', 'win-chip-meta', id.slice(-4)));
+      list.append(chip);
+    });
+    podium.append(list);
+    body.push(podium);
+  } else {
+    body.push(el('p', 'hint', 'No winner on record for this drop yet.'));
+  }
+
   body.push(el('p', 'hint', 'Rerolling draws new winners. For a coins giveaway that pays them again, on top of what the first draw already paid out.'));
 
   
