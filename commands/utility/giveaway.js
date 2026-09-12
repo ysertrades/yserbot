@@ -689,7 +689,7 @@ async function revealGiveaway(message, interaction) {
   };
 }
 
-async function async sendPrizeDm(guild, shortId, text, onlyWinnerId = null) {
+async function sendPrizeDm(guild, shortId, text, onlyWinnerId = null) {
   const allEnded = readJson('giveaways_ended.json', {});
   const data = allEnded[guild.id]?.[String(shortId).toLowerCase()];
   if (!data) return { error: 'unknown_giveaway' };
