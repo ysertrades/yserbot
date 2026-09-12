@@ -1994,6 +1994,54 @@ function startTicking() {
   }, 1000);
 }
 
+
+/* Instant panel removals — animate out, update state, optional background refresh */
+function gawIdOf(x) {
+  return String(x?.shortId || x?.messageId || x?.id || '').toLowerCase();
+}
+
+function leaveNode(node, ms = 220) {
+  return new Promise((resolve) => {
+    if (!node) { resolve(); return; }
+    node.classList.add('is-leaving');
+    node.style.pointerEvents = 'none';
+    setTimeout(() => {
+      try { node.remove(); } catch (_) {}
+      resolve();
+    }, ms);
+  });
+}
+
+function optimisticGawRemove(shortId) {
+  const id = String(shortId || '').toLowerCase();
+  if (!id || !state.overview?.giveaways) return;
+  const g = state.overview.giveaways;
+  g.active = (g.active || []).filter((x) => gawIdOf(x) !== id);
+  g.ended = (g.ended || []).filter((x) => gawIdOf(x) !== id);
+  document.querySelectorAll(`[data-gaw-id="${CSS.escape(id)}"]`).forEach((n) => {
+    leaveNode(n);
+  });
+}
+
+function optimisticGawEnd(shortId) {
+  const id = String(shortId || '').toLowerCase();
+  const g = state.overview?.giveaways;
+  if (!g || !id) return;
+  const idx = (g.active || []).findIndex((x) => gawIdOf(x) === id);
+  if (idx >= 0) {
+    const [item] = g.active.splice(idx, 1);
+    item._justEnded = true;
+    g.ended = [item, ...(g.ended || [])];
+  }
+}
+
+async function softRefreshOverview() {
+  try {
+    if (typeof refreshOverview === 'function') await refreshOverview();
+  } catch (_) {}
+}
+
+
 function renderGiveaways() {
   ticking.clear();
   const g = state.overview?.giveaways || { active: [], ended: [] };
@@ -2125,9 +2173,18 @@ function renderGiveaways() {
       })) return;
       clearAll.disabled = true;
       const out = await post('giveawayclearhistory', {});
-      if (out) {
+      if (out && out.ok !== false && out.error == null) {
+        if (state.overview?.giveaways) {
+          // Keep only pending prize sends; wipe the rest of history
+          const pending = (state.overview.giveaways.ended || []).filter(
+            (x) => x.kind === 'prize' && !x.prizeDmSent,
+          );
+          state.overview.giveaways.ended = pending;
+        }
         state.gawHistoryOpen = false;
         state.gawHistoryPage = 0;
+        try { renderGiveaways(); } catch (_) {}
+        softRefreshOverview();
       } else {
         clearAll.disabled = false;
       }
@@ -2187,6 +2244,8 @@ function renderGiveaways() {
 
 function buildLiveDropCard(x, { phase }) {
   const d = el('div', `drop-card kind-prize ${phase === 'ended' ? 'is-ended' : 'is-live'}`);
+  const gid = gawIdOf(x);
+  if (gid) d.dataset.gawId = gid;
   const top = el('div', 'drop-card-top');
   top.append(el('span', 'kind prize', 'PRIZE'));
   const badge = el('span', phase === 'ended' ? 'ended-dot' : 'live-dot', phase === 'ended' ? 'ENDED' : 'LIVE');
@@ -2226,8 +2285,15 @@ function buildLiveDropCard(x, { phase }) {
         confirmLabel: 'End drop',
       })) return;
       end.disabled = true;
-      await post('giveawayend', { messageId: x.messageId, kind: x.kind || 'prize' });
-      end.disabled = false;
+      const out = await post('giveawayend', { messageId: x.messageId, kind: x.kind || 'prize' });
+      if (out && out.ok !== false && out.error == null) {
+        optimisticGawEnd(x.shortId || x.messageId);
+        await leaveNode(d);
+        try { renderGiveaways(); } catch (_) {}
+        softRefreshOverview();
+      } else {
+        end.disabled = false;
+      }
     });
     act.append(end);
   } else {
@@ -2464,8 +2530,13 @@ function openEndedGiveaway(x) {
     reroll.disabled = true;
     reroll.textContent = 'Drawing…';
     const out = await post('giveawayreroll', { shortId: x.shortId, kind: x.kind });
-    if (out) closeSheet();
-    else { reroll.disabled = false; reroll.textContent = multiW ? 'Reroll winners' : 'Reroll winner'; }
+    if (out && out.ok !== false && out.error == null) {
+      closeSheet();
+      softRefreshOverview().then(() => { try { renderGiveaways(); } catch (_) {} });
+    } else {
+      reroll.disabled = false;
+      reroll.textContent = multiW ? 'Reroll winners' : 'Reroll winner';
+    }
   });
 
   const del = el('button', 'btn small danger', 'Delete from panel');
@@ -2478,8 +2549,16 @@ function openEndedGiveaway(x) {
     }
     del.disabled = true;
     const out = await post('giveawaydelete', { shortId: x.shortId, kind: x.kind });
-    if (out) closeSheet();
-    else { del.disabled = false; del.dataset.armed = ''; del.textContent = 'Delete from panel'; }
+    if (out && out.ok !== false && out.error == null) {
+      optimisticGawRemove(x.shortId);
+      closeSheet();
+      try { renderGiveaways(); } catch (_) {}
+      softRefreshOverview();
+    } else {
+      del.disabled = false;
+      del.dataset.armed = '';
+      del.textContent = 'Delete from panel';
+    }
   });
 
   openSheet(x.title || 'Giveaway', body, [reroll, del]);
