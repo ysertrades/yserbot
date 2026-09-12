@@ -30,6 +30,21 @@ Before making a broad recommendation or implementing a cross-cutting change, bui
 - environment variables, deployment assumptions, scripts, dependencies, secrets handling, and operational configuration;
 - logging, observability, rate limits, input validation, authorization, and failure recovery.
 
+Also perform a systematic quality and consistency sweep across the repository:
+
+- spelling, grammar, labels, command names, help text, and user-facing copy;
+- inconsistent capitalization, terminology, colors, icons, button labels, embed styles, and panel wording;
+- duplicated commands, handlers, helpers, schemas, objects, configuration keys, and repeated business logic;
+- dead code, unused imports, unreachable branches, stale feature flags, orphaned custom IDs, and handlers that are registered but never used;
+- settings that are displayed but not persisted, persisted but not displayed, or validated differently across Discord and the panel;
+- API fields that do not match frontend expectations, missing loading/empty/error states, and broken links or navigation;
+- missing permission checks, inconsistent error handling, unsafe defaults, and paths that can silently fail;
+- dependency, script, environment-variable, and documentation drift;
+- accessibility and usability issues such as unclear feedback, missing labels, poor contrast, or destructive actions without confirmation;
+- repeated database writes, race-prone state updates, unnecessary network calls, and inefficient hot paths.
+
+Use repository-wide searches and cross-reference definitions with their call sites. Report each finding with exact evidence and classify it as a confirmed defect, maintainability issue, intentional duplication, cosmetic issue, or hypothesis. Do not flag repetition merely because two similar things are intentionally different.
+
 For the panel, inspect the actual HTML, JavaScript, CSS, server routes, API contracts, and settings schema together. Do not infer the design from one screenshot or one tab. Preserve the established branding and layout unless the requested change intentionally revises the design.
 
 When reporting the audit, identify what is confirmed by source evidence, what is an intentional product choice, what is inconsistent, and what is an unverified hypothesis. Include file paths, symbols, data flow, user impact, and dependencies between systems.
