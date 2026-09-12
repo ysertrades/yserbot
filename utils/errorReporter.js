@@ -30,15 +30,9 @@ function errorText(error) {
 
 function channelsFor(guildId) {
   if (!client) return [];
-  const config = readJson('config.json', {});
-  const guildIds = guildId ? [guildId] : Object.keys(config);
-  const channels = [];
-  for (const id of guildIds) {
-    const channelId = config[id]?.errorLogChannel;
-    const channel = channelId && client.channels.cache.get(channelId);
-    if (channel?.isTextBased?.()) channels.push({ guildId: id, channel });
-  }
-  return channels;
+  const channelId = readJson('owner.json', {}).errorLogChannel;
+  const channel = channelId && client.channels.cache.get(channelId);
+  return channel?.isTextBased?.() ? [{ guildId: channel.guildId || guildId, channel }] : [];
 }
 
 function contextText(context = {}) {

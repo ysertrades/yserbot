@@ -219,7 +219,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       values: panelLogSettings(guildId),
     },
     giveaways: giveawayState,
-    settings: settings.read(guildId, guild),
+    settings: settings.read(guildId, guild, { ownerOnly: !!session && auth.isOwner(session.uid) }),
     features: features.read(guildId, guild),
     featureToggles: featureToggles.read(guildId),
     tickets: tickets.read(guildId, guild),

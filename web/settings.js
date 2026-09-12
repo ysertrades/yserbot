@@ -15,6 +15,7 @@
  */
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
+const auth = require('./auth');
 
 const WARN_ACTIONS = ['none', 'mute', 'kick', 'ban'];
 
@@ -28,7 +29,6 @@ const FIELDS = [
   { key: 'welcomeChannel', path: ['welcomeChannel'], type: 'channel', label: 'Welcome messages' },
   { key: 'leaveChannel',   path: ['leaveChannel'],   type: 'channel', label: 'Leave messages' },
   { key: 'logsChannel',    path: ['logsChannel'],    type: 'channel', label: 'Moderation log' },
-  { key: 'errorLogChannel', path: ['errorLogChannel'], type: 'channel', label: 'Bot error logs' },
   { key: 'reportChannel',  path: ['reportChannel'],  type: 'channel', label: 'Reports' },
   { key: 'supportRoles',   path: ['supportRoles'],   type: 'roles',   label: 'Support roles' },
   { key: 'reportRoles',    path: ['reportRoles'],    type: 'roles',   label: 'Report handler roles' },
@@ -59,13 +59,16 @@ function put(obj, path, value) {
 
 /* ─── reading ────────────────────────────────────────────────────────────── */
 
-function read(guildId, guild) {
+function read(guildId, guild, { ownerOnly = false } = {}) {
   const conf = readJson('config.json', {})[guildId] || {};
+  const ownerConf = readJson('owner.json', {});
   const values = {};
   const resolved = {};
+  const ownerFields = [{ key: 'errorLogChannel', path: ['errorLogChannel'], type: 'channel', label: 'Owner-only bot error logs' }];
+  const fields = ownerOnly ? [...FIELDS, ...ownerFields] : FIELDS;
 
-  for (const f of FIELDS) {
-    const raw = dig(conf, f.path);
+  for (const f of fields) {
+    const raw = f.key === 'errorLogChannel' ? ownerConf.errorLogChannel : dig(conf, f.path);
     if (f.type === 'roles') {
       let ids = Array.isArray(raw) ? raw : [];
       // Migrate legacy single-role keys into the multi arrays
@@ -89,7 +92,7 @@ function read(guildId, guild) {
   }
 
   return {
-    fields: FIELDS.map(f => ({
+    fields: fields.map(f => ({
       key: f.key, label: f.label, type: f.type,
       choices: f.choices || null, min: f.min ?? null, max: f.max ?? null,
     })),
@@ -110,8 +113,9 @@ function read(guildId, guild) {
 
 /* ─── writing ────────────────────────────────────────────────────────────── */
 
-function save(guildId, body, { guild }) {
+function save(guildId, body, { guild, session }) {
   const conf = readJson('config.json', {});
+  const ownerConf = readJson('owner.json', {});
   if (!conf[guildId]) conf[guildId] = {};
   const notes = [];
 
@@ -174,6 +178,22 @@ function save(guildId, body, { guild }) {
     if (same) continue;
     put(conf[guildId], f.path, value);
     notes.push(f.label);
+  }
+
+  if ('errorLogChannel' in body) {
+    if (!auth.isOwner(session?.uid)) return { error: 'owner_only', field: 'errorLogChannel' };
+    const incoming = body.errorLogChannel;
+    if (incoming !== null && incoming !== '' &&
+        (typeof incoming !== 'string' || !guild.channels.cache.get(incoming)?.isTextBased?.())) {
+      return { error: 'bad_channel', field: 'errorLogChannel' };
+    }
+    const value = incoming === '' ? null : incoming;
+    const current = ownerConf.errorLogChannel;
+    if (current !== value) {
+      ownerConf.errorLogChannel = value;
+      writeJson('owner.json', ownerConf);
+      notes.push('Owner-only bot error logs');
+    }
   }
 
   if (notes.length === 0) return { unchanged: true };
