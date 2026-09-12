@@ -7,9 +7,9 @@
 :root {
   /* Quant Lab product — exact design tokens */
   --bg:      #0D0F12;
-  --surface: #181B20;
-  --raised:  #1E2229;
-  --sunken:  #14171D;
+  --surface: #16181D;
+  --raised:  #1A1D24;
+  --sunken:  #12141A;
   --rule:    rgba(255, 255, 255, 0.08);
   --ink:     #F3F4F6;
   --soft:    #9CA3AF;
@@ -801,14 +801,7 @@ html[data-entered] .grid > * {
 .btn { transition: filter var(--fast) var(--ease), transform var(--fast) var(--ease), opacity var(--fast); }
 .btn:active:not(:disabled) { transform: scale(0.96); }
 .sections button { transition: color var(--fast) var(--ease); }
-.sections button::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
-  background: var(--accent); transform: scaleX(0); transform-origin: center;
-  transition: transform var(--mid) var(--ease);
-}
 .sections button { position: relative; border-bottom-color: transparent !important; }
-.sections button[aria-current="true"]::after { transform: scaleX(1); }
-
 .tpl-entry, .chip-toggle, .guilds button {
   transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease),
               color var(--fast) var(--ease), transform var(--fast) var(--ease);
@@ -839,8 +832,8 @@ html[data-entered] .embed-box[open] .body { animation: none; }
 .sheet-scrim {
   position: absolute; inset: 0;
   background: color-mix(in srgb, var(--bg) 75%, transparent);
-  backdrop-filter: blur(16px) saturate(130%);
-  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  /* no glass */
+  -webkit-/* no glass */
   animation: scrimIn var(--mid) var(--ease) both;
 }
 
@@ -1568,8 +1561,9 @@ html[data-state="panel"] body {
   overflow: hidden;
   height: 100%;
 }
+html[data-state="panel"] .bar,
 html[data-state="panel"] > .bar {
-  display: none;
+  display: none !important;
 }
 html[data-state="panel"] #main {
   max-width: none;
@@ -1655,10 +1649,15 @@ html[data-state="panel"] .view[data-view="panel"] {
 }
 
 .sidebar-nav.sections button[aria-current="true"] {
-  color: var(--ink);
+  color: var(--accent);
   background: var(--raised);
-  border-bottom-color: transparent !important;
+  border: 0 !important;
+  border-bottom: 0 !important;
   box-shadow: none;
+}
+.sidebar-nav.sections button[aria-current="true"] .nav-ico {
+  color: var(--accent);
+  opacity: 1;
 }
 
 .workspace {
@@ -1692,7 +1691,7 @@ html[data-state="panel"] .view[data-view="panel"] {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 1.5rem 1.75rem 3rem;
+  padding:  1.5rem 1.75rem 4.5rem;
   display: flex;
   flex-direction: column;
   gap: var(--gap-stack);
@@ -1758,4 +1757,37 @@ html[data-state="panel"] .view[data-view="panel"] {
   .workspace-body {
     padding: 1.15rem 1rem 2.5rem;
   }
+}
+
+/* Clean end of each tab — content stops; no endless empty card feel */
+.workspace-body .section[data-active] > :last-child {
+  margin-bottom: 0.5rem;
+}
+.workspace-body::after {
+  content: "";
+  display: block;
+  height: 1.5rem;
+  flex: none;
+}
+.panel {
+  background: var(--surface) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.tile {
+  background: var(--surface) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+.gaw {
+  background: var(--sunken) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+/* Kill any residual underline animation on nav */
+.sidebar-nav.sections button::after,
+.sections button::after {
+  content: none !important;
+  display: none !important;
 }
