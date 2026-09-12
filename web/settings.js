@@ -158,6 +158,9 @@ function save(guildId, body, { guild, session }) {
         break;
       }
       case 'choice': {
+        // Blank = leave alone (same idea as empty int fields). Stops a
+        // channel-only save from failing when Action at threshold was never set.
+        if (incoming === null || incoming === '' || incoming === undefined) continue;
         if (!f.choices.includes(incoming)) return { error: 'bad_choice', field: f.key };
         value = incoming;
         break;

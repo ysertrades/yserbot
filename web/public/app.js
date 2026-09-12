@@ -39,6 +39,7 @@ const WRITE_ERRORS = {
   bad_user:        'That is not a Discord account id.',
   no_sources:      'Keep at least one news source.',
   bad_price:       'Price must be a whole number.',
+  bad_choice:      'Pick a valid option from the list.',
   bad_number:      'That number is outside the range this setting allows.',
   bad_weight:      'A rarity weight has to be between 0 and 1000.',
   bad_rarity:      'Could not read the rarity table.',
@@ -287,7 +288,26 @@ async function post(op, body, { quiet = false } = {}) {
   }
   if (data.unchanged) { if (!quiet) toast('Nothing to change.'); return data; }
   if (!quiet) {
-    toast(op.startsWith('bot-profile') ? 'Profile saved.' : 'Saved — logged to your mod channel.', 'good');
+    const SUCCESS = {
+      giveawaystart:        'Giveaway launched — members can enter now.',
+      giveawayend:          'Giveaway ended — drawing winners.',
+      giveawayreroll:       'New winner drawn.',
+      giveawaydelete:       'Giveaway removed.',
+      giveawaysendprize:    'Prize message sent.',
+      giveawayclearhistory: 'Giveaway history cleared.',
+      featuretoggles:       'Features updated for this server.',
+      settings:             'Server settings saved.',
+      econpost:             'Calendar post sent to the channel.',
+      econcal:              'Calendar settings saved.',
+      warnsettings:         'Warning settings saved.',
+      economyglobal:        'Economy dials updated.',
+    };
+    let msg = SUCCESS[op];
+    if (!msg && op.startsWith('bot-profile')) msg = 'Profile saved.';
+    if (!msg && data.changed && Array.isArray(data.changed) && data.changed.length)
+      msg = `Saved: ${data.changed.join(', ')}.`;
+    if (!msg) msg = 'Saved.';
+    toast(msg, 'good');
   }
   if (data.overview) {
     state.overview = data.overview;
@@ -955,10 +975,12 @@ function actions(onSave, { label = 'Save changes', busyLabel = null } = {}) {
   save.type = 'button';
   save.addEventListener('click', async () => {
     save.disabled = true;
+    save.className = 'btn primary small';
     if (busyLabel) save.textContent = busyLabel;
     try { await onSave(); }
     finally {
       save.disabled = false;
+      save.className = 'btn primary small';
       save.textContent = label;
     }
   });
@@ -2070,7 +2092,7 @@ function renderGiveaways() {
   }
 
   if (!cards.length) {
-    activeWrap.replaceChildren(el('p', 'muted', 'No live drops. Launch one below.'));
+    activeWrap.replaceChildren(el('p', 'muted', 'No live giveaways. Launch one below.'));
   } else {
     const pageSize = 3;
     const total = cards.length;
@@ -2141,7 +2163,7 @@ function renderGiveaways() {
   if (!endedWrap) return;
 
   if (!state.gawHistoryOpen) {
-    const btn = el('button', 'btn', 'Show recent drops');
+    const btn = el('button', 'btn', 'Show recent giveaways');
     btn.type = 'button';
     btn.addEventListener('click', () => { state.gawHistoryOpen = true; state.gawHistoryPage = 0; renderGiveaways(); });
     endedWrap.replaceChildren(
@@ -2167,8 +2189,8 @@ function renderGiveaways() {
     clearAll.type = 'button';
     clearAll.addEventListener('click', async () => {
       if (!await askConfirm({
-        title: 'Delete all drop history?',
-        message: `Removes ${history.length} finished drop${history.length === 1 ? '' : 's'} from the panel. Channel messages stay. Reroll will no longer be available for them.`,
+        title: 'Delete all giveaway history?',
+        message: `Removes ${history.length} finished giveaway${history.length === 1 ? '' : 's'} from the panel. Channel messages stay. Reroll will no longer be available for them.`,
         confirmLabel: 'Delete all', danger: true,
       })) return;
       clearAll.disabled = true;
@@ -2280,9 +2302,9 @@ function buildLiveDropCard(x, { phase }) {
     end.type = 'button';
     end.addEventListener('click', async () => {
       if (!await askConfirm({
-        title: 'End this drop?',
+        title: 'End this giveaway?',
         message: 'Entries lock. Participants can Open Box to see if they won.',
-        confirmLabel: 'End drop',
+        confirmLabel: 'End giveaway',
       })) return;
       end.disabled = true;
       const out = await post('giveawayend', { messageId: x.messageId, kind: x.kind || 'prize' });
@@ -2342,7 +2364,7 @@ function openEndedGiveaway(x) {
     podium.append(list);
     body.push(podium);
   } else {
-    body.push(el('p', 'hint', 'No winner on record for this drop yet.'));
+    body.push(el('p', 'hint', 'No winner on record for this giveaway yet.'));
   }
 
   body.push(el('p', 'hint', 'Rerolling draws new winners. For a coins giveaway that pays them again, on top of what the first draw already paid out.'));
@@ -3898,20 +3920,20 @@ function renderGiveawayForm() {
     })(),
     textField('Min account age (days)', '0', v => { draft.minAccountAgeDays = Number(v) || 0; }),
     actions(async () => {
-      if (!String(draft.prize || '').trim()) { toast('Name the prize for this drop.', 'bad'); return; }
+      if (!String(draft.prize || '').trim()) { toast('Name the prize for this giveaway.', 'bad'); return; }
       if (!draft.channelId) { toast('Pick a channel first.', 'bad'); return; }
-      if (!draft.hostId) { toast('Pick a host (admin) for this drop.', 'bad'); return; }
+      if (!draft.hostId) { toast('Pick a host (admin) for this giveaway.', 'bad'); return; }
       if (!parseDurationMs(draft.duration)) {
         toast('Duration must look like 30m, 1h, 6h or 2d.', 'bad');
         return;
       }
       if (!await askConfirm({
-        title: 'Launch this drop?',
-        message: `**${draft.prize}** · ${draft.winners} winner${draft.winners === 1 ? '' : 's'} · ${humanDuration(draft.duration)}. Posts to the channel with Enter drop.`,
-        confirmLabel: 'Launch drop',
+        title: 'Launch this giveaway?',
+        message: `**${draft.prize}** · ${draft.winners} winner${draft.winners === 1 ? '' : 's'} · ${humanDuration(draft.duration)}. Posts to the channel with **Enter**.`,
+        confirmLabel: 'Launch giveaway',
       })) return;
       await post('giveawaystart', draft);
-    }, { label: 'Launch drop', busyLabel: 'Launching…' }),
+    }, { label: 'Launch giveaway', busyLabel: 'Launching…' }),
   );
 
   state.gawBump = () => {};
@@ -4295,6 +4317,9 @@ function renderSettings() {
           return null;
         }
         payload[f.key] = n;
+      } else if (f.type === 'choice') {
+        // UI may show choices[0] while draft is still null — never send null.
+        payload[f.key] = (v == null || v === '') ? (f.choices && f.choices[0]) : v;
       } else {
         payload[f.key] = v;
       }
@@ -4354,11 +4379,21 @@ function syncFeatureNav() {
   };
   const econOff = !featureOn('economy');
   const casOff = !featureOn('casino');
+  const calOff = !featureOn('econ_calendar');
+  const gawOff = !featureOn('giveaways');
   hide(document.getElementById('nav-economy') || document.querySelector('[data-goto="economy"]'), econOff);
   hide(document.getElementById('nav-casino') || document.querySelector('[data-goto="casino"]'), casOff);
+  hide(document.getElementById('nav-feeds') || document.querySelector('[data-goto="feeds"]'), calOff);
+  hide(document.getElementById('nav-giveaways') || document.querySelector('[data-goto="giveaways"]'), gawOff);
+
+  // Hide the calendar panels themselves if someone deep-links the section
+  document.querySelectorAll('.section[data-section="feeds"] .panel').forEach(p => {
+    hide(p, calOff);
+  });
 
   const sec = root?.dataset?.section;
-  if ((sec === 'economy' && econOff) || (sec === 'casino' && casOff)) {
+  if ((sec === 'economy' && econOff) || (sec === 'casino' && casOff)
+      || (sec === 'feeds' && calOff) || (sec === 'giveaways' && gawOff)) {
     if (typeof showSection === 'function') showSection('overview');
   }
 }
