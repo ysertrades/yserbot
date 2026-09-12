@@ -170,6 +170,8 @@ const TYPES = {
   '.js':   'text/javascript; charset=utf-8',
   '.svg':  'image/svg+xml',
   '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
   // Served with its registered type or the install prompt never appears.
   '.webmanifest': 'application/manifest+json',
   // Instrument Serif, self-hosted for the legal pages. Served from our own

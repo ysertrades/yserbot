@@ -67,7 +67,8 @@ body {
 }
 
 .brand { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
-.mark { width: 26px; height: 26px; flex: none; display: block; }
+.mark { width: 26px; height: 26px; flex: none; display: block; border-radius: 7px; object-fit: cover; }
+img.mark { background: rgba(147,151,238,0.14); }
 .mark rect { fill: rgba(147,151,238,0.14); stroke: rgba(147,151,238,0.5); stroke-width: 1; }
 .mark .y path { stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; fill: none; }
 .wordmark { font-family: var(--mono); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; text-transform: lowercase; }
