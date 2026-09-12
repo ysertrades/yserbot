@@ -4698,51 +4698,93 @@ function openAvatarStudio(host, img, fileName, onReady) {
 
 function openCase(c) {
   const kind = c.type === 'mute' ? 'timeout' : c.type;
-  const body = el('div');
-  body.append(el('p', null, `${c.icon} Case #${c.id} · ${String(c.type).toUpperCase()}`));
-  body.append(row('Member', c.userName || c.userTag || c.userId));
-  body.append(row('User ID', c.userId || '—'));
-  body.append(row('Moderator', c.moderator || '—'));
-  if (c.at) body.append(row('When', relativeTime(c.at)));
-  if (c.durationMs) body.append(row('Duration', `${Math.round(c.durationMs / 60000)} min`));
-  if (c.clearedAt) body.append(row('Status', 'Warning forgiven'));
-  else if (c.inServer === false) body.append(row('Status', 'No longer in the server'));
-  if (c.reason) body.append(el('p', 'hint', c.reason));
+  const when = c.at ? relativeTime(c.at) : '—';
+  const body = [
+    sheetRow('Case', `#${c.id}`),
+    sheetRow('Action', `${c.icon || ''} ${String(c.type).toUpperCase()}`.trim()),
+    sheetRow('Member', `${c.userName || c.userTag || 'Unknown'}`),
+    sheetRow('User ID', el('span', 'v mono wrap', c.userId || '—')),
+    sheetRow('Moderator', c.moderator || '—'),
+    sheetRow('When', when),
+  ];
+  if (c.durationMs) body.push(sheetRow('Duration', `${Math.round(c.durationMs / 60000)} min`));
+  if (c.clearedAt) body.push(sheetRow('Status', 'Warning forgiven'));
+  else if (c.inServer === false) body.push(sheetRow('Status', 'Left the server'));
+  if (c.reason) body.push(sheetRow('Reason', c.reason));
 
-  const acts = [];
+  const btns = [];
+
+  // Follow-up actions — same double-tap arm pattern as report sheet
+  const arm = (label, danger, run) => {
+    const b = el('button', `btn ${danger ? 'danger' : ''}`.trim(), label);
+    b.type = 'button';
+    b.addEventListener('click', async () => {
+      if (b.dataset.armed !== '1') {
+        b.dataset.armed = '1';
+        b.textContent = `Tap again to confirm`;
+        return;
+      }
+      b.disabled = true;
+      try { await run(); }
+      finally {
+        if (!$('#sheet').hidden) {
+          b.disabled = false;
+          b.dataset.armed = '';
+          b.textContent = label;
+        }
+      }
+    });
+    return b;
+  };
+
   if (c.type === 'warn' && !c.clearedAt && c.userId) {
-    acts.push({
-      label: 'Clear warnings',
-      danger: true,
-      run: async () => {
-        if (!await askConfirm({
-          title: `Clear warnings for ${c.userName || c.userId}?`,
-          message: 'Active warnings for this member are forgiven. The case log keeps the history.',
-          confirmLabel: 'Clear them', danger: true,
-        })) return;
-        await post('warnclear', { userId: c.userId });
-        closeSheet();
-      },
-    });
+    btns.push(arm('Clear warnings', true, async () => {
+      const out = await post('warnclear', { userId: c.userId });
+      if (out) closeSheet();
+    }));
   }
+
   if (c.userId) {
-    acts.push({
-      label: 'Use in Quick action',
-      run: () => {
-        state.modQuick = state.modQuick || { userId: '', action: 'warn', reason: '', timeoutMinutes: 60 };
-        state.modQuick.userId = c.userId;
-        closeSheet();
-        renderModeration();
-        toast('User ID filled in Quick action.', 'good');
-      },
+    const fill = el('button', 'btn', 'Use in Quick action');
+    fill.type = 'button';
+    fill.addEventListener('click', () => {
+      state.modQuick = state.modQuick || { userId: '', action: 'warn', reason: '', timeoutMinutes: 60 };
+      state.modQuick.userId = String(c.userId);
+      closeSheet();
+      renderModeration();
+      toast('User ID filled in Quick action.', 'good');
     });
+    btns.push(fill);
+
+    // Escalate from an existing case
+    if (kind === 'warn' || kind === 'timeout') {
+      btns.push(arm('Timeout 1h', false, async () => {
+        const out = await post('modaction', {
+          userId: c.userId, action: 'timeout', reason: c.reason || `Follow-up on case #${c.id}`,
+          timeoutMinutes: 60,
+        });
+        if (out) closeSheet();
+      }));
+    }
+    if (kind !== 'ban') {
+      btns.push(arm('Kick', true, async () => {
+        const out = await post('modaction', {
+          userId: c.userId, action: 'kick', reason: c.reason || `Follow-up on case #${c.id}`,
+        });
+        if (out) closeSheet();
+      }));
+      btns.push(arm('Ban', true, async () => {
+        const out = await post('modaction', {
+          userId: c.userId, action: 'ban', reason: c.reason || `Follow-up on case #${c.id}`,
+        });
+        if (out) closeSheet();
+      }));
+    }
   }
-  openSheet({
-    title: `Case #${c.id}`,
-    body,
-    actions: acts,
-  });
+
+  openSheet(`Case #${c.id} · ${String(c.type).toUpperCase()}`, body, btns);
 }
+
 
 function renderModeration() {
 
@@ -4854,19 +4896,33 @@ function renderModeration() {
     logEl.replaceChildren(...(filtered.length ? filtered.map(c => {
       const d = el('button', 'gaw tappable');
       d.type = 'button';
-      const top = el('div', 'gaw-top');
       const kind = typeAlias(c.type);
-      const sev = kind === 'ban' ? 'sev-warn' : kind === 'kick' ? 'sev-warn' : kind === 'warn' ? 'sev-clear' : '';
+      const sev = kind === 'ban' || kind === 'kick' ? 'sev-warn'
+        : kind === 'timeout' ? 'sev-clear'
+        : kind === 'warn' ? 'sev-clear' : '';
+
+      const top = el('div', 'gaw-top');
       top.append(
-        el('span', `kind ${sev}`.trim(), `${c.icon} ${String(c.type).toUpperCase()}`),
-        el('span', 'nm', c.userName || c.userTag || c.userId),
+        el('span', `kind ${sev}`.trim(), String(c.type).toUpperCase()),
+        el('span', 'nm', c.userName || c.userTag || c.userId || 'Unknown'),
+        el('span', 'idtag', `#${c.id}`),
       );
       d.append(top);
-      const when = c.at ? relativeTime(c.at) : '';
-      const cleared = c.clearedAt ? ' · forgiven' : '';
-      d.append(el('p', 'hint',
-        `#${c.id} · by ${c.moderator}${when ? ` · ${when}` : ''}${cleared}`));
-      if (c.reason) d.append(el('p', 'hint', c.reason.length > 120 ? c.reason.slice(0, 117) + '…' : c.reason));
+
+      const when = c.at ? relativeTime(c.at) : null;
+      const bits = [];
+      bits.push(`by ${c.moderator || 'unknown'}`);
+      if (when) bits.push(when);
+      if (c.clearedAt) bits.push('forgiven');
+      if (c.inServer === false) bits.push('left server');
+      if (c.durationMs) bits.push(`${Math.round(c.durationMs / 60000)}m timeout`);
+      d.append(el('p', 'hint', bits.join(' · ')));
+
+      if (c.reason) {
+        const reason = c.reason.length > 140 ? c.reason.slice(0, 137) + '…' : c.reason;
+        d.append(el('p', 'hint', reason));
+      }
+
       d.append(el('span', 'chev', '›'));
       d.addEventListener('click', () => openCase(c));
       return d;
