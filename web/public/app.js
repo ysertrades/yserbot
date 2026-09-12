@@ -750,13 +750,16 @@ function renderHealth(h) {
 /* ── forms ─────────────────────────────────────────────────────────────── */
 
 function toggle(label, checked, onChange) {
-  const l = el('label', 'toggle');
+  // Div, not <label> — only the switch control toggles, not the text.
+  const row = el('div', 'toggle');
+  row.append(el('span', 'toggle-text', label));
   const input = el('input');
   input.type = 'checkbox';
   input.checked = checked;
   input.addEventListener('change', () => onChange(input.checked));
-  l.append(el('span', null, label), input);
-  return l;
+  input.addEventListener('click', (e) => e.stopPropagation());
+  row.append(input);
+  return row;
 }
 
 function textField(label, value, onInput, { placeholder = '' } = {}) {
@@ -1954,7 +1957,22 @@ function countdownEl(endsAt, startedAt = null) {
 
   const paint = () => {
     const left = endsAt - Date.now();
-    if (left <= 0) { node.textContent = 'ending now'; node.className = 'countdown over'; fill.style.width = '100%'; return false; }
+    if (left <= 0) {
+      node.textContent = 'ending now';
+      node.className = 'countdown over';
+      fill.style.width = '100%';
+      // Move card out of Live once the clock hits zero (no tab switch needed)
+      if (!node.dataset.endedBump) {
+        node.dataset.endedBump = '1';
+        setTimeout(() => {
+          try {
+            if (typeof refreshOverview === 'function') refreshOverview();
+            else if (typeof renderGiveaways === 'function') renderGiveaways();
+          } catch (_) {}
+        }, 600);
+      }
+      return false;
+    }
     const s = Math.floor(left / 1000);
     const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60, sec = s % 60;
     node.textContent = d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${m}m ${String(sec).padStart(2, '0')}s` : `${m}m ${String(sec).padStart(2, '0')}s`;
@@ -3368,25 +3386,40 @@ function renderAppearanceIndex() {
   const groups = state.overview?.appearance?.groups || [];
   if (!groups.length) { wrap.replaceChildren(el('p', 'muted', 'Nothing to style yet.')); return; }
 
-  const nodes = [];
-  for (const g of groups) {
-    nodes.push(el('p', 'index-group', g.name));
-    for (const e of g.entries) {
-      const b = el('button', 'tpl-entry');
-      b.type = 'button';
-      b.append(el('span', 'nm', e.label));
-      const meta = el('span', 'mt');
-      // A dot for "this server has changed it" and a slash for "switched off",
-      // so the list says what is different without opening anything.
-      meta.textContent = `${e.values.enabled === false ? '⃠' : ''}${e.changed ? '●' : ''}`;
-      meta.title = [e.changed ? 'changed from the shipped wording' : null,
-        e.values.enabled === false ? 'not being sent' : null].filter(Boolean).join(' · ');
-      b.append(meta);
-      if (e.key === state.styleKey) b.setAttribute('aria-current', 'true');
-      b.addEventListener('click', () => { state.styleKey = e.key; renderAppearance(); });
-      nodes.push(b);
-    }
+  if (!state.appearanceCat) state.appearanceCat = groups[0]?.name || '';
+  if (!groups.some(g => g.name === state.appearanceCat)) {
+    state.appearanceCat = groups[0]?.name || '';
   }
+
+  const nodes = [];
+  const tabs = el('div', 'appear-cats');
+  for (const g of groups) {
+    const t = el('button', 'appear-cat' + (g.name === state.appearanceCat ? ' on' : ''), g.name);
+    t.type = 'button';
+    t.addEventListener('click', () => {
+      state.appearanceCat = g.name;
+      renderAppearanceIndex();
+    });
+    tabs.append(t);
+  }
+  nodes.push(tabs);
+
+  const active = groups.find(g => g.name === state.appearanceCat) || groups[0];
+  const list = el('div', 'appear-list');
+  for (const e of (active?.entries || [])) {
+    const b = el('button', 'tpl-entry');
+    b.type = 'button';
+    b.append(el('span', 'nm', e.label));
+    const meta = el('span', 'mt');
+    meta.textContent = `${e.values.enabled === false ? '⃠' : ''}${e.changed ? '●' : ''}`;
+    meta.title = [e.changed ? 'changed from the shipped wording' : null,
+      e.values.enabled === false ? 'not being sent' : null].filter(Boolean).join(' · ');
+    b.append(meta);
+    if (e.key === state.styleKey) b.setAttribute('aria-current', 'true');
+    b.addEventListener('click', () => { state.styleKey = e.key; renderAppearance(); });
+    list.append(b);
+  }
+  nodes.push(list);
   wrap.replaceChildren(...nodes);
 }
 
@@ -6973,6 +7006,21 @@ window.addEventListener('pageshow', (e) => {
  * alone, so adding a section is a matter of adding markup and a nav button —
  * there is no second list anywhere that has to be kept in step.
  */
+
+
+/* Catch selects injected after first enhance (giveaway form, feeds, etc.) */
+(function watchSelects() {
+  if (window.cselectObserver) return;
+  window.cselectObserver = new MutationObserver(() => {
+    try { enhanceSelects(document); } catch (_) {}
+  });
+  const start = () => {
+    if (!document.body) return;
+    window.cselectObserver.observe(document.body, { childList: true, subtree: true });
+  };
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start);
+})();
 
 function enhanceSelects(scope) {
   const rootEl = scope || document;
