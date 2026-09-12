@@ -95,6 +95,7 @@ function read(guildId, guild, { ownerOnly = false } = {}) {
     fields: fields.map(f => ({
       key: f.key, label: f.label, type: f.type,
       choices: f.choices || null, min: f.min ?? null, max: f.max ?? null,
+      scale: f.scale ?? null,
     })),
     values,
     resolved,
@@ -146,6 +147,11 @@ function save(guildId, body, { guild, session }) {
         break;
       }
       case 'int': {
+        // Empty / null means "leave this setting alone" so a channel-only
+        // save is not blocked by blank warning/mute fields.
+        if (incoming === null || incoming === '' || (typeof incoming === 'number' && Number.isNaN(incoming))) {
+          continue;
+        }
         const n = Number(incoming);
         if (!Number.isInteger(n) || n < (f.min ?? 0) || n > (f.max ?? 1e9)) return { error: 'bad_number', field: f.key };
         value = f.scale ? n * f.scale : n;

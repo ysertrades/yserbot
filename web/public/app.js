@@ -2515,6 +2515,22 @@ function openEndedGiveaway(x) {
         }
         toast(multi ? ('Prize DMs sent (' + sent + '/' + total + ').') : (sent ? 'Prize DM sent.' : 'Prize DM sent.'), 'good');
         sendPrize.textContent = 'Sent';
+        // Leave Live immediately → Recent drops (soft animation)
+        try {
+          const g = state.overview && state.overview.giveaways;
+          const id = String(x.shortId || '').toLowerCase();
+          if (g && id) {
+            const hit = (g.ended || []).find((e) => String(e.shortId || '').toLowerCase() === id);
+            if (hit) hit.prizeDmSent = true;
+          }
+          document.querySelectorAll('[data-gaw-id="' + CSS.escape(String(x.shortId || '').toLowerCase()) + '"]').forEach((n) => {
+            if (typeof leaveNode === 'function') leaveNode(n);
+            else { n.classList.add('is-leaving'); setTimeout(() => n.remove(), 220); }
+          });
+          closeSheet();
+          if (typeof renderGiveaways === 'function') renderGiveaways();
+          if (typeof softRefreshOverview === 'function') softRefreshOverview();
+        } catch (_) {}
       } catch (e) {
         sendPrize.disabled = false;
         sendPrize.textContent = sendLabel;
@@ -4249,13 +4265,41 @@ function renderSettings() {
       nodes.push(textField(f.label, value == null ? '' : String(value),
         v => { draft[f.key] = v; markDirty(); }, { placeholder: 'e.g. Quantlab' }));
     } else {
-      nodes.push(textField(`${f.label}${f.min != null ? ` (${f.min}–${f.max})` : ''}`, value == null ? '' : String(value),
-        v => { draft[f.key] = Number(v); markDirty(); }));
+      const scale = f.scale || 0;
+      const shown = value == null || value === ''
+        ? ''
+        : String(scale ? Math.round(Number(value) / scale) : value);
+      nodes.push(textField(
+        `${f.label}${f.min != null ? ` (${f.min}–${f.max})` : ''}`,
+        shown,
+        v => {
+          const t = String(v).trim();
+          draft[f.key] = t === '' ? null : Number(t);
+          markDirty();
+        },
+      ));
     }
   }
 
   nodes.push(actions(async () => {
-    const out = await post('settings', draft);
+    // Build a clean payload: omit blank ints so channel/role saves are not
+    // rejected by empty "Warnings before action" / "Mute length" boxes.
+    const payload = {};
+    for (const f of s.fields) {
+      const v = draft[f.key];
+      if (f.type === 'int') {
+        if (v == null || v === '' || Number.isNaN(Number(v))) continue;
+        const n = Number(v);
+        if (!Number.isInteger(n)) {
+          toast('That number is outside the range this setting allows.', 'bad');
+          return null;
+        }
+        payload[f.key] = n;
+      } else {
+        payload[f.key] = v;
+      }
+    }
+    const out = await post('settings', payload);
     if (out) form.dataset.dirty = '0';
     return out;
   }));
