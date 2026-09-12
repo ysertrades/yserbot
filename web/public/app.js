@@ -2201,7 +2201,7 @@ function buildLiveDropCard(x, { phase }) {
     d.append(timeBox);
     d.append(c.bar);
   } else if (phase === 'ended') {
-    d.append(el('p', 'hint', 'Waiting for prize message → Send to winner'));
+    d.append(el('p', 'hint', `Waiting for prize message → Send to winner${(x.winnersList?.length > 1 || x.winners > 1) ? 's' : ''}`));
     if (x.winnersList?.length) {
       const w = el('div', 'drop-winners');
       for (const win of x.winnersList) {
@@ -2370,49 +2370,107 @@ function openEndedGiveaway(x) {
       );
     };
 
-    const sendPrize = el('button', 'btn primary', 'Send to winner');
+
+    const winners = Array.isArray(x.winnersList) ? x.winnersList : [];
+    const multi = winners.length > 1;
+    const prizeByWinner = {};
+    winners.forEach((w, i) => { prizeByWinner[String(w.id || i)] = { code: '', custom: '' }; });
+    let activeWinnerKey = winners[0] ? String(winners[0].id || 0) : '0';
+
+    const winnerTabs = el('div', 'prize-winner-tabs');
+    const syncWinnerTabs = () => {
+      winnerTabs.replaceChildren();
+      if (!multi) return;
+      winners.forEach((w, i) => {
+        const key = String(w.id || i);
+        const name = (w.name || w.id || ('Winner ' + (i + 1)));
+        const label = name.startsWith('@') ? name : '@' + name;
+        const b = el('button', 'prize-winner-tab' + (key === activeWinnerKey ? ' on' : ''), label);
+        b.type = 'button';
+        b.addEventListener('click', () => {
+          // stash current fields
+          const prev = prizeByWinner[activeWinnerKey] || { code: '', custom: '' };
+          prev.code = codeVal;
+          prev.custom = customVal;
+          prizeByWinner[activeWinnerKey] = prev;
+          activeWinnerKey = key;
+          const next = prizeByWinner[key] || { code: '', custom: '' };
+          codeVal = next.code || '';
+          customVal = next.custom || '';
+          codeInput.value = codeVal;
+          customInput.value = customVal;
+          syncWinnerTabs();
+        });
+        winnerTabs.append(b);
+      });
+    };
+    if (multi) {
+      body.push(el('p', 'hint', 'Set a prize message per winner, then send.'));
+      body.push(winnerTabs);
+      syncWinnerTabs();
+    }
+
+    const sendLabel = multi ? 'Send to winners' : 'Send to winner';
+    const sendPrize = el('button', 'btn primary small', sendLabel);
+
     sendPrize.type = 'button';
     sendPrize.addEventListener('click', async () => {
-      const text = buildMessage();
-      if (!text) {
-        toast(mode === 'code' ? 'Enter the checkout code first.' : 'Write a prize message first.', 'bad');
-        return;
+      if (multi) {
+        const prev = prizeByWinner[activeWinnerKey] || { code: '', custom: '' };
+        prev.code = codeVal;
+        prev.custom = customVal;
+        prizeByWinner[activeWinnerKey] = prev;
       }
       sendPrize.disabled = true;
       sendPrize.textContent = 'Sending…';
       try {
-        const out = await post('giveawaysendprize', { shortId: x.shortId, text });
-        if (out && out.ok !== false) {
-          toast(out.sent != null ? `Prize DM sent (${out.sent}/${out.total}).` : 'Prize DM sent.', 'good');
-          sendPrize.textContent = 'Sent';
-        } else {
-          sendPrize.disabled = false;
-          sendPrize.textContent = 'Send to winner';
+        let sent = 0, total = 0;
+        const list = multi ? winners : (winners.length ? winners : [{ id: null }]);
+        for (let i = 0; i < list.length; i++) {
+          const w = list[i];
+          const key = String(w.id || i);
+          if (multi) {
+            const bag = prizeByWinner[key] || {};
+            codeVal = bag.code || '';
+            customVal = bag.custom || '';
+          }
+          const text = buildMessage();
+          if (!text) {
+            toast(multi ? ('Missing prize text for ' + (w.name || w.id || 'a winner')) : (mode === 'code' ? 'Enter the checkout code first.' : 'Write a prize message first.'), 'bad');
+            sendPrize.disabled = false;
+            sendPrize.textContent = sendLabel;
+            return;
+          }
+          const payload = { shortId: x.shortId, text };
+          if (w.id) payload.winnerId = String(w.id);
+          const out = await post('giveawaysendprize', payload);
+          total += 1;
+          if (out && out.ok !== false) sent += (out.sent != null ? out.sent : 1);
         }
+        toast(multi ? ('Prize DMs sent (' + sent + '/' + total + ').') : (sent ? 'Prize DM sent.' : 'Prize DM sent.'), 'good');
+        sendPrize.textContent = 'Sent';
       } catch (e) {
         sendPrize.disabled = false;
-        sendPrize.textContent = 'Send to winner';
+        sendPrize.textContent = sendLabel;
       }
     });
     body.push(sendPrize);
   }
 
-
-const reroll = el('button', 'btn primary', 'Reroll winners');
+  const multiW = (Array.isArray(x.winnersList) ? x.winnersList.length : Number(x.winners || 1)) > 1;
+  const reroll = el('button', 'btn primary small', multiW ? 'Reroll winners' : 'Reroll winner');
   reroll.type = 'button';
   reroll.addEventListener('click', async () => {
     reroll.disabled = true;
     reroll.textContent = 'Drawing…';
     const out = await post('giveawayreroll', { shortId: x.shortId, kind: x.kind });
     if (out) closeSheet();
-    else { reroll.disabled = false; reroll.textContent = 'Reroll winners'; }
+    else { reroll.disabled = false; reroll.textContent = multiW ? 'Reroll winners' : 'Reroll winner'; }
   });
 
-  const del = el('button', 'btn danger', 'Delete from panel');
+  const del = el('button', 'btn small danger', 'Delete from panel');
   del.type = 'button';
   del.addEventListener('click', async () => {
-    // Two taps, because deleting the record is what makes a reroll impossible
-    // from then on — and the announcement in the channel stays either way.
     if (del.dataset.armed !== '1') {
       del.dataset.armed = '1';
       del.textContent = 'Tap again to delete';
@@ -2425,6 +2483,7 @@ const reroll = el('button', 'btn primary', 'Reroll winners');
   });
 
   openSheet(x.title || 'Giveaway', body, [reroll, del]);
+
 }
 
 /* ── previewing an embed ───────────────────────────────────────────────────
@@ -3391,10 +3450,11 @@ function renderAppearanceIndex() {
     state.appearanceCat = groups[0]?.name || '';
   }
 
+  const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   const nodes = [];
-  const tabs = el('div', 'appear-cats');
+  const tabs = el('div', 'appear-seg');
   for (const g of groups) {
-    const t = el('button', 'appear-cat' + (g.name === state.appearanceCat ? ' on' : ''), g.name);
+    const t = el('button', 'appear-seg-btn' + (g.name === state.appearanceCat ? ' on' : ''), titleCase(g.name));
     t.type = 'button';
     t.addEventListener('click', () => {
       state.appearanceCat = g.name;
@@ -7060,26 +7120,44 @@ function enhanceSelects(scope) {
       menu.hidden = true;
       menu.replaceChildren();
     };
-    const place = () => {
+        const place = () => {
       const r = btn.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const width = Math.max(r.width, 180);
+      const pad = 8;
+      const width = Math.min(Math.max(r.width, 180), vw - pad * 2);
       let left = r.left;
-      if (left + width > vw - 8) left = Math.max(8, vw - width - 8);
+      if (left + width > vw - pad) left = vw - width - pad;
+      if (left < pad) left = pad;
+      menu.style.position = 'fixed';
       menu.style.width = width + 'px';
       menu.style.left = left + 'px';
-      const below = vh - r.bottom;
-      const maxH = Math.min(280, Math.floor(vh * 0.42));
-      menu.style.maxHeight = maxH + 'px';
-      if (below < 160 && r.top > below) {
-        menu.style.top = 'auto';
-        menu.style.bottom = (vh - r.top + 6) + 'px';
-      } else {
-        menu.style.bottom = 'auto';
+      menu.style.right = 'auto';
+
+      // Measure after temporary show for height-aware flip
+      const prevVis = menu.hidden;
+      menu.hidden = false;
+      const need = Math.min(menu.scrollHeight || 200, Math.floor(vh * 0.5));
+      const spaceBelow = vh - r.bottom - pad;
+      const spaceAbove = r.top - pad;
+      let openUp = false;
+      let maxH = need;
+      if (spaceBelow >= Math.min(need, 160) || spaceBelow >= spaceAbove) {
+        openUp = false;
+        maxH = Math.max(120, Math.min(need, spaceBelow));
         menu.style.top = (r.bottom + 6) + 'px';
+        menu.style.bottom = 'auto';
+      } else {
+        openUp = true;
+        maxH = Math.max(120, Math.min(need, spaceAbove));
+        menu.style.bottom = (vh - r.top + 6) + 'px';
+        menu.style.top = 'auto';
       }
+      menu.style.maxHeight = maxH + 'px';
+      if (prevVis) menu.hidden = true;
     };
+    const onScrollClose = () => { if (wrap.dataset.open === '1') close(); };
+    window.addEventListener('scroll', onScrollClose, true);
     const open = () => {
       document.querySelectorAll('.cselect-menu').forEach((m) => {
         m.hidden = true;

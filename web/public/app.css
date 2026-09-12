@@ -2198,3 +2198,74 @@ select.cselect-native {
   width: 1px !important;
   height: 1px !important;
 }
+
+
+/* Appearance segmented control */
+.appear-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+  padding: 0.25rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+}
+.appear-seg-btn {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #9CA3AF;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.appear-seg-btn:hover { color: #F3F4F6; background: rgba(255,255,255,0.04); }
+.appear-seg-btn.on {
+  color: #F3F4F6;
+  background: #1A1D24;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+/* Prize sheet winner tabs + compact foot */
+.prize-winner-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.55rem;
+}
+.prize-winner-tab {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #A1A1AA;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prize-winner-tab.on {
+  color: #E9E5FF;
+  border-color: rgba(139,92,246,0.4);
+  background: rgba(139,92,246,0.14);
+}
+
+.sheet .actions .btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.82rem;
+}
+.sheet .btn.primary.small,
+.sheet .btn.small {
+  padding: 0.38rem 0.7rem;
+  font-size: 0.8rem;
+  border-radius: 9px;
+}

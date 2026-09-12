@@ -689,7 +689,7 @@ async function revealGiveaway(message, interaction) {
   };
 }
 
-async function sendPrizeDm(guild, shortId, text) {
+async function async sendPrizeDm(guild, shortId, text, onlyWinnerId = null) {
   const allEnded = readJson('giveaways_ended.json', {});
   const data = allEnded[guild.id]?.[String(shortId).toLowerCase()];
   if (!data) return { error: 'unknown_giveaway' };
@@ -697,7 +697,11 @@ async function sendPrizeDm(guild, shortId, text) {
   if (!data.currentWinners?.length) return { error: 'no_winners' };
   const body = String(text || '').trim();
   if (!body) return { error: 'empty_prize' };
-  const winners = data.currentWinners || [];
+  let winners = data.currentWinners || [];
+  if (onlyWinnerId) {
+    winners = winners.filter((id) => String(id) === String(onlyWinnerId));
+    if (!winners.length) return { error: 'unknown_winner' };
+  }
   if (!winners.length) return { error: 'no_winners' };
 
   let sent = 0;

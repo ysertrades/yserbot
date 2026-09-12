@@ -311,7 +311,8 @@ async function sendPrize(guildId, body, { guild }) {
   const text = String(body?.text || body?.message || '').trim();
   if (!shortId) return { error: 'unknown_giveaway' };
   if (!text) return { error: 'empty_prize' };
-  return giveawayCmd().sendPrizeDm(guild, shortId, text);
+  const winnerId = body?.winnerId ? String(body.winnerId) : null;
+  return giveawayCmd().sendPrizeDm(guild, shortId, text, winnerId);
 }
 
 module.exports = {
