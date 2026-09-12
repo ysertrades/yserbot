@@ -486,6 +486,14 @@ Object.assign(OPS, {
     }
     return r;
   },
+  async giveawayclearhistory(guildId, body, ctx) {
+    const r = giveaways.clearHistory(guildId);
+    if (r.ok) {
+      await announce(ctx.client, guildId, ctx.session,
+        `🗑️ Cleared **${r.removed}** finished drop${r.removed === 1 ? '' : 's'} from the panel history`, 'giveaways');
+    }
+    return r;
+  },
   /* -- Whop courses ------------------------------------------------------- */
   async whop(guildId, body, ctx) {
     const r = await whopPanel.saveSettings(guildId, body, ctx);

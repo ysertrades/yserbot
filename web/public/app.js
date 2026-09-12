@@ -2096,19 +2096,45 @@ function renderGiveaways() {
   hide.addEventListener('click', () => { state.gawHistoryOpen = false; renderGiveaways(); });
   head.append(hide);
 
+  if (history.length) {
+    const clearAll = el('button', 'btn small danger', 'Delete all');
+    clearAll.type = 'button';
+    clearAll.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: 'Delete all drop history?',
+        message: `Removes ${history.length} finished drop${history.length === 1 ? '' : 's'} from the panel. Channel messages stay. Reroll will no longer be available for them.`,
+        confirmLabel: 'Delete all', danger: true,
+      })) return;
+      clearAll.disabled = true;
+      const out = await post('giveawayclearhistory', {});
+      if (out) {
+        state.gawHistoryOpen = false;
+        state.gawHistoryPage = 0;
+      } else {
+        clearAll.disabled = false;
+      }
+    });
+    head.append(clearAll);
+  }
+
+  const mention = (w) => {
+    const label = (w && (w.name || w.id)) || '';
+    return label.startsWith('@') ? label : `@${label}`;
+  };
+
   const list = slice.map(x => {
     const d = el('button', 'gaw tappable');
     d.type = 'button';
     const top = el('div', 'gaw-top');
     top.append(
-      el('span', 'kind prize', 'PRIZE'),
+      el('span', 'kind prize', x.kind === 'coins' ? 'COINS' : 'PRIZE'),
       el('span', 'nm', x.title || 'Drop'),
       el('span', 'idtag', x.shortId ? `QL-${x.shortId}` : ''),
     );
     d.append(top);
     d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
     if (x.winnersList?.length) {
-      d.append(el('p', 'hint', `Winner${x.winnersList.length > 1 ? 's' : ''}: ${x.winnersList.map(w => w.name || w.id).join(', ')}`));
+      d.append(el('p', 'hint', `Winner${x.winnersList.length > 1 ? 's' : ''}: ${x.winnersList.map(mention).join(', ')}`));
     }
     d.append(el('span', 'chev', '›'));
     d.addEventListener('click', () => openEndedGiveaway(x));
@@ -2199,6 +2225,15 @@ function openEndedGiveaway(x) {
     sheetRow('Winners', String(x.winners)),
     sheetRow('ID', el('span', 'v mono', x.shortId)),
   ];
+  if (x.winnersList?.length) {
+    body.push(sheetRow(
+      x.winnersList.length > 1 ? 'Winner list' : 'Winner',
+      x.winnersList.map(w => {
+        const label = w.name || w.id || '';
+        return label.startsWith('@') ? label : `@${label}`;
+      }).join(', '),
+    ));
+  }
   if (x.endedAt) body.push(sheetRow('Ended', new Date(x.endedAt).toLocaleString()));
   body.push(el('p', 'hint', 'Rerolling draws new winners. For a coins giveaway that pays them again, on top of what the first draw already paid out.'));
 

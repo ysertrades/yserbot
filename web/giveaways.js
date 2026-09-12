@@ -37,11 +37,27 @@ const entrantCount = (map, messageId, stored) => {
 
 /* ─── reading ────────────────────────────────────────────────────────────── */
 
-function list(guildId) {
+function list(guildId, guild) {
   const prizeActive = readJson(PRIZE_ACTIVE, {});
   const coinsActive = readJson(COINS_ACTIVE, {});
   const prizeEnded = readJson(PRIZE_ENDED, {})[guildId] || {};
   const coinsEnded = readJson(COINS_ENDED, {})[guildId] || {};
+
+  // Panel should show @name, not raw snowflakes — resolve from the live guild
+  // cache when we can, fall back to the id only if the member already left.
+  const nameOf = (id) => {
+    const mid = String(id || '');
+    if (!mid) return '';
+    const member = guild?.members?.cache?.get(mid);
+    if (member) return member.displayName || member.user?.username || mid;
+    const user = guild?.client?.users?.cache?.get(mid);
+    if (user) return user.username || mid;
+    return mid;
+  };
+  const winnersOf = (ids) => (ids || []).map(id => ({
+    id: String(id),
+    name: nameOf(id),
+  }));
 
   const active = [];
 
@@ -85,12 +101,13 @@ function list(guildId) {
       endedAt: d.endedAt ?? d.createdAt ?? null,
       prizeDmSent: !!d.prizeDmSent,
       revealed: !!d.revealed,
-      winnersList: (d.currentWinners || []).map(id => ({ id })),
+      winnersList: winnersOf(d.currentWinners),
     })),
     ...Object.entries(coinsEnded).map(([shortId, d]) => ({
       kind: 'coins', shortId, title: `${Number(d.amount || 0).toLocaleString()} coins`,
       winners: d.winnersCount ?? 1, entrants: (d.entrants || []).length,
       endedAt: d.endedAt ?? d.createdAt ?? null,
+      winnersList: winnersOf(d.currentWinners),
     })),
   ].sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0)).slice(0, 25);
 
@@ -167,6 +184,20 @@ function remove(guildId, body) {
 
   const title = kind === 'coins' ? `${Number(entry.amount || 0).toLocaleString()} coins` : (entry.prize || 'Giveaway');
   return { ok: true, shortId, kind, title };
+}
+
+/** Wipe finished prize + coins history for this guild (panel only). */
+function clearHistory(guildId) {
+  let removed = 0;
+  for (const file of [PRIZE_ENDED, COINS_ENDED]) {
+    const all = readJson(file, {});
+    const bucket = all[guildId];
+    if (!bucket) continue;
+    removed += Object.keys(bucket).length;
+    delete all[guildId];
+    writeJson(file, all);
+  }
+  return { ok: true, removed };
 }
 
 /**
@@ -284,4 +315,4 @@ async function sendPrize(guildId, body, { guild }) {
 }
 
 module.exports = {
-  sendPrize, list, create, endNow, reroll, remove };
+  sendPrize, list, create, endNow, reroll, remove, clearHistory };

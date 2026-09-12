@@ -123,7 +123,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
   const embeds   = readJson('embeds.json', {})[guildId] || {};
   const cases    = readJson('cases.json', {})[guildId] || {};
   const known    = listSources();
-  const giveawayState = giveaways.list(guildId);
+  const giveawayState = giveaways.list(guildId, guild);
 
   return {
     guild: {
