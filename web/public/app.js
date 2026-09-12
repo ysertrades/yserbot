@@ -7114,11 +7114,29 @@ function enhanceSelects(scope) {
       val.textContent = opt ? (opt.textContent || opt.value || '—') : '—';
     };
     syncLabel();
+    let closeTimer = null;
     const close = () => {
+      // Instant clear used after option pick
+      if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
       wrap.dataset.open = '';
       btn.setAttribute('aria-expanded', 'false');
+      menu.classList.remove('is-open', 'is-leaving');
       menu.hidden = true;
       menu.replaceChildren();
+    };
+    const softClose = () => {
+      if (wrap.dataset.open !== '1') return;
+      wrap.dataset.open = '';
+      btn.setAttribute('aria-expanded', 'false');
+      menu.classList.remove('is-open');
+      menu.classList.add('is-leaving');
+      if (closeTimer) clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => {
+        menu.classList.remove('is-leaving');
+        menu.hidden = true;
+        menu.replaceChildren();
+        closeTimer = null;
+      }, 160);
     };
         const place = () => {
       const r = btn.getBoundingClientRect();
@@ -7154,9 +7172,16 @@ function enhanceSelects(scope) {
         menu.style.top = 'auto';
       }
       menu.style.maxHeight = maxH + 'px';
+      menu.dataset.flip = openUp ? '1' : '';
       if (prevVis) menu.hidden = true;
     };
-    const onScrollClose = () => { if (wrap.dataset.open === '1') close(); };
+    const onScrollClose = (e) => {
+      if (wrap.dataset.open !== '1') return;
+      // Allow scrolling the menu list itself — only dismiss when page/panel moves
+      const t = e.target;
+      if (t && (menu.contains(t) || t === menu)) return;
+      softClose();
+    };
     window.addEventListener('scroll', onScrollClose, true);
     const open = () => {
       document.querySelectorAll('.cselect-menu').forEach((m) => {
@@ -7189,6 +7214,10 @@ function enhanceSelects(scope) {
         menu.appendChild(o);
       });
       menu.hidden = false;
+      menu.classList.remove('is-leaving');
+      // force reflow so enter transition plays
+      void menu.offsetWidth;
+      menu.classList.add('is-open');
       wrap.dataset.open = '1';
       btn.setAttribute('aria-expanded', 'true');
       place();
@@ -7204,14 +7233,19 @@ function enhanceSelects(scope) {
 }
 document.addEventListener('click', (e) => {
   if (e.target.closest && (e.target.closest('.cselect') || e.target.closest('.cselect-menu'))) return;
+  document.querySelectorAll('.cselect-menu.is-open, .cselect-menu:not([hidden])').forEach((m) => {
+    m.classList.remove('is-open');
+    m.classList.add('is-leaving');
+    setTimeout(() => {
+      m.classList.remove('is-leaving');
+      m.hidden = true;
+      m.replaceChildren();
+    }, 160);
+  });
   document.querySelectorAll('.cselect[data-open="1"]').forEach((w) => {
     w.dataset.open = '';
     const b = w.querySelector('.cselect-trigger');
     if (b) b.setAttribute('aria-expanded', 'false');
-  });
-  document.querySelectorAll('.cselect-menu').forEach((m) => {
-    m.hidden = true;
-    m.replaceChildren();
   });
 });
 window.addEventListener('resize', () => {

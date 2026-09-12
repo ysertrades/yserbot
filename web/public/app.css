@@ -2269,3 +2269,33 @@ select.cselect-native {
   font-size: 0.8rem;
   border-radius: 9px;
 }
+
+
+/* Dropdown enter / leave */
+.cselect-menu {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top center;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  pointer-events: none;
+}
+.cselect-menu.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.cselect-menu.is-leaving {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  pointer-events: none;
+}
+/* When menu opens upward, grow from bottom */
+.cselect-menu[data-flip="1"] {
+  transform-origin: bottom center;
+}
+.cselect-menu[data-flip="1"].is-open {
+  transform: translateY(0) scale(1);
+}
+.cselect-menu[data-flip="1"].is-leaving {
+  transform: translateY(4px) scale(0.98);
+}
