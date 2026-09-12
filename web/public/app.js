@@ -4623,6 +4623,56 @@ function renderBotProfile() {
         : 'Server nickname is locked. The bot operator has not allowed servers to change it.'));
   }
 
+
+  // ── Server display image (this server only) ───────────────────────────
+  nodes.push(el('h2', null, 'Bot image in this server'));
+  nodes.push(el('p', 'hint',
+    'Used on giveaway cards and branded embeds here. This does not change the bot’s Discord avatar worldwide — only the operator can change that.'));
+  if (bp.canEditServerImage || bp.canEditNickname) {
+    const imgDraft = { url: guild.brandAvatar || '' };
+    if (guild.brandAvatar) {
+      const prev = el('img');
+      prev.src = guild.brandAvatar;
+      prev.alt = '';
+      prev.style.cssText = 'width:64px;height:64px;border-radius:12px;object-fit:cover;display:block;margin:0.4rem 0';
+      nodes.push(prev);
+    }
+    nodes.push(textField('Image URL (https)', imgDraft.url, v => { imgDraft.url = v.trim(); }, {
+      placeholder: 'https://…',
+    }));
+    const imgActions = el('div', 'actions');
+    const saveImg = el('button', 'btn primary small', 'Save server image');
+    saveImg.type = 'button';
+    saveImg.addEventListener('click', async () => {
+      saveImg.disabled = true;
+      saveImg.textContent = 'Saving…';
+      try {
+        const res = await post('bot-profile-server-image', { url: imgDraft.url });
+        if (res?.ok || res?.unchanged) {
+          try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
+          renderBotProfile();
+        }
+      } finally {
+        saveImg.disabled = false;
+        saveImg.textContent = 'Save server image';
+      }
+    });
+    const clearImg = el('button', 'btn small', 'Clear image');
+    clearImg.type = 'button';
+    clearImg.addEventListener('click', async () => {
+      clearImg.disabled = true;
+      try {
+        const res = await post('bot-profile-server-image', { url: '' });
+        if (res?.ok || res?.unchanged) {
+          try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
+          renderBotProfile();
+        }
+      } finally { clearImg.disabled = false; }
+    });
+    imgActions.append(saveImg, clearImg);
+    nodes.push(imgActions);
+  }
+
   // ── Global identity (owner only) ──────────────────────────────────────
   if (bp.canEditGlobal) {
     nodes.push(el('h2', null, 'Global identity'));

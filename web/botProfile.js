@@ -111,10 +111,17 @@ function read(guildId, client, session) {
     activityText = liveActivity.name || activityText;
   }
 
+  const conf = readJson('config.json', {})[guildId] || {};
+  const brandAvatar = typeof conf.brandAvatar === 'string' && /^https:\/\//i.test(conf.brandAvatar)
+    ? conf.brandAvatar
+    : null;
+
   return {
     isOwner: owner,
-    allowGuildNickname: f.allowGuildNickname,
-    canEditNickname: owner || f.allowGuildNickname,
+    allowGuildNickname: true,
+    // Anyone with panel access to this server can set the nickname + server image.
+    canEditNickname: true,
+    canEditServerImage: true,
     canEditGlobal: owner,
     canEditPresence: owner,
     global: {
@@ -126,6 +133,7 @@ function read(guildId, client, session) {
     guild: {
       nickname: member?.nickname || null,
       displayName: member?.displayName || me?.username || null,
+      brandAvatar,
     },
     presence: {
       status: liveStatus,

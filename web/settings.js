@@ -26,6 +26,9 @@ const WARN_ACTIONS = ['none', 'mute', 'kick', 'ban'];
  */
 const FIELDS = [
   { key: 'brandName', path: ['brandName'], type: 'string', label: 'Server brand name (giveaways)', max: 32 },
+  // HTTPS image used on giveaway cards / embeds in THIS server only.
+  // Discord’s real bot avatar is global and stays operator-only.
+  { key: 'brandAvatar', path: ['brandAvatar'], type: 'string', label: 'Server bot image URL (https)', max: 300 },
   { key: 'welcomeChannel', path: ['welcomeChannel'], type: 'channel', label: 'Welcome messages' },
   { key: 'leaveChannel',   path: ['leaveChannel'],   type: 'channel', label: 'Leave messages' },
   { key: 'logsChannel',    path: ['logsChannel'],    type: 'channel', label: 'Moderation log' },
@@ -169,7 +172,13 @@ function save(guildId, body, { guild, session }) {
         value = !!incoming;
         break;
       case 'string': {
-        const str = String(incoming ?? '').trim().slice(0, f.max || 64);
+        let str = String(incoming ?? '').trim().slice(0, f.max || 64);
+        if (f.key === 'brandAvatar') {
+          if (!str) { value = null; break; }
+          if (!/^https:\/\//i.test(str)) return { error: 'bad_image', field: 'brandAvatar' };
+          value = str.slice(0, 300);
+          break;
+        }
         // Keep null vs "" consistent so brand name edits always save.
         value = str || null;
         break;

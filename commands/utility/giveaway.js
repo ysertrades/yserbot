@@ -21,6 +21,13 @@ function guildBrand(guildId) {
   return n || 'Quantlab';
 }
 
+function guildBrandAvatar(guildId, guild) {
+  const conf = readJson('config.json', {})[guildId] || {};
+  const custom = typeof conf.brandAvatar === 'string' ? conf.brandAvatar.trim() : '';
+  if (custom && /^https:\/\//i.test(custom)) return custom;
+  return guild?.iconURL?.({ size: 256, dynamic: true }) || null;
+}
+
 const GOLD         = 0xFFD700;
 const SETUP_EXPIRY = 10 * 60 * 1000; // 10 min
 const MAX_WINNERS  = 10;
@@ -348,7 +355,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const reqLines      = requirementsLines(data);
 
   const dropId = genId(guildId);
-  const iconUrl = guild.iconURL({ size: 256, dynamic: true }) || hostAvatarUrl || null;
+  const iconUrl = guildBrandAvatar(guild.id, guild) || hostAvatarUrl || null;
   // https image only for MediaGallery; dynamic: attachments stay on classic path later if needed
   const bannerUrl = (imageUrl && /^https:\/\//i.test(String(imageUrl))) ? String(imageUrl) : null;
 
@@ -521,7 +528,7 @@ async function endGiveaway(message, meta) {
   };
   writeJson('giveaways_ended.json', allEnded);
 
-  const iconUrl = message.guild?.iconURL?.({ size: 256, dynamic: true }) || null;
+  const iconUrl = guildBrandAvatar(message.guild?.id, message.guild) || null;
   const bannerUrl = (imageUrl && /^https:\/\//i.test(String(imageUrl))) ? String(imageUrl) : null;
   const closed = buildClosedV2({
     prize,

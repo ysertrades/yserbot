@@ -838,12 +838,25 @@ Object.assign(OPS, {
   },
   'bot-profile-nick': async (guildId, body, ctx) => {
     const botProfile = require('./botProfile');
-    const auth = require('./auth');
-    const f = botProfile.flags();
-    if (!auth.isOwner(ctx.session.uid) && !f.allowGuildNickname) {
-      return { error: 'forbidden' };
-    }
+    // Panel session already proves this user may manage this guild.
     return botProfile.applyNickname(guildId, body?.nickname, ctx.client);
+  },
+  'bot-profile-server-image': async (guildId, body, ctx) => {
+    const { readJson, writeJson } = require('../utils/jsonStorage');
+    let url = body?.url == null ? null : String(body.url).trim();
+    if (url === '') url = null;
+    if (url && !/^https:\/\//i.test(url)) return { error: 'bad_image' };
+    if (url && url.length > 300) return { error: 'bad_image' };
+    const conf = readJson('config.json', {});
+    if (!conf[guildId]) conf[guildId] = {};
+    if ((conf[guildId].brandAvatar || null) === url) return { unchanged: true };
+    conf[guildId].brandAvatar = url;
+    writeJson('config.json', conf);
+    return {
+      ok: true,
+      guild: { brandAvatar: url },
+      changed: ['Server bot image'],
+    };
   },
   'bot-profile-presence': async (_guildId, body, ctx) => {
     const botProfile = require('./botProfile');
