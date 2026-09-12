@@ -5,21 +5,25 @@
    one hex, and the only colour is the accent: brand Purple. */
 
 :root {
-  --bg:      #0A0B0E;
-  --surface: #15161D;
-  --raised:  #1E2028;
-  --sunken:  #08090B;
-  --rule:    #262832;
-  --ink:     #F5F7FB;
-  --soft:    #AEB4C0;
-  --muted:   #5B6270;
-  --accent:  #9397EE;
-  --accent-d:#201E2C;
+  /* Quant Lab product surface system — solid cards, not glass */
+  --bg:      #0B0B0C;
+  --surface: #141416;
+  --raised:  #1C1C1F;
+  --sunken:  #101012;
+  --rule:    #2A2A2E;
+  --ink:     #F4F4F5;
+  --soft:    #A1A1AA;
+  --muted:   #71717A;
+  --accent:  #8B85F0;
+  --accent-d:#2A2750;
   --good:    #4FB6E8;
-  --off:     #5B6270;
-  --warn:    #3A3F8F;
+  --off:     #52525B;
+  --warn:    #F59E0B;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --radius:  16px;
+  --radius-sm: 12px;
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 24px -12px rgba(0,0,0,0.55);
 }
 
 * { box-sizing: border-box; }
@@ -33,6 +37,7 @@ body {
   font-family: var(--sans);
   font-size: 15px;
   line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -44,18 +49,12 @@ body {
   margin: 0.7rem 0.85rem 0;
   display: flex; align-items: center; justify-content: space-between;
   gap: 0.9rem;
-  padding: 0.65rem 0.8rem 0.65rem 0.85rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 12px 36px -14px rgba(0, 0, 0, 0.85);
+  padding: 0.6rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
-}
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .bar { background: var(--surface); }
 }
 
 .bar::after {
@@ -114,18 +113,31 @@ html[data-state="panel"]   .view[data-view="panel"] { display: flex; }
 @media (min-width: 46rem) { .grid { grid-template-columns: 1fr 1fr; } }
 
 .panel {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 16px;
-  padding: 1.35rem 1.4rem 1.5rem;
+  border-radius: var(--radius);
+  padding: 1.25rem 1.3rem 1.4rem;
+  box-shadow: var(--shadow-card);
 }
 .panel.center { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.85rem; padding: 2.8rem 1.4rem; }
 
-h1 { font-size: 1.4rem; margin: 0; letter-spacing: -0.02em; font-weight: 600; }
+h1 {
+  font-size: 1.45rem;
+  margin: 0;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  color: var(--ink);
+}
 h2 {
-  font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.14em;
-  text-transform: uppercase; color: var(--muted); margin: 0 0 0.95rem;
-  font-weight: 500; display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .muted { color: var(--soft); margin: 0; }
 .hint { color: var(--muted); font-size: 0.78rem; margin: 0; }
@@ -148,33 +160,74 @@ h2 {
 .guilds { display: flex; gap: 0.55rem; overflow-x: auto; padding-bottom: 0.25rem; }
 .guilds button {
   display: flex; align-items: center; gap: 0.5rem;
-  background: var(--surface); border: 1px solid var(--rule);
-  color: var(--soft); border-radius: 12px; padding: 0.45rem 0.75rem;
-  font: inherit; font-size: 0.82rem; cursor: pointer; white-space: nowrap;
+  background: var(--sunken);
+  border: 1px solid var(--rule);
+  color: var(--soft);
+  border-radius: 12px;
+  padding: 0.45rem 0.8rem;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 .guilds button img { width: 18px; height: 18px; border-radius: 5px; }
-.guilds button[aria-current="true"] { border-color: var(--accent); color: var(--ink); background: var(--raised); }
+.guilds button:hover { color: var(--ink); border-color: color-mix(in srgb, var(--accent) 30%, var(--rule)); }
+.guilds button[aria-current="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--rule));
+  color: var(--ink);
+  background: var(--raised);
+}
 .guilds:has(button:only-child) { display: none; }
 
 /* ── section nav ─────────────────────────────────────────────────────── */
 .sections {
-  display: flex; gap: 0.35rem; overflow-x: auto;
-  border-bottom: 1px solid var(--rule); padding-bottom: 0.15rem;
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+  padding: 0.3rem;
+  background: var(--sunken);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
 }
 .sections button {
-  background: none; border: 0; border-bottom: 2px solid transparent;
-  color: var(--muted); font: inherit; font-size: 0.9rem;
-  padding: 0.55rem 0.8rem; cursor: pointer; white-space: nowrap;
+  position: relative;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 500;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease;
 }
-.sections button[aria-current="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.sections button[aria-current="true"] {
+  color: var(--ink);
+  background: var(--raised);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+}
 .sections button:hover { color: var(--soft); }
+.sections button[aria-current="true"]:hover { color: var(--ink); }
 
 /* ── stat tiles ──────────────────────────────────────────────────────── */
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.8rem, 1fr)); gap: 0.75rem; }
 .tile {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid var(--rule); border-radius: 14px;
-  padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.2rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 0.95rem 1.05rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--rule));
+  background: var(--raised);
 }
 .tile .n { font-family: var(--mono); font-size: 1.45rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .tile .l { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
@@ -260,7 +313,11 @@ h2 {
 input[type="text"], input[type="date"], textarea, select {
   width: 100%; font: inherit; font-size: 0.88rem;
   background: var(--sunken); color: var(--ink);
-  border: 1px solid var(--rule); border-radius: 10px; padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule); border-radius: 10px; padding: 0.6rem 0.75rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+input[type="text"]:hover, input[type="date"]:hover, textarea:hover, select:hover {
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--rule));
 }
 textarea { resize: vertical; min-height: 4.5rem; font-family: var(--mono); font-size: 0.82rem; }
 input[type="text"], input[type="date"] { font-family: var(--mono); font-size: 0.82rem; }
@@ -520,7 +577,20 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .post-row .k { color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── giveaways ───────────────────────────────────────────────────────── */
-.gaw { border: 1px solid var(--rule); border-radius: 12px; background: var(--sunken); padding: 0.85rem 0.95rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.gaw {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--sunken);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.gaw.tappable:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--rule));
+  background: var(--raised);
+}
 .gaw-top { display: flex; align-items: center; gap: 0.55rem; }
 .gaw-top .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
 .gaw .kind {
