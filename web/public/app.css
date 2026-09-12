@@ -1878,3 +1878,227 @@ html[data-state="panel"] .view[data-view="panel"] {
 html[data-state="panel"] .bar {
   display: none !important;
 }
+
+
+/* ═══ Quant Lab shell polish (account in frame, glass selects) ═══════════ */
+html[data-state="panel"] .bar { display: none !important; }
+
+.app-shell,
+.sidebar,
+.workspace {
+  background: #0D0F12 !important;
+}
+
+.sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+  padding-top: 1.25rem !important;
+}
+
+.sidebar-brand {
+  padding-top: 0.15rem !important;
+  padding-bottom: 1rem !important;
+}
+
+.workspace-top { display: none !important; }
+
+.workspace-body {
+  margin: 0.85rem 1rem 1rem 0.75rem !important;
+  padding: 1.1rem 1.25rem 2rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 16px !important;
+  background: #0B0C0E !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1.35rem !important;
+  overflow: auto !important;
+  min-height: 0 !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.14) transparent;
+}
+
+.workspace-body::-webkit-scrollbar { width: 8px; height: 8px; }
+.workspace-body::-webkit-scrollbar-track { background: transparent; }
+.workspace-body::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.workspace-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.22);
+  background-clip: padding-box;
+}
+
+.content-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: none;
+  padding-bottom: 0.15rem;
+}
+
+.content-toolbar .workspace-section-label {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #F3F4F6;
+}
+
+.content-toolbar .bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.82rem;
+}
+
+.content-toolbar .bar-right img {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+
+.content-toolbar .bar-right .who {
+  color: #9CA3AF;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel, .tile {
+  background: #16181D !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+select.cselect-native {
+  position: absolute !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.cselect {
+  position: relative;
+  width: 100%;
+}
+
+.cselect-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  text-align: left;
+  font: inherit;
+  font-size: 0.88rem;
+  color: #F3F4F6;
+  background: #12141A;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 0.62rem 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.cselect-trigger:hover {
+  border-color: rgba(255,255,255,0.14);
+}
+
+.cselect-trigger:focus {
+  outline: none;
+  border-color: rgba(255,255,255,0.16);
+  box-shadow: none;
+}
+
+.cselect-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cselect-chev {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  display: grid;
+  place-items: center;
+  color: #9CA3AF;
+  transition: transform 0.18s ease;
+}
+
+.cselect[data-open="1"] .cselect-chev {
+  transform: rotate(180deg);
+  color: #F3F4F6;
+}
+
+.cselect-menu {
+  position: fixed;
+  z-index: 4000;
+  min-width: 10rem;
+  max-height: min(280px, 42vh);
+  overflow: auto;
+  padding: 0.35rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(18, 20, 26, 0.78);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.14) transparent;
+}
+
+.cselect-menu::-webkit-scrollbar { width: 6px; }
+.cselect-menu::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14);
+  border-radius: 999px;
+}
+
+.cselect-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.86rem;
+  color: #E5E7EB;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  cursor: pointer;
+}
+
+.cselect-option:hover,
+.cselect-option[data-active="1"] {
+  background: rgba(255,255,255,0.06);
+  color: #fff;
+}
+
+.cselect-option[aria-selected="true"] {
+  background: rgba(139, 92, 246, 0.16);
+  color: #E9E5FF;
+}
+
+select:focus {
+  outline: none !important;
+  border-color: rgba(255,255,255,0.14) !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 52rem) {
+  .workspace-body {
+    margin: 0.5rem 0.65rem 0.75rem !important;
+  }
+}

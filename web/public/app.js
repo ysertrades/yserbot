@@ -6973,7 +6973,129 @@ window.addEventListener('pageshow', (e) => {
  * alone, so adding a section is a matter of adding markup and a nav button —
  * there is no second list anywhere that has to be kept in step.
  */
+
+function enhanceSelects(scope) {
+  const rootEl = scope || document;
+  rootEl.querySelectorAll('select:not([data-cselect])').forEach((sel) => {
+    if (sel.closest('.cselect')) return;
+    sel.dataset.cselect = '1';
+    sel.classList.add('cselect-native');
+    const wrap = document.createElement('div');
+    wrap.className = 'cselect';
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cselect-trigger';
+    btn.setAttribute('aria-haspopup', 'listbox');
+    btn.setAttribute('aria-expanded', 'false');
+    const val = document.createElement('span');
+    val.className = 'cselect-value';
+    const chev = document.createElement('span');
+    chev.className = 'cselect-chev';
+    chev.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+    btn.append(val, chev);
+    wrap.appendChild(btn);
+    const menu = document.createElement('div');
+    menu.className = 'cselect-menu';
+    menu.hidden = true;
+    menu.setAttribute('role', 'listbox');
+    document.body.appendChild(menu);
+    const syncLabel = () => {
+      const opt = sel.options[sel.selectedIndex];
+      val.textContent = opt ? (opt.textContent || opt.value || '—') : '—';
+    };
+    syncLabel();
+    const close = () => {
+      wrap.dataset.open = '';
+      btn.setAttribute('aria-expanded', 'false');
+      menu.hidden = true;
+      menu.replaceChildren();
+    };
+    const place = () => {
+      const r = btn.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const width = Math.max(r.width, 180);
+      let left = r.left;
+      if (left + width > vw - 8) left = Math.max(8, vw - width - 8);
+      menu.style.width = width + 'px';
+      menu.style.left = left + 'px';
+      const below = vh - r.bottom;
+      const maxH = Math.min(280, Math.floor(vh * 0.42));
+      menu.style.maxHeight = maxH + 'px';
+      if (below < 160 && r.top > below) {
+        menu.style.top = 'auto';
+        menu.style.bottom = (vh - r.top + 6) + 'px';
+      } else {
+        menu.style.bottom = 'auto';
+        menu.style.top = (r.bottom + 6) + 'px';
+      }
+    };
+    const open = () => {
+      document.querySelectorAll('.cselect-menu').forEach((m) => {
+        m.hidden = true;
+        m.replaceChildren();
+      });
+      document.querySelectorAll('.cselect[data-open="1"]').forEach((w) => {
+        w.dataset.open = '';
+        const b = w.querySelector('.cselect-trigger');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+      menu.replaceChildren();
+      Array.from(sel.options).forEach((opt, i) => {
+        const o = document.createElement('button');
+        o.type = 'button';
+        o.className = 'cselect-option';
+        o.setAttribute('role', 'option');
+        o.textContent = opt.textContent || opt.value || '—';
+        if (opt.disabled) o.disabled = true;
+        if (i === sel.selectedIndex) o.setAttribute('aria-selected', 'true');
+        o.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (opt.disabled) return;
+          sel.selectedIndex = i;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          syncLabel();
+          close();
+        });
+        menu.appendChild(o);
+      });
+      menu.hidden = false;
+      wrap.dataset.open = '1';
+      btn.setAttribute('aria-expanded', 'true');
+      place();
+    };
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (wrap.dataset.open === '1') close();
+      else open();
+    });
+    sel.addEventListener('change', syncLabel);
+  });
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest && (e.target.closest('.cselect') || e.target.closest('.cselect-menu'))) return;
+  document.querySelectorAll('.cselect[data-open="1"]').forEach((w) => {
+    w.dataset.open = '';
+    const b = w.querySelector('.cselect-trigger');
+    if (b) b.setAttribute('aria-expanded', 'false');
+  });
+  document.querySelectorAll('.cselect-menu').forEach((m) => {
+    m.hidden = true;
+    m.replaceChildren();
+  });
+});
+window.addEventListener('resize', () => {
+  document.querySelectorAll('.cselect-menu').forEach((m) => { m.hidden = true; m.replaceChildren(); });
+  document.querySelectorAll('.cselect[data-open="1"]').forEach((w) => { w.dataset.open = ''; });
+});
+
 function showSection(name) {
+  try { enhanceSelects(document); } catch (e) {}
+
   const prev = root.dataset.section;
   root.dataset.section = name;
   const titleEl = document.getElementById('here');
@@ -7208,6 +7330,7 @@ async function main() {
   state.me = me.user;
   renderIdentity(me.user);
   initSections();
+  try { enhanceSelects(document); } catch (e) {}
   initSheet();
   initEmbedLink();
   // The button does not exist to click for anyone this is false for — see
