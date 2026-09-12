@@ -5,19 +5,28 @@
    one hex, and the only colour is the accent: brand Purple. */
 
 :root {
-  --bg:      #0A0B0E;
+  /* Ground matches YSER app (#121212). Brand dark-neutral stays for surfaces. */
+  --bg:      #121212;
   --surface: #15161D;
   --raised:  #1E2028;
-  --sunken:  #08090B;
-  --rule:    #262832;
+  --sunken:  #0E0F12;
+  /* Hairline rules like YSER glass edges (not heavy #262832 blocks) */
+  --rule:    rgba(176, 176, 176, 0.12);
+  --rule-strong: #262832;
+  /* Text colors unchanged */
   --ink:     #F5F7FB;
   --soft:    #AEB4C0;
   --muted:   #5B6270;
+  /* Brand purple from Quantlab book */
   --accent:  #9397EE;
   --accent-d:#201E2C;
   --good:    #4FB6E8;
   --off:     #5B6270;
   --warn:    #3A3F8F;
+  /* YSER glass recipe */
+  --glass:   rgba(20, 24, 33, 0.55);
+  --glass-fill: rgba(0, 0, 0, 0.22);
+  --edge:    rgba(255, 255, 255, 0.08);
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -29,6 +38,10 @@
 body {
   margin: 0;
   background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 90% 55% at 15% -15%, rgba(147, 151, 238, 0.09), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 95% 110%, rgba(147, 151, 238, 0.06), transparent 50%);
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--sans);
   font-size: 15px;
@@ -46,11 +59,13 @@ body {
   gap: 0.9rem;
   padding: 0.65rem 0.8rem 0.65rem 0.85rem;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 12px 36px -14px rgba(0, 0, 0, 0.85);
+  border: 0.5px solid var(--rule);
+  background: var(--glass-fill);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow:
+    0 1px 0 var(--edge) inset,
+    0 12px 36px -14px rgba(0, 0, 0, 0.85);
   overflow: hidden;
 }
 
@@ -114,10 +129,19 @@ html[data-state="panel"]   .view[data-view="panel"] { display: flex; }
 @media (min-width: 46rem) { .grid { grid-template-columns: 1fr 1fr; } }
 
 .panel {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  border: 1px solid var(--rule);
-  border-radius: 16px;
+  position: relative;
+  background: var(--glass-fill);
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  border: 0.5px solid var(--rule);
+  border-radius: 20px;
   padding: 1.35rem 1.4rem 1.5rem;
+  box-shadow:
+    0 1px 0 var(--edge) inset,
+    0 24px 48px -28px rgba(0, 0, 0, 0.75);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .panel { background: color-mix(in srgb, var(--surface) 92%, transparent); }
 }
 .panel.center { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 0.85rem; padding: 2.8rem 1.4rem; }
 
@@ -520,7 +544,21 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .post-row .k { color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── giveaways ───────────────────────────────────────────────────────── */
-.gaw { border: 1px solid var(--rule); border-radius: 12px; background: var(--sunken); padding: 0.85rem 0.95rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.gaw {
+  border: 0.5px solid var(--rule);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 0.85rem 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  box-shadow: 0 1px 0 var(--edge) inset;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .gaw { background: var(--sunken); }
+}
 .gaw-top { display: flex; align-items: center; gap: 0.55rem; }
 .gaw-top .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.92rem; }
 .gaw .kind {
