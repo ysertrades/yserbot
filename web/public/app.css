@@ -5,25 +5,28 @@
    one hex, and the only colour is the accent: brand Purple. */
 
 :root {
-  /* Quant Lab product surface system — solid cards, not glass */
-  --bg:      #0B0B0C;
-  --surface: #141416;
-  --raised:  #1C1C1F;
-  --sunken:  #101012;
-  --rule:    #2A2A2E;
-  --ink:     #F4F4F5;
-  --soft:    #A1A1AA;
-  --muted:   #71717A;
-  --accent:  #8B85F0;
-  --accent-d:#2A2750;
+  /* Quant Lab product — exact design tokens */
+  --bg:      #0D0F12;
+  --surface: #181B20;
+  --raised:  #1E2229;
+  --sunken:  #14171D;
+  --rule:    rgba(255, 255, 255, 0.08);
+  --ink:     #F3F4F6;
+  --soft:    #9CA3AF;
+  --muted:   #6B7280;
+  --accent:  #8B5CF6;
+  --accent-2:#6366F1;
+  --accent-d:#2E1065;
   --good:    #4FB6E8;
-  --off:     #52525B;
+  --off:     #6B7280;
   --warn:    #F59E0B;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --radius:  16px;
   --radius-sm: 12px;
-  --shadow-card: 0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 24px -12px rgba(0,0,0,0.55);
+  --sidebar-w: 220px;
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.25);
+  --gap-stack: 1.75rem;
 }
 
 * { box-sizing: border-box; }
@@ -1557,4 +1560,202 @@ nav.sections button[aria-hidden="true"] {
   border-radius: 999px;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
+}
+
+
+/* ── App shell (Quant Lab dual-column) ─────────────────────────────────── */
+html[data-state="panel"] body {
+  overflow: hidden;
+  height: 100%;
+}
+html[data-state="panel"] > .bar {
+  display: none;
+}
+html[data-state="panel"] #main {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  height: 100dvh;
+  height: 100vh;
+}
+html[data-state="panel"] .view[data-view="panel"] {
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
+.app-shell {
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  height: 100vh;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.sidebar {
+  flex: 0 0 var(--sidebar-w);
+  width: var(--sidebar-w);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1.15rem 0.75rem 1.5rem;
+  border-right: 1px solid var(--rule);
+  background: #0B0D10;
+  overflow: auto;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.25rem 0.55rem 0.75rem;
+}
+
+.sidebar-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+/* Sidebar nav overrides horizontal .sections */
+.sidebar-nav.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  overflow: visible;
+}
+
+.sidebar-nav.sections button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  border: 0 !important;
+  border-radius: 12px;
+  border-bottom: 0 !important;
+  background: transparent;
+  color: var(--soft);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-nav.sections button:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-nav.sections button[aria-current="true"] {
+  color: var(--ink);
+  background: var(--raised);
+  border-bottom-color: transparent !important;
+  box-shadow: none;
+}
+
+.workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.workspace-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.5rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.workspace-section-label {
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.workspace-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.5rem 1.75rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+}
+
+.section {
+  gap: var(--gap-stack);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.4rem;
+  box-shadow: var(--shadow-card);
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+
+.grid {
+  gap: 1.15rem;
+}
+
+@media (min-width: 46rem) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 52rem) {
+  .app-shell {
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+  }
+  html[data-state="panel"] body {
+    overflow: auto;
+    height: auto;
+  }
+  html[data-state="panel"] #main {
+    height: auto;
+  }
+  .sidebar {
+    flex: none;
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    padding: 0.75rem;
+  }
+  .sidebar-nav.sections {
+    flex-direction: row !important;
+    overflow-x: auto;
+  }
+  .sidebar-nav.sections button {
+    width: auto;
+    white-space: nowrap;
+  }
+  .workspace-body {
+    padding: 1.15rem 1rem 2.5rem;
+  }
 }
