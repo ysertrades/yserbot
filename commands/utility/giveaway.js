@@ -139,7 +139,8 @@ function dateStr(ts) { return new Date(ts).toISOString().slice(0, 10); }
 function requirementsLines(data) {
   const lines = [];
   if (data.requiredRoleId) lines.push(`🔐 Requires <@&${data.requiredRoleId}>`);
-  if (data.bonusRoleId) lines.push(`⭐ <@&${data.bonusRoleId}> gets **2×** entries`);
+  // Bonus role is no longer a draw multiplier — equal odds for every entrant.
+  // (Field kept in setup for compatibility; it does not change win chance.)
   if (data.minAccountAgeDays > 0) lines.push(`🕰️ Account must be **${data.minAccountAgeDays}+ days** old`);
   return lines;
 }
@@ -440,20 +441,10 @@ function pickWinners(pool, count) {
   return winners;
 }
 
-// Expands entrantIds into a weighted pool: bonus-role holders appear twice.
-// Falls back to an unweighted (but still perfectly fair, 1-entry-each) pool
-// if the bonus role isn't set or the member fetch fails for any reason.
+// Equal odds for every entrant — one slot each, no role multipliers.
+// (Bonus-role 2× entries used to stack the draw; hosts asked for a flat field.)
 async function buildWeightedPool(entrantIds, guild, bonusRoleId) {
-  if (!bonusRoleId || entrantIds.length === 0) return entrantIds;
-  let members;
-  try { members = await guild.members.fetch({ user: entrantIds }); }
-  catch { return entrantIds; }
-  const pool = [];
-  for (const id of entrantIds) {
-    pool.push(id);
-    if (members.get(id)?.roles.cache.has(bonusRoleId)) pool.push(id);
-  }
-  return pool;
+  return Array.isArray(entrantIds) ? [...entrantIds] : [];
 }
 
 async function dmWinners(client, guild, winnerIds, prize, hostId, { rerolled = false } = {}) {

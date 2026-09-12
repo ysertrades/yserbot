@@ -82,9 +82,14 @@ function buildClosedV2({
   prize, entries, winnersCount, hostId, dropId,
   iconUrl = null, imageUrl = null, brand = 'Quantlab',
 }) {
+  const n = Number(winnersCount) || 1;
+  const selectedLine = n === 1
+    ? 'The winner has been selected. Reveal to see if you won.'
+    : 'The winners have been selected. Reveal to see if you won.';
+  const winnersLabel = n === 1 ? 'Winner' : 'Winners';
   const body =
-    'The winners have been selected. Open the box to reveal your personal result.\n\n' +
-    line('Valid entries', entries) + '  ·  ' + line('Winners', winnersCount);
+    selectedLine + '\n\n' +
+    line('Valid entries', entries) + '  ·  ' + line(winnersLabel, n);
   const host = hostId ? '<@' + hostId + '>' : brand;
 
   const kids = [];
@@ -96,7 +101,7 @@ function buildClosedV2({
     customId: 'giveaway_reveal', label: 'Reveal', style: 3, emoji: '🎁',
   })));
   kids.push(separator(true));
-  kids.push(text('-# Drop provided by ' + host + '  ·  Drop ID: QL-' + dropId));
+  kids.push(text('-# Giveaway provided by ' + host + '  ·  Drop ID: QL-' + dropId));
 
   return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
 }
