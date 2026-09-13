@@ -44,10 +44,10 @@ const SKY    = LIGHT.sky;
 // Passing nothing has to produce a finished card — the same rule the other
 // two banners follow, so the no-arg render keeps its cache entry.
 const PRIZE_DEFAULTS = {
-  pill:     'GIVEAWAY',
-  heading:  'PRIZE DROP',
+  pill:     '', // empty = no corner pill (keeps layout clean)
+  heading:  'GIVEAWAY DROP',
   subtitle: 'ONE WINNER TAKES IT',
-  tagline:  'HIT ENTER BELOW TO CLAIM YOUR SHOT. WINNER DRAWN WHEN THE TIMER RUNS OUT.',
+  tagline:  'HIT ENTER BELOW TO CLAIM YOUR ENTRY. WINNER DRAWN WHEN THE TIMER RUNS OUT.',
 };
 
 /**
@@ -87,12 +87,15 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
   // ── The gift, left ────────────────────────────────────────────────────────
   giftBox(png, 176, 214, 150);
 
-  // ── Status pill, top right ────────────────────────────────────────────────
-  const pillW = 34 + textWidth(pill, 2);
-  const pillX = W - 46 - pillW;
-  fillRoundedRectBlend(png, pillX, 42, pillW, 40, 10, PURPLE, 1);
-  dot(png, pillX + 17, 62, 5, WHITE);
-  drawText(png, pill, pillX + 30, 52, 2, WHITE);
+  // ── Status pill (optional) ───────────────────────────────────────────────
+  if (pill && String(pill).trim()) {
+    const pillW = 34 + textWidth(pill, 2);
+    const pillX = W - 46 - pillW;
+    fillRoundedRectBlend(png, pillX, 42, pillW, 40, 10, PURPLE, 1);
+    dot(png, pillX + 17, 62, 5, WHITE);
+    drawText(png, pill, pillX + 30, 52, 2, WHITE);
+  }
+
 
   // ── Copy block, right of the gift ─────────────────────────────────────────
   const left = 330, right = W - 46;

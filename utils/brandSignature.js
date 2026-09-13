@@ -144,7 +144,11 @@ function drawFlowSignature(png, x, y, opts = {}) {
   const tx = x + CHIP + CHIP_GAP;
   const ty = y + 5;
   drawText(png, WORDMARK, tx, ty, WORD_SCALE, primary);
-  drawText(png, CAPTION, tx, ty + GLYPH_H * WORD_SCALE + 4, 1, caption, captionAlpha);
+  // Allow callers to hide "ORIGINAL DESIGN" (e.g. prize giveaway banner)
+  const captionText = opts.caption !== undefined ? opts.caption : CAPTION;
+  if (captionText) {
+    drawText(png, captionText, tx, ty + GLYPH_H * WORD_SCALE + 4, 1, caption, captionAlpha);
+  }
 }
 
 module.exports = {

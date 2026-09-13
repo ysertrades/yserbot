@@ -22,23 +22,39 @@ const { buildLiveV2, buildClosedV2, buildEmptyV2, IS_COMPONENTS_V2 } = require('
  * - https://…  → use as-is
  * - dynamic:key → render PNG, attach file, use attachment://filename
  */
-function resolveGiveawayBanner(imageUrl, guildId) {
+function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
   if (!imageUrl) return { url: null, files: [] };
   const raw = String(imageUrl).trim();
   if (/^https:\/\//i.test(raw)) return { url: raw, files: [] };
   if (!raw.startsWith('dynamic:')) return { url: null, files: [] };
   try {
-    const {
-      DYNAMIC_IMAGES, dynamicImageKey, renderDynamic,
-    } = require('../../utils/dynamicEmbedImages');
+    const dyn = require('../../utils/dynamicEmbedImages');
     const { AttachmentBuilder } = require('discord.js');
-    const key = dynamicImageKey(raw);
-    const entry = DYNAMIC_IMAGES[key];
+    const key = dyn.dynamicImageKey(raw);
+    const entry = dyn.DYNAMIC_IMAGES[key];
     if (!entry) {
       console.warn('[GIVEAWAY] unknown dynamic banner:', key);
       return { url: null, files: [] };
     }
-    const buf = renderDynamic(key, entry, guildId);
+
+    let buf;
+    if (entry.takesCopy) {
+      const { copyForDynamicKey } = require('../../utils/bannerCopy');
+      let copy = copyForDynamicKey(guildId, key) || {};
+      // Live giveaway art: heading + winners-based subtitle (panel winners count)
+      if (key === 'prizeGiveawayBanner') {
+        const w = Math.max(1, Number(opts.winners) || 1);
+        copy = {
+          ...copy,
+          pill: '', // no corner pill on the live drop art
+          heading: copy.heading && copy.heading !== 'PRIZE DROP' ? copy.heading : 'GIVEAWAY DROP',
+          subtitle: w === 1 ? 'ONE WINNER TAKES IT' : (w + ' WINNERS TAKE IT'),
+        };
+      }
+      buf = entry.generate(copy);
+    } else {
+      buf = entry.generate();
+    }
     if (!buf) return { url: null, files: [] };
     return {
       url: `attachment://${entry.filename}`,
@@ -392,57 +408,37 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const dropId = genId(guildId);
   const iconUrl = guildBrandAvatar(guild.id, guild) || hostAvatarUrl || null;
 
-  const resolved = resolveGiveawayBanner(imageUrl, guildId);
+  // Always the same V2 layout. Banner (if any) sits in the MediaGallery slot.
+  const resolved = resolveGiveawayBanner(imageUrl, guildId, { winners });
 
-  // Buttons shared by both layouts
-  const enterRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('giveaway_enter').setLabel('Enter').setStyle(ButtonStyle.Primary).setEmoji('🎁'),
-    new ButtonBuilder().setCustomId('giveaway_check').setLabel('Check entry').setStyle(ButtonStyle.Secondary).setEmoji('🎟️'),
-  );
+  const v2 = buildLiveV2({
+    prize,
+    winnersCount: winners,
+    ends: `<t:${Math.floor(endTime / 1000)}:R>`,
+    endsAt: dateStr(endTime),
+    entries: 0,
+    requirements: reqLines,
+    dropId,
+    iconUrl,
+    imageUrl: resolved.url,
+    brand: guildBrand(guildId),
+  });
 
-  let msg;
-  if (resolved.url) {
-    // Banner present: classic embed + attachment is the reliable Discord path.
-    // Components V2 MediaGallery often drops attachment:// on live messages.
-    const embed = buildLiveCard(guild, {
-      prize,
-      winnersCount: winners,
-      hostId,
-      endTime,
-      entries: 0,
-      requirements: reqLines,
-      dropId,
-    });
-    if (embed) {
-      try { embed.setImage(resolved.url); } catch { /* ignore bad url */ }
-    }
-    msg = await channel.send({
-      content: content || undefined,
-      embeds: embed ? [embed] : [],
-      components: [enterRow],
-      files: resolved.files.length ? resolved.files : undefined,
-      allowedMentions: mentionOpts,
-    });
-  } else {
-    // No banner → keep the V2 card
-    const v2 = buildLiveV2({
-      prize,
-      winnersCount: winners,
-      ends: `<t:${Math.floor(endTime / 1000)}:R>`,
-      endsAt: dateStr(endTime),
-      entries: 0,
-      requirements: reqLines,
-      dropId,
-      iconUrl,
-      imageUrl: null,
-      brand: guildBrand(guildId),
-    });
-    msg = await channel.send({
-      ...v2,
-      content: content || undefined,
-      allowedMentions: mentionOpts,
-    });
+  // V2 forbids classic content/embeds; put @everyone/@here in a leading text row.
+  const components = v2.components;
+  if (content && components?.[0]?.components) {
+    components[0].components = [
+      { type: 10, content: String(content).slice(0, 4000) },
+      ...components[0].components,
+    ];
   }
+
+  const msg = await channel.send({
+    flags: v2.flags,
+    components,
+    files: resolved.files.length ? resolved.files : undefined,
+    allowedMentions: mentionOpts,
+  });
 
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   if (!global.giveawayMeta)     global.giveawayMeta     = new Map();
@@ -572,7 +568,7 @@ async function endGiveaway(message, meta) {
       hostId,
       dropId: (meta && meta.dropId) || '————',
       iconUrl,
-      imageUrl: emptyBanner.url,
+      imageUrl: null, // banner comes off when the giveaway ends
       brand: guildBrand(guildId),
     });
     try {
@@ -615,7 +611,7 @@ async function endGiveaway(message, meta) {
   writeJson('giveaways_ended.json', allEnded);
 
   const iconUrl = guildBrandAvatar(message.guild?.id, message.guild) || null;
-  const closedBanner = resolveGiveawayBanner(imageUrl, message.guild?.id);
+  // Banner is live-only — ended card is clean stats + Reveal
   const closed = buildClosedV2({
     prize,
     entries: entrantIds.length,
@@ -623,7 +619,7 @@ async function endGiveaway(message, meta) {
     hostId,
     dropId: shortId,
     iconUrl,
-    imageUrl: bannerUrl,
+    imageUrl: null,
     brand: guildBrand(message.guild?.id),
   });
 
