@@ -60,13 +60,29 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
       // Live giveaway art: heading + winners-based subtitle (panel winners count)
       if (key === 'prizeGiveawayBanner') {
         const w = Math.max(1, Number(opts.winners) || 1);
-        copy = {
-          ...copy,
-          pill: '',
-          heading: copy.heading && copy.heading !== 'PRIZE DROP' ? copy.heading : 'GIVEAWAY DROP',
-          subtitle: w === 1 ? 'ONE WINNER TAKES IT' : (w + ' WINNERS TAKE IT'),
-          dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
-        };
+        const prizeText = String(opts.prize || '').trim();
+        if (opts.ended) {
+          // Ended-only art: heading + prize on the banner (not live drop copy)
+          const sub = prizeText
+            ? prizeText.slice(0, 42).toUpperCase()
+            : (w === 1 ? 'ONE WINNER' : (w + ' WINNERS'));
+          copy = {
+            ...copy,
+            pill: '',
+            heading: 'WINNERS SELECTED',
+            subtitle: sub,
+            tagline: 'TAP REVEAL BELOW TO SEE IF YOU WON.',
+            dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
+          };
+        } else {
+          copy = {
+            ...copy,
+            pill: '',
+            heading: copy.heading && copy.heading !== 'PRIZE DROP' ? copy.heading : 'GIVEAWAY DROP',
+            subtitle: w === 1 ? 'ONE WINNER TAKES IT' : (w + ' WINNERS TAKE IT'),
+            dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
+          };
+        }
       }
       buf = entry.generate(copy);
     } else {
@@ -687,7 +703,12 @@ async function endGiveaway(message, meta) {
     let emptyBanner = { url: null, files: [] };
     try {
       if (typeof resolveGiveawayBanner === 'function') {
-        emptyBanner = resolveGiveawayBanner(imageUrl, guildId);
+        emptyBanner = resolveGiveawayBanner(imageUrl, guildId, {
+          winners: winnersCount || 1,
+          dropId: (meta && meta.dropId) || undefined,
+          prize,
+          ended: true,
+        });
       } else if (imageUrl && /^https:\/\//i.test(String(imageUrl))) {
         emptyBanner = { url: String(imageUrl), files: [] };
       }
@@ -745,6 +766,8 @@ async function endGiveaway(message, meta) {
   const closedBanner = resolveGiveawayBanner(imageUrl, message.guild?.id, {
     winners: winnersCount,
     dropId: shortId,
+    prize,
+    ended: true,
   });
   const closed = buildClosedV2({
     prize,
