@@ -3986,15 +3986,19 @@ function renderGiveawayForm() {
     paintDur();
   }, { hideChips: true }));
 
-  // Winners chips
+  // Winners chips — only exact match lights a chip (100 must not highlight 10)
   const winBox = el('div', 'field');
   winBox.append(el('label', null, 'Winners'));
   const winChips = el('div', 'chipset drop-chips');
+  const WIN_MAX = 100;
   const paintWin = () => {
     winChips.replaceChildren();
+    const current = Number(draft.winners);
     for (const n of [1, 2, 3, 5, 10]) {
-      const b = el('button', 'chip-toggle' + (draft.winners === n ? ' on' : ''), String(n));
+      const on = Number.isInteger(current) && current === n;
+      const b = el('button', 'chip-toggle' + (on ? ' on' : ''), String(n));
       b.type = 'button';
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
       b.addEventListener('click', () => {
         draft.winners = n;
         const inp = winBox.querySelector('input');
@@ -4006,9 +4010,19 @@ function renderGiveawayForm() {
   };
   paintWin();
   winBox.append(winChips);
-  winBox.append(textField('Or type a number', '1', v => {
-    const n = Number(v);
-    if (Number.isInteger(n) && n >= 1 && n <= 50) { draft.winners = n; paintWin(); }
+  winBox.append(textField('Or type a number', String(draft.winners || 1), v => {
+    const n = parseInt(String(v).trim(), 10);
+    if (Number.isInteger(n) && n >= 1 && n <= WIN_MAX) {
+      draft.winners = n;
+      paintWin();
+    } else if (String(v).trim() === '') {
+      // empty while typing — no chip selected
+      draft.winners = 1;
+      paintWin();
+    } else {
+      // invalid / out of range — keep typed digits in the box but clear chips
+      paintWin();
+    }
   }));
 
   form.replaceChildren(
