@@ -268,6 +268,26 @@ const CATALOGUE = {
 
   /* -- the record ---------------------------------------------------------- */
 
+  'mod.lock': action('Channel locked',
+    'Posted when /lock is used. {channel} and {reason} are filled in.',
+    BRAND.sky, 'locked this channel', {
+      tokens: ['{channel}', '{reason}'],
+      defaults: {
+        enabled: true, color: BRAND.sky, title: 'Channel locked',
+        body: '**Channel:** {channel}\n**Reason:** {reason}',
+      },
+    }),
+
+  'mod.unlock': action('Channel unlocked',
+    'Posted when /unlock is used.',
+    BRAND.cyan, 'unlocked this channel', {
+      tokens: ['{channel}'],
+      defaults: {
+        enabled: true, color: BRAND.cyan, title: 'Channel unlocked',
+        body: '**Channel:** {channel}\nMessaging is open again.',
+      },
+    }),
+
   'log.action': {
     group: 'Records',
     label: 'Mod-log entry',
