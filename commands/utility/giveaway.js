@@ -185,31 +185,26 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
     dropId,
   });
 
-  const embed = buildLiveCard(guild, {
+  const iconUrl = guildBrandAvatar(guild.id, guild) || null;
+  const v2 = buildLiveV2({
     prize,
     winnersCount: winners,
-    hostId,
-    endTime,
+    ends: `<t:${Math.floor(endTime / 1000)}:R>`,
+    endsAt: dateStr(endTime),
     entries: Number(entryCount) || 0,
     requirements: reqLines,
     dropId,
+    iconUrl,
+    imageUrl: resolved.url,
+    brand: guildBrand(guild.id),
   });
-  if (embed && resolved.url) {
-    try { embed.setImage(resolved.url); } catch { /* ignore */ }
-  }
 
-  const enterRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('giveaway_enter').setLabel('Enter').setStyle(ButtonStyle.Primary).setEmoji('🎁'),
-    new ButtonBuilder().setCustomId('giveaway_check').setLabel('Check entry').setStyle(ButtonStyle.Secondary).setEmoji('🎟️'),
-  );
-
-  // Keep existing content (ping + "New giveaway") so edits never wipe the notification text
-  const keepContent = message.content || null;
+  withMentionRow(v2, meta.mentionContent || rec.mentionContent || null);
 
   await message.edit({
-    content: keepContent,
-    embeds: embed ? [embed] : [],
-    components: [enterRow],
+    ...v2,
+    content: null,
+    embeds: [],
     files: resolved.files.length ? resolved.files : undefined,
   });
   return true;
@@ -487,38 +482,28 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const dropId = genId(guildId);
   const iconUrl = guildBrandAvatar(guild.id, guild) || hostAvatarUrl || null;
 
-  // Classic content + embed so phone push says "New giveaway", not "sent an image".
-  // (Components V2 cannot set `content`, so Discord falls back to the banner file.)
+  // Always the same V2 layout. Banner (if any) sits in the MediaGallery slot.
   const resolved = resolveGiveawayBanner(imageUrl, guildId, { winners, dropId });
 
-  const notifyLines = [];
-  if (content) notifyLines.push(content); // @everyone / role ping above everything
-  notifyLines.push(`🎁 **New giveaway — ${prize}**`);
-  notifyLines.push(`Ends <t:${endTimestamp}:R> · Tap **Enter** below`);
-  const notifyContent = notifyLines.join('\n').slice(0, 2000);
-
-  const embed = buildLiveCard(guild, {
+  const v2 = buildLiveV2({
     prize,
     winnersCount: winners,
-    hostId,
-    endTime,
+    ends: `<t:${Math.floor(endTime / 1000)}:R>`,
+    endsAt: dateStr(endTime),
     entries: 0,
     requirements: reqLines,
     dropId,
+    iconUrl,
+    imageUrl: resolved.url,
+    brand: guildBrand(guildId),
   });
-  if (embed && resolved.url) {
-    try { embed.setImage(resolved.url); } catch { /* ignore */ }
-  }
 
-  const enterRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('giveaway_enter').setLabel('Enter').setStyle(ButtonStyle.Primary).setEmoji('🎁'),
-    new ButtonBuilder().setCustomId('giveaway_check').setLabel('Check entry').setStyle(ButtonStyle.Secondary).setEmoji('🎟️'),
-  );
+  // Ping sits ABOVE the card as the first text row (V2 cannot use classic content).
+  withMentionRow(v2, content);
 
   const msg = await channel.send({
-    content: notifyContent,
-    embeds: embed ? [embed] : [],
-    components: [enterRow],
+    flags: v2.flags,
+    components: v2.components,
     files: resolved.files.length ? resolved.files : undefined,
     allowedMentions: mentionOpts || { parse: [] },
   });
