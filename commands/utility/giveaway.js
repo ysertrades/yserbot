@@ -968,8 +968,8 @@ async function performReroll(guild, shortId) {
     const mentions = newWinners.map(id => `<@${id}>`).join(', ');
     const multi = newWinners.length > 1;
     const line = multi
-      ? `🎲 **Reroll complete** — new winners are ${mentions}! Congrats, reach out to <@${data.hostId}> for **${data.prize}**.`
-      : `🎲 **Reroll complete** — ${mentions} takes **${data.prize}**! Ping <@${data.hostId}> to claim it.`;
+      ? `🎲 **Reroll complete** — ${mentions} just pulled **${data.prize}**. Congrats!`
+      : `🎲 **Reroll complete** — ${mentions} takes **${data.prize}**. Congrats!`;
 
     await origMsg.reply({
       content: line.slice(0, 2000),
@@ -982,9 +982,10 @@ async function performReroll(guild, shortId) {
       }).catch(() => {});
     });
 
-    // Best-effort: refresh ended card winner line when it's still a classic embed
+    // Classic embed messages only — V2 ended cards keep their layout;
+    // the reply above is the public winner announcement.
     try {
-      if (origMsg.embeds?.length) {
+      if (origMsg.embeds?.length && !(origMsg.flags?.has?.(require('discord.js').MessageFlags.IsComponentsV2))) {
         const updEmbed = new EmbedBuilder()
           .setColor(GOLD)
           .setTitle(`🎟️  ${data.prize} — Ended`)
@@ -998,7 +999,7 @@ async function performReroll(guild, shortId) {
         const rerollFiles = applyEmbedImage(updEmbed, data.imageUrl, guildId);
         await origMsg.edit({ embeds: [updEmbed], ...replaceFiles(rerollFiles) }).catch(() => {});
       }
-    } catch { /* V2 ended cards stay as-is; the reply is the public record */ }
+    } catch { /* leave card as-is */ }
   } catch { /* original message may be gone — the reroll itself still succeeded */ }
 
   // No winner DM on reroll — the channel reply is the announcement.
