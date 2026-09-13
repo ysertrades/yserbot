@@ -2077,7 +2077,7 @@ async function softRefreshOverview() {
 
 
 async function openGiveawayParticipants(messageId, meta = {}) {
-  const sheetTitle = meta.title ? `Roster · ${meta.title}` : 'Giveaway roster';
+  const sheetTitle = meta.title ? `Participants · ${meta.title}` : 'Participants';
   // Loading state
   openSheet(sheetTitle, [
     el('div', 'roster-loading', 'Pulling entrants…'),
@@ -2114,7 +2114,7 @@ async function openGiveawayParticipants(messageId, meta = {}) {
   body.push(hero);
 
   if (!(res.participants || []).length) {
-    body.push(el('div', 'roster-empty', 'No one has entered yet. Share the drop — the roster fills live.'));
+    body.push(el('div', 'roster-empty', 'No one has entered yet.'));
   } else {
     const list = el('div', 'roster-list');
     (res.participants || []).forEach((p, i) => {
@@ -2135,9 +2135,9 @@ async function openGiveawayParticipants(messageId, meta = {}) {
       const info = el('div', 'roster-info');
       info.append(el('span', 'roster-name', p.tag || p.id));
       const bits = [
-        p.accountAgeDays != null ? `acct ${p.accountAgeDays}d` : null,
-        p.serverJoinDays != null ? `here ${p.serverJoinDays}d` : null,
-        p.young ? 'young' : null,
+        p.accountAgeDays != null ? `Age ${p.accountAgeDays}d` : null,
+        p.serverJoinDays != null ? `Server ${p.serverJoinDays}d` : null,
+        p.young ? 'Young' : null,
       ].filter(Boolean);
       info.append(el('span', 'roster-sub', bits.join(' · ') || p.id));
       row.append(info);
