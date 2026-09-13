@@ -40,7 +40,8 @@ async function save(guildId, body, ctx = {}) {
       console.warn('[featureToggles] command visibility:', err.message);
     }
   }
-  return result;
+  // Return fresh groups so the panel can update nav/toggles without a refresh.
+  return { ...result, featureToggles: read(guildId) };
 }
 
 module.exports = { read, save };

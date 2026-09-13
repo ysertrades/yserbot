@@ -147,8 +147,10 @@ async function checkGuild(client, guildId) {
 }
 
 async function runTick(client) {
+  const { isFeatureEnabled } = require('./featureToggles');
   const stored = require('./jsonStorage').readJson(whop.FILE, {});
   for (const guildId of Object.keys(stored)) {
+    if (!isFeatureEnabled(guildId, 'whop')) continue;
     if (!whop.getSettings(guildId).enabled) continue;
     if (!client.guilds.cache.has(guildId)) continue;
     await checkGuild(client, guildId);

@@ -2322,3 +2322,18 @@ select.cselect-native {
   overflow: hidden;
   pointer-events: none;
 }
+
+
+/* Save / primary actions: busy = still clearly the main button, not “dead grey” */
+.btn.primary:disabled,
+.btn.primary.is-busy {
+  opacity: 0.85;
+  filter: none;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  cursor: wait;
+}
+.btn.primary:not(:disabled):not(.is-busy) {
+  opacity: 1;
+}

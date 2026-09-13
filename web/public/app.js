@@ -309,6 +309,10 @@ async function post(op, body, { quiet = false } = {}) {
     if (!msg) msg = 'Saved.';
     toast(msg, 'good');
   }
+  if (data.featureToggles && state.overview) {
+    state.overview.featureToggles = data.featureToggles;
+    try { syncFeatureNav(); } catch {}
+  }
   if (data.overview) {
     state.overview = data.overview;
     renderOverview();
@@ -712,6 +716,7 @@ function renderOverview() {
   renderGiveaways();
   renderSettings();
   renderFeatureToggles();
+  try { syncFeatureNav(); } catch {}
   try { syncFeatureNav(); } catch (e) { console.warn('[panel] syncFeatureNav', e); }
   renderBotProfile();
   renderPanelLog();
@@ -974,12 +979,18 @@ function actions(onSave, { label = 'Save changes', busyLabel = null } = {}) {
   const save = el('button', 'btn primary small', label);
   save.type = 'button';
   save.addEventListener('click', async () => {
+    if (save.dataset.busy === '1') return;
+    save.dataset.busy = '1';
     save.disabled = true;
-    save.className = 'btn primary small';
+    save.setAttribute('aria-busy', 'true');
+    save.className = 'btn primary small is-busy';
     if (busyLabel) save.textContent = busyLabel;
-    try { await onSave(); }
-    finally {
+    try {
+      await onSave();
+    } finally {
+      save.dataset.busy = '0';
       save.disabled = false;
+      save.removeAttribute('aria-busy');
       save.className = 'btn primary small';
       save.textContent = label;
     }
@@ -4373,27 +4384,38 @@ function featureOn(key) {
 function syncFeatureNav() {
   const hide = (el, off) => {
     if (!el) return;
-    el.hidden = off;
+    el.hidden = !!off;
     el.style.display = off ? 'none' : '';
     el.setAttribute('aria-hidden', off ? 'true' : 'false');
   };
-  const econOff = !featureOn('economy');
-  const casOff = !featureOn('casino');
-  const calOff = !featureOn('econ_calendar');
-  const gawOff = !featureOn('giveaways');
-  hide(document.getElementById('nav-economy') || document.querySelector('[data-goto="economy"]'), econOff);
-  hide(document.getElementById('nav-casino') || document.querySelector('[data-goto="casino"]'), casOff);
-  hide(document.getElementById('nav-feeds') || document.querySelector('[data-goto="feeds"]'), calOff);
-  hide(document.getElementById('nav-giveaways') || document.querySelector('[data-goto="giveaways"]'), gawOff);
+  const nav = (name) =>
+    document.getElementById('nav-' + name) || document.querySelector('[data-goto="' + name + '"]');
 
-  // Hide the calendar panels themselves if someone deep-links the section
-  document.querySelectorAll('.section[data-section="feeds"] .panel').forEach(p => {
-    hide(p, calOff);
-  });
+  const econOff = !featureOn('economy');
+  const casOff  = !featureOn('casino');
+  const calOff  = !featureOn('econ_calendar');
+  const whopOff = !featureOn('whop');
+  const gawOff  = !featureOn('giveaways');
+  const tixOff  = !featureOn('tickets');
+  // Feeds holds calendar + Whop — keep the tab if either is on.
+  const feedsOff = calOff && whopOff;
+
+  hide(nav('economy'), econOff);
+  hide(nav('casino'), casOff);
+  hide(nav('feeds'), feedsOff);
+  hide(nav('giveaways'), gawOff);
+  hide(nav('tickets'), tixOff);
+
+  // Calendar panels only
+  hide($('#form-econcal')?.closest('.panel'), calOff);
+  hide($('#release-desk'), calOff);
+  // Whop panel only
+  hide($('#whop-panel'), whopOff);
 
   const sec = root?.dataset?.section;
   if ((sec === 'economy' && econOff) || (sec === 'casino' && casOff)
-      || (sec === 'feeds' && calOff) || (sec === 'giveaways' && gawOff)) {
+      || (sec === 'feeds' && feedsOff) || (sec === 'giveaways' && gawOff)
+      || (sec === 'tickets' && tixOff)) {
     if (typeof showSection === 'function') showSection('overview');
   }
 }
@@ -4404,13 +4426,19 @@ function renderFeatureToggles() {
   if (!box) return;
   if (!ft) { box.replaceChildren(); return; }
 
+  // Don't wipe in-progress edits when live overview refresh fires.
+  if (box.dataset.dirty === '1' && root?.dataset?.section === 'settings') return;
+
   const draft = {};
-  for (const g of ft.groups) draft[g.key] = g.enabled;
+  for (const g of ft.groups) draft[g.key] = g.enabled !== false;
 
   const rows = ft.groups.map(g => {
     const row = el('div', 'toggle-row');
     row.append(
-      toggle(g.label, draft[g.key], v => { draft[g.key] = v; }),
+      toggle(g.label, !!draft[g.key], v => {
+        draft[g.key] = v;
+        box.dataset.dirty = '1';
+      }),
       el('p', 'hint', g.description),
     );
     return row;
@@ -4418,9 +4446,32 @@ function renderFeatureToggles() {
 
   box.replaceChildren(...rows, actions(async () => {
     const out = await post('featuretoggles', draft);
+    if (!out) return null; // keep dirty so the user can retry
+
+    // Live update: apply server groups (or optimistic draft) without full reload.
+    if (out.featureToggles?.groups && state.overview) {
+      state.overview.featureToggles = out.featureToggles;
+    } else if (state.overview?.featureToggles?.groups) {
+      for (const g of state.overview.featureToggles.groups) {
+        if (g.key in draft) g.enabled = !!draft[g.key];
+      }
+    }
+    box.dataset.dirty = '0';
     try { syncFeatureNav(); } catch {}
+    // Soft refresh overview in background so other cards stay truthful.
+    try {
+      const fresh = await get(`/api/guild/${state.guildId}`);
+      if (fresh?.guild?.id === state.guildId) {
+        const keepDirty = box.dataset.dirty === '1';
+        state.overview = fresh;
+        if (!keepDirty) renderFeatureToggles();
+        syncFeatureNav();
+      }
+    } catch {}
     return out;
-  }));
+  }, { label: 'Save changes', busyLabel: 'Saving…' }));
+
+  box.dataset.dirty = '0';
 }
 
 /* ── bot profile ──────────────────────────────────────────────────────────

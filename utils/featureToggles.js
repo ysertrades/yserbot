@@ -129,6 +129,12 @@ const FEATURE_GROUPS = [
     commands: [],
     passive: true,
   },
+  {
+    key: 'whop', label: 'Whop Courses',
+    description: 'Whop course tracking and new-lesson posts in Feeds. Turn off to stop scanning and posting for this server.',
+    commands: [],
+    passive: true,
+  },
 ];
 
 const COMMAND_TO_GROUP = new Map();
