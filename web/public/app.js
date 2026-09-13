@@ -2070,7 +2070,9 @@ function optimisticGawEnd(shortId) {
 
 async function softRefreshOverview() {
   try {
-    if (typeof refreshOverview === 'function') await refreshOverview();
+    if (typeof refreshOverview === 'function') {
+      Promise.resolve(refreshOverview()).catch(() => {});
+    }
   } catch (_) {}
 }
 
@@ -2078,103 +2080,163 @@ async function softRefreshOverview() {
 
 async function openGiveawayParticipants(messageId, meta = {}) {
   const sheetTitle = meta.title ? `Participants · ${meta.title}` : 'Participants';
-  // Loading state
-  openSheet(sheetTitle, [
-    el('div', 'roster-loading', 'Pulling entrants…'),
-  ], []);
 
-  const res = await post('giveawayparticipants', { messageId });
-  if (!res?.ok) {
-    openSheet(sheetTitle, [
-      el('p', 'hint bad', 'Could not load participants. The giveaway may have ended.'),
-    ], [
-      Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
-    ]);
-    return;
+  // Keep one sheet open — do not tear down on every refresh
+  if (!window.__gawRoster) window.__gawRoster = {};
+  const roster = window.__gawRoster;
+  roster.messageId = messageId;
+  roster.title = meta.title || roster.title || '';
+
+  // Stop previous poller
+  if (roster.pollTimer) {
+    clearInterval(roster.pollTimer);
+    roster.pollTimer = null;
   }
 
-  const young = (res.participants || []).filter(p => p.young).length;
-  const body = [];
+  const paint = async (opts = {}) => {
+    const silent = !!opts.silent;
+    if (!silent) {
+      openSheet(sheetTitle, [el('div', 'roster-loading', 'Pulling entrants…')], []);
+    }
 
-  // Hero strip
-  const hero = el('div', 'roster-hero');
-  const count = el('div', 'roster-count');
-  count.append(el('span', 'roster-count-num', String(res.count)));
-  count.append(el('span', 'roster-count-label', res.count === 1 ? 'entrant' : 'entrants'));
-  hero.append(count);
-  const metaLine = el('div', 'roster-meta');
-  if (res.prize) metaLine.append(el('span', 'roster-prize', res.prize));
-  if (res.dropId) metaLine.append(el('span', 'roster-id mono', `QL-${res.dropId}`));
-  if (young) {
-    const flag = el('span', 'roster-flag', `${young} young account${young === 1 ? '' : 's'}`);
-    flag.title = 'Account age under 14 days — review for multi-account risk';
-    metaLine.append(flag);
-  }
-  hero.append(metaLine);
-  body.push(hero);
-
-  if (!(res.participants || []).length) {
-    body.push(el('div', 'roster-empty', 'No one has entered yet.'));
-  } else {
-    const list = el('div', 'roster-list');
-    (res.participants || []).forEach((p, i) => {
-      const row = el('div', 'roster-row' + (p.young ? ' is-young' : ''));
-      row.style.animationDelay = `${Math.min(i, 12) * 0.04}s`;
-
-      const av = el('div', 'roster-av');
-      if (p.avatar) {
-        const img = el('img');
-        img.src = p.avatar;
-        img.alt = '';
-        av.append(img);
-      } else {
-        av.append(el('span', null, (p.tag || '?').slice(0, 1).toUpperCase()));
+    const res = await post('giveawayparticipants', { messageId });
+    // Sheet closed or switched to another drop
+    if (roster.messageId !== messageId) return;
+    if (!res?.ok) {
+      if (!silent) {
+        openSheet(sheetTitle, [
+          el('p', 'hint bad', 'Could not load participants. The giveaway may have ended.'),
+        ], [
+          Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
+        ]);
       }
-      row.append(av);
+      return;
+    }
 
-      const info = el('div', 'roster-info');
-      info.append(el('span', 'roster-name', p.tag || p.id));
-      const bits = [
-        p.accountAgeDays != null ? `Age ${p.accountAgeDays}d` : null,
-        p.serverJoinDays != null ? `Server ${p.serverJoinDays}d` : null,
-        p.young ? 'Young' : null,
-      ].filter(Boolean);
-      info.append(el('span', 'roster-sub', bits.join(' · ') || p.id));
-      row.append(info);
+    const young = (res.participants || []).filter(p => p.young).length;
+    const body = [];
 
-      const actions = el('div', 'roster-actions');
-      const rm = el('button', 'btn small danger roster-remove', 'Remove');
-      rm.type = 'button';
-      rm.title = 'Remove this entry from the giveaway';
-      rm.addEventListener('click', async () => {
-        if (!await askConfirm({
-          title: 'Remove entrant?',
-          message: `${p.tag} will lose their spot. This cannot be undone from the panel.`,
-          confirmLabel: 'Remove entry',
-          danger: true,
-        })) return;
-        rm.disabled = true;
-        row.classList.add('is-leaving');
-        const out = await post('giveawayremoveparticipant', { messageId, userId: p.id });
-        if (out?.ok) {
-          setTimeout(() => openGiveawayParticipants(messageId, { title: res.prize }), 220);
-          softRefreshOverview();
+    const hero = el('div', 'roster-hero');
+    const count = el('div', 'roster-count');
+    count.append(el('span', 'roster-count-num', String(res.count)));
+    count.append(el('span', 'roster-count-label', res.count === 1 ? 'entrant' : 'entrants'));
+    hero.append(count);
+    const metaLine = el('div', 'roster-meta');
+    if (res.prize) metaLine.append(el('span', 'roster-prize', res.prize));
+    if (res.dropId) metaLine.append(el('span', 'roster-id mono', `QL-${res.dropId}`));
+    if (young) {
+      const flag = el('span', 'roster-flag', `${young} young account${young === 1 ? '' : 's'}`);
+      flag.title = 'Account age under 14 days';
+      metaLine.append(flag);
+    }
+    hero.append(metaLine);
+    body.push(hero);
+
+    if (!(res.participants || []).length) {
+      body.push(el('div', 'roster-empty', 'No one has entered yet.'));
+    } else {
+      const list = el('div', 'roster-list');
+      (res.participants || []).forEach((p, i) => {
+        const row = el('div', 'roster-row' + (p.young ? ' is-young' : ''));
+        row.dataset.userId = p.id;
+        row.style.animationDelay = silent ? '0s' : `${Math.min(i, 12) * 0.04}s`;
+
+        const av = el('div', 'roster-av');
+        if (p.avatar) {
+          const img = el('img');
+          img.src = p.avatar;
+          img.alt = '';
+          av.append(img);
         } else {
-          row.classList.remove('is-leaving');
-          rm.disabled = false;
+          av.append(el('span', null, (p.tag || '?').slice(0, 1).toUpperCase()));
         }
-      });
-      actions.append(rm);
-      row.append(actions);
-      list.append(row);
-    });
-    body.push(list);
-  }
+        row.append(av);
 
-  openSheet(sheetTitle, body, [
-    Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
-  ]);
+        const info = el('div', 'roster-info');
+        info.append(el('span', 'roster-name', p.tag || p.id));
+        const bits = [
+          p.accountAgeDays != null ? `Age ${p.accountAgeDays}d` : null,
+          p.serverJoinDays != null ? `Server ${p.serverJoinDays}d` : null,
+          p.young ? 'Young' : null,
+        ].filter(Boolean);
+        info.append(el('span', 'roster-sub', bits.join(' · ') || p.id));
+        row.append(info);
+
+        const actions = el('div', 'roster-actions');
+        const rm = el('button', 'btn small danger roster-remove', 'Remove');
+        rm.type = 'button';
+        rm.addEventListener('click', async () => {
+          if (!await askConfirm({
+            title: 'Remove entrant?',
+            message: `${p.tag} will lose their spot.`,
+            confirmLabel: 'Remove entry',
+            danger: true,
+          })) return;
+          rm.disabled = true;
+          row.classList.add('is-leaving');
+          const out = await post('giveawayremoveparticipant', { messageId, userId: p.id });
+          if (out?.ok) {
+            // Stay on the same sheet — quiet repaint, no full relaunch
+            row.remove();
+            const num = document.querySelector('.roster-count-num');
+            if (num) num.textContent = String(out.count ?? Math.max(0, (res.count || 1) - 1));
+            // Refresh list from server without closing
+            await paint({ silent: true });
+            // Update live cards in background (do not remount sheet)
+            try {
+              const data = await get(`/api/guild/${state.guildId}`);
+              if (data) {
+                state.overview = data;
+                if (typeof renderGiveaways === 'function') renderGiveaways();
+              }
+            } catch (_) {}
+          } else {
+            row.classList.remove('is-leaving');
+            rm.disabled = false;
+          }
+        });
+        actions.append(rm);
+        row.append(actions);
+        list.append(row);
+      });
+      body.push(list);
+    }
+
+    openSheet(sheetTitle, body, [
+      Object.assign(el('button', 'btn', 'Close'), {
+        type: 'button',
+        onclick: () => {
+          if (roster.pollTimer) {
+            clearInterval(roster.pollTimer);
+            roster.pollTimer = null;
+          }
+          roster.messageId = null;
+          closeSheet();
+        },
+      }),
+    ]);
+  };
+
+  await paint({ silent: false });
+
+  // Live poll while the sheet is open — new enters appear without reopening
+  roster.pollTimer = setInterval(() => {
+    if (roster.messageId !== messageId) {
+      clearInterval(roster.pollTimer);
+      roster.pollTimer = null;
+      return;
+    }
+    const sheet = document.getElementById('sheet');
+    if (sheet && sheet.hidden) {
+      clearInterval(roster.pollTimer);
+      roster.pollTimer = null;
+      roster.messageId = null;
+      return;
+    }
+    paint({ silent: true }).catch(() => {});
+  }, 4000);
 }
+
 
 function renderGiveaways() {
   ticking.clear();

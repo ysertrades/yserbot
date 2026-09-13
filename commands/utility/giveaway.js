@@ -160,30 +160,59 @@ function persistGiveawayEntry(msgId, entrants) {
 async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
   if (!guild || !messageId) return false;
   const rec = getActiveGiveaway(messageId);
-  if (!rec || rec.guildId !== guild.id) return false;
+  if (!rec || String(rec.guildId) !== String(guild.id)) {
+    console.warn('[GIVEAWAY] refresh: no active record', messageId);
+    return false;
+  }
 
   const channel = guild.channels.cache.get(rec.channelId)
     || await guild.channels.fetch(rec.channelId).catch(() => null);
-  if (!channel?.isTextBased?.()) return false;
+  if (!channel?.isTextBased?.()) {
+    console.warn('[GIVEAWAY] refresh: channel missing', rec.channelId);
+    return false;
+  }
 
   const message = await channel.messages.fetch(messageId).catch(() => null);
-  if (!message) return false;
+  if (!message) {
+    console.warn('[GIVEAWAY] refresh: message missing', messageId);
+    return false;
+  }
 
   const meta = global.giveawayMeta?.get(messageId) || rec;
   const prize = meta.prize || rec.prize;
-  const hostId = meta.hostId || rec.hostId;
+  const hostId = meta.hostId || rec.hostId || null;
   const endTime = Number(meta.endTime || rec.endTime);
-  if (!prize || !hostId || !(endTime > 0)) return false;
+  if (!prize || !(endTime > 0)) {
+    console.warn('[GIVEAWAY] refresh: incomplete meta', { prize: !!prize, endTime });
+    return false;
+  }
 
   const dropId = meta.dropId || rec.dropId || '————';
   const winners = meta.winners ?? meta.winnersCount ?? rec.winnersCount ?? 1;
   const reqLines = meta.requirementLines || rec.requirementLines || [];
   const imageUrl = meta.imageUrl ?? rec.imageUrl ?? null;
+  const entries = Number(entryCount) || 0;
 
-  const resolved = resolveGiveawayBanner(imageUrl, guild.id, {
-    winners,
-    dropId,
-  });
+  // Prefer the banner already on the message (CDN URL). Re-uploading the PNG
+  // on every Enter is a common reason the edit fails and the counter freezes.
+  let bannerUrl = null;
+  let bannerFiles = [];
+  try {
+    const atts = message.attachments;
+    const att = atts?.find?.(a => /\.(png|jpe?g|webp|gif)$/i.test(a.name || ''))
+      || (atts?.size ? [...atts.values()][0] : null);
+    if (att?.url) bannerUrl = att.proxyURL || att.url;
+  } catch {}
+
+  if (!bannerUrl && imageUrl) {
+    try {
+      const resolved = resolveGiveawayBanner(imageUrl, guild.id, { winners, dropId });
+      bannerUrl = resolved.url;
+      bannerFiles = resolved.files || [];
+    } catch (err) {
+      console.warn('[GIVEAWAY] refresh banner resolve:', err.message);
+    }
+  }
 
   const iconUrl = guildBrandAvatar(guild.id, guild) || null;
   const v2 = buildLiveV2({
@@ -191,30 +220,51 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
     winnersCount: winners,
     ends: `<t:${Math.floor(endTime / 1000)}:R>`,
     endsAt: dateStr(endTime),
-    entries: Number(entryCount) || 0,
+    entries,
     requirements: reqLines,
     dropId,
     iconUrl,
-    imageUrl: resolved.url,
+    imageUrl: bannerUrl,
     brand: guildBrand(guild.id),
   });
-
   withMentionRow(v2, meta.mentionContent || rec.mentionContent || null);
 
   try {
-    await message.edit({
+    const payload = {
       flags: v2.flags,
       components: v2.components,
       content: null,
       embeds: [],
-      files: resolved.files.length ? resolved.files : undefined,
-    });
+    };
+    if (bannerFiles.length) payload.files = bannerFiles;
+    await message.edit(payload);
+    return true;
   } catch (err) {
-    console.warn('[GIVEAWAY] refreshLiveGiveawayMessage edit failed:', err.message);
+    console.warn('[GIVEAWAY] refresh edit failed:', err.message);
+    // Report so the panel / error log surfaces silent freezes
+    try {
+      const conf = readJson('config.json', {})[guild.id] || {};
+      const logId = conf.errorLogChannelId || conf.modLogChannelId || conf.logsChannel;
+      const logCh = logId && guild.channels.cache.get(logId);
+      if (logCh?.isTextBased?.()) {
+        const { EmbedBuilder } = require('discord.js');
+        await logCh.send({
+          embeds: [new EmbedBuilder()
+            .setColor(0xE67E22)
+            .setTitle('Giveaway card update failed')
+            .setDescription(
+              `Live **Entries** counter could not be refreshed.\\n` +
+              `**Drop:** QL-${dropId}\\n**Prize:** ${prize}\\n` +
+              `**Entries (memory):** ${entries}\\n**Error:** \\`${String(err.message || err).slice(0, 180)}\\``
+            )
+            .setTimestamp()],
+        }).catch(() => {});
+      }
+    } catch {}
     return false;
   }
-  return true;
 }
+
 
 async function restoreGiveaways(client) {
   const active = readJson(ACTIVE_FILE, {});
