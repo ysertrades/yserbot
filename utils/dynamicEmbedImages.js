@@ -127,4 +127,7 @@ function collectDynamicAttachments(template, guildId = null) {
   return files;
 }
 
-module.exports = { DYNAMIC_IMAGES, isDynamicImage, dynamicImageKey, dynamicAttachmentRef, collectDynamicAttachments, warm };
+module.exports = {
+  DYNAMIC_IMAGES, isDynamicImage, dynamicImageKey, dynamicAttachmentRef,
+  collectDynamicAttachments, warm, renderDynamic,
+};

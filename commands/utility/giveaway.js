@@ -14,7 +14,42 @@ const { solidRule, BRAND_PURPLE } = require('../../utils/dropFormat');
 const { parseDuration } = require('../../utils/duration');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 const messageStyle = require('../../utils/messageStyle');
+
 const { buildLiveV2, buildClosedV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
+
+/**
+ * Turn a panel banner value into something Components V2 can show.
+ * - https://…  → use as-is
+ * - dynamic:key → render PNG, attach file, use attachment://filename
+ */
+function resolveGiveawayBanner(imageUrl, guildId) {
+  if (!imageUrl) return { url: null, files: [] };
+  const raw = String(imageUrl).trim();
+  if (/^https:\/\//i.test(raw)) return { url: raw, files: [] };
+  if (!raw.startsWith('dynamic:')) return { url: null, files: [] };
+  try {
+    const {
+      DYNAMIC_IMAGES, dynamicImageKey, renderDynamic,
+    } = require('../../utils/dynamicEmbedImages');
+    const { AttachmentBuilder } = require('discord.js');
+    const key = dynamicImageKey(raw);
+    const entry = DYNAMIC_IMAGES[key];
+    if (!entry) {
+      console.warn('[GIVEAWAY] unknown dynamic banner:', key);
+      return { url: null, files: [] };
+    }
+    const buf = renderDynamic(key, entry, guildId);
+    if (!buf) return { url: null, files: [] };
+    return {
+      url: `attachment://${entry.filename}`,
+      files: [new AttachmentBuilder(buf, { name: entry.filename })],
+    };
+  } catch (err) {
+    console.warn('[GIVEAWAY] dynamic banner failed:', err.message);
+    return { url: null, files: [] };
+  }
+}
+
 function guildBrand(guildId) {
   const conf = readJson('config.json', {})[guildId] || {};
   const n = String(conf.brandName || '').trim();
@@ -357,40 +392,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const dropId = genId(guildId);
   const iconUrl = guildBrandAvatar(guild.id, guild) || hostAvatarUrl || null;
 
-  // Resolve banner: https URL or dynamic: generated attachment (prize / TV / etc.)
-  let bannerUrl = null;
-  const bannerFiles = [];
-  if (imageUrl && /^https:\/\//i.test(String(imageUrl))) {
-    bannerUrl = String(imageUrl);
-  } else if (imageUrl && String(imageUrl).startsWith('dynamic:')) {
-    try {
-      const {
-        isDynamicImage, dynamicImageKey, DYNAMIC_IMAGES,
-      } = require('../../utils/dynamicEmbedImages');
-      const { AttachmentBuilder } = require('discord.js');
-      const key = dynamicImageKey(String(imageUrl));
-      const entry = DYNAMIC_IMAGES[key];
-      if (entry) {
-        // renderDynamic is internal — call generate path via collect pattern
-        const { renderDynamic } = (() => {
-          // Prefer exporting render if present; else regenerate via entry.generate
-          try { return require('../../utils/dynamicEmbedImages'); } catch { return {}; }
-        })();
-        let buf;
-        if (typeof entry.generate === 'function') {
-          buf = entry.takesCopy
-            ? entry.generate(require('../../utils/bannerCopy').copyForDynamicKey(key, guildId))
-            : entry.generate();
-        }
-        if (buf) {
-          bannerFiles.push(new AttachmentBuilder(buf, { name: entry.filename }));
-          bannerUrl = `attachment://${entry.filename}`;
-        }
-      }
-    } catch (err) {
-      console.warn('[GIVEAWAY] dynamic banner failed:', err.message);
-    }
-  }
+  const resolved = resolveGiveawayBanner(imageUrl, guildId);
 
   const v2 = buildLiveV2({
     prize,
@@ -401,13 +403,13 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     requirements: reqLines,
     dropId,
     iconUrl,
-    imageUrl: bannerUrl,
+    imageUrl: resolved.url,
     brand: guildBrand(guildId),
   });
 
   const msg = await channel.send({
     ...v2,
-    files: bannerFiles.length ? bannerFiles : undefined,
+    files: resolved.files.length ? resolved.files : undefined,
     allowedMentions: mentionOpts,
   });
 
@@ -563,7 +565,7 @@ async function endGiveaway(message, meta) {
   writeJson('giveaways_ended.json', allEnded);
 
   const iconUrl = guildBrandAvatar(message.guild?.id, message.guild) || null;
-  const bannerUrl = (imageUrl && /^https:\/\//i.test(String(imageUrl))) ? String(imageUrl) : null;
+  const closedBanner = resolveGiveawayBanner(imageUrl, message.guild?.id);
   const closed = buildClosedV2({
     prize,
     entries: entrantIds.length,
@@ -847,6 +849,7 @@ function buildListPayload(guildId, guild) {
 // ── Module ────────────────────────────────────────────────────────────────────
 
 module.exports = {
+  resolveGiveawayBanner,
   data: new SlashCommandBuilder()
     .setName('giveaway').setDescription('Create, end, reroll & list giveaways')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

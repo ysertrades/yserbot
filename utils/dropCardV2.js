@@ -23,9 +23,11 @@ function row(...buttons) {
   return { type: 1, components: buttons };
 }
 function media(url) {
-  if (!url || !/^https:\/\//i.test(url)) return null;
-  // Full-width gallery is Discord's only image size in V2; order keeps it under the stats.
-  return { type: 12, items: [{ media: { url } }] };
+  // https CDN links and attachment:// files uploaded with the message
+  if (!url) return null;
+  const u = String(url);
+  if (!/^https:\/\//i.test(u) && !/^attachment:\/\//i.test(u)) return null;
+  return { type: 12, items: [{ media: { url: u } }] };
 }
 function sectionWithThumb(content, iconUrl) {
   if (!iconUrl) return text(content);

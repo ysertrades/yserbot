@@ -351,8 +351,23 @@ module.exports = {
               ?? client.commands.get('giveaway')?.getActiveGiveaway?.(interaction.message.id);
             const dropId = meta?.dropId || stored?.dropId || '••••••••';
             const iconUrl = interaction.guild?.iconURL?.({ size: 256, dynamic: true }) || null;
-            const bannerUrl = (stored?.imageUrl && /^https:\/\//i.test(String(stored.imageUrl)))
-              ? String(stored.imageUrl) : null;
+            // Keep generated banners on every entry refresh (https + dynamic:)
+            let bannerUrl = null;
+            let bannerFiles = [];
+            try {
+              const gaw = client.commands.get('giveaway');
+              const resolved = gaw?.resolveGiveawayBanner
+                ? gaw.resolveGiveawayBanner(stored?.imageUrl, interaction.guildId)
+                : null;
+              if (resolved) {
+                bannerUrl = resolved.url;
+                bannerFiles = resolved.files || [];
+              } else if (stored?.imageUrl && /^https:\/\//i.test(String(stored.imageUrl))) {
+                bannerUrl = String(stored.imageUrl);
+              }
+            } catch (err) {
+              console.warn('[GIVEAWAY] entry banner resolve:', err.message);
+            }
 
             if (canRebuild) {
               try {
