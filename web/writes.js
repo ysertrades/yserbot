@@ -850,13 +850,45 @@ Object.assign(OPS, {
     return botProfile.applyNickname(guildId, body?.nickname, ctx.client);
   },
   'bot-profile-server-image': async (guildId, body, ctx) => {
-    const { readJson, writeJson } = require('../utils/jsonStorage');
-    let url = body?.url == null ? null : String(body.url).trim();
-    if (url === '') url = null;
-    if (url && !/^https:\/\//i.test(url)) return { error: 'bad_image' };
-    if (url && url.length > 300) return { error: 'bad_image' };
     const conf = readJson('config.json', {});
     if (!conf[guildId]) conf[guildId] = {};
+
+    let url = String(body?.url || body?.brandAvatar || '').trim();
+    if (url === '') url = null;
+
+    // High-quality upload: data:image/...;base64,... → Discord CDN https URL
+    if (body?.data && typeof body.data === 'string' && body.data.startsWith('data:image/')) {
+      const mm = body.data.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
+      if (!mm) return { error: 'bad_image' };
+      const buf = Buffer.from(mm[2], 'base64');
+      // Keep quality high — allow up to ~2.5MB processed PNG
+      if (!buf.length || buf.length > 2.5 * 1024 * 1024) return { error: 'bad_image' };
+      try {
+        const { AttachmentBuilder } = require('discord.js');
+        const guild = ctx.guild || ctx.client.guilds.cache.get(guildId);
+        if (!guild) return { error: 'unknown_guild' };
+        const c = conf[guildId] || {};
+        let ch = guild.channels.cache.get(c.logsChannel || c.errorLogChannelId || c.modLogChannelId);
+        if (!ch?.isTextBased?.()) {
+          ch = guild.channels.cache.find(x =>
+            x.isTextBased?.() && x.viewable &&
+            x.permissionsFor?.(guild.members.me)?.has?.('AttachFiles')
+          );
+        }
+        if (!ch) return { error: 'no_upload_channel' };
+        const file = new AttachmentBuilder(buf, { name: `server_brand_${guildId}.png` });
+        const msg = await ch.send({ files: [file] });
+        url = msg.attachments.first()?.url || null;
+        await msg.delete().catch(() => {});
+        if (!url) return { error: 'bad_image' };
+      } catch (err) {
+        console.warn('[Panel] server image upload:', err.message);
+        return { error: 'bad_image' };
+      }
+    }
+
+    if (url && !/^https:\/\//i.test(url)) return { error: 'bad_image' };
+    if (url && url.length > 500) return { error: 'bad_image' };
     if ((conf[guildId].brandAvatar || null) === url) return { unchanged: true };
     conf[guildId].brandAvatar = url;
     writeJson('config.json', conf);

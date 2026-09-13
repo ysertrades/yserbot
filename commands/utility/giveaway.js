@@ -22,6 +22,22 @@ const { buildLiveV2, buildClosedV2, buildEmptyV2, IS_COMPONENTS_V2 } = require('
  * - https://…  → use as-is
  * - dynamic:key → render PNG, attach file, use attachment://filename
  */
+
+/** Prepend the launch ping as the first text row (above the giveaway card). */
+function withMentionRow(v2, mentionContent) {
+  if (!mentionContent || !v2?.components?.[0]?.components) return v2;
+  const text = String(mentionContent).trim();
+  if (!text) return v2;
+  // Avoid stacking the same ping twice on repeated edits
+  const kids = v2.components[0].components;
+  if (kids[0]?.type === 10 && String(kids[0].content || '') === text) return v2;
+  v2.components[0].components = [
+    { type: 10, content: text.slice(0, 4000) },
+    ...kids,
+  ];
+  return v2;
+}
+
 function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
   if (!imageUrl) return { url: null, files: [] };
   const raw = String(imageUrl).trim();
@@ -182,6 +198,8 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
     imageUrl: resolved.url,
     brand: guildBrand(guild.id),
   });
+
+  withMentionRow(v2, meta.mentionContent || rec.mentionContent || null);
 
   await message.edit({
     ...v2,
@@ -480,20 +498,14 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     brand: guildBrand(guildId),
   });
 
-  // V2 forbids classic content/embeds; put @everyone/@here in a leading text row.
-  const components = v2.components;
-  if (content && components?.[0]?.components) {
-    components[0].components = [
-      { type: 10, content: String(content).slice(0, 4000) },
-      ...components[0].components,
-    ];
-  }
+  // Ping sits ABOVE the card as the first text row (V2 cannot use classic content).
+  withMentionRow(v2, content);
 
   const msg = await channel.send({
     flags: v2.flags,
-    components,
+    components: v2.components,
     files: resolved.files.length ? resolved.files : undefined,
-    allowedMentions: mentionOpts,
+    allowedMentions: mentionOpts || { parse: [] },
   });
 
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
@@ -505,6 +517,8 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     requiredRoleId, bonusRoleId, minAccountAgeDays,
     requirementLines: reqLines,
     dropId,
+    // Keep the launch ping across entry/refresh edits
+    mentionContent: content || null,
   });
 
   // Persist so entries and the timer survive a bot restart
@@ -515,6 +529,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     requiredRoleId: requiredRoleId || null, bonusRoleId: bonusRoleId || null,
     minAccountAgeDays: minAccountAgeDays || 0, createdAt,
     dropId,
+    mentionContent: content || null,
   });
 
   if (giveawayTimers.has(msg.id)) clearTimeout(giveawayTimers.get(msg.id));
@@ -955,6 +970,7 @@ function buildListPayload(guildId, guild) {
 
 module.exports = {
   resolveGiveawayBanner,
+  withMentionRow,
   refreshLiveGiveawayMessage,
   getActiveGiveaway,
   persistGiveawayEntry,

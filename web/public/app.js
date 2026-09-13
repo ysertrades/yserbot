@@ -4806,6 +4806,36 @@ function renderBotProfile() {
     nodes.push(textField('Image URL (https)', imgDraft.url, v => { imgDraft.url = v.trim(); }, {
       placeholder: 'https://…',
     }));
+    // High-quality upload (same path as before) — baked at 1024² then sent to Discord CDN
+    const fileRow = el('div', 'field');
+    fileRow.append(el('span', null, 'Or upload'));
+    const fileInput = el('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
+    fileInput.style.cssText = 'display:block;margin-top:0.35rem';
+    const uploadHint = el('p', 'hint', 'PNG / JPG / WebP. Framed at high resolution so it stays sharp on the giveaway card.');
+    const studioHost = el('div');
+    studioHost.style.cssText = 'display:none;margin-top:0.75rem';
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      try {
+        const img = await loadImageFromFile(file);
+        studioHost.style.display = '';
+        openAvatarStudio(studioHost, img, file.name, async (dataUrl) => {
+          imgDraft.url = '';
+          imgDraft.data = dataUrl;
+          const prev = studioHost.parentElement?.querySelector('img.brand-prev');
+          // live preview
+          let preview = nodes.find?.(n => false);
+        });
+      } catch (err) {
+        console.warn(err);
+      }
+    });
+    fileRow.append(fileInput, uploadHint, studioHost);
+    nodes.push(fileRow);
+
     const imgActions = el('div', 'actions');
     const saveImg = el('button', 'btn primary small', 'Save server image');
     saveImg.type = 'button';
@@ -4813,8 +4843,12 @@ function renderBotProfile() {
       saveImg.disabled = true;
       saveImg.textContent = 'Saving…';
       try {
-        const res = await post('bot-profile-server-image', { url: imgDraft.url });
+        const payload = imgDraft.data
+          ? { data: imgDraft.data }
+          : { url: imgDraft.url };
+        const res = await post('bot-profile-server-image', payload);
         if (res?.ok || res?.unchanged) {
+          imgDraft.data = null;
           try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
           renderBotProfile();
         }

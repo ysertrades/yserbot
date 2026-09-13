@@ -466,11 +466,18 @@ module.exports = {
                   imageUrl: bannerUrl,
                   brand,
                 });
+                try {
+                  const gaw = client.commands.get('giveaway');
+                  if (gaw && typeof gaw.withMentionRow === 'function') {
+                    gaw.withMentionRow(payload, meta.mentionContent || stored?.mentionContent || null);
+                  }
+                } catch {}
                 await interaction.message.edit({
                   ...payload,
                   content: null,
                   embeds: [],
-                }).catch((e) => console.warn('[giveaway enter] edit', e.message));
+                  files: bannerFiles.length ? bannerFiles : undefined,
+                }).catch((e => console.warn('[giveaway enter] edit', e.message));
               } catch (e) {
                 console.warn('[giveaway enter] V2 rebuild failed', e.message);
               }
