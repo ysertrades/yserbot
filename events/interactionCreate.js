@@ -293,6 +293,9 @@ module.exports = {
         }
 
         // Giveaway — enter
+        if (id === 'giveaway_ended') {
+          return interaction.reply({ content: 'This giveaway has already ended.', flags: EPHEMERAL_FLAG }).catch(() => {});
+        }
         if (id === 'giveaway_enter') {
           if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
           let entrants = global.giveawayEntrants.get(interaction.message.id);

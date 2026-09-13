@@ -108,4 +108,32 @@ function buildClosedV2({
   return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
 }
 
-module.exports = { IS_COMPONENTS_V2, buildLiveV2, buildClosedV2 };
+/**
+ * Nobody entered — keep Components V2 so the live Enter card is fully replaced.
+ * Classic embeds cannot overwrite a V2 message (that left Enter stuck on screen).
+ */
+function buildEmptyV2({
+  prize, hostId, dropId,
+  iconUrl = null, imageUrl = null, brand = 'Quantlab',
+}) {
+  const host = hostId ? '<@' + hostId + '>' : brand;
+  const body =
+    'Nobody entered this giveaway.\n\n' +
+    line('Prize', prize) + '  ·  ' + line('Entries', '0');
+
+  const kids = [];
+  kids.push(sectionWithThumb('# GIVEAWAY ENDED — NO ENTRIES\n\n' + body, iconUrl));
+  const gallery = media(imageUrl);
+  if (gallery) kids.push(gallery);
+  kids.push(separator(true));
+  kids.push(row(button({
+    customId: 'giveaway_ended', label: 'Ended — no entries', style: 2, emoji: '📭',
+  })));
+  kids.push(separator(true));
+  kids.push(text('-# Giveaway provided by ' + host + '  ·  Drop ID: QL-' + dropId));
+
+  return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
+}
+
+module.exports = { IS_COMPONENTS_V2, buildLiveV2, buildClosedV2, buildEmptyV2 };
+

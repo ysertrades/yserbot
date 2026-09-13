@@ -15,7 +15,7 @@ const { parseDuration } = require('../../utils/duration');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 const messageStyle = require('../../utils/messageStyle');
 
-const { buildLiveV2, buildClosedV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
+const { buildLiveV2, buildClosedV2, buildEmptyV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
 
 /**
  * Turn a panel banner value into something Components V2 can show.
@@ -523,17 +523,36 @@ async function endGiveaway(message, meta) {
   if (giveawayTimers.has(message.id)) { clearTimeout(giveawayTimers.get(message.id)); giveawayTimers.delete(message.id); }
 
   if (!entrants || entrants.size === 0) {
-    const embed = messageStyle.build(guildId, 'giveaway.empty', {
-      tokens: {
-        server: message.guild?.name || '',
-        prize, host: `<@${hostId}>`, id: '',
-      },
-    });
-    const endFiles = applyEmbedImage(embed, imageUrl, guildId);
+    // Live cards are Components V2. Classic embeds cannot replace them —
+    // that left the Enter button stuck when nobody joined.
+    const iconUrl = guildBrandAvatar(message.guild?.id, message.guild) || null;
+    let emptyBanner = { url: null, files: [] };
     try {
-      await message.edit({ embeds: [embed], components: [disabledEmptyRow], ...replaceFiles(endFiles) });
+      if (typeof resolveGiveawayBanner === 'function') {
+        emptyBanner = resolveGiveawayBanner(imageUrl, guildId);
+      } else if (imageUrl && /^https:\/\//i.test(String(imageUrl))) {
+        emptyBanner = { url: String(imageUrl), files: [] };
+      }
     } catch (err) {
-      console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);
+      console.warn('[GIVEAWAY END] banner resolve:', err.message);
+    }
+    const empty = buildEmptyV2({
+      prize,
+      hostId,
+      dropId: (meta && meta.dropId) || '————',
+      iconUrl,
+      imageUrl: emptyBanner.url,
+      brand: guildBrand(guildId),
+    });
+    try {
+      await message.edit({
+        ...empty,
+        content: null,
+        embeds: [],
+        files: emptyBanner.files.length ? emptyBanner.files : undefined,
+      });
+    } catch (err) {
+      console.error('[GIVEAWAY END] empty V2 update failed:', err.message ?? err);
     }
     removeActiveGiveaway(message.id);
     global.giveawayEntrants.delete(message.id);
