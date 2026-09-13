@@ -960,29 +960,48 @@ async function performReroll(guild, shortId) {
   allEnded[guildId][shortId.toLowerCase()] = data;
   writeJson('giveaways_ended.json', allEnded);
 
+  // Announce in-channel as a reply under the giveaway — plain text, no DM embed.
   try {
     const channel = await guild.client.channels.fetch(data.channelId);
     const origMsg = await channel.messages.fetch(data.messageId);
-    const updEmbed = new EmbedBuilder()
-      .setColor(GOLD)
-      .setTitle(`🎟️  ${data.prize} — Ended`)
-      .setDescription(
-        `🏆 **Winner${newWinners.length > 1 ? 's' : ''}:** ${newWinners.map(id => `<@${id}>`).join(', ')}\n\n` +
-        `👤 **Hosted by:** <@${data.hostId}>\n` +
-        `📊 **Total entries:** ${data.entrants.length}\n\n` +
-        `🔁 To reroll, use \`/giveaway reroll\` or \`g.reroll ${shortId}\``,
-      )
-      .setFooter({ text: `Rerolled 🎲 • ID: ${shortId}` })
-      .setTimestamp();
-    // guildId, not data.guildId — the ended record never stored one, so the
-    // banner was being drawn with the factory wording rather than whatever
-    // this server typed into Studio.
-    const rerollFiles = applyEmbedImage(updEmbed, data.imageUrl, guildId);
-    await origMsg.edit({ embeds: [updEmbed], ...replaceFiles(rerollFiles) }).catch(() => {});
+
+    const mentions = newWinners.map(id => `<@${id}>`).join(', ');
+    const multi = newWinners.length > 1;
+    const line = multi
+      ? `🎲 **Reroll complete** — new winners are ${mentions}! Congrats, reach out to <@${data.hostId}> for **${data.prize}**.`
+      : `🎲 **Reroll complete** — ${mentions} takes **${data.prize}**! Ping <@${data.hostId}> to claim it.`;
+
+    await origMsg.reply({
+      content: line.slice(0, 2000),
+      allowedMentions: { users: newWinners, parse: [] },
+    }).catch(async () => {
+      // Fallback if reply fails (e.g. message too old for reply ref)
+      await channel.send({
+        content: line.slice(0, 2000),
+        allowedMentions: { users: newWinners, parse: [] },
+      }).catch(() => {});
+    });
+
+    // Best-effort: refresh ended card winner line when it's still a classic embed
+    try {
+      if (origMsg.embeds?.length) {
+        const updEmbed = new EmbedBuilder()
+          .setColor(GOLD)
+          .setTitle(`🎟️  ${data.prize} — Ended`)
+          .setDescription(
+            `🏆 **Winner${multi ? 's' : ''}:** ${mentions}\n\n` +
+            `👤 **Hosted by:** <@${data.hostId}>\n` +
+            `📊 **Total entries:** ${data.entrants.length}`,
+          )
+          .setFooter({ text: `Rerolled 🎲 • ID: ${shortId}` })
+          .setTimestamp();
+        const rerollFiles = applyEmbedImage(updEmbed, data.imageUrl, guildId);
+        await origMsg.edit({ embeds: [updEmbed], ...replaceFiles(rerollFiles) }).catch(() => {});
+      }
+    } catch { /* V2 ended cards stay as-is; the reply is the public record */ }
   } catch { /* original message may be gone — the reroll itself still succeeded */ }
 
-  // DM the NEW winner(s) — every reroll notifies whoever actually won this time.
-  await dmWinners(guild.client, guild, newWinners, data.prize, data.hostId, { rerolled: true });
+  // No winner DM on reroll — the channel reply is the announcement.
 
   return { data, newWinners };
 }

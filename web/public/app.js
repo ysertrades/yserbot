@@ -2549,9 +2549,6 @@ function openEndedGiveaway(x) {
     body.push(el('p', 'hint', 'No winner on record for this giveaway yet.'));
   }
 
-  body.push(el('p', 'hint', 'Rerolling draws new winners. For a coins giveaway that pays them again, on top of what the first draw already paid out.'));
-
-  
   // Prize DM — template system (code / follow-up / custom)
   if (x.kind !== 'coins') {
     const prizeName = x.title || 'your prize';
