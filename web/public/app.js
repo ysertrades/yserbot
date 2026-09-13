@@ -2076,50 +2076,102 @@ async function softRefreshOverview() {
 
 
 
-async function openGiveawayParticipants(messageId) {
+async function openGiveawayParticipants(messageId, meta = {}) {
+  const sheetTitle = meta.title ? `Roster · ${meta.title}` : 'Giveaway roster';
+  // Loading state
+  openSheet(sheetTitle, [
+    el('div', 'roster-loading', 'Pulling entrants…'),
+  ], []);
+
   const res = await post('giveawayparticipants', { messageId });
-  if (!res?.ok) return;
-  const body = [];
-  body.push(el('p', 'muted', `${res.count} entrant${res.count === 1 ? '' : 's'} · ${res.prize || ''}`));
-  if (res.dropId) body.push(el('p', 'hint', `Drop ID QL-${res.dropId}`));
-  const list = el('div', 'items');
-  for (const p of res.participants || []) {
-    const row = el('div', 'item' + (p.young ? ' warn' : ''));
-    const left = el('div', 'social-names');
-    if (p.avatar) {
-      const img = el('img');
-      img.src = p.avatar;
-      img.alt = '';
-      img.style.cssText = 'width:28px;height:28px;border-radius:50%;object-fit:cover';
-      row.append(img);
-    }
-    left.append(el('span', 'nm', p.tag));
-    left.append(el('span', 'mt', [
-      p.accountAgeDays != null ? `acct ${p.accountAgeDays}d` : null,
-      p.serverJoinDays != null ? `joined ${p.serverJoinDays}d ago` : null,
-      p.young ? 'young account' : null,
-    ].filter(Boolean).join(' · ')));
-    row.append(left);
-    const rm = el('button', 'btn small danger', 'Remove');
-    rm.type = 'button';
-    rm.addEventListener('click', async () => {
-      if (!await askConfirm({
-        title: 'Remove entrant?',
-        message: `Remove ${p.tag} from this giveaway?`,
-        confirmLabel: 'Remove',
-        danger: true,
-      })) return;
-      rm.disabled = true;
-      const out = await post('giveawayremoveparticipant', { messageId, userId: p.id });
-      if (out?.ok) openGiveawayParticipants(messageId);
-      else rm.disabled = false;
-    });
-    row.append(rm);
-    list.append(row);
+  if (!res?.ok) {
+    openSheet(sheetTitle, [
+      el('p', 'hint bad', 'Could not load participants. The giveaway may have ended.'),
+    ], [
+      Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
+    ]);
+    return;
   }
-  if (!(res.participants || []).length) list.append(el('p', 'muted', 'No entries yet.'));
-  body.push(list);
-  openSheet('Participants', body, [
+
+  const young = (res.participants || []).filter(p => p.young).length;
+  const body = [];
+
+  // Hero strip
+  const hero = el('div', 'roster-hero');
+  const count = el('div', 'roster-count');
+  count.append(el('span', 'roster-count-num', String(res.count)));
+  count.append(el('span', 'roster-count-label', res.count === 1 ? 'entrant' : 'entrants'));
+  hero.append(count);
+  const metaLine = el('div', 'roster-meta');
+  if (res.prize) metaLine.append(el('span', 'roster-prize', res.prize));
+  if (res.dropId) metaLine.append(el('span', 'roster-id mono', `QL-${res.dropId}`));
+  if (young) {
+    const flag = el('span', 'roster-flag', `${young} young account${young === 1 ? '' : 's'}`);
+    flag.title = 'Account age under 14 days — review for multi-account risk';
+    metaLine.append(flag);
+  }
+  hero.append(metaLine);
+  body.push(hero);
+
+  if (!(res.participants || []).length) {
+    body.push(el('div', 'roster-empty', 'No one has entered yet. Share the drop — the roster fills live.'));
+  } else {
+    const list = el('div', 'roster-list');
+    (res.participants || []).forEach((p, i) => {
+      const row = el('div', 'roster-row' + (p.young ? ' is-young' : ''));
+      row.style.animationDelay = `${Math.min(i, 12) * 0.04}s`;
+
+      const av = el('div', 'roster-av');
+      if (p.avatar) {
+        const img = el('img');
+        img.src = p.avatar;
+        img.alt = '';
+        av.append(img);
+      } else {
+        av.append(el('span', null, (p.tag || '?').slice(0, 1).toUpperCase()));
+      }
+      row.append(av);
+
+      const info = el('div', 'roster-info');
+      info.append(el('span', 'roster-name', p.tag || p.id));
+      const bits = [
+        p.accountAgeDays != null ? `acct ${p.accountAgeDays}d` : null,
+        p.serverJoinDays != null ? `here ${p.serverJoinDays}d` : null,
+        p.young ? 'young' : null,
+      ].filter(Boolean);
+      info.append(el('span', 'roster-sub', bits.join(' · ') || p.id));
+      row.append(info);
+
+      const actions = el('div', 'roster-actions');
+      const rm = el('button', 'btn small danger roster-remove', 'Remove');
+      rm.type = 'button';
+      rm.title = 'Remove this entry from the giveaway';
+      rm.addEventListener('click', async () => {
+        if (!await askConfirm({
+          title: 'Remove entrant?',
+          message: `${p.tag} will lose their spot. This cannot be undone from the panel.`,
+          confirmLabel: 'Remove entry',
+          danger: true,
+        })) return;
+        rm.disabled = true;
+        row.classList.add('is-leaving');
+        const out = await post('giveawayremoveparticipant', { messageId, userId: p.id });
+        if (out?.ok) {
+          setTimeout(() => openGiveawayParticipants(messageId, { title: res.prize }), 220);
+          softRefreshOverview();
+        } else {
+          row.classList.remove('is-leaving');
+          rm.disabled = false;
+        }
+      });
+      actions.append(rm);
+      row.append(actions);
+      list.append(row);
+    });
+    body.push(list);
+  }
+
+  openSheet(sheetTitle, body, [
     Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
   ]);
 }
@@ -2358,6 +2410,14 @@ function buildLiveDropCard(x, { phase }) {
 
   const act = el('div', 'actions');
   if (phase === 'live') {
+    const parts = el('button', 'btn small primary', 'Participants');
+    parts.type = 'button';
+    parts.title = 'View and manage who entered';
+    parts.addEventListener('click', () => {
+      openGiveawayParticipants(x.messageId, { title: x.title });
+    });
+    act.append(parts);
+
     const end = el('button', 'btn small danger', 'End now');
     end.type = 'button';
     end.addEventListener('click', async () => {

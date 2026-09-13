@@ -76,6 +76,8 @@ function list(guildId, guild) {
       // rather than how long the page has been open.
       startedAt: d.createdAt ?? null,
       entrants: entrantCount(global.giveawayEntrants, messageId, d.entrants),
+      shortId: d.dropId || null,
+      dropId: d.dropId || null,
     });
   }
   for (const [messageId, d] of Object.entries(coinsActive)) {

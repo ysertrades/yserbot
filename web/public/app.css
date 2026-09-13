@@ -2337,3 +2337,165 @@ select.cselect-native {
 .btn.primary:not(:disabled):not(.is-busy) {
   opacity: 1;
 }
+
+
+/* ── Giveaway roster (panel) ─────────────────────────────────────────────── */
+.roster-loading {
+  padding: 1.5rem 0;
+  text-align: center;
+  color: var(--soft);
+  animation: roster-pulse 1.2s ease-in-out infinite;
+}
+@keyframes roster-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.roster-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1.25rem;
+  padding-bottom: 0.9rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+.roster-count {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.roster-count-num {
+  font-size: 1.85rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+.roster-count-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--soft);
+}
+.roster-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+.roster-prize {
+  font-size: 0.85rem;
+  color: var(--text);
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster-id {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  color: var(--soft);
+}
+.roster-flag {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(231, 76, 60, 0.15);
+  color: #f5a9a0;
+  border: 1px solid rgba(231, 76, 60, 0.35);
+}
+.roster-empty {
+  padding: 1.75rem 0.5rem;
+  text-align: center;
+  color: var(--soft);
+  font-size: 0.9rem;
+}
+.roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding-right: 0.15rem;
+}
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  animation: roster-in 0.35s ease both;
+  transition: background 0.15s, border-color 0.15s, opacity 0.22s, transform 0.22s;
+}
+@keyframes roster-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.roster-row:hover {
+  background: var(--raised);
+  border-color: var(--rule);
+}
+.roster-row.is-young {
+  border-color: rgba(231, 76, 60, 0.25);
+  background: rgba(231, 76, 60, 0.06);
+}
+.roster-row.is-leaving {
+  opacity: 0;
+  transform: translateX(12px);
+  pointer-events: none;
+}
+.roster-av {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex: none;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  color: var(--soft);
+}
+.roster-av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.roster-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.roster-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster-sub {
+  font-size: 0.72rem;
+  color: var(--soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.roster-actions {
+  flex: none;
+}
+.roster-remove {
+  opacity: 0.85;
+}
+.roster-row:hover .roster-remove {
+  opacity: 1;
+}
