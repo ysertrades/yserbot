@@ -137,6 +137,61 @@ function persistGiveawayEntry(msgId, entrants) {
   writeJson(ACTIVE_FILE, all);
 }
 
+/**
+ * Rebuild the live Discord card so Entries: N matches storage.
+ * Used after panel remove and after anti-alt remove buttons.
+ */
+async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
+  if (!guild || !messageId) return false;
+  const rec = getActiveGiveaway(messageId);
+  if (!rec || rec.guildId !== guild.id) return false;
+
+  const channel = guild.channels.cache.get(rec.channelId)
+    || await guild.channels.fetch(rec.channelId).catch(() => null);
+  if (!channel?.isTextBased?.()) return false;
+
+  const message = await channel.messages.fetch(messageId).catch(() => null);
+  if (!message) return false;
+
+  const meta = global.giveawayMeta?.get(messageId) || rec;
+  const prize = meta.prize || rec.prize;
+  const hostId = meta.hostId || rec.hostId;
+  const endTime = Number(meta.endTime || rec.endTime);
+  if (!prize || !hostId || !(endTime > 0)) return false;
+
+  const dropId = meta.dropId || rec.dropId || '————';
+  const winners = meta.winners ?? meta.winnersCount ?? rec.winnersCount ?? 1;
+  const reqLines = meta.requirementLines || rec.requirementLines || [];
+  const imageUrl = meta.imageUrl ?? rec.imageUrl ?? null;
+
+  const resolved = resolveGiveawayBanner(imageUrl, guild.id, {
+    winners,
+    dropId,
+  });
+
+  const iconUrl = guildBrandAvatar(guild.id, guild) || null;
+  const v2 = buildLiveV2({
+    prize,
+    winnersCount: winners,
+    ends: `<t:${Math.floor(endTime / 1000)}:R>`,
+    endsAt: dateStr(endTime),
+    entries: Number(entryCount) || 0,
+    requirements: reqLines,
+    dropId,
+    iconUrl,
+    imageUrl: resolved.url,
+    brand: guildBrand(guild.id),
+  });
+
+  await message.edit({
+    ...v2,
+    content: null,
+    embeds: [],
+    files: resolved.files.length ? resolved.files : undefined,
+  });
+  return true;
+}
+
 async function restoreGiveaways(client) {
   const active = readJson(ACTIVE_FILE, {});
   const now    = Date.now();
@@ -900,6 +955,9 @@ function buildListPayload(guildId, guild) {
 
 module.exports = {
   resolveGiveawayBanner,
+  refreshLiveGiveawayMessage,
+  getActiveGiveaway,
+  persistGiveawayEntry,
   data: new SlashCommandBuilder()
     .setName('giveaway').setDescription('Create, end, reroll & list giveaways')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

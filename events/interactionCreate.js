@@ -334,6 +334,13 @@ module.exports = {
             } catch {}
           }
           client.commands.get('giveaway')?.persistGiveawayEntry?.(msgId, entrants);
+          try {
+            await client.commands.get('giveaway')?.refreshLiveGiveawayMessage?.(
+              interaction.guild, msgId, entrants.size,
+            );
+          } catch (err) {
+            console.warn('[GIVEAWAY] alt-remove refresh:', err.message);
+          }
           await interaction.update({
             content: interaction.message.content || null,
             embeds: interaction.message.embeds,

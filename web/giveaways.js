@@ -379,6 +379,15 @@ async function removeParticipant(guildId, body, { guild }) {
   entrants.delete(userId);
   giveawayCmd().persistGiveawayEntry?.(messageId, entrants);
 
+  // Update the live Discord card so Entries matches the new count
+  try {
+    if (typeof giveawayCmd().refreshLiveGiveawayMessage === 'function') {
+      await giveawayCmd().refreshLiveGiveawayMessage(guild, messageId, entrants.size);
+    }
+  } catch (err) {
+    console.warn('[GIVEAWAY] panel remove refresh:', err.message);
+  }
+
   return { ok: true, count: entrants.size, removed: userId };
 }
 
