@@ -2075,6 +2075,55 @@ async function softRefreshOverview() {
 }
 
 
+
+async function openGiveawayParticipants(messageId) {
+  const res = await post('giveawayparticipants', { messageId });
+  if (!res?.ok) return;
+  const body = [];
+  body.push(el('p', 'muted', `${res.count} entrant${res.count === 1 ? '' : 's'} · ${res.prize || ''}`));
+  if (res.dropId) body.push(el('p', 'hint', `Drop ID QL-${res.dropId}`));
+  const list = el('div', 'items');
+  for (const p of res.participants || []) {
+    const row = el('div', 'item' + (p.young ? ' warn' : ''));
+    const left = el('div', 'social-names');
+    if (p.avatar) {
+      const img = el('img');
+      img.src = p.avatar;
+      img.alt = '';
+      img.style.cssText = 'width:28px;height:28px;border-radius:50%;object-fit:cover';
+      row.append(img);
+    }
+    left.append(el('span', 'nm', p.tag));
+    left.append(el('span', 'mt', [
+      p.accountAgeDays != null ? `acct ${p.accountAgeDays}d` : null,
+      p.serverJoinDays != null ? `joined ${p.serverJoinDays}d ago` : null,
+      p.young ? 'young account' : null,
+    ].filter(Boolean).join(' · ')));
+    row.append(left);
+    const rm = el('button', 'btn small danger', 'Remove');
+    rm.type = 'button';
+    rm.addEventListener('click', async () => {
+      if (!await askConfirm({
+        title: 'Remove entrant?',
+        message: `Remove ${p.tag} from this giveaway?`,
+        confirmLabel: 'Remove',
+        danger: true,
+      })) return;
+      rm.disabled = true;
+      const out = await post('giveawayremoveparticipant', { messageId, userId: p.id });
+      if (out?.ok) openGiveawayParticipants(messageId);
+      else rm.disabled = false;
+    });
+    row.append(rm);
+    list.append(row);
+  }
+  if (!(res.participants || []).length) list.append(el('p', 'muted', 'No entries yet.'));
+  body.push(list);
+  openSheet('Participants', body, [
+    Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
+  ]);
+}
+
 function renderGiveaways() {
   ticking.clear();
   const g = state.overview?.giveaways || { active: [], ended: [] };

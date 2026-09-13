@@ -55,7 +55,7 @@ const PRIZE_DEFAULTS = {
  * @returns {Buffer} PNG image data
  */
 function generatePrizeGiveawayBannerImage(copy = {}) {
-  const { pill, heading, subtitle, tagline } = { ...PRIZE_DEFAULTS, ...copy };
+  const { pill, heading, subtitle, tagline, dropId } = { ...PRIZE_DEFAULTS, ...copy };
   const W = 1000, H = 400;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
@@ -124,6 +124,12 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
     chip: PURPLE, primary: TEXT, caption: SUBTLE,
     chipAlpha: 0.18, borderAlpha: 0.45, captionAlpha: 0.85,
   });
+  // Drop ID under the signature / gift — ties the art to this live giveaway
+  if (dropId) {
+    const idLine = ('QL-' + String(dropId)).toUpperCase().slice(0, 16);
+    drawTextCentered(png, idLine, 176, 348, 1, SUBTLE);
+  }
+
 
   return PNG.sync.write(png);
 }

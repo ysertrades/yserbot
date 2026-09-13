@@ -460,6 +460,14 @@ Object.assign(OPS, {
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 Cleared today's lottery pool (${r.cleared} entrant${r.cleared === 1 ? '' : 's'})`, 'giveaways');
     return r;
   },
+  async giveawayparticipants(guildId, body, ctx) {
+    return require('./giveaways').participants(guildId, body, ctx);
+  },
+  async giveawayremoveparticipant(guildId, body, ctx) {
+    const r = await require('./giveaways').removeParticipant(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎟️ Removed <@${r.removed}> from a live giveaway — **${r.count}** left`, 'giveaways');
+    return r;
+  },
   async giveawayend(guildId, body, ctx) {
     const r = await giveaways.endNow(guildId, body, ctx);
     if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎟️ Ended a ${r.kind} giveaway early`, 'giveaways');

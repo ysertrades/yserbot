@@ -84,26 +84,17 @@ module.exports = {
     };
     writeJson(LOCK_FILE, locks);
 
-    const lockEmbed = messageStyle.buildPayload(guildId, 'mod.lock', {
+    // buildPayload already returns { content } or { embeds: [EmbedBuilder] }
+    const lockPayload = messageStyle.buildPayload(guildId, 'mod.lock', {
       tokens: {
         channel: `${channel}`,
         reason: reason || 'No reason provided',
         user: interaction.user.toString(),
         server: interaction.guild.name,
       },
-    });
-    const lockPayload = lockEmbed
-      ? { embeds: [lockEmbed] }
-      : { content: '🔒 Locked' };
+    }) || { content: '🔒 Locked' };
 
     await interaction.editReply(lockPayload);
-
-    if (channel.id !== interaction.channelId) {
-      try {
-        await channel.send(lockPayload);
-      } catch { /* missing send perms in target */ }
-    } else if (lockEmbed) {
-      try { await channel.send(lockPayload); } catch {}
-    }
+    try { await channel.send(lockPayload); } catch { /* missing send perms */ }
   },
 };

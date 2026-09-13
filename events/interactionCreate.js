@@ -296,6 +296,54 @@ module.exports = {
         if (id === 'giveaway_ended') {
           return interaction.reply({ content: 'This giveaway has already ended.', flags: EPHEMERAL_FLAG }).catch(() => {});
         }
+        
+        if (id.startsWith('gaw_alt_')) {
+          const parts = id.split(':');
+          const action = parts[0];
+          const msgId = parts[1];
+          const userId = parts[2];
+          if (!interaction.memberPermissions?.has?.('ManageMessages') && !interaction.memberPermissions?.has?.('ModerateMembers')) {
+            return interaction.reply({ content: 'Moderator permission required.', flags: EPHEMERAL_FLAG }).catch(() => {});
+          }
+          if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
+          let entrants = global.giveawayEntrants.get(msgId);
+          if (!entrants) {
+            const saved = client.commands.get('giveaway')?.getActiveGiveaway?.(msgId);
+            if (saved) {
+              entrants = new Set(saved.entrants || []);
+              global.giveawayEntrants.set(msgId, entrants);
+            }
+          }
+          if (action === 'gaw_alt_dismiss') {
+            await interaction.update({ components: [] }).catch(() => interaction.deferUpdate());
+            return;
+          }
+          if (!entrants) {
+            return interaction.reply({ content: 'Giveaway no longer active.', flags: EPHEMERAL_FLAG }).catch(() => {});
+          }
+          const removeOne = (uid) => { entrants.delete(uid); };
+          if (action === 'gaw_alt_remove') {
+            removeOne(userId);
+          } else if (action === 'gaw_alt_remove_cohort') {
+            removeOne(userId);
+            // remove other young accounts currently in the set
+            try {
+              const anti = require('../utils/giveawayAntiAlt');
+              const analysis = anti.evaluateEntrant(interaction.guild, [...entrants, userId], userId);
+              for (const id2 of analysis.cohort) removeOne(id2);
+            } catch {}
+          }
+          client.commands.get('giveaway')?.persistGiveawayEntry?.(msgId, entrants);
+          await interaction.update({
+            content: interaction.message.content || null,
+            embeds: interaction.message.embeds,
+            components: [],
+          }).catch(() => {});
+          return interaction.followUp({
+            content: `Removed. **${entrants.size}** entries remain.`,
+            flags: EPHEMERAL_FLAG,
+          }).catch(() => {});
+        }
         if (id === 'giveaway_enter') {
           if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
           let entrants = global.giveawayEntrants.get(interaction.message.id);
@@ -335,6 +383,24 @@ module.exports = {
           }
 
           entrants.add(interaction.user.id);
+          try {
+            const anti = require('../utils/giveawayAntiAlt');
+            const ids = [...entrants];
+            const analysis = anti.evaluateEntrant(interaction.guild, ids, interaction.user.id);
+            if (analysis.suspicious) {
+              const meta = global.giveawayMeta?.get(interaction.message.id);
+              anti.reportSuspicious(interaction.guild, {
+                messageId: interaction.message.id,
+                dropId: meta?.dropId,
+                prize: meta?.prize,
+                userId: interaction.user.id,
+                analysis,
+              }).catch(() => {});
+            }
+          } catch (err) {
+            console.warn('[GIVEAWAY ANTI-ALT]', err.message);
+          }
+
           try {
             // Rebuilt from the catalogue, not patched. This used to find the
             // exact string "📊 **Entries:** N participants" with a regular

@@ -315,5 +315,71 @@ async function sendPrize(guildId, body, { guild }) {
   return giveawayCmd().sendPrizeDm(guild, shortId, text, winnerId);
 }
 
+
+async function participants(guildId, body, { guild }) {
+  const messageId = String(body?.messageId || '');
+  if (!messageId) return { error: 'bad_message' };
+  const giveawayCmd = () => require('../commands/utility/giveaway.js');
+  const rec = giveawayCmd().getActiveGiveaway?.(messageId);
+  if (!rec || rec.guildId !== guildId) return { error: 'not_found' };
+
+  let ids = rec.entrants || [];
+  if (global.giveawayEntrants?.has(messageId)) {
+    ids = [...global.giveawayEntrants.get(messageId)];
+  }
+
+  const rows = [];
+  for (const id of ids) {
+    const m = guild.members.cache.get(id);
+    const u = m?.user || guild.client.users.cache.get(id);
+    const ageDays = u?.createdTimestamp
+      ? (Date.now() - u.createdTimestamp) / 86400000
+      : null;
+    const joinDays = m?.joinedTimestamp
+      ? (Date.now() - m.joinedTimestamp) / 86400000
+      : null;
+    rows.push({
+      id,
+      tag: u?.tag || u?.username || id,
+      avatar: u?.displayAvatarURL?.({ size: 64 }) || null,
+      accountAgeDays: ageDays != null ? Math.round(ageDays * 10) / 10 : null,
+      serverJoinDays: joinDays != null ? Math.round(joinDays * 10) / 10 : null,
+      young: ageDays != null && ageDays < 14,
+    });
+  }
+  rows.sort((a, b) => Number(b.young) - Number(a.young) || (a.accountAgeDays || 999) - (b.accountAgeDays || 999));
+
+  return {
+    ok: true,
+    messageId,
+    prize: rec.prize,
+    dropId: rec.dropId || null,
+    count: rows.length,
+    participants: rows,
+  };
+}
+
+async function removeParticipant(guildId, body, { guild }) {
+  const messageId = String(body?.messageId || '');
+  const userId = String(body?.userId || '');
+  if (!messageId || !userId) return { error: 'bad_request' };
+  const giveawayCmd = () => require('../commands/utility/giveaway.js');
+  const rec = giveawayCmd().getActiveGiveaway?.(messageId);
+  if (!rec || rec.guildId !== guildId) return { error: 'not_found' };
+
+  if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
+  let entrants = global.giveawayEntrants.get(messageId);
+  if (!entrants) {
+    entrants = new Set(rec.entrants || []);
+    global.giveawayEntrants.set(messageId, entrants);
+  }
+  if (!entrants.has(userId)) return { error: 'not_entrant' };
+  entrants.delete(userId);
+  giveawayCmd().persistGiveawayEntry?.(messageId, entrants);
+
+  return { ok: true, count: entrants.size, removed: userId };
+}
+
 module.exports = {
-  sendPrize, list, create, endNow, reroll, remove, clearHistory };
+  sendPrize, list, create, endNow, reroll, remove, clearHistory,
+  participants, removeParticipant };

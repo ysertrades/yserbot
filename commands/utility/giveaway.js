@@ -46,9 +46,10 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
         const w = Math.max(1, Number(opts.winners) || 1);
         copy = {
           ...copy,
-          pill: '', // no corner pill on the live drop art
+          pill: '',
           heading: copy.heading && copy.heading !== 'PRIZE DROP' ? copy.heading : 'GIVEAWAY DROP',
           subtitle: w === 1 ? 'ONE WINNER TAKES IT' : (w + ' WINNERS TAKE IT'),
+          dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
         };
       }
       buf = entry.generate(copy);
@@ -409,7 +410,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const iconUrl = guildBrandAvatar(guild.id, guild) || hostAvatarUrl || null;
 
   // Always the same V2 layout. Banner (if any) sits in the MediaGallery slot.
-  const resolved = resolveGiveawayBanner(imageUrl, guildId, { winners });
+  const resolved = resolveGiveawayBanner(imageUrl, guildId, { winners, dropId });
 
   const v2 = buildLiveV2({
     prize,
@@ -568,7 +569,7 @@ async function endGiveaway(message, meta) {
       hostId,
       dropId: (meta && meta.dropId) || '————',
       iconUrl,
-      imageUrl: null, // banner comes off when the giveaway ends
+      imageUrl: emptyBanner.url,
       brand: guildBrand(guildId),
     });
     try {
@@ -611,7 +612,10 @@ async function endGiveaway(message, meta) {
   writeJson('giveaways_ended.json', allEnded);
 
   const iconUrl = guildBrandAvatar(message.guild?.id, message.guild) || null;
-  // Banner is live-only — ended card is clean stats + Reveal
+  const closedBanner = resolveGiveawayBanner(imageUrl, message.guild?.id, {
+    winners: winnersCount,
+    dropId: shortId,
+  });
   const closed = buildClosedV2({
     prize,
     entries: entrantIds.length,
@@ -619,16 +623,16 @@ async function endGiveaway(message, meta) {
     hostId,
     dropId: shortId,
     iconUrl,
-    imageUrl: null,
+    imageUrl: closedBanner.url,
     brand: guildBrand(message.guild?.id),
   });
 
   try {
     await message.edit({
       ...closed,
-      // Required when switching a classic message to V2
       content: null,
       embeds: [],
+      files: closedBanner.files.length ? closedBanner.files : undefined,
     });
   } catch (err) {
     console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);

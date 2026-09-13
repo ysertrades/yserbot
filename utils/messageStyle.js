@@ -1102,7 +1102,9 @@ function build(guildId, key, opts = {}) {
     const name = title || 'Update';
     try { embed.setAuthor({ name, iconURL: iconURL || undefined }); }
     catch { set(() => embed.setAuthor({ name })); }
-    if (body) set(() => embed.setDescription(body));
+    // Discord requires description when present as a field-less card;
+    // never send an author-only embed with a missing description.
+    set(() => embed.setDescription(body || '\u200b'));
     return embed;
   }
 
