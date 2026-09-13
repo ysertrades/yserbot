@@ -64,6 +64,12 @@ function renderDynamic(key, entry, guildId) {
  */
 async function warm() {
   const started = Date.now();
+  try {
+    const { loadQuantLogo } = require('./quantLogo');
+    await loadQuantLogo(64);
+  } catch (err) {
+    console.warn('[RenderCache] quant logo preload:', err.message);
+  }
   for (const [key, entry] of Object.entries(DYNAMIC_IMAGES)) {
     try {
       // No guild at boot, so the banners warm their default wording. A guild

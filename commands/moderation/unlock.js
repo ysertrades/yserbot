@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const messageStyle = require('../../utils/messageStyle');
 
 const LOCK_FILE = 'locked_channels.json';
 
@@ -49,12 +50,25 @@ module.exports = {
     delete locks[guildId][channel.id];
     writeJson(LOCK_FILE, locks);
 
-    await interaction.editReply({ content: '🔓 Unlocked' });
+    const unlockEmbed = messageStyle.build(guildId, 'mod.unlock', {
+      tokens: {
+        channel: `${channel}`,
+        user: interaction.user.toString(),
+        server: interaction.guild.name,
+      },
+    });
+    const unlockPayload = unlockEmbed
+      ? { embeds: [unlockEmbed] }
+      : { content: '🔓 Unlocked' };
+
+    await interaction.editReply(unlockPayload);
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ content: '🔓 Unlocked' });
+        await channel.send(unlockPayload);
       } catch {}
+    } else if (unlockEmbed) {
+      try { await channel.send(unlockPayload); } catch {}
     }
   },
 };

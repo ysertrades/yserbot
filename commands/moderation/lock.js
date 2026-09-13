@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { sendTempReply } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
+const messageStyle = require('../../utils/messageStyle');
 
 const LOCK_FILE = 'locked_channels.json';
 const LOCKABLE_PERMS = ['SendMessages', 'SendMessagesInThreads', 'CreatePublicThreads', 'CreatePrivateThreads'];
@@ -83,12 +84,26 @@ module.exports = {
     };
     writeJson(LOCK_FILE, locks);
 
-    await interaction.editReply({ content: '🔒 Locked' });
+    const lockEmbed = messageStyle.build(guildId, 'mod.lock', {
+      tokens: {
+        channel: `${channel}`,
+        reason: reason || 'No reason provided',
+        user: interaction.user.toString(),
+        server: interaction.guild.name,
+      },
+    });
+    const lockPayload = lockEmbed
+      ? { embeds: [lockEmbed] }
+      : { content: '🔒 Locked' };
+
+    await interaction.editReply(lockPayload);
 
     if (channel.id !== interaction.channelId) {
       try {
-        await channel.send({ content: '🔒 Locked' });
+        await channel.send(lockPayload);
       } catch { /* missing send perms in target */ }
+    } else if (lockEmbed) {
+      try { await channel.send(lockPayload); } catch {}
     }
   },
 };

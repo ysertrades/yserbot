@@ -356,8 +356,41 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
 
   const dropId = genId(guildId);
   const iconUrl = guildBrandAvatar(guild.id, guild) || hostAvatarUrl || null;
-  // https image only for MediaGallery; dynamic: attachments stay on classic path later if needed
-  const bannerUrl = (imageUrl && /^https:\/\//i.test(String(imageUrl))) ? String(imageUrl) : null;
+
+  // Resolve banner: https URL or dynamic: generated attachment (prize / TV / etc.)
+  let bannerUrl = null;
+  const bannerFiles = [];
+  if (imageUrl && /^https:\/\//i.test(String(imageUrl))) {
+    bannerUrl = String(imageUrl);
+  } else if (imageUrl && String(imageUrl).startsWith('dynamic:')) {
+    try {
+      const {
+        isDynamicImage, dynamicImageKey, DYNAMIC_IMAGES,
+      } = require('../../utils/dynamicEmbedImages');
+      const { AttachmentBuilder } = require('discord.js');
+      const key = dynamicImageKey(String(imageUrl));
+      const entry = DYNAMIC_IMAGES[key];
+      if (entry) {
+        // renderDynamic is internal — call generate path via collect pattern
+        const { renderDynamic } = (() => {
+          // Prefer exporting render if present; else regenerate via entry.generate
+          try { return require('../../utils/dynamicEmbedImages'); } catch { return {}; }
+        })();
+        let buf;
+        if (typeof entry.generate === 'function') {
+          buf = entry.takesCopy
+            ? entry.generate(require('../../utils/bannerCopy').copyForDynamicKey(key, guildId))
+            : entry.generate();
+        }
+        if (buf) {
+          bannerFiles.push(new AttachmentBuilder(buf, { name: entry.filename }));
+          bannerUrl = `attachment://${entry.filename}`;
+        }
+      }
+    } catch (err) {
+      console.warn('[GIVEAWAY] dynamic banner failed:', err.message);
+    }
+  }
 
   const v2 = buildLiveV2({
     prize,
@@ -374,6 +407,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
 
   const msg = await channel.send({
     ...v2,
+    files: bannerFiles.length ? bannerFiles : undefined,
     allowedMentions: mentionOpts,
   });
 

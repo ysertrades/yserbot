@@ -87,6 +87,17 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
   // ── The gift, left ────────────────────────────────────────────────────────
   giftBox(png, 176, 214, 150);
 
+  // QuantLab mark centred under the gift (same visual weight as the old monogram)
+  try {
+    const { blitQuantLogo, hasQuantLogo } = require('./quantLogo');
+    if (hasQuantLogo()) {
+      const logoSize = 52;
+      const logoX = Math.round(176 - logoSize / 2);
+      const logoY = Math.round(214 + 75 + 10); // under the 150px gift
+      blitQuantLogo(png, logoX, logoY, logoSize, { circle: true, alpha: 1 });
+    }
+  } catch { /* logo optional at first boot before warm */ }
+
   // ── Status pill, top right ────────────────────────────────────────────────
   const pillW = 34 + textWidth(pill, 2);
   const pillX = W - 46 - pillW;
