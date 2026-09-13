@@ -253,9 +253,13 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
             .setColor(0xE67E22)
             .setTitle('Giveaway card update failed')
             .setDescription(
-              `Live **Entries** counter could not be refreshed.\\n` +
-              `**Drop:** QL-${dropId}\\n**Prize:** ${prize}\\n` +
-              `**Entries (memory):** ${entries}\\n**Error:** \\`${String(err.message || err).slice(0, 180)}\\``
+              [
+                'Live **Entries** counter could not be refreshed.',
+                '**Drop:** QL-' + String(dropId),
+                '**Prize:** ' + String(prize),
+                '**Entries (memory):** ' + String(entries),
+                '**Error:** `' + String(err.message || err).slice(0, 180) + '`',
+              ].join('\n')
             )
             .setTimestamp()],
         }).catch(() => {});
