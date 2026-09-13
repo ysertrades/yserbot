@@ -408,83 +408,18 @@ module.exports = {
             console.warn('[GIVEAWAY ANTI-ALT]', err.message);
           }
 
-          try {
-            // Rebuilt from the catalogue, not patched. This used to find the
-            // exact string "📊 **Entries:** N participants" with a regular
-            // expression and swap the number — so the moment a server reworded
-            // the card, which is now something they can do on the Appearance
-            // screen, the counter stopped moving with nothing to say why.
-            const gawCmd = client.commands.get('giveaway');
-            const meta = global.giveawayMeta?.get(interaction.message.id)
-              ?? gawCmd?.getActiveGiveaway?.(interaction.message.id);
-            let upd = null;
-            // Everything the card needs, or nothing. A record from before this
-            // existed — or a partial one — would build a card full of
-            // "undefined" where the prize used to be, which is worse than the
-            // patch it replaced.
-            const canRebuild = meta?.prize && meta?.hostId && Number(meta?.endTime) > 0;
-            const stored = global.giveawayMeta?.get(interaction.message.id)
-              ?? client.commands.get('giveaway')?.getActiveGiveaway?.(interaction.message.id);
-            const dropId = meta?.dropId || stored?.dropId || '••••••••';
-            const iconUrl = interaction.guild?.iconURL?.({ size: 256, dynamic: true }) || null;
-            // Keep generated banners on every entry refresh (https + dynamic:)
-            let bannerUrl = null;
-            let bannerFiles = [];
-            try {
-              const gaw = client.commands.get('giveaway');
-              const resolved = gaw?.resolveGiveawayBanner
-                ? gaw.resolveGiveawayBanner(stored?.imageUrl, interaction.guildId)
-                : null;
-              if (resolved) {
-                bannerUrl = resolved.url;
-                bannerFiles = resolved.files || [];
-              } else if (stored?.imageUrl && /^https:\/\//i.test(String(stored.imageUrl))) {
-                bannerUrl = String(stored.imageUrl);
-              }
-            } catch (err) {
-              console.warn('[GIVEAWAY] entry banner resolve:', err.message);
-            }
-
-            if (canRebuild) {
-              try {
-                const { buildLiveV2 } = require('../utils/dropCardV2');
-                const conf = {};
-                try {
-                  const { readJson } = require('../utils/jsonStorage');
-                  Object.assign(conf, readJson('config.json', {})[interaction.guildId] || {});
-                } catch {}
-                const brand = String(conf.brandName || '').trim() || 'Quantlab';
-                const payload = buildLiveV2({
-                  prize: meta.prize,
-                  winnersCount: meta.winners ?? meta.winnersCount ?? 1,
-                  ends: `<t:${Math.floor(Number(meta.endTime) / 1000)}:R>`,
-                  endsAt: new Date(Number(meta.endTime)).toLocaleString(),
-                  entries: entrants.size,
-                  requirements: meta.requirementLines || [],
-                  dropId,
-                  iconUrl,
-                  imageUrl: bannerUrl,
-                  brand,
-                });
-                try {
-                  const gaw = client.commands.get('giveaway');
-                  if (gaw && typeof gaw.withMentionRow === 'function') {
-                    gaw.withMentionRow(payload, meta.mentionContent || stored?.mentionContent || null);
-                  }
-                } catch {}
-                await interaction.message.edit({
-                  ...payload,
-                  content: null,
-                  embeds: [],
-                  files: bannerFiles.length ? bannerFiles : undefined,
-                }).catch((e => console.warn('[giveaway enter] edit', e.message));
-              } catch (e) {
-                console.warn('[giveaway enter] V2 rebuild failed', e.message);
-              }
-            }
-          } catch {}
-          // Persist the new entry so it survives future restarts
+          // Persist first, then refresh the V2 card (same path as panel remove).
+          // This keeps Entries live on first enter AND after remove → re-enter.
           client.commands.get('giveaway')?.persistGiveawayEntry?.(interaction.message.id, entrants);
+          try {
+            await client.commands.get('giveaway')?.refreshLiveGiveawayMessage?.(
+              interaction.guild,
+              interaction.message.id,
+              entrants.size,
+            );
+          } catch (err) {
+            console.warn('[GIVEAWAY] enter refresh:', err.message);
+          }
           return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 

@@ -375,20 +375,24 @@ async function removeParticipant(guildId, body, { guild }) {
     entrants = new Set(rec.entrants || []);
     global.giveawayEntrants.set(messageId, entrants);
   }
-  if (!entrants.has(userId)) return { error: 'not_entrant' };
-  entrants.delete(userId);
-  giveawayCmd().persistGiveawayEntry?.(messageId, entrants);
+  // Normalize IDs to strings — Discord snowflakes must match enter path
+  const uid = String(userId);
+  const normalized = new Set([...entrants].map(String));
+  if (!normalized.has(uid)) return { error: 'not_entrant' };
+  normalized.delete(uid);
+  global.giveawayEntrants.set(messageId, normalized);
+  giveawayCmd().persistGiveawayEntry?.(messageId, normalized);
 
   // Update the live Discord card so Entries matches the new count
   try {
     if (typeof giveawayCmd().refreshLiveGiveawayMessage === 'function') {
-      await giveawayCmd().refreshLiveGiveawayMessage(guild, messageId, entrants.size);
+      await giveawayCmd().refreshLiveGiveawayMessage(guild, messageId, normalized.size);
     }
   } catch (err) {
     console.warn('[GIVEAWAY] panel remove refresh:', err.message);
   }
 
-  return { ok: true, count: entrants.size, removed: userId };
+  return { ok: true, count: normalized.size, removed: uid };
 }
 
 module.exports = {

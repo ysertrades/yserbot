@@ -201,12 +201,18 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
 
   withMentionRow(v2, meta.mentionContent || rec.mentionContent || null);
 
-  await message.edit({
-    ...v2,
-    content: null,
-    embeds: [],
-    files: resolved.files.length ? resolved.files : undefined,
-  });
+  try {
+    await message.edit({
+      flags: v2.flags,
+      components: v2.components,
+      content: null,
+      embeds: [],
+      files: resolved.files.length ? resolved.files : undefined,
+    });
+  } catch (err) {
+    console.warn('[GIVEAWAY] refreshLiveGiveawayMessage edit failed:', err.message);
+    return false;
+  }
   return true;
 }
 
