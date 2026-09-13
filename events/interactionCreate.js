@@ -474,7 +474,8 @@ module.exports = {
                 } catch {}
                 await interaction.message.edit({
                   ...payload,
-                  content: null,
+                  // Keep launch text so phones don't lose the "New giveaway" line
+                  content: interaction.message.content || null,
                   embeds: [],
                   files: bannerFiles.length ? bannerFiles : undefined,
                 }).catch((e => console.warn('[giveaway enter] edit', e.message));
@@ -485,6 +486,14 @@ module.exports = {
           } catch {}
           // Persist the new entry so it survives future restarts
           client.commands.get('giveaway')?.persistGiveawayEntry?.(interaction.message.id, entrants);
+
+          try {
+            await client.commands.get('giveaway')?.refreshLiveGiveawayMessage?.(
+              interaction.guild, interaction.message.id, entrants.size,
+            );
+          } catch (err) {
+            console.warn('[GIVEAWAY] enter refresh:', err.message);
+          }
           return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
         }
 
