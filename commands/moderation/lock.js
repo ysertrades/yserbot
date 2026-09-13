@@ -84,7 +84,7 @@ module.exports = {
     };
     writeJson(LOCK_FILE, locks);
 
-    const lockEmbed = messageStyle.build(guildId, 'mod.lock', {
+    const lockEmbed = messageStyle.buildPayload(guildId, 'mod.lock', {
       tokens: {
         channel: `${channel}`,
         reason: reason || 'No reason provided',

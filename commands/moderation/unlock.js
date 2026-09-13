@@ -50,7 +50,7 @@ module.exports = {
     delete locks[guildId][channel.id];
     writeJson(LOCK_FILE, locks);
 
-    const unlockEmbed = messageStyle.build(guildId, 'mod.unlock', {
+    const unlockEmbed = messageStyle.buildPayload(guildId, 'mod.unlock', {
       tokens: {
         channel: `${channel}`,
         user: interaction.user.toString(),

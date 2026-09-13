@@ -3653,6 +3653,12 @@ function renderAppearance() {
   for (const part of entry.parts) {
     if (part === 'enabled') {
       fields.append(toggle(PART_LABEL.enabled, values.enabled !== false, v => { values.enabled = v; repaint(); }));
+    } else if (part === 'format') {
+      fields.append(select('Delivery', values.format === 'plain' ? 'plain' : 'embed', [
+        { value: 'embed', label: 'Embed card' },
+        { value: 'plain', label: 'Plain message' },
+      ], v => { values.format = v; repaint(); }));
+      fields.append(el('p', 'hint', 'Embed card = coloured Discord embed. Plain message = normal text in chat (good for lock/unlock).'));
     } else if (part === 'color') {
       fields.append(colorField('Colour', values.color, v => { values.color = v; repaint(); }));
     } else if (part === 'title') {

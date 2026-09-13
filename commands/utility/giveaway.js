@@ -394,24 +394,55 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
 
   const resolved = resolveGiveawayBanner(imageUrl, guildId);
 
-  const v2 = buildLiveV2({
-    prize,
-    winnersCount: winners,
-    ends: `<t:${Math.floor(endTime / 1000)}:R>`,
-    endsAt: dateStr(endTime),
-    entries: 0,
-    requirements: reqLines,
-    dropId,
-    iconUrl,
-    imageUrl: resolved.url,
-    brand: guildBrand(guildId),
-  });
+  // Buttons shared by both layouts
+  const enterRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('giveaway_enter').setLabel('Enter').setStyle(ButtonStyle.Primary).setEmoji('🎁'),
+    new ButtonBuilder().setCustomId('giveaway_check').setLabel('Check entry').setStyle(ButtonStyle.Secondary).setEmoji('🎟️'),
+  );
 
-  const msg = await channel.send({
-    ...v2,
-    files: resolved.files.length ? resolved.files : undefined,
-    allowedMentions: mentionOpts,
-  });
+  let msg;
+  if (resolved.url) {
+    // Banner present: classic embed + attachment is the reliable Discord path.
+    // Components V2 MediaGallery often drops attachment:// on live messages.
+    const embed = buildLiveCard(guild, {
+      prize,
+      winnersCount: winners,
+      hostId,
+      endTime,
+      entries: 0,
+      requirements: reqLines,
+      dropId,
+    });
+    if (embed) {
+      try { embed.setImage(resolved.url); } catch { /* ignore bad url */ }
+    }
+    msg = await channel.send({
+      content: content || undefined,
+      embeds: embed ? [embed] : [],
+      components: [enterRow],
+      files: resolved.files.length ? resolved.files : undefined,
+      allowedMentions: mentionOpts,
+    });
+  } else {
+    // No banner → keep the V2 card
+    const v2 = buildLiveV2({
+      prize,
+      winnersCount: winners,
+      ends: `<t:${Math.floor(endTime / 1000)}:R>`,
+      endsAt: dateStr(endTime),
+      entries: 0,
+      requirements: reqLines,
+      dropId,
+      iconUrl,
+      imageUrl: null,
+      brand: guildBrand(guildId),
+    });
+    msg = await channel.send({
+      ...v2,
+      content: content || undefined,
+      allowedMentions: mentionOpts,
+    });
+  }
 
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   if (!global.giveawayMeta)     global.giveawayMeta     = new Map();

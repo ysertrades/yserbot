@@ -69,30 +69,13 @@ function generateTradingViewBannerImage(copy = {}) {
   dot(png, pillX + 20, pillY + 21, 6, WHITE);
   drawText(png, pillText, pillX + 34, pillY + 13, 2, WHITE);
 
-  // ── Logo tile — QuantLab mark (repo Quantbot.jpg), same tile size as before ─
+  // ── Logo on its own black tile — TradingView's own mark ─────────────────
   const tileX = 62, tileY = 128, tileW = 254, tileH = 148;
   fillRoundedRectBlend(png, tileX, tileY, tileW, tileH, 30, BLACK, 1);
   fillRoundedRectBlend(png, tileX, tileY, tileW, tileH, 30, WHITE, 0.05);
 
-  try {
-    const { blitQuantLogo, hasQuantLogo } = require('./quantLogo');
-    if (hasQuantLogo()) {
-      const mark = 112; // fits the 254×148 tile with padding
-      blitQuantLogo(
-        png,
-        Math.round(tileX + (tileW - mark) / 2),
-        Math.round(tileY + (tileH - mark) / 2),
-        mark,
-        { circle: true, alpha: 1 },
-      );
-    } else {
-      const markW = 176;
-      drawTradingViewMark(png, tileX + (tileW - markW) / 2, tileY + (tileH - markW / TV_ASPECT) / 2, markW, WHITE);
-    }
-  } catch {
-    const markW = 176;
-    drawTradingViewMark(png, tileX + (tileW - markW) / 2, tileY + (tileH - markW / TV_ASPECT) / 2, markW, WHITE);
-  }
+  const markW = 176;
+  drawTradingViewMark(png, tileX + (tileW - markW) / 2, tileY + (tileH - markW / TV_ASPECT) / 2, markW, WHITE);
 
   // ── Signature, centred under the logo tile ───────────────────────────────
   drawFlowSignature(png, Math.round(tileX + (tileW - signatureWidth()) / 2), 306, {

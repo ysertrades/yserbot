@@ -61,7 +61,7 @@ const COMMON_TOKENS = ['{user}', '{server}'];
  * a switch here would look like "stop announcing warnings" and actually mean
  * "make /warn fail". Only messages the bot sends unprompted can be turned off.
  */
-const ACTION_PARTS = ['color', 'title', 'body'];
+const ACTION_PARTS = ['enabled', 'format', 'color', 'title', 'body'];
 
 const action = (label, blurb, color, done, extra = {}) => ({
   group: 'Moderation',
@@ -70,7 +70,13 @@ const action = (label, blurb, color, done, extra = {}) => ({
   shape: 'action',
   parts: ACTION_PARTS,
   tokens: ['{reason}'],
-  defaults: { enabled: true, color, title: `{user} ${done}`, body: '**Reason:** {reason}' },
+  defaults: {
+    enabled: true,
+    format: 'embed', // 'embed' | 'plain'
+    color,
+    title: `{user} ${done}`,
+    body: '**Reason:** {reason}',
+  },
   ...extra,
 });
 
@@ -269,21 +275,21 @@ const CATALOGUE = {
   /* -- the record ---------------------------------------------------------- */
 
   'mod.lock': action('Channel locked',
-    'Posted when /lock is used. {channel} and {reason} are filled in.',
+    'Posted when /lock is used. {channel} and {reason} are filled in. Switch Delivery to Embed card if you want a coloured card.',
     BRAND.sky, 'locked this channel', {
       tokens: ['{channel}', '{reason}'],
       defaults: {
-        enabled: true, color: BRAND.sky, title: 'Channel locked',
+        enabled: true, format: 'plain', color: BRAND.sky, title: '🔒 Channel locked',
         body: '**Channel:** {channel}\n**Reason:** {reason}',
       },
     }),
 
   'mod.unlock': action('Channel unlocked',
-    'Posted when /unlock is used.',
+    'Posted when /unlock is used. Switch Delivery to Embed card if you want a coloured card.',
     BRAND.cyan, 'unlocked this channel', {
       tokens: ['{channel}'],
       defaults: {
-        enabled: true, color: BRAND.cyan, title: 'Channel unlocked',
+        enabled: true, format: 'plain', color: BRAND.cyan, title: '🔓 Channel unlocked',
         body: '**Channel:** {channel}\nMessaging is open again.',
       },
     }),
@@ -903,6 +909,10 @@ function setStyle(guildId, key, patch) {
       const full = hex.startsWith('#') ? hex : `#${hex}`;
       if (!isHex(full)) return { error: 'bad_color' };
       next.color = full.toUpperCase();
+    } else if (part === 'format') {
+      const f = String(value || '').toLowerCase();
+      if (f !== 'embed' && f !== 'plain') return { error: 'bad_format' };
+      next.format = f;
     } else if (part === 'enabled' || part === 'thumbnail' || part === 'timestamp') {
       next[part] = !!value;
     } else if (part === 'palette') {
@@ -1156,10 +1166,40 @@ function catalogue() {
   }));
 }
 
+
+/**
+ * Preferred send helper. Honours format: 'embed' | 'plain'.
+ * Callers should: channel.send(messageStyle.buildPayload(...))
+ */
+function buildPayload(guildId, key, opts = {}) {
+  const entry = CATALOGUE[key];
+  if (!entry) return null;
+  const style = styleFor(guildId, key);
+  if (!style.enabled) return null;
+
+  const tokens = opts.tokens || {};
+  const title = fill(style.title || '', tokens).slice(0, 256);
+  const body = fill(style.body || '', tokens).slice(0, 4096);
+  const format = style.format === 'plain' ? 'plain' : 'embed';
+
+  if (format === 'plain') {
+    const lines = [];
+    if (title) lines.push(title);
+    if (body) lines.push(body);
+    const content = lines.join('\n').slice(0, 2000) || null;
+    if (!content) return null;
+    return { content };
+  }
+
+  const embed = build(guildId, key, opts);
+  if (!embed) return null;
+  return { embeds: [embed] };
+}
+
 module.exports = {
   CATALOGUE, FILE, LIMITS,
   catalogue, all, customised, styleFor, setStyle, resetStyle,
-  build, fill, isOn, partsOf,
+  build, buildPayload, fill, isOn, partsOf,
   buttonsFor, buildButtons, BUTTON_STYLES, BUTTON_LIMITS,
   paletteFor, PALETTE_KINDS, IMPACT_KINDS,
 };

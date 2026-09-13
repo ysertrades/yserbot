@@ -128,7 +128,18 @@ function drawFlowSignature(png, x, y, opts = {}) {
 
   fillRoundedRectBlend(png, x, y, CHIP, CHIP, 10, chip, chipAlpha);
   roundedBorder(png, x, y, CHIP, CHIP, 10, chip, borderAlpha);
-  drawFlowMonogram(png, x, y, chip);
+  // Prefer Quantbot.jpg inside the chip (same size as the old chart monogram).
+  // Falls back to the line monogram if the logo is not warmed yet.
+  try {
+    const { blitQuantLogo, hasQuantLogo } = require('./quantLogo');
+    if (hasQuantLogo()) {
+      blitQuantLogo(png, x + 2, y + 2, CHIP - 4, { circle: true, alpha: 1 });
+    } else {
+      drawFlowMonogram(png, x, y, chip);
+    }
+  } catch {
+    drawFlowMonogram(png, x, y, chip);
+  }
 
   const tx = x + CHIP + CHIP_GAP;
   const ty = y + 5;
