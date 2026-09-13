@@ -123,12 +123,9 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
   drawFlowSignature(png, Math.round(176 - signatureWidth() / 2), 306, {
     chip: PURPLE, primary: TEXT, caption: SUBTLE,
     chipAlpha: 0.18, borderAlpha: 0.45, captionAlpha: 0.85,
+    // Under QUANTLAB: drop id only (never ORIGINAL DESIGN / never colour arrays)
+    captionText: dropId ? ('QL-' + String(dropId)).toUpperCase().slice(0, 16) : '',
   });
-  // Drop ID under the signature / gift — ties the art to this live giveaway
-  if (dropId) {
-    const idLine = ('QL-' + String(dropId)).toUpperCase().slice(0, 16);
-    drawTextCentered(png, idLine, 176, 348, 1, SUBTLE);
-  }
 
 
   return PNG.sync.write(png);

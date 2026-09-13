@@ -144,10 +144,13 @@ function drawFlowSignature(png, x, y, opts = {}) {
   const tx = x + CHIP + CHIP_GAP;
   const ty = y + 5;
   drawText(png, WORDMARK, tx, ty, WORD_SCALE, primary);
-  // Allow callers to hide "ORIGINAL DESIGN" (e.g. prize giveaway banner)
-  const captionText = opts.caption !== undefined ? opts.caption : CAPTION;
-  if (captionText) {
-    drawText(png, captionText, tx, ty + GLYPH_H * WORD_SCALE + 4, 1, caption, captionAlpha);
+  // `caption` is always the *colour*. Optional label is `captionText`.
+  // (Using caption as text printed RGBA arrays like "174,180,192,255".)
+  const label = Object.prototype.hasOwnProperty.call(opts, 'captionText')
+    ? (opts.captionText == null ? '' : String(opts.captionText))
+    : CAPTION;
+  if (label) {
+    drawText(png, label, tx, ty + GLYPH_H * WORD_SCALE + 4, 1, caption, captionAlpha);
   }
 }
 
