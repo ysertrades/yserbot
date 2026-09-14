@@ -62,18 +62,26 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
         const w = Math.max(1, Number(opts.winners) || 1);
         const prizeText = String(opts.prize || '').trim();
         if (opts.ended) {
-          // Ended-only art: heading + prize on the banner (not live drop copy)
+          // Ended-only art: never keep live "HIT ENTER" / Studio enter copy
           const sub = prizeText
             ? prizeText.slice(0, 42).toUpperCase()
             : (w === 1 ? 'ONE WINNER' : (w + ' WINNERS'));
+          // Two-line tagline so the band under the rule stays filled (same as live)
+          const endedTagline =
+            'THE DRAW IS LOCKED. TAP REVEAL BELOW TO SEE IF FORTUNE FOUND YOU.';
           copy = {
             ...copy,
             pill: '',
             heading: 'WINNERS SELECTED',
             subtitle: sub,
-            tagline: 'TAP REVEAL BELOW TO SEE IF YOU WON.',
+            tagline: endedTagline,
             dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
           };
+          // Hard override after spread — Studio "enter" wording must not stick
+          copy.tagline = endedTagline;
+          copy.heading = 'WINNERS SELECTED';
+          copy.subtitle = sub;
+          copy.pill = '';
         } else {
           copy = {
             ...copy,
