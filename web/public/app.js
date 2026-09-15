@@ -6055,15 +6055,14 @@ function renderTickets() {
     }));
   }
 
-  /* -- settings: support roles (multi) ----------------------------------- */
-  const roles = state.overview?.roles || [];
+  /* -- settings: support roles (multi) — same list as Settings role chips */
   const draft = {
     supportRoleIds: Array.isArray(t.supportRoleIds) ? [...t.supportRoleIds] : (t.supportRoleId ? [t.supportRoleId] : []),
   };
   $('#form-tickets').replaceChildren(
     pickManyRoles(
       'Support roles',
-      roles,
+      roleList(),
       draft.supportRoleIds,
       ids => { draft.supportRoleIds = ids; },
     ),
