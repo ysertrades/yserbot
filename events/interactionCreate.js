@@ -762,7 +762,13 @@ module.exports = {
         if (id.startsWith('automod_link_approve:')) {
           return await client.commands.get('automod')?.handleLinkApprove(interaction, id.slice('automod_link_approve:'.length));
         }
-        if (id.startsWith('automod_link_deny:')) {
+        if (id.startsWith('automod_link_act:')) {
+        const rest = id.slice('automod_link_act:'.length);
+        const [act, reqId] = rest.split(':');
+        const automod = client.commands.get('automod');
+        if (automod?.handleLinkModAction) return automod.handleLinkModAction(interaction, act, reqId);
+      }
+      if (id.startsWith('automod_link_deny:')) {
           return await client.commands.get('automod')?.handleLinkDeny(interaction, id.slice('automod_link_deny:'.length));
         }
 

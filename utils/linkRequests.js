@@ -6,6 +6,34 @@ const { readJson, writeJson } = require('./jsonStorage');
 const FILE = 'link_requests.json';
 const LINK_REGEX = /(https?:\/\/\S+)|(\bwww\.\S+\.\S+)/i;
 
+/** Only Discord / Telegram / WhatsApp invite-style links are restricted. */
+const RESTRICTED_LINK_RE = new RegExp(
+  String.raw`(?:https?:\/\/)?(?:` +
+  // Discord invites
+  String.raw`(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/[A-Za-z0-9-]+` +
+  String.raw`|` +
+  // Telegram
+  String.raw`(?:t\.me|telegram\.me|telegram\.dog)\/[A-Za-z0-9_+/]+` +
+  String.raw`|` +
+  // WhatsApp
+  String.raw`(?:wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)\/\S+` +
+  String.raw`)`,
+  'i'
+);
+
+function isRestrictedLink(text) {
+  return RESTRICTED_LINK_RE.test(String(text || ''));
+}
+
+function restrictedPlatform(text) {
+  const s = String(text || '').toLowerCase();
+  if (/(?:discord\.gg|discord(?:app)?\.com\/invite)/i.test(s)) return 'Discord';
+  if (/(?:t\.me|telegram\.me|telegram\.dog)/i.test(s)) return 'Telegram';
+  if (/(?:wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)/i.test(s)) return 'WhatsApp';
+  return 'invite';
+}
+
+
 function extractLink(text) {
   const m = String(text || '').match(LINK_REGEX);
   return m ? m[0] : '';
@@ -91,5 +119,5 @@ function getDecidedRequests(guildId, limit = 20) {
 module.exports = {
   createRequest, getRequest, updateRequest, deleteRequest,
   findActiveRequest, getAllActiveRequests, getUserHistory, getDecidedRequests,
-  extractLink, LINK_REGEX,
+  extractLink, LINK_REGEX, RESTRICTED_LINK_RE, isRestrictedLink, restrictedPlatform,
 };

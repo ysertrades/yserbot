@@ -5603,7 +5603,19 @@ function renderModeration() {
         confirmLabel: 'Clear them', danger: true,
       })) return;
       clear.disabled = true;
-      await post('warnclear', { userId: w.userId });
+      const out = await post('warnclear', { userId: w.userId });
+      if (out?.ok !== false) {
+        try {
+          const fresh = await get(`/api/guild/${state.guildId}`);
+          if (fresh?.guild?.id === state.guildId) {
+            state.overview = fresh;
+            renderModeration();
+          }
+        } catch {}
+        toast('Warnings cleared.', 'good');
+      } else {
+        clear.disabled = false;
+      }
     });
     right.append(clear);
     r.append(right);

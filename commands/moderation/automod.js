@@ -16,6 +16,7 @@ const { postCustomLog, suppressDeleteLog } = require('../../utils/modLog');
 const {
   createRequest, getRequest, updateRequest, deleteRequest,
   findActiveRequest, getAllActiveRequests, getUserHistory, LINK_REGEX,
+  isRestrictedLink, restrictedPlatform,
 } = require('../../utils/linkRequests');
 const { analyse, humanAge, flagLines, severity } = require('../../utils/linkInsight');
 const linkDecisions = require('../../utils/linkDecisions');
@@ -23,7 +24,7 @@ const { evaluate, consumeAllowed, lockAfterViolation, grantPermit, getRecord, cl
 
 const FEATURES = [
   { key: 'badWords',              label: '🤬 Bad Word / Harassment Filter',        desc: 'Deletes messages containing filtered words and warns the sender in-channel.' },
-  { key: 'linkFilter',            label: '🔗 Link Posting Approval',               desc: 'Non-moderators need admin approval before a posted link goes through.' },
+  { key: 'linkFilter',            label: '🔗 Invite Link Guard',                   desc: 'Only Discord, Telegram & WhatsApp links need approval. Other links are allowed.' },
   { key: 'mentionSpamProtection', label: '🚨 Mass-Mention Raid Protection (native)', desc: 'Uses Discord\'s built-in Auto Moderation to instantly block messages with excessive @mentions — a common raid tactic.' },
 ];
 
@@ -151,7 +152,7 @@ module.exports = {
     if (!settings.badWords && !settings.linkFilter) return false;
     if (isAutoModExempt(message.member)) return false;
 
-    if (settings.linkFilter && LINK_REGEX.test(message.content)) {
+    if (settings.linkFilter && isRestrictedLink(message.content)) {
       // A previously-approved user gets exactly one link per their admin-set
       // cooldown, no re-request needed. Posting again before that cooldown
       // is up doesn't just cost the permit — it locks them out of
@@ -192,6 +193,7 @@ module.exports = {
   handleLinkApprove,
   handleLinkApproveModalSubmit,
   handleLinkDeny,
+  handleLinkModAction,
 
   // ── /automod cooldowns — list/select/manage (routed from interactionCreate.js) ──
   handleCooldownSelect,
@@ -315,7 +317,20 @@ async function handleLinkViolation(message, client) {
   );
 
   const notice = await sendPrivateNotice(message.channel, message.author, embed, [row], 60_000);
-  if (notice) updateRequest(request.id, { noticeMessageId: notice.id });
+  if (notice) updateRequest(request.id, { noticeMessageId: notice.id, channelId: message.channel.id });
+
+  // Creative DM about the restricted platform
+  const platform = restrictedPlatform(message.content);
+  try {
+    await message.author.send({
+      content:
+        `**Heads up from ${message.guild.name}**\n\n` +
+        `Your message was removed because it included a **${platform}** link.\n` +
+        `Those invites need staff approval here so the community stays clean.\n\n` +
+        `If it was legit, use **Request Approval** in the channel notice — a moderator will review it.\n` +
+        `Normal links (YouTube, charts, sites) are fine.`,
+    });
+  } catch { /* DMs closed */ }
 
   // If they never click through, the request would otherwise sit in
   // 'pending' forever — findActiveRequest would then treat it as still
@@ -429,8 +444,11 @@ function snowflakeTime(id) {
 
 function buildRequestCardRow(requestId) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`automod_link_approve:${requestId}`).setLabel('✅ Approve').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId(`automod_link_deny:${requestId}`).setLabel('❌ Deny').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`automod_link_approve:${requestId}`).setLabel('Approve').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`automod_link_act:kick:${requestId}`).setLabel('Kick').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`automod_link_act:ban:${requestId}`).setLabel('Ban').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`automod_link_act:timeout:${requestId}`).setLabel('Timeout').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`automod_link_act:mute:${requestId}`).setLabel('Mute').setStyle(ButtonStyle.Secondary),
   );
 }
 
@@ -849,3 +867,66 @@ async function setMentionSpamRule(guild, enable) {
     return { ok: false, error: err.message };
   }
 }
+
+
+/** Plain-text result in the channel where the invite was posted. */
+async function announceLinkAction(client, request, verb, reason) {
+  try {
+    const guild = client.guilds.cache.get(request.guildId);
+    const ch = guild?.channels?.cache?.get(request.channelId);
+    if (!ch?.isTextBased?.()) return;
+    const line =
+      `<@${request.userId}> has been **${verb}**.\n` +
+      `Reason: ${reason}`;
+    await ch.send({ content: line.slice(0, 2000), allowedMentions: { users: [request.userId] } });
+  } catch (err) {
+    console.warn('[automod] announceLinkAction:', err.message);
+  }
+}
+
+async function handleLinkModAction(interaction, action, requestId) {
+  if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)
+      && !interaction.member?.permissions?.has(PermissionFlagsBits.ModerateMembers)
+      && !interaction.member?.permissions?.has(PermissionFlagsBits.BanMembers)
+      && !interaction.member?.permissions?.has(PermissionFlagsBits.KickMembers)) {
+    return interaction.reply({ content: '❌ Missing moderation permission.', flags: MessageFlags.Ephemeral });
+  }
+  const request = getRequest(requestId);
+  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', flags: MessageFlags.Ephemeral });
+  if (request.status === 'approved' || request.status === 'denied' || request.status === 'actioned') {
+    return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
+  }
+
+  const guild = interaction.guild;
+  const member = await guild.members.fetch(request.userId).catch(() => null);
+  const platform = restrictedPlatform(request.link || request.originalContent || '');
+  const reasons = {
+    kick: `Posted a ${platform} invite without approval`,
+    ban: `Posted a ${platform} invite without approval`,
+    timeout: `Posted a ${platform} invite without approval`,
+    mute: `Posted a ${platform} invite without approval`,
+  };
+  const reason = reasons[action] || `Restricted ${platform} link`;
+  const verbs = { kick: 'kicked', ban: 'banned', timeout: 'timed out', mute: 'muted' };
+
+  try {
+    if (action === 'kick' && member) await member.kick(reason);
+    else if (action === 'ban') await guild.members.ban(request.userId, { reason, deleteMessageSeconds: 0 });
+    else if ((action === 'timeout' || action === 'mute') && member) {
+      await member.timeout(60 * 60 * 1000, reason); // 1h
+    } else if (!member && action !== 'ban') {
+      return interaction.reply({ content: '❌ Member is no longer in the server.', flags: MessageFlags.Ephemeral });
+    }
+  } catch (err) {
+    return interaction.reply({ content: `❌ Action failed: ${String(err.message || err).slice(0, 120)}`, flags: MessageFlags.Ephemeral });
+  }
+
+  updateRequest(requestId, { status: 'actioned', decidedAt: Date.now(), decidedBy: interaction.user.tag, action });
+  await announceLinkAction(interaction.client, request, verbs[action] || action, reason);
+
+  const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+    .setColor(0xE74C3C)
+    .setFooter({ text: `${(verbs[action] || action).toUpperCase()} by ${interaction.user.tag}` });
+  return interaction.update({ embeds: [updatedEmbed], components: [] });
+}
+
