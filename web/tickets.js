@@ -48,11 +48,26 @@ function openTickets(guild) {
     // before topics were set.
     const byTopic = topic.startsWith(TOPIC_PREFIX);
     if (!byTopic && !ch.name?.startsWith('ticket-')) continue;
+    const ownerId = byTopic ? topic.slice(TOPIC_PREFIX.length) : null;
+    let ownerTag = null;
+    let ownerName = null;
+    if (ownerId) {
+      const mem = guild.members?.cache?.get(ownerId);
+      if (mem) {
+        ownerName = mem.displayName || mem.user?.globalName || mem.user?.username || null;
+        ownerTag = mem.user?.username
+          ? `@${mem.user.username}`
+          : (ownerName ? `@${ownerName}` : null);
+      }
+    }
     out.push({
       id: ch.id,
       name: ch.name,
-      ownerId: byTopic ? topic.slice(TOPIC_PREFIX.length) : null,
+      ownerId,
+      ownerTag,
+      ownerName,
       createdAt: ch.createdTimestamp ?? null,
+      messageCount: typeof ch.messageCount === 'number' ? ch.messageCount : null,
     });
   }
   return out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));

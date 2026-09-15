@@ -2531,3 +2531,25 @@ select.cselect-native {
 .confirm-actions {
   display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap;
 }
+
+
+/* Tickets — opener mention */
+.ticket-opener {
+  color: var(--accent, #a78bfa);
+  font-weight: 600;
+  font-variant-numeric: normal;
+}
+.ticket-open-card .actions {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/* Tracking log desk wraps grid + pager */
+.track-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.track-pager {
+  margin-top: 0.15rem;
+}

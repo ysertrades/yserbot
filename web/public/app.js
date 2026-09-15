@@ -1116,8 +1116,17 @@ function renderWhop() {
   if (!log.length) {
     blocks.push(el("p", "muted", "Empty. Add a course from the library below (course + channel)."));
   } else {
+    const pageSize = 3;
+    const total = log.length;
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    let page = Math.max(0, state.trackLogPage || 0);
+    if (page >= pages) page = pages - 1;
+    state.trackLogPage = page;
+    const slice = log.slice(page * pageSize, (page + 1) * pageSize);
+
+    const desk = el("div", "track-desk");
     const grid = el("div", "track-grid");
-    for (const e of log) {
+    for (const e of slice) {
       const card = el("div", "track-card");
       card.append(
         el("p", "track-title", e.title || e.id),
@@ -1154,7 +1163,49 @@ function renderWhop() {
       card.append(acts);
       grid.append(card);
     }
-    blocks.push(grid);
+    desk.append(grid);
+    if (pages > 1) {
+      const pager = el("div", "drop-pager track-pager");
+      const meta = el("div", "drop-pager-meta");
+      meta.append(
+        el("span", "drop-pager-label", "Tracking desk"),
+        el("span", "drop-pager-count", `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} of ${total}`),
+      );
+      const dots = el("div", "drop-pager-dots");
+      for (let i = 0; i < pages; i++) {
+        const dot = el("button", "drop-pager-dot" + (i === page ? " on" : ""), String(i + 1));
+        dot.type = "button";
+        if (i === page) dot.setAttribute("aria-current", "page");
+        dot.addEventListener("click", () => {
+          state.trackLogPage = i;
+          if (typeof renderWhop === "function") renderWhop();
+        });
+        dots.append(dot);
+      }
+      const nav = el("div", "drop-pager-nav");
+      const prev = el("button", "btn small drop-pager-btn", "←");
+      prev.type = "button";
+      prev.disabled = page <= 0;
+      prev.addEventListener("click", () => {
+        if ((state.trackLogPage || 0) > 0) {
+          state.trackLogPage -= 1;
+          if (typeof renderWhop === "function") renderWhop();
+        }
+      });
+      const next = el("button", "btn small drop-pager-btn", "→");
+      next.type = "button";
+      next.disabled = page >= pages - 1;
+      next.addEventListener("click", () => {
+        if ((state.trackLogPage || 0) < pages - 1) {
+          state.trackLogPage += 1;
+          if (typeof renderWhop === "function") renderWhop();
+        }
+      });
+      nav.append(prev, next);
+      pager.append(meta, dots, nav);
+      desk.append(pager);
+    }
+    blocks.push(desk);
   }
 
   /* ---- Course library from scan ---- */
@@ -6031,7 +6082,7 @@ function renderTickets() {
     wrap.replaceChildren(el('p', 'muted', 'No tickets are open right now.'));
   } else {
     wrap.replaceChildren(...t.open.map(tk => {
-      const d = el('div', 'gaw');
+      const d = el('div', 'gaw ticket-open-card');
       const top = el('div', 'gaw-top');
       top.append(el('span', 'kind prize', 'OPEN'), el('span', 'nm', `#${tk.name}`));
       d.append(top);
@@ -6039,17 +6090,35 @@ function renderTickets() {
       const bits = [];
       if (tk.createdAt) bits.push(`opened ${relativeTime(tk.createdAt)}`);
       d.append(el('p', 'hint', bits.join(' · ') || 'open'));
+
       if (tk.ownerId) {
         const line = el('div', 'row');
-        line.append(el('span', 'k', 'Opened by'), el('span', 'v mono', tk.ownerId));
+        const who = tk.ownerTag || tk.ownerName || 'Member';
+        const v = el('span', 'v ticket-opener', who);
+        v.title = tk.ownerId;
+        line.append(el('span', 'k', 'Opened by'), v);
         d.append(line);
       }
 
       const act = el('div', 'actions');
+      const copy = el('button', 'btn small', 'Copy ID');
+      copy.type = 'button';
+      copy.title = 'Copy channel ID';
+      copy.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(String(tk.id));
+          toast('Channel ID copied.', 'ok');
+        } catch {
+          toast(String(tk.id), 'ok');
+        }
+      });
+      const detail = el('button', 'btn small', 'Details');
+      detail.type = 'button';
+      detail.addEventListener('click', () => openTicketSheet(tk));
       const close = el('button', 'btn small danger', 'Close');
       close.type = 'button';
       close.addEventListener('click', () => openTicketSheet(tk));
-      act.append(close);
+      act.append(copy, detail, close);
       d.append(act);
       return d;
     }));
@@ -6086,8 +6155,10 @@ function renderTickets() {
 function openTicketSheet(tk) {
   const body = [
     sheetRow('Channel', `#${tk.name}`),
-    tk.ownerId ? sheetRow('Opened by', el('span', 'v mono', tk.ownerId)) : null,
+    tk.ownerId ? sheetRow('Opened by', el('span', 'v', tk.ownerTag || tk.ownerName || ('@' + tk.ownerId))) : null,
+    tk.ownerId ? sheetRow('User ID', el('span', 'v mono', tk.ownerId)) : null,
     tk.createdAt ? sheetRow('Opened', new Date(tk.createdAt).toLocaleString()) : null,
+    sheetRow('Channel ID', el('span', 'v mono', tk.id)),
     el('p', 'note', 'Closing deletes the channel and everything said in it. There is no archive — this cannot be undone.'),
   ].filter(Boolean);
 
