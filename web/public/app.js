@@ -323,9 +323,8 @@ async function post(op, body, { quiet = false } = {}) {
       if (fresh?.guild?.id === state.guildId) {
         state.overview = fresh;
         renderGiveaways();
-        if (root.dataset.section === 'giveaways' && !($('#form-gaw')?.contains(document.activeElement))) {
-          renderGiveawayForm();
-        }
+        // Never rebuild the launch form from a live tick — preserves typed fields
+
       }
     } catch (e) { console.warn('[panel] giveaway refresh', e); }
   } else if (state.overview?.botProfile) {
@@ -404,6 +403,17 @@ function initSheet() {
  *
  * @returns {Promise<boolean>}
  */
+function isEditingPanel() {
+  const a = document.activeElement;
+  if (!a || a === document.body || a === document.documentElement) return false;
+  const tag = (a.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+  if (a.isContentEditable) return true;
+  // focused inside a form / sheet field
+  if (a.closest && (a.closest('form') || a.closest('.field') || a.closest('#sheet'))) return true;
+  return false;
+}
+
 function askConfirm({ title, message, confirmLabel = 'Confirm', danger = false }) {
   // Nested overlay — never replaces the current sheet (e.g. Participants).
   return new Promise(resolve => {
@@ -3996,11 +4006,14 @@ function refreshGawPreview(draft, attempt = 0) {
   }, 320);
 }
 
-function renderGiveawayForm() {
+function renderGiveawayForm(opts = {}) {
   const form = $('#form-gaw');
   if (!form) return;
-  /* Keep draft while focused inside the form — live overview must not erase it */
-  if (form.dataset.ready === '1' && form.contains(document.activeElement)) return;
+  // Once the launch form is built, keep it. Live overview / tab focus must
+  // not rebuild and wipe prize, duration, winners, etc.
+  // Pass { force: true } after a successful launch or when entering the tab.
+  if (form.dataset.ready === '1' && !opts.force) return;
+  if (isEditingPanel() && form.dataset.ready === '1') return;
 
   const draft = {
     kind: 'prize',
@@ -4197,6 +4210,8 @@ function renderGiveawayForm() {
   );
 
   state.gawBump = () => {};
+  form.dataset.ready = '1';
+
 }
 
 /* ── lottery ───────────────────────────────────────────────────────────── */
@@ -7582,15 +7597,18 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') { stopLive(); return; }
   if (!state.guildId) return;
   startLive();
-  // A page a phone put to sleep comes back holding whatever it had when it
-  // went away — which, if it was opened into a background tab, can be
-  // nothing at all. Ask again rather than trusting what is on screen.
-  refreshOverview();
+  // Do NOT refreshOverview on every tab focus — that rebuilds forms and
+  // erases text the user was typing. Only fetch if overview never loaded.
+  if (!state.overview) refreshOverview();
 });
 
 // The other way a load quietly loses: the request went out while the
 // connection was down. Nothing tells the page that except this.
-window.addEventListener('online', () => { if (state.guildId) refreshOverview(); });
+window.addEventListener('online', () => {
+  if (!state.guildId) return;
+  if (isEditingPanel()) return; // keep typed fields
+  refreshOverview();
+});
 
 // Coming back through the history stack — Back into the panel, or a phone
 // restoring the tab — replays the page from cache without re-running any of
@@ -7818,7 +7836,8 @@ function showSection(name) {
   }
   if (name === 'giveaways') {
     renderGiveaways();
-    renderGiveawayForm();
+    // First open of the tab builds the form; later visits keep typed draft
+    renderGiveawayForm({ force: !$('#form-gaw')?.dataset?.ready });
   }
 }
 
