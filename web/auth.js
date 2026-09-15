@@ -252,19 +252,30 @@ async function completeLogin(code, client) {
     discord('/users/@me/guilds', bearer),
   ]);
 
-  // Keep only guilds this account OWNS (Discord owner flag), that the bot is
-  // actually in, and that the allowlist permits.
-  //
-  // Manage Server used to be enough. That let anyone with an admin role on
-  // YOUR server open YOUR panel. Ownership is the right gate for multi-tenant
-  // use: each person only sees servers they created under their Discord.
-  // Staff grants (owner console) and PANEL_OWNER_IDS still open extra access
-  // without needing the Discord owner flag.
+  // Guilds this account can open in the panel:
+  //   • Discord server owner, or
+  //   • Administrator, or
+  //   • Manage Server
+  // All admins of the same server share the same per-guild config (settings,
+  // giveaways, appearance, etc.) — nothing is stored per Discord user.
+  // Staff grants (owner console) and PANEL_OWNER_IDS still open extra access.
   //
   // The access token is discarded right after this — the panel never acts on
   // the user's behalf, so there is nothing to store.
+  const PERM_ADMINISTRATOR = 0x8n;
+  const PERM_MANAGE_GUILD = 0x20n;
+  const canManageGuild = (g) => {
+    if (g.owner === true) return true;
+    try {
+      const p = BigInt(g.permissions || 0);
+      return (p & PERM_ADMINISTRATOR) === PERM_ADMINISTRATOR
+        || (p & PERM_MANAGE_GUILD) === PERM_MANAGE_GUILD;
+    } catch {
+      return false;
+    }
+  };
   const manageable = guilds
-    .filter(g => g.owner === true)
+    .filter(canManageGuild)
     .filter(g => client.guilds.cache.has(g.id))
     .filter(g => c.allowlist.length === 0 || c.allowlist.includes(g.id))
     .map(g => g.id);

@@ -66,20 +66,21 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
           const sub = prizeText
             ? prizeText.slice(0, 42).toUpperCase()
             : (w === 1 ? 'ONE WINNER' : (w + ' WINNERS'));
+          const endedHeading = w === 1 ? 'WINNER SELECTED' : 'WINNERS SELECTED';
           // Two-line tagline so the band under the rule stays filled (same as live)
           const endedTagline =
             'THE DRAW IS LOCKED. TAP REVEAL BELOW TO SEE IF FORTUNE FOUND YOU.';
           copy = {
             ...copy,
             pill: '',
-            heading: 'WINNERS SELECTED',
+            heading: endedHeading,
             subtitle: sub,
             tagline: endedTagline,
             dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
           };
           // Hard override after spread — Studio "enter" wording must not stick
           copy.tagline = endedTagline;
-          copy.heading = 'WINNERS SELECTED';
+          copy.heading = endedHeading;
           copy.subtitle = sub;
           copy.pill = '';
         } else {
