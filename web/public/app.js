@@ -405,22 +405,46 @@ function initSheet() {
  * @returns {Promise<boolean>}
  */
 function askConfirm({ title, message, confirmLabel = 'Confirm', danger = false }) {
+  // Nested overlay — never replaces the current sheet (e.g. Participants).
   return new Promise(resolve => {
     let answered = false;
-    const done = value => { answered = true; resolve(value); };
+    const finish = (value) => {
+      if (answered) return;
+      answered = true;
+      try { overlay.remove(); } catch {}
+      document.removeEventListener('keydown', onKey);
+      resolve(value);
+    };
 
-    const go = el('button', `btn ${danger ? 'danger' : 'primary'}`, confirmLabel);
-    go.type = 'button';
-    go.addEventListener('click', () => { done(true); closeSheet(); });
+    const overlay = el('div', 'confirm-overlay');
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
 
+    const card = el('div', 'confirm-card');
+    card.append(el('h3', 'confirm-title', title || 'Confirm'));
+    if (message) card.append(el('p', 'confirm-msg muted', message));
+
+    const actions = el('div', 'confirm-actions');
     const cancel = el('button', 'btn', 'Cancel');
     cancel.type = 'button';
-    cancel.addEventListener('click', () => { done(false); closeSheet(); });
+    cancel.addEventListener('click', () => finish(false));
+    const go = el('button', `btn ${danger ? 'danger' : 'primary'}`, confirmLabel);
+    go.type = 'button';
+    go.addEventListener('click', () => finish(true));
+    actions.append(cancel, go);
+    card.append(actions);
+    overlay.append(card);
 
-    // Dismissing by scrim, Escape or the close button is a "no" — and has to
-    // resolve, or the caller waits forever.
-    openSheet(title, [el('p', 'muted', message)], [go, cancel],
-      () => { if (!answered) resolve(false); });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(false);
+    });
+    const onKey = (e) => {
+      if (e.key === 'Escape') finish(false);
+    };
+    document.addEventListener('keydown', onKey);
+
+    document.body.append(overlay);
+    go.focus();
   });
 }
 
@@ -1982,19 +2006,23 @@ function countdownEl(endsAt, startedAt = null) {
   const node = el('span', 'countdown');
   const bar = el('div', 'meter');
   const fill = el('i');
+  // Continuous motion — no CSS width transition (that caused stop-go every 1s)
+  fill.style.transition = 'none';
   bar.append(fill);
-  // Falling back to now keeps an old record without a start time working; it
-  // is the previous behaviour, and only for those.
   const began = Number(startedAt) > 0 ? Number(startedAt) : Date.now();
   const span = Math.max(1, endsAt - began);
+  let raf = 0;
+  let lastSec = -1;
 
   const paint = () => {
-    const left = endsAt - Date.now();
+    const now = Date.now();
+    const left = endsAt - now;
     if (left <= 0) {
       node.textContent = 'ending now';
       node.className = 'countdown over';
       fill.style.width = '100%';
-      // Move card out of Live once the clock hits zero (no tab switch needed)
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
       if (!node.dataset.endedBump) {
         node.dataset.endedBump = '1';
         setTimeout(() => {
@@ -2006,18 +2034,45 @@ function countdownEl(endsAt, startedAt = null) {
       }
       return false;
     }
+    // Bar moves every frame (smooth until the end)
+    const pct = Math.min(100, Math.max(0, ((now - began) / span) * 100));
+    fill.style.width = pct.toFixed(2) + '%';
+
+    // Text updates once per second (readable, no flicker)
     const s = Math.floor(left / 1000);
-    const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60, sec = s % 60;
-    node.textContent = d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${m}m ${String(sec).padStart(2, '0')}s` : `${m}m ${String(sec).padStart(2, '0')}s`;
-    const soon = left < 5 * 60000;
-    node.className = `countdown${soon ? ' soon' : ''}`;
-    bar.className = `meter${soon ? ' soon' : ''}`;
-    fill.style.width = `${Math.min(100, ((span - left) / span) * 100).toFixed(1)}%`;
+    if (s !== lastSec) {
+      lastSec = s;
+      const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60, sec = s % 60;
+      node.textContent = d > 0
+        ? `${d}d ${h}h ${m}m`
+        : h > 0
+          ? `${h}h ${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`
+          : `${m}m ${String(sec).padStart(2, '0')}s`;
+      node.className = left < 60_000 ? 'countdown soon' : 'countdown';
+      if (left < 60_000) bar.classList.add('soon');
+      else bar.classList.remove('soon');
+    }
     return true;
   };
+
+  const loop = () => {
+    if (!paint()) return;
+    raf = requestAnimationFrame(loop);
+  };
   paint();
-  ticking.add(paint);
+  raf = requestAnimationFrame(loop);
+  // Still register with ticking so cleanup on re-render works
+  const tickPaint = () => {
+    if (!document.body.contains(node)) {
+      if (raf) cancelAnimationFrame(raf);
+      return false;
+    }
+    return paint();
+  };
+  ticking.add(tickPaint);
   return { node, bar };
+}
+
 }
 
 function startTicking() {
@@ -2112,6 +2167,14 @@ async function openGiveawayParticipants(messageId, meta = {}) {
       }
       return;
     }
+
+    // Skip full DOM rebuild when nothing changed (cuts lag while sheet is open)
+    const fp = JSON.stringify({
+      c: res.count,
+      ids: (res.participants || []).map(p => p.id),
+    });
+    if (silent && roster.lastFp === fp) return;
+    roster.lastFp = fp;
 
     const young = (res.participants || []).filter(p => p.young).length;
     const body = [];
@@ -2219,7 +2282,7 @@ async function openGiveawayParticipants(messageId, meta = {}) {
 
   await paint({ silent: false });
 
-  // Live poll while the sheet is open — new enters appear without reopening
+  // Live poll while the sheet is open — only repaint when the list changes
   roster.pollTimer = setInterval(() => {
     if (roster.messageId !== messageId) {
       clearInterval(roster.pollTimer);
@@ -2234,7 +2297,7 @@ async function openGiveawayParticipants(messageId, meta = {}) {
       return;
     }
     paint({ silent: true }).catch(() => {});
-  }, 4000);
+  }, 8000);
 }
 
 

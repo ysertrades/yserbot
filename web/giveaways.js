@@ -170,7 +170,7 @@ async function reroll(guildId, body, { guild }) {
  * record makes a reroll impossible from then on, which is the whole point of
  * offering it beside reroll rather than instead of it.
  */
-function remove(guildId, body) {
+async function remove(guildId, body, ctx = {}) {
   const shortId = String(body.shortId || '').trim().toLowerCase();
   if (!shortId || !/^[\w-]{1,40}$/.test(shortId)) return { error: 'bad_id' };
   const kind = body.kind === 'coins' ? 'coins' : 'prize';
@@ -179,6 +179,23 @@ function remove(guildId, body) {
   const all = readJson(file, {});
   const entry = all[guildId]?.[shortId];
   if (!entry) return { error: 'unknown_giveaway' };
+
+  // Delete the original launch message from the channel (best-effort)
+  const channelId = entry.channelId;
+  const messageId = entry.messageId;
+  const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId);
+  if (guild && channelId && messageId) {
+    try {
+      const ch = guild.channels.cache.get(channelId)
+        || await guild.channels.fetch(channelId).catch(() => null);
+      if (ch?.isTextBased?.()) {
+        const msg = await ch.messages.fetch(messageId).catch(() => null);
+        if (msg) await msg.delete().catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[GIVEAWAY] panel delete message:', err.message);
+    }
+  }
 
   delete all[guildId][shortId];
   if (Object.keys(all[guildId]).length === 0) delete all[guildId];

@@ -487,10 +487,10 @@ Object.assign(OPS, {
     return r;
   },
   async giveawaydelete(guildId, body, ctx) {
-    const r = giveaways.remove(guildId, body);
+    const r = await giveaways.remove(guildId, body, ctx);
     if (r.ok) {
       await announce(ctx.client, guildId, ctx.session,
-        `🗑️ Removed finished giveaway **${r.title}** (\`${r.shortId}\`) from the panel — it can no longer be rerolled`, 'giveaways');
+        `🗑️ Removed finished giveaway **${r.title}** (\`${r.shortId}\`) from the panel — channel message deleted when possible`, 'giveaways');
     }
     return r;
   },
