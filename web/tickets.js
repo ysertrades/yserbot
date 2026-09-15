@@ -31,9 +31,6 @@ const TOPIC_PREFIX = 'ticket-owner:';
 const { DEFAULT: DEFAULTS } = require('../commands/utility/ticket');
 
 const FIELDS = [
-  { key: 'inactivityEnabled', type: 'bool', label: 'Nudge quiet tickets' },
-  { key: 'inactivityTime', type: 'int', label: 'Nudge after (minutes)', min: 1, max: 10080 },
-  { key: 'inactivityMessage', type: 'text', label: 'What the nudge says', max: 400 },
   { key: 'transcriptEnabled', type: 'bool', label: 'Save a transcript on close' },
 ];
 
@@ -141,8 +138,6 @@ async function close(guildId, body, { guild, session }) {
   if (!topic.startsWith(TOPIC_PREFIX) && !channel.name?.startsWith('ticket-')) {
     return { error: 'not_a_ticket' };
   }
-
-  try { ticketCmd().clearInactivityTimer(channel.id); } catch { /* no timer running */ }
 
   const name = channel.name;
   const ownerId = topic.startsWith(TOPIC_PREFIX) ? topic.slice(TOPIC_PREFIX.length) : null;

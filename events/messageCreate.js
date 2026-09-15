@@ -21,14 +21,6 @@ module.exports = {
     const guildId = message.guild?.id;
     if (!guildId) return;
 
-    // ── Ticket inactivity reset ───────────────────────────────────────────
-    const isTicket = message.channel.topic?.startsWith('ticket-owner:') || message.channel.name?.startsWith('ticket-');
-    if (isTicket) {
-      const ticketCmd = client?.commands?.get('ticket');
-      if (ticketCmd?.resetInactivityTimer) {
-        ticketCmd.resetInactivityTimer(message.channel.id);
-      }
-    }
 
     // ── g.reroll <id> prefix command ─────────────────────────────────────
     const content = message.content.trim();

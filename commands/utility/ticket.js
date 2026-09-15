@@ -16,56 +16,8 @@ const { createServerEmbed, sendTempReply: sendTempEphemeralReply } = require('..
 const messageStyle = require('../../utils/messageStyle');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
-// ── Inactivity timer store ────────────────────────────────────────────────
-// channelId → { timerId, channel, guild, minutes, message }
-const ticketTimers = new Map();
-
-function startInactivityTimer(channel, guild, minutes, message) {
-  clearInactivityTimer(channel.id);
-  const ms    = minutes * 60 * 1000;
-  const entry = { channel, guild, minutes, message };
-
-  // Wrapped because a timer has no caller: anything that throws in here — a
-  // guild whose stored warning text is missing, a channel deleted since — would
-  // otherwise surface only as an anonymous unhandled rejection.
-  entry.timerId = setTimeout(async () => {
-   try {
-    ticketTimers.delete(channel.id);
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId('ticket_still_here')
-        .setLabel("I'm Still Here")
-        .setStyle(ButtonStyle.Primary)
-        .setEmoji('👋'),
-    );
-    const embed = createServerEmbed('warning', {
-      title: '💤 Ticket Inactivity Warning',
-      description: String(message ?? '').replace('{time}', `${minutes} minute${minutes !== 1 ? 's' : ''}`),
-    }, guild);
-    await channel.send({ embeds: [embed], components: [row] }).catch(() => {});
-   } catch (err) {
-    console.error(`[TICKET ${channel.id}] inactivity warning failed:`, err.message ?? err);
-   }
-  }, ms);
-
-  ticketTimers.set(channel.id, entry);
-}
-
-function clearInactivityTimer(channelId) {
-  const entry = ticketTimers.get(channelId);
-  if (entry) { clearTimeout(entry.timerId); ticketTimers.delete(channelId); }
-}
-
-function resetInactivityTimer(channelId) {
-  const entry = ticketTimers.get(channelId);
-  if (entry) startInactivityTimer(entry.channel, entry.guild, entry.minutes, entry.message);
-}
-
 // ── Default settings ──────────────────────────────────────────────────────
 const DEFAULT = {
-  inactivityEnabled: true,
-  inactivityTime: 30,
-  inactivityMessage: 'This ticket has been inactive for {time}. Click below if you still need help.',
   transcriptEnabled: false,
 };
 
@@ -114,10 +66,7 @@ module.exports = {
     .addSubcommand(s => s.setName('close').setDescription('Close the current ticket channel'))
     .addSubcommand(s => s.setName('settings').setDescription('Change a ticket setting')
       .addStringOption(o => o.setName('setting').setDescription('Setting').setRequired(true).addChoices(
-        { name: 'Inactivity Time (minutes)', value: 'inactivityTime'    },
-        { name: 'Inactivity Enabled',        value: 'inactivityEnabled' },
-        { name: 'Inactivity Message',        value: 'inactivityMessage' },
-        { name: 'Transcript Enabled',        value: 'transcriptEnabled' },
+        { name: 'Transcript Enabled', value: 'transcriptEnabled' },
       ))
       .addStringOption(o => o.setName('value').setDescription('New value').setRequired(true)))
     .addSubcommand(s => s.setName('viewsettings').setDescription('View current ticket settings')),
@@ -144,7 +93,6 @@ module.exports = {
       if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
         return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
       }
-      clearInactivityTimer(channel.id);
       await interaction.reply({ embeds: [createServerEmbed('info', { title: 'Closing Ticket', description: 'This ticket will be closed in **5 seconds**.' }, interaction.guild)] });
       setTimeout(async () => { try { await channel.delete('Ticket closed'); } catch {} }, 5000);
 
@@ -154,17 +102,13 @@ module.exports = {
       const settings = config[guildId].ticketSettings;
       let parsed, display;
 
-      if (setting === 'inactivityTime') {
-        parsed = parseInt(rawValue);
-        if (isNaN(parsed) || parsed < 1) return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Minimum 1 minute.' }, interaction.guild)] });
-        display = `${parsed} minute${parsed !== 1 ? 's' : ''}`;
-      } else if (setting === 'inactivityEnabled' || setting === 'transcriptEnabled') {
+      if (setting === 'transcriptEnabled') {
         const low = rawValue.toLowerCase();
         if (['true','yes','1','on'].includes(low))       { parsed = true;  display = 'Enabled'; }
         else if (['false','no','0','off'].includes(low)) { parsed = false; display = 'Disabled'; }
         else return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid', description: 'Use `true` or `false`.' }, interaction.guild)] });
       } else {
-        parsed = rawValue; display = rawValue;
+        return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Unknown setting', description: 'Only `transcriptEnabled` is available.' }, interaction.guild)] });
       }
 
       const old = settings[setting];
@@ -182,11 +126,8 @@ module.exports = {
         embeds: [createServerEmbed('info', {
           title: '🎫 Ticket Settings',
           fields: [
-            { name: 'Support Role',      value: config[guildId].supportRole ? `<@&${config[guildId].supportRole}>` : 'Not set', inline: false },
-            { name: 'Inactivity',        value: s.inactivityEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
-            { name: 'Inactivity Time',   value: `${s.inactivityTime} min`,  inline: true },
-            { name: 'Transcript',        value: s.transcriptEnabled ? '✅' : '❌', inline: true },
-            { name: 'Inactivity Message', value: s.inactivityMessage || DEFAULT.inactivityMessage, inline: false },
+            { name: 'Support Role', value: config[guildId].supportRole ? `<@&${config[guildId].supportRole}>` : 'Not set', inline: false },
+            { name: 'Transcript', value: s.transcriptEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
           ],
         }, interaction.guild)],
         flags: MessageFlags.Ephemeral,
@@ -196,33 +137,11 @@ module.exports = {
 
   // ── Button handlers ───────────────────────────────────────────────────────
   handleButton: async function(interaction) {
-    if (interaction.customId === 'ticket_still_here') {
-      resetInactivityTimer(interaction.channel.id);
-      // If no timer was running (already fired), restart one
-      const config  = readJson('config.json', {});
-      const gCfg    = config[interaction.guild.id] || {};
-      const settings = gCfg.ticketSettings || DEFAULT;
-      if (settings.inactivityEnabled !== false && !ticketTimers.has(interaction.channel.id)) {
-        startInactivityTimer(interaction.channel, interaction.guild, settings.inactivityTime || DEFAULT.inactivityTime, settings.inactivityMessage || DEFAULT.inactivityMessage);
-      }
-
-      // Ping support role in the channel so staff are notified
-      const supportRoleIds = roleIdList(gCfg, 'supportRoles', 'supportRole');
-      const supportRoleId = supportRoleIds[0];
-      const pingContent   = supportRoleId
-        ? `<@&${supportRoleId}> — ${interaction.user} is still here and needs help!`
-        : `A support member is needed — ${interaction.user} is still here!`;
-      await interaction.channel.send({ content: pingContent }).catch(() => {});
-
-      return interaction.reply({ content: '✅ Done! Support has been notified and the inactivity timer has been reset.', flags: MessageFlags.Ephemeral });
-    }
-
     if (interaction.customId === 'close_ticket') {
       const channel = interaction.channel;
       if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
         return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
       }
-      clearInactivityTimer(channel.id);
       await interaction.reply({ embeds: [createServerEmbed('info', { title: 'Closing Ticket', description: 'This ticket will be closed in **5 seconds**.' }, interaction.guild)] });
       setTimeout(async () => { try { await channel.delete('Ticket closed'); } catch {} }, 5000);
       return;
@@ -301,21 +220,10 @@ module.exports = {
       components: closeRow ? [closeRow] : [],
     });
 
-    // Start inactivity timer
-    const settings = gCfg.ticketSettings || DEFAULT;
-    if (settings.inactivityEnabled !== false) {
-      startInactivityTimer(channel, guild, settings.inactivityTime || DEFAULT.inactivityTime, settings.inactivityMessage || DEFAULT.inactivityMessage);
-    }
-
     await interaction.editReply({
       embeds: [createServerEmbed('success', { title: 'Ticket Created', description: `Your ticket: ${channel}` }, guild)],
     });
     setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
   },
 
-  // Expose timer functions for messageCreate.js to call
-  startInactivityTimer,
-  clearInactivityTimer,
-  resetInactivityTimer,
-  ticketTimers,
 };
