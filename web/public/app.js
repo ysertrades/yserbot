@@ -2073,8 +2073,6 @@ function countdownEl(endsAt, startedAt = null) {
   return { node, bar };
 }
 
-}
-
 function startTicking() {
   clearInterval(tickTimer);
   tickTimer = setInterval(() => {
