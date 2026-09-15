@@ -30,9 +30,7 @@ const TOPIC_PREFIX = 'ticket-owner:';
 // different name, in a different unit, describing a thing it does not do.
 const { DEFAULT: DEFAULTS } = require('../commands/utility/ticket');
 
-const FIELDS = [
-  { key: 'transcriptEnabled', type: 'bool', label: 'Save a transcript on close' },
-];
+const FIELDS = [];
 
 function settingsFor(guildId) {
   const stored = readJson('config.json', {})[guildId]?.ticketSettings || {};
@@ -62,13 +60,21 @@ function openTickets(guild) {
 
 /** Everything the Tickets screen shows. */
 function read(guildId, guild) {
-  const s = settingsFor(guildId);
-  const supportRoleId = readJson('config.json', {})[guildId]?.supportRole || null;
+  const conf = readJson('config.json', {})[guildId] || {};
+  let supportRoleIds = Array.isArray(conf.supportRoles) ? conf.supportRoles.filter(Boolean) : [];
+  if (!supportRoleIds.length && conf.supportRole) supportRoleIds = [conf.supportRole];
+  const supportRoles = supportRoleIds.map(id => ({
+    id,
+    name: guild?.roles?.cache?.get(id)?.name || id,
+  }));
   return {
     fields: FIELDS,
-    values: Object.fromEntries(FIELDS.map(f => [f.key, s[f.key]])),
-    supportRoleId,
-    supportRole: (supportRoleId && guild?.roles?.cache?.get(supportRoleId)?.name) || null,
+    values: {},
+    supportRoleIds,
+    supportRoles,
+    // legacy single for any old UI
+    supportRoleId: supportRoleIds[0] || null,
+    supportRole: supportRoles[0]?.name || null,
     open: openTickets(guild),
   };
 }
@@ -103,13 +109,28 @@ function save(guildId, body, guild) {
     changed.push(f.label);
   }
 
-  if ('supportRoleId' in body) {
-    const id = body.supportRoleId;
-    if (id === null || id === '') {
-      if (config[guildId].supportRole) { delete config[guildId].supportRole; changed.push('support role cleared'); }
-    } else {
-      if (typeof id !== 'string' || !/^\d{5,25}$/.test(id) || !guild?.roles?.cache?.has(id)) return { error: 'bad_role' };
-      if (config[guildId].supportRole !== id) { config[guildId].supportRole = id; changed.push('support role'); }
+  if ('supportRoleIds' in body || 'supportRoleId' in body) {
+    let ids = body.supportRoleIds;
+    if (!Array.isArray(ids) && 'supportRoleId' in body) {
+      ids = body.supportRoleId ? [body.supportRoleId] : [];
+    }
+    if (!Array.isArray(ids)) return { error: 'bad_roles' };
+    const clean = [];
+    for (const id of ids) {
+      if (typeof id !== 'string' || !/^\d{5,25}$/.test(id)) return { error: 'bad_role' };
+      if (!guild?.roles?.cache?.has(id)) return { error: 'bad_role' };
+      if (!clean.includes(id)) clean.push(id);
+    }
+    const prev = Array.isArray(config[guildId].supportRoles) ? config[guildId].supportRoles : [];
+    const same = prev.length === clean.length && prev.every((id, i) => id === clean[i]);
+    if (!same) {
+      config[guildId].supportRoles = clean;
+      if (clean.length) config[guildId].supportRole = clean[0];
+      else {
+        delete config[guildId].supportRole;
+        delete config[guildId].supportRoles;
+      }
+      changed.push(clean.length ? `support roles (${clean.length})` : 'support roles cleared');
     }
   }
 

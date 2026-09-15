@@ -33,7 +33,6 @@ const FIELDS = [
   { key: 'leaveChannel',   path: ['leaveChannel'],   type: 'channel', label: 'Leave messages' },
   { key: 'logsChannel',    path: ['logsChannel'],    type: 'channel', label: 'Moderation log' },
   { key: 'reportChannel',  path: ['reportChannel'],  type: 'channel', label: 'Reports' },
-  { key: 'supportRoles',   path: ['supportRoles'],   type: 'roles',   label: 'Support roles' },
   { key: 'reportRoles',    path: ['reportRoles'],    type: 'roles',   label: 'Report handler roles' },
   { key: 'modRoles',       path: ['cmdSetup', 'modRoles'],   type: 'roles', label: 'Moderator roles' },
   { key: 'adminRoles',     path: ['cmdSetup', 'adminRoles'], type: 'roles', label: 'Admin roles' },
@@ -75,7 +74,6 @@ function read(guildId, guild, { ownerOnly = false } = {}) {
     if (f.type === 'roles') {
       let ids = Array.isArray(raw) ? raw : [];
       // Migrate legacy single-role keys into the multi arrays
-      if (!ids.length && f.key === 'supportRoles' && conf.supportRole) ids = [conf.supportRole];
       if (!ids.length && f.key === 'reportRoles' && conf.reportRole) ids = [conf.reportRole];
       values[f.key] = ids;
       resolved[f.key] = values[f.key].map(id => ({ id, name: guild.roles.cache.get(id)?.name || null }));

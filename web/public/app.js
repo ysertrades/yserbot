@@ -6055,20 +6055,19 @@ function renderTickets() {
     }));
   }
 
-  /* -- settings ---------------------------------------------------------- */
-  const draft = { ...t.values };
+  /* -- settings: support roles (multi) ----------------------------------- */
+  const roles = state.overview?.roles || [];
+  const draft = {
+    supportRoleIds: Array.isArray(t.supportRoleIds) ? [...t.supportRoleIds] : (t.supportRoleId ? [t.supportRoleId] : []),
+  };
   $('#form-tickets').replaceChildren(
-    pickOne('Support role', 'role', t.supportRoleId, v => { draft.supportRoleId = v; },
-      { blank: 'No support role' }),
-    ...t.fields.map(f => {
-      if (f.type === 'bool') return toggle(f.label, !!draft[f.key], v => { draft[f.key] = v; });
-      if (f.type === 'int') {
-        return textField(`${f.label} (${f.min}–${f.max})`, String(draft[f.key] ?? ''),
-          v => { draft[f.key] = Number(v); });
-      }
-      return areaField(f.label, draft[f.key] ?? '', v => { draft[f.key] = v; }, 3);
-    }),
-    el('p', 'hint', 'The nudge message can use {time}, which becomes how long the ticket has been quiet.'),
+    pickManyRoles(
+      'Support roles',
+      roles,
+      draft.supportRoleIds,
+      ids => { draft.supportRoleIds = ids; },
+    ),
+    el('p', 'hint', 'Members with any of these roles can see and answer tickets. Pick one or more.'),
     actions(() => post('tickets', draft)),
   );
 

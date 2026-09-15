@@ -17,9 +17,7 @@ const messageStyle = require('../../utils/messageStyle');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 
 // ── Default settings ──────────────────────────────────────────────────────
-const DEFAULT = {
-  transcriptEnabled: false,
-};
+const DEFAULT = {};
 
 async function sendTempReply(interaction, embed) {
   await interaction.reply({ embeds: [embed], fetchReply: true });
@@ -61,15 +59,9 @@ module.exports = {
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand(s => s.setName('setup').setDescription('Set up the ticket panel')
       .addChannelOption(o => o.setName('channel').setDescription('Channel for the panel').setRequired(true).addChannelTypes(ChannelType.GuildText)))
-    .addSubcommand(s => s.setName('supportrole').setDescription('Set the support role')
+    .addSubcommand(s => s.setName('supportrole').setDescription('Add a support role (can add several)')
       .addRoleOption(o => o.setName('role').setDescription('Support role').setRequired(true)))
-    .addSubcommand(s => s.setName('close').setDescription('Close the current ticket channel'))
-    .addSubcommand(s => s.setName('settings').setDescription('Change a ticket setting')
-      .addStringOption(o => o.setName('setting').setDescription('Setting').setRequired(true).addChoices(
-        { name: 'Transcript Enabled', value: 'transcriptEnabled' },
-      ))
-      .addStringOption(o => o.setName('value').setDescription('New value').setRequired(true)))
-    .addSubcommand(s => s.setName('viewsettings').setDescription('View current ticket settings')),
+    .addSubcommand(s => s.setName('close').setDescription('Close the current ticket channel')),
 
   async execute(interaction) {
     const config  = readJson('config.json', {});
@@ -84,9 +76,17 @@ module.exports = {
       await sendTempReply(interaction, createServerEmbed('success', { title: 'Ticket Panel Created', description: `Panel sent to ${channel}.` }, interaction.guild));
 
     } else if (sub === 'supportrole') {
-      config[guildId].supportRole = interaction.options.getRole('role').id;
+      const role = interaction.options.getRole('role');
+      const list = roleIdList(config[guildId], 'supportRoles', 'supportRole');
+      if (!list.includes(role.id)) list.push(role.id);
+      config[guildId].supportRoles = list;
+      config[guildId].supportRole = list[0];
       writeJson('config.json', config);
-      await sendTempReply(interaction, createServerEmbed('success', { title: 'Support Role Set', description: `Support role set to **${interaction.options.getRole('role').name}**.` }, interaction.guild));
+      const names = list.map(id => interaction.guild.roles.cache.get(id)?.name || id).join(', ');
+      await sendTempReply(interaction, createServerEmbed('success', {
+        title: 'Support Roles',
+        description: `Added **${role.name}**.\nCurrent: ${names}`,
+      }, interaction.guild));
 
     } else if (sub === 'close') {
       const channel = interaction.channel;
