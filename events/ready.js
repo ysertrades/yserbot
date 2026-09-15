@@ -59,6 +59,8 @@ module.exports = {
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
         try {
+            // Small delay so the gateway has registered shard 0 after reconnect storms.
+            await new Promise(res => setTimeout(res, 2000));
             await botProfile.applyStoredPresence(client);
             const p = botProfile.flags().presence;
             if (!p.activityText) {
@@ -70,7 +72,11 @@ module.exports = {
             }
         } catch (err) {
             console.warn('[Panel] presence restore failed, using fallback:', err.message || err);
-            client.user.setActivity('QuantLab | /help', { type: 3 });
+            try {
+                await client.user.setActivity('QuantLab | /help', { type: 3 });
+            } catch (e2) {
+                console.warn('[Panel] fallback activity failed:', e2.message || e2);
+            }
         }
 
         await syncSlashCommands(client);

@@ -76,15 +76,40 @@ function setFlags(partial) {
  */
 async function applyStoredPresence(client) {
   const p = flags().presence;
-  try {
-    await client.user.setPresence({
-      status: p.status,
-      activities: p.activityText
-        ? [{ name: p.activityText, type: ACTIVITY_TYPES[p.activityType] || ActivityType.Watching }]
-        : [],
-    });
-  } catch (err) {
-    console.warn('[Panel] could not restore bot presence:', err.message || err);
+  const payload = {
+    status: p.status || 'online',
+    activities: p.activityText
+      ? [{ name: p.activityText, type: ACTIVITY_TYPES[p.activityType] || ActivityType.Watching }]
+      : [],
+  };
+
+  // After a gateway reconnect storm, ClientReady can fire before the shard is
+  // registered for presence sends ("Shard 0 not found"). Retry a few times.
+  const delays = [0, 1500, 4000, 8000];
+  let lastErr;
+  for (const ms of delays) {
+    if (ms) await new Promise(r => setTimeout(r, ms));
+    try {
+      if (!client?.user) return;
+      // Shard must exist before setPresence broadcasts.
+      const shard = client.ws?.shards?.get?.(0);
+      if (!shard || shard.status !== 0 /* READY */) {
+        lastErr = new Error('shard not ready');
+        continue;
+      }
+      await client.user.setPresence(payload);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err?.message || err);
+      if (!/Shard .* not found|WebSocket not open|SHARDING/i.test(msg)) {
+        console.warn('[Panel] could not restore bot presence:', msg);
+        return;
+      }
+    }
+  }
+  if (lastErr) {
+    console.warn('[Panel] presence restore skipped after retries:', lastErr.message || lastErr);
   }
 }
 
@@ -264,6 +289,11 @@ async function applyPresence(body, client) {
     // Prefer setPresence (status + activities together). Fall back to the
     // older split calls if a host is on a discord.js build that rejects the
     // combined form.
+    // Avoid "Shard 0 not found" if called mid-reconnect.
+    const shard = client.ws?.shards?.get?.(0);
+    if (shard && shard.status !== 0) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
     if (typeof client.user.setPresence === 'function') {
       await client.user.setPresence({
         status,
