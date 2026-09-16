@@ -273,8 +273,9 @@ async function create(guildId, body, { guild, session, client }) {
   // https link. Anything else is refused rather than passed to Discord, which
   // rejects the whole message for a malformed image and loses the giveaway.
   let imageUrl = null;
-  if (kind === 'prize' && body.imageUrl) {
-    const raw = String(body.imageUrl).trim();
+  if (kind === 'prize') {
+    const raw = String(body.imageUrl || 'dynamic:prizeGiveawayBanner').trim()
+      || 'dynamic:prizeGiveawayBanner';
     if (raw.startsWith('dynamic:')) {
       if (!Object.hasOwn(DYNAMIC_IMAGES, raw.slice(8))) return { error: 'bad_image' };
       imageUrl = raw;

@@ -1773,6 +1773,190 @@ function areaField(label, value, onInput, rows = 4) {
   return l;
 }
 
+
+/* ── Image source control ─────────────────────────────────────────────────
+ * Compact row: value pill (URL or label) + chevron menu of generated
+ * banners + Upload. Giveaway defaults to Prize banner; picking "Image URL"
+ * turns the pill into a text field; the menu still restores Prize banner.
+ */
+function dynamicImageLabel(keyOrDynamic) {
+  const key = String(keyOrDynamic || '').replace(/^dynamic:/, '');
+  const names = {
+    prizeGiveawayBanner: 'Prize banner',
+    tradingViewBanner: 'TradingView',
+    economyShowcase: 'Economy showcase',
+    reportGuide: 'Report guide',
+    nyseOpen: 'NYSE open',
+    futuresOpen: 'Futures open',
+    riskGuide: 'Risk guide',
+    newsfeedGuide: 'Newsfeed guide',
+    whopBanner: 'Whop banner',
+  };
+  return names[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim();
+}
+
+function generatedImageOptions() {
+  return (state.overview?.composerMeta?.dynamicImages || []).map(d => ({
+    value: d,
+    label: dynamicImageLabel(d),
+  }));
+}
+
+async function fileToDataUrl(file, maxSide = 1600) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+  const type = (file.type && file.type.startsWith('image/')) ? file.type : 'image/png';
+  return c.toDataURL(type === 'image/jpg' ? 'image/jpeg' : type, 0.92);
+}
+
+/**
+ * @param {string} label
+ * @param {string} value  dynamic:… | https… | ''
+ * @param {(v: string) => void} onChange
+ * @param {{ defaultValue?: string, giveaway?: boolean }} opts
+ */
+function imageSourceField(label, value, onChange, opts = {}) {
+  const field = el('div', 'field img-source');
+  field.append(el('label', null, label));
+
+  const row = el('div', 'img-source-row');
+  const pill = el('div', 'img-source-pill');
+  const input = el('input');
+  input.type = 'text';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.placeholder = opts.giveaway ? 'Prize banner (default)' : 'https://… or pick generated';
+
+  const chev = el('button', 'img-source-chev');
+  chev.type = 'button';
+  chev.title = 'Generated images';
+  chev.setAttribute('aria-label', 'Pick generated image');
+  chev.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>';
+
+  const menu = el('div', 'img-source-menu');
+  menu.hidden = true;
+
+  let current = value || opts.defaultValue || '';
+  let urlMode = !!(current && !String(current).startsWith('dynamic:') && current !== (opts.defaultValue || ''));
+
+  const paint = () => {
+    if (urlMode && (!current || !String(current).startsWith('dynamic:'))) {
+      input.readOnly = false;
+      input.value = current && !String(current).startsWith('dynamic:') ? current : '';
+      input.placeholder = 'https://…';
+    } else if (current && String(current).startsWith('dynamic:')) {
+      input.readOnly = true;
+      input.value = dynamicImageLabel(current);
+      input.placeholder = '';
+    } else if (opts.giveaway && (!current || current === opts.defaultValue)) {
+      input.readOnly = true;
+      input.value = dynamicImageLabel(opts.defaultValue || 'dynamic:prizeGiveawayBanner');
+      current = opts.defaultValue || 'dynamic:prizeGiveawayBanner';
+    } else {
+      input.readOnly = false;
+      input.value = current || '';
+    }
+  };
+
+  const setVal = (v, asUrlMode) => {
+    current = v || '';
+    if (asUrlMode !== undefined) urlMode = asUrlMode;
+    paint();
+    onChange(current);
+  };
+
+  input.addEventListener('input', () => {
+    if (input.readOnly) return;
+    urlMode = true;
+    current = input.value.trim();
+    onChange(current);
+  });
+
+  const closeMenu = () => { menu.hidden = true; };
+  const openMenu = () => {
+    menu.replaceChildren();
+    if (opts.giveaway) {
+      const def = opts.defaultValue || 'dynamic:prizeGiveawayBanner';
+      const b = el('button', 'img-source-opt' + (current === def && !urlMode ? ' on' : ''), 'Prize banner');
+      b.type = 'button';
+      b.addEventListener('click', () => { setVal(def, false); closeMenu(); });
+      menu.append(b);
+    }
+    for (const g of generatedImageOptions()) {
+      if (opts.giveaway && g.value === (opts.defaultValue || 'dynamic:prizeGiveawayBanner')) continue;
+      const b = el('button', 'img-source-opt' + (current === g.value ? ' on' : ''), g.label);
+      b.type = 'button';
+      b.addEventListener('click', () => { setVal(g.value, false); closeMenu(); });
+      menu.append(b);
+    }
+    const urlBtn = el('button', 'img-source-opt' + (urlMode ? ' on' : ''), 'Image URL…');
+    urlBtn.type = 'button';
+    urlBtn.addEventListener('click', () => {
+      urlMode = true;
+      if (String(current).startsWith('dynamic:')) current = '';
+      paint();
+      onChange(current);
+      closeMenu();
+      setTimeout(() => input.focus(), 30);
+    });
+    menu.append(urlBtn);
+    menu.hidden = false;
+  };
+
+  chev.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (menu.hidden) openMenu();
+    else closeMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!field.contains(e.target)) closeMenu();
+  });
+
+  const upBtn = el('button', 'btn small img-source-up', 'Upload');
+  upBtn.type = 'button';
+  upBtn.title = 'Upload from your device';
+  const fileIn = el('input');
+  fileIn.type = 'file';
+  fileIn.accept = 'image/png,image/jpeg,image/webp,image/gif';
+  fileIn.hidden = true;
+  upBtn.addEventListener('click', () => fileIn.click());
+  fileIn.addEventListener('change', async () => {
+    const file = fileIn.files?.[0];
+    fileIn.value = '';
+    if (!file) return;
+    upBtn.disabled = true;
+    upBtn.textContent = '…';
+    try {
+      const data = await fileToDataUrl(file);
+      const res = await post('imageupload', { data });
+      if (res?.url) {
+        setVal(res.url, true);
+        toast('Image uploaded.', 'ok');
+      } else {
+        toast(ERRORS[res?.error] || res?.detail || 'Upload failed.', 'bad');
+      }
+    } catch (err) {
+      toast('Upload failed.', 'bad');
+    }
+    upBtn.disabled = false;
+    upBtn.textContent = 'Upload';
+  });
+
+  pill.append(input, chev, menu);
+  row.append(pill, upBtn, fileIn);
+  field.append(row);
+  paint();
+  return field;
+}
+
+
 function renderComposerIndex() {
   const wrap = $('#tpl-index');
   const list = state.overview?.composer || [];
@@ -1880,9 +2064,9 @@ function renderComposer() {
       el('p', 'muted', 'No embed — this posts as a normal Discord message.'),
       areaField('Message body', a.above, v => { a.above = v; }, 5),
       el('p', 'hint', 'Type #channel-name and it becomes a real channel link. Mentions and markdown work here.'),
-      textField('Image above the text (URL)', a.pictureAbove || '', v => { a.pictureAbove = v; }),
-      el('p', 'hint', 'Sent as its own message just above the text.'),
-      textField('Image below the text (URL)', a.picture || '', v => { a.picture = v; }),
+      imageSourceField('Image above the text', a.pictureAbove || '', v => { a.pictureAbove = v; }),
+      el('p', 'hint', 'Sent as its own message just above the text. Pick a generated image, paste a URL, or upload.'),
+      imageSourceField('Image below the text', a.picture || '', v => { a.picture = v; }),
       el('p', 'hint', 'Sent under the text as a second message (optional note below).'),
       areaField('Note under the image below (optional)', a.below, v => { a.below = v; }, 2),
     );
@@ -1909,10 +2093,8 @@ function renderComposer() {
       textField('Colour (hex)', e.color, v => { e.color = v; }),
       textField('Footer', e.footer, v => { e.footer = v; }),
       el('p', 'hint', 'Discord draws the footer, the title and the author line as plain text — a #channel there stays writing, it cannot become a link. Put it in the description or under the embed instead.'),
-      select('Image', e.image || '', [
-        ...(meta?.dynamicImages || []).map(d => ({ value: d, label: `Generated · ${d.slice(8)}` })),
-      ], v => { e.image = v; }, { blank: 'None or paste a URL below' }),
-      textField('Image URL (overrides the picker)', e.image && !e.image.startsWith('dynamic:') ? e.image : '', v => { if (v) e.image = v; }),
+      imageSourceField('Image', e.image || '', v => { e.image = v; }),
+      el('p', 'hint', 'Generated image, URL, or upload — used as the large embed image.'),
       textField('Thumbnail URL', e.thumbnail, v => { e.thumbnail = v; }),
       toggle('Show a timestamp', !!e.timestamp, v => { e.timestamp = v; }),
     );
@@ -4223,14 +4405,8 @@ function renderGiveawayForm(opts = {}) {
     requiredRoleId: null,
     bonusRoleId: null,
     minAccountAgeDays: 0,
-    imageUrl: null,
+    imageUrl: 'dynamic:prizeGiveawayBanner',
   };
-
-  let pickedImage = '', typedImage = '';
-  const syncImage = () => { draft.imageUrl = pickedImage || typedImage || null; };
-
-  const generated = (state.overview?.composerMeta?.dynamicImages || [])
-    .map(d => ({ value: d, label: `Generated · ${d.slice(8)}` }));
 
   // Duration chips
   const durBox = el('div', 'field');
@@ -4300,12 +4476,12 @@ function renderGiveawayForm(opts = {}) {
     textField('Prize name', '', v => { draft.prize = v; }, {
       placeholder: 'e.g. Weekend Coin Rain · VIP role · $50 credit',
     }),
-    select('Banner (optional)', '', generated, v => { pickedImage = v; syncImage(); }, {
-      blank: 'None — or paste a link below',
-    }),
-    textField('Image link (optional)', '', v => { typedImage = v.trim(); syncImage(); }, {
-      placeholder: 'https://…',
-    }),
+    imageSourceField(
+      'Banner',
+      'dynamic:prizeGiveawayBanner',
+      v => { draft.imageUrl = v || 'dynamic:prizeGiveawayBanner'; },
+      { giveaway: true, defaultValue: 'dynamic:prizeGiveawayBanner' },
+    ),
     winBox,
     durBox,
     (() => {

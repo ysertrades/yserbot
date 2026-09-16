@@ -917,4 +917,35 @@ async function apply(op, guildId, body, ctx) {
   return handler(guildId, body, ctx);
 }
 
+
+  // Generic panel image → Discord CDN (Composer / Giveaway uploads)
+  'imageupload': async (guildId, body, ctx) => {
+    if (!body?.data || typeof body.data !== 'string' || !body.data.startsWith('data:image/')) {
+      return { error: 'bad_image' };
+    }
+    const mm = body.data.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
+    if (!mm) return { error: 'bad_image' };
+    const ext = mm[1].toLowerCase() === 'jpg' ? 'jpeg' : mm[1].toLowerCase();
+    const buf = Buffer.from(mm[2], 'base64');
+    if (buf.length > 7.5 * 1024 * 1024) return { error: 'body_too_large' };
+    const guild = ctx.client?.guilds?.cache?.get(guildId);
+    if (!guild) return { error: 'unknown_guild' };
+    let ch = guild.systemChannel
+      || guild.channels.cache.find(c => c.isTextBased?.() && c.viewable && c.permissionsFor(guild.members.me)?.has?.('AttachFiles'));
+    if (!ch) return { error: 'no_upload_channel' };
+    try {
+      const msg = await ch.send({
+        files: [{ attachment: buf, name: `panel-upload.${ext === 'jpeg' ? 'jpg' : ext}` }],
+      });
+      const url = msg.attachments.first()?.url;
+      if (!url) return { error: 'upload_failed' };
+      // Delete the upload message so the channel stays clean (CDN URL remains valid a long time)
+      msg.delete().catch(() => {});
+      return { ok: true, url };
+    } catch (err) {
+      console.warn('[Panel] imageupload:', err.message);
+      return { error: 'upload_failed', detail: String(err.message || err).slice(0, 120) };
+    }
+  },
+
 module.exports = { apply, OPS };
