@@ -1780,10 +1780,22 @@ function renderComposerIndex() {
   wrap.replaceChildren(...list.map(t => {
     const b = el('button', 'tpl-entry');
     b.type = 'button';
-    b.append(el('span', 'nm', t.name));
+    const nm = el('span', 'nm');
+    const hasEmbed = Array.isArray(t.embeds) && t.embeds.length > 0;
+    if (hasEmbed) {
+      const mark = el('span', 'tpl-embed-mark', '✦');
+      mark.title = 'Has embed';
+      nm.append(mark, document.createTextNode(' ' + t.name));
+    } else {
+      nm.textContent = t.name;
+    }
+    b.append(nm);
     const meta = el('span', 'mt');
-    meta.textContent = `${t.embeds.length}▦ ${t.buttons.length}⬤ ${t.posts.length}↗`;
-    meta.title = `${t.embeds.length} embeds · ${t.buttons.length} buttons · ${t.posts.length} posted`;
+    const eN = t.embeds?.length || 0;
+    const bN = t.buttons?.length || 0;
+    const pN = t.posts?.length || 0;
+    meta.textContent = `${eN ? eN + '▦ ' : ''}${bN ? bN + '⬤ ' : ''}${pN ? pN + '↗' : ''}`.trim() || 'text';
+    meta.title = `${eN} embeds · ${bN} buttons · ${pN} posted`;
     b.append(meta);
     if (t.name === state.tplName) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => { state.tplName = t.name; state.draft = null; renderComposer(); });
@@ -1794,7 +1806,7 @@ function renderComposerIndex() {
 function newDraft(name = '') {
   return {
     name,
-    embeds: [{ title: '', description: '', color: '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false }],
+    embeds: [],
     around: { above: '', below: '', picture: '' },
     buttons: [], posts: [],
   };
@@ -1857,11 +1869,26 @@ function renderComposer() {
   head.append(el('h2', null, 'Message'));
   head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
 
+  if (!draft.embeds.length) {
+    const empty = el('div', 'composer-empty-embeds');
+    empty.append(
+      el('p', 'muted', 'No embeds yet — this can be a plain text message, or add an embed below.'),
+    );
+    head.append(empty);
+  }
+
   draft.embeds.forEach((e, i) => {
+    // Capture index so field/button handlers never target the wrong embed
+    const embedIndex = i;
     const box = el('details', 'embed-box');
-    if (i === 0) box.open = true;
+    // Keep open state when re-rendering if user had this one open
+    if (!state._composerOpen) state._composerOpen = {};
+    const openKey = `${draft.name || '_new'}:${embedIndex}`;
+    box.open = state._composerOpen[openKey] !== false && (state._composerOpen[openKey] === true || embedIndex === 0);
+    box.addEventListener('toggle', () => { state._composerOpen[openKey] = box.open; });
+
     const sum = el('summary');
-    sum.append(el('span', 'swatch'), el('span', 'nm', e.title || `Embed ${i + 1}`));
+    sum.append(el('span', 'swatch'), el('span', 'nm', e.title || `Embed ${embedIndex + 1}`));
     sum.querySelector('.swatch').style.background = e.color || '#5865F2';
     const inner = el('div', 'body');
     inner.append(
@@ -1870,9 +1897,6 @@ function renderComposer() {
       el('p', 'hint', 'Type #channel-name here and it posts as a real channel link people can tap.'),
       textField('Colour (hex)', e.color, v => { e.color = v; }),
       textField('Footer', e.footer, v => { e.footer = v; }),
-      // Said here rather than left to be discovered: Discord draws a footer,
-      // a title and an author line as plain characters, so a channel written
-      // into one of them cannot be made clickable by us or by anyone.
       el('p', 'hint', 'Discord draws the footer, the title and the author line as plain text — a #channel there stays writing, it cannot become a link. Put it in the description or under the embed instead.'),
       select('Image', e.image || '', [
         ...(meta?.dynamicImages || []).map(d => ({ value: d, label: `Generated · ${d.slice(8)}` })),
@@ -1882,7 +1906,6 @@ function renderComposer() {
       toggle('Show a timestamp', !!e.timestamp, v => { e.timestamp = v; }),
     );
 
-    // Fields
     const fieldWrap = el('div', 'subfields');
     fieldWrap.append(el('h2', null, 'Fields'));
     e.fields = e.fields || [];
@@ -1895,32 +1918,42 @@ function renderComposer() {
       );
       const del = el('button', 'btn small danger', 'Remove field');
       del.type = 'button';
-      del.addEventListener('click', () => { e.fields.splice(fi, 1); renderComposer(); });
+      del.addEventListener('click', () => {
+        draft.embeds[embedIndex].fields.splice(fi, 1);
+        renderComposer();
+      });
       rowEl.append(del);
       fieldWrap.append(rowEl);
     });
     const addField = el('button', 'btn small', 'Add field');
     addField.type = 'button';
-    addField.addEventListener('click', () => { e.fields.push({ name: '', value: '', inline: false }); renderComposer(); });
+    addField.addEventListener('click', () => {
+      draft.embeds[embedIndex].fields.push({ name: '', value: '', inline: false });
+      renderComposer();
+    });
     fieldWrap.append(addField);
     inner.append(fieldWrap);
 
-    if (draft.embeds.length > 1) {
-      const rm = el('button', 'btn small danger', 'Remove this embed');
-      rm.type = 'button';
-      rm.addEventListener('click', () => { draft.embeds.splice(i, 1); renderComposer(); });
-      inner.append(rm);
-    }
+    const rm = el('button', 'btn small danger', 'Remove this embed');
+    rm.type = 'button';
+    rm.addEventListener('click', () => {
+      draft.embeds.splice(embedIndex, 1);
+      renderComposer();
+    });
+    inner.append(rm);
 
     box.append(sum, inner);
     head.append(box);
   });
 
-  const addEmbed = el('button', 'btn small', 'Add embed');
+  const addEmbed = el('button', 'btn small', '＋ Add embed');
   addEmbed.type = 'button';
   addEmbed.disabled = draft.embeds.length >= (meta?.limits?.embeds || 10);
   addEmbed.addEventListener('click', () => {
+    const idx = draft.embeds.length;
     draft.embeds.push({ title: '', description: '', color: '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false });
+    if (!state._composerOpen) state._composerOpen = {};
+    state._composerOpen[`${draft.name || '_new'}:${idx}`] = true;
     renderComposer();
   });
 
@@ -1940,10 +1973,31 @@ function renderComposer() {
   const saveBtn = el('button', 'btn primary small', 'Save message');
   saveBtn.type = 'button';
   saveBtn.addEventListener('click', async () => {
+    const name = (draft.name || '').trim();
+    if (!name) { toast('Give the message a name first.', 'bad'); return; }
+    const around = draft.around || {};
+    const hasAround = !!(around.above || around.below || around.picture);
+    if (!draft.embeds.length && !hasAround) {
+      toast('Add an embed, or write text above/below the message.', 'bad');
+      return;
+    }
+    for (let i = 0; i < draft.embeds.length; i++) {
+      const e = draft.embeds[i];
+      const c = String(e.color || '').trim();
+      if (c && !/^#?[0-9a-fA-F]{6}$/.test(c)) {
+        toast(`Embed ${i + 1}: colour must be a 6-digit hex (e.g. #5865F2).`, 'bad');
+        return;
+      }
+      if (e.title && e.title.length > 256) { toast(`Embed ${i + 1}: title is too long (max 256).`, 'bad'); return; }
+      if (e.description && e.description.length > 4096) { toast(`Embed ${i + 1}: description is too long (max 4096).`, 'bad'); return; }
+      const bare = !(e.title || e.description || e.footer || e.image || e.thumbnail || (e.fields || []).some(f => f.name && f.value));
+      if (bare) { toast(`Embed ${i + 1} is empty — add content or remove it.`, 'bad'); return; }
+    }
     saveBtn.disabled = true;
     const res = await post('template', { name: draft.name, embeds: draft.embeds, around: draft.around });
     saveBtn.disabled = false;
     if (res?.ok) { state.tplName = draft.name; state.draft = null; renderComposer(); }
+    else if (res?.error === 'empty_message') toast('Add an embed or some text around the message.', 'bad');
   });
 
   // Sits beside Save because that is where you are when you want to check your
@@ -2015,10 +2069,12 @@ function renderComposer() {
 
     const add = el('details', 'item');
     const addSum = el('summary');
-    addSum.append(el('span', 'nm', '+ Add a button'));
+    addSum.append(el('span', 'nm', '＋ Add a button'));
     const addBody = el('div', 'body');
+    // Always locked to THIS message — never another template
     const nb = { embedName: draft.name, id: '', label: '', style: 'Primary', type: 'custom', emoji: '', roleId: '', url: '', responseEmbedName: '' };
     addBody.append(
+      el('p', 'hint', `Buttons attach to “${draft.name}” only.`),
       textField('Button id (letters, numbers, dashes)', '', v => { nb.id = v; }),
       textField('Label', '', v => { nb.label = v; }),
       textField('Emoji', '', v => { nb.emoji = v; }),
@@ -2027,7 +2083,15 @@ function renderComposer() {
       pickOne('Role it grants', 'role', '', v => { nb.roleId = v; }, { blank: 'Not a role button' }),
       textField('URL (link buttons)', '', v => { nb.url = v; }),
       templatePick('', v => { nb.responseEmbedName = v; }),
-      actions(() => post('button', nb)),
+      actions(async () => {
+        nb.embedName = draft.name; // re-bind in case name was edited
+        if (!nb.id || !/^[\w-]+$/.test(nb.id)) { toast('Button id: letters, numbers, dashes only.', 'bad'); return; }
+        if (!nb.label && nb.type !== 'link') { toast('Give the button a label.', 'bad'); return; }
+        if (nb.type === 'link' && !/^https?:\/\//i.test(nb.url || '')) { toast('Link buttons need a full https URL.', 'bad'); return; }
+        if (nb.type === 'role' && !nb.roleId) { toast('Pick a role for this button.', 'bad'); return; }
+        if (nb.type === 'embed' && !nb.responseEmbedName) { toast('Pick which message it shows privately.', 'bad'); return; }
+        await post('button', nb);
+      }),
     );
     add.append(addSum, addBody);
     btnPanel.append(add);

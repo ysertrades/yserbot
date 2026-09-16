@@ -2625,3 +2625,17 @@ select.cselect-native {
 .cselect-option.is-selected {
   font-weight: 600;
 }
+
+/* Composer: embed indicator on template list */
+.tpl-entry .tpl-embed-mark {
+  display: inline-block;
+  color: #c4b5fd;
+  font-size: 0.75em;
+  margin-right: 0.15em;
+  opacity: 0.9;
+  vertical-align: middle;
+}
+.composer-empty-embeds {
+  padding: 0.75rem 0.25rem 0.25rem;
+  opacity: 0.85;
+}

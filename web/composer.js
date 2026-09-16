@@ -241,8 +241,13 @@ function sanitizeEmbed(input) {
 function saveTemplate(guildId, body) {
   const name = clean(body.name, 80);
   if (!name) return { error: 'bad_template' };
-  if (!Array.isArray(body.embeds) || body.embeds.length === 0) return { error: 'no_embeds' };
+  if (!Array.isArray(body.embeds)) return { error: 'no_embeds' };
   if (body.embeds.length > LIMITS.embeds) return { error: 'too_many_embeds' };
+  // Embeds are optional — text-only messages (above/below/picture) are valid.
+  // A completely empty template (no embeds and no around text) is refused.
+  const aroundPeek = sanitizeAround(body.around);
+  if (aroundPeek.error) return aroundPeek;
+  if (body.embeds.length === 0 && !aroundPeek.around) return { error: 'empty_message' };
 
   const embeds = [];
   for (const raw of body.embeds) {
