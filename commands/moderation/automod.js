@@ -24,7 +24,7 @@ const { evaluate, consumeAllowed, lockAfterViolation, grantPermit, getRecord, cl
 
 const FEATURES = [
   { key: 'badWords',              label: '🤬 Bad Word / Harassment Filter',        desc: 'Deletes messages containing filtered words and warns the sender in-channel.' },
-  { key: 'linkFilter',            label: '🔗 Invite Link Guard',                   desc: 'Only Discord, Telegram & WhatsApp links need approval. Other links are allowed.' },
+  { key: 'linkFilter',            label: '🔗 Invite Link Guard',                   desc: 'Deletes Discord, Telegram & WhatsApp invites, DMs the member, and posts a staff card in the mod-log. Other links are allowed.' },
   { key: 'mentionSpamProtection', label: '🚨 Mass-Mention Raid Protection (native)', desc: 'Uses Discord\'s built-in Auto Moderation to instantly block messages with excessive @mentions — a common raid tactic.' },
 ];
 
@@ -153,25 +153,8 @@ module.exports = {
     if (isAutoModExempt(message.member)) return false;
 
     if (settings.linkFilter && isRestrictedLink(message.content)) {
-      // A previously-approved user gets exactly one link per their admin-set
-      // cooldown, no re-request needed. Posting again before that cooldown
-      // is up doesn't just cost the permit — it locks them out of
-      // submitting a *new* request too, until the original cooldown would
-      // have elapsed anyway, so spamming "Request Approval" can't shortcut it.
-      const status = evaluate(message.guild.id, message.author.id);
-      if (status.state === 'allowed') {
-        consumeAllowed(message.guild.id, message.author.id);
-        return false; // let it through, restart their cooldown clock
-      }
-      if (status.state === 'locked') {
-        await handleLockedLinkAttempt(message, status.secondsLeft);
-        return true;
-      }
-      if (status.state === 'waiting') {
-        lockAfterViolation(message.guild.id, message.author.id);
-        await handleLockedLinkAttempt(message, status.secondsLeft);
-        return true;
-      }
+      // Discord / Telegram / WhatsApp only — always delete + report.
+      // No permit, no cooldown, no "request approval" loop.
       await handleLinkViolation(message, client);
       return true;
     }
@@ -279,66 +262,62 @@ async function handleLockedLinkAttempt(message, secondsLeft) {
 
 // ── Link filter action ──────────────────────────────────────────────────
 async function handleLinkViolation(message, client) {
-  // Never let a user pile up more than one live request — otherwise
-  // spamming links and clicking "Request Approval" repeatedly stacks
-  // duplicate approval cards in the mod-log channel.
-  const existing = findActiveRequest(message.guild.id, message.author.id);
-  if (existing) {
-    try { await message.delete(); } catch { return; }
-    suppressDeleteLog(message.id);
-    await sendPrivateNotice(message.channel, message.author, new EmbedBuilder()
-      .setColor(0xF39C12)
-      .setTitle('⏳ Request Already Pending')
-      .setDescription('You already have a link request waiting on a moderator\'s decision. Please wait for that one to be handled before sending another link.'));
-    return;
-  }
-
   const originalContent = message.content;
   const channelId = message.channel.id;
+  const platform = restrictedPlatform(originalContent);
 
   try { await message.delete(); } catch { return; }
   suppressDeleteLog(message.id);
 
+  // Track for staff action buttons (no user-facing "request approval")
   const request = createRequest({
     guildId: message.guild.id, channelId,
     userId: message.author.id, userTag: message.author.tag,
     originalContent,
   });
+  updateRequest(request.id, {
+    status: 'reported',
+    reason: `Auto-detected ${platform} invite`,
+    link: request.link || originalContent.slice(0, 400),
+  });
 
-  const embed = new EmbedBuilder()
-    .setColor(0xF39C12)
-    .setTitle('🔗 Link Removed')
-    .setDescription(
-      `${message.author}, your message was removed — only moderators can post links here.\n\n` +
-      'If you have a legitimate reason to share it, click below to request approval.',
-    );
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`automod_link_request:${request.id}`).setLabel('📨 Request Approval').setStyle(ButtonStyle.Primary),
-  );
-
-  const notice = await sendPrivateNotice(message.channel, message.author, embed, [row], 60_000);
-  if (notice) updateRequest(request.id, { noticeMessageId: notice.id, channelId: message.channel.id });
-
-  // Creative DM about the restricted platform
-  const platform = restrictedPlatform(message.content);
+  // Creative DM (no cooldown / request language)
   try {
     await message.author.send({
       content:
         `**Heads up from ${message.guild.name}**\n\n` +
         `Your message was removed because it included a **${platform}** link.\n` +
-        `Those invites need staff approval here so the community stays clean.\n\n` +
-        `If it was legit, use **Request Approval** in the channel notice — a moderator will review it.\n` +
-        `Normal links (YouTube, charts, sites) are fine.`,
+        `Invite links for Discord, Telegram, and WhatsApp aren't allowed here — keeps the room free of off-platform spam.\n\n` +
+        `Charts, news, and normal sites are fine. Staff have been notified.`,
     });
   } catch { /* DMs closed */ }
 
-  // If they never click through, the request would otherwise sit in
-  // 'pending' forever — findActiveRequest would then treat it as still
-  // live and permanently block them from ever requesting again.
-  setTimeout(() => {
-    const current = getRequest(request.id);
-    if (current && current.status === 'pending') updateRequest(request.id, { status: 'expired' });
-  }, 60_000);
+  // Short in-channel notice (auto-deletes) — no Request Approval button
+  await sendPrivateNotice(message.channel, message.author, new EmbedBuilder()
+    .setColor(0xF39C12)
+    .setTitle('🔗 Invite removed')
+    .setDescription(
+      `${message.author}, **${platform}** invites aren't allowed here.\n` +
+      `Staff can review the report in the mod-log.`,
+    ), [], 12_000);
+
+  // Staff card in moderation log channel
+  const logCh = getModLogChannel(message.guild);
+  if (logCh) {
+    const card = buildRequestCardEmbed(
+      { ...request, status: 'reported', reason: `Auto-detected ${platform} invite` },
+      message.guild,
+    );
+    card
+      .setTitle(`🔗 ${platform} invite removed`)
+      .setFooter({ text: `Report #${request.id} • Dismiss or take action` });
+    await logCh.send({
+      embeds: [card],
+      components: [buildRequestCardRow(request.id)],
+    }).catch((err) => console.warn('[automod] mod-log post failed:', err.message));
+  } else {
+    console.warn('[automod] No moderation log channel set — restricted link deleted but not reported.');
+  }
 }
 
 async function handleLinkRequestButton(interaction, requestId) {
@@ -427,7 +406,7 @@ function buildRequestCardEmbed(request, guild) {
   if (original) embed.addFields({ name: '📝 The message it came from', value: original, inline: false });
 
   return embed
-    .setFooter({ text: `Request #${request.id} • Approve grants one link per cooldown • Admins only` })
+    .setFooter({ text: `Report #${request.id} • Dismiss or take action` })
     .setTimestamp(request.createdAt || Date.now());
 }
 
@@ -444,7 +423,7 @@ function snowflakeTime(id) {
 
 function buildRequestCardRow(requestId) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`automod_link_approve:${requestId}`).setLabel('Approve').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`automod_link_approve:${requestId}`).setLabel('Dismiss').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`automod_link_act:kick:${requestId}`).setLabel('Kick').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`automod_link_act:ban:${requestId}`).setLabel('Ban').setStyle(ButtonStyle.Danger),
     new ButtonBuilder().setCustomId(`automod_link_act:timeout:${requestId}`).setLabel('Timeout').setStyle(ButtonStyle.Secondary),
@@ -473,26 +452,29 @@ async function handleLinkModalSubmit(interaction, requestId) {
   });
 }
 
-// Approving isn't instant — the admin sets how long this user's next-link
-// cooldown should be first, via a modal, so the "one link per cooldown"
-// permit can actually be granted rather than a one-time-only exception.
+// Dismiss = staff saw it; no permit, no cooldown, no repost.
 async function handleLinkApprove(interaction, requestId) {
-  if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)) {
-    return interaction.reply({ content: '❌ Only Administrators can approve link requests.', flags: MessageFlags.Ephemeral });
+  if (!interaction.member?.permissions?.has(PermissionFlagsBits.Administrator)
+      && !interaction.member?.permissions?.has(PermissionFlagsBits.ModerateMembers)
+      && !interaction.member?.permissions?.has(PermissionFlagsBits.ManageMessages)) {
+    return interaction.reply({ content: '❌ Missing moderation permission.', flags: MessageFlags.Ephemeral });
   }
   const request = getRequest(requestId);
-  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', flags: MessageFlags.Ephemeral });
-  if (request.status === 'approved' || request.status === 'denied') {
-    return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
+  if (!request) return interaction.reply({ content: '⌛ This report no longer exists.', flags: MessageFlags.Ephemeral });
+  if (request.status === 'approved' || request.status === 'denied' || request.status === 'actioned' || request.status === 'dismissed') {
+    return interaction.reply({ content: `This report was already handled (**${request.status}**).`, flags: MessageFlags.Ephemeral });
   }
 
-  const modal = new ModalBuilder().setCustomId(`automod_link_approve_modal:${requestId}`).setTitle('Approve Link Request').addComponents(
-    new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('cooldown').setLabel('Cooldown until next link (1h/24h/7d)')
-        .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(10).setValue('24h'),
-    ),
-  );
-  return interaction.showModal(modal);
+  updateRequest(requestId, {
+    status: 'dismissed',
+    decidedAt: Date.now(),
+    decidedBy: interaction.user.tag,
+  });
+
+  const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+    .setColor(0x2ECC71)
+    .setFooter({ text: `✅ Dismissed by ${interaction.user.tag}` });
+  return interaction.update({ embeds: [updatedEmbed], components: [] });
 }
 
 async function handleLinkApproveModalSubmit(interaction, requestId) {
