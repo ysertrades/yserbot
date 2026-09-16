@@ -874,7 +874,10 @@ async function handleLinkModAction(interaction, action, requestId) {
     return interaction.reply({ content: '❌ Missing moderation permission.', flags: MessageFlags.Ephemeral });
   }
   const request = getRequest(requestId);
-  if (!request) return interaction.reply({ content: '⌛ This request no longer exists.', flags: MessageFlags.Ephemeral });
+  if (!request) return interaction.reply({ content: '⌛ This report no longer exists.', flags: MessageFlags.Ephemeral });
+  if (request.status === 'actioned' || request.status === 'dismissed' || request.status === 'approved' || request.status === 'denied') {
+    return interaction.reply({ content: `This report was already handled (**${request.status}**).`, flags: MessageFlags.Ephemeral });
+  }
   if (request.status === 'approved' || request.status === 'denied' || request.status === 'actioned') {
     return interaction.reply({ content: `This request was already **${request.status}**.`, flags: MessageFlags.Ephemeral });
   }
