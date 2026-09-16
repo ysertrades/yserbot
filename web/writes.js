@@ -909,16 +909,6 @@ Object.assign(OPS, {
     if (!auth.isOwner(ctx.session.uid)) return { error: 'forbidden' };
     return botProfile.applyPresence(body || {}, ctx.client);
   },
-});
-
-async function apply(op, guildId, body, ctx) {
-  const handler = OPS[op];
-  if (!handler) return { error: 'unknown_operation' };
-  return handler(guildId, body, ctx);
-}
-
-
-  // Generic panel image → Discord CDN (Composer / Giveaway uploads)
   'imageupload': async (guildId, body, ctx) => {
     if (!body?.data || typeof body.data !== 'string' || !body.data.startsWith('data:image/')) {
       return { error: 'bad_image' };
@@ -928,19 +918,24 @@ async function apply(op, guildId, body, ctx) {
     const ext = mm[1].toLowerCase() === 'jpg' ? 'jpeg' : mm[1].toLowerCase();
     const buf = Buffer.from(mm[2], 'base64');
     if (buf.length > 7.5 * 1024 * 1024) return { error: 'body_too_large' };
-    const guild = ctx.client?.guilds?.cache?.get(guildId);
+    const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId);
     if (!guild) return { error: 'unknown_guild' };
-    let ch = guild.systemChannel
-      || guild.channels.cache.find(c => c.isTextBased?.() && c.viewable && c.permissionsFor(guild.members.me)?.has?.('AttachFiles'));
+    const conf = readJson('config.json', {})[guildId] || {};
+    let ch = guild.channels.cache.get(conf.logsChannel || conf.errorLogChannelId || conf.modLogChannelId);
+    if (!ch?.isTextBased?.()) {
+      ch = guild.channels.cache.find(x =>
+        x.isTextBased?.() && x.viewable &&
+        x.permissionsFor?.(guild.members.me)?.has?.('AttachFiles')
+      );
+    }
     if (!ch) return { error: 'no_upload_channel' };
     try {
-      const msg = await ch.send({
-        files: [{ attachment: buf, name: `panel-upload.${ext === 'jpeg' ? 'jpg' : ext}` }],
-      });
+      const { AttachmentBuilder } = require('discord.js');
+      const file = new AttachmentBuilder(buf, { name: `panel_upload.${ext === 'jpeg' ? 'jpg' : ext}` });
+      const msg = await ch.send({ files: [file] });
       const url = msg.attachments.first()?.url;
+      await msg.delete().catch(() => {});
       if (!url) return { error: 'upload_failed' };
-      // Delete the upload message so the channel stays clean (CDN URL remains valid a long time)
-      msg.delete().catch(() => {});
       return { ok: true, url };
     } catch (err) {
       console.warn('[Panel] imageupload:', err.message);
@@ -948,4 +943,11 @@ async function apply(op, guildId, body, ctx) {
     }
   },
 
+});
+
+async function apply(op, guildId, body, ctx) {
+  const handler = OPS[op];
+  if (!handler) return { error: 'unknown_operation' };
+  return handler(guildId, body, ctx);
+}
 module.exports = { apply, OPS };
