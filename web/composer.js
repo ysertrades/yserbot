@@ -23,7 +23,8 @@
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { normaliseMention, mentionSend } = require('../utils/mentionTarget');
 const panelPosts = require('../utils/panelPosts');
-const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
+const { AttachmentBuilder } = require('discord.js');
+const { DYNAMIC_IMAGES, renderDynamic, isDynamicImage, dynamicImageKey } = require('../utils/dynamicEmbedImages');
 
 // Required lazily: commands/utility/embed.js pulls in a good deal of the bot,
 // and web/ is loaded from index.js before the command files have all settled.
@@ -166,8 +167,9 @@ function sanitizeAround(input) {
   const below = clean(input.below, LIMITS.content) || null;
   const picture = clean(input.picture, 500) || null;
   const pictureAbove = clean(input.pictureAbove, 500) || null;
-  if (picture && !isHttpUrl(picture)) return { error: 'bad_picture' };
-  if (pictureAbove && !isHttpUrl(pictureAbove)) return { error: 'bad_picture_above' };
+  // https URL or dynamic:<key> (generated banners) — same rules as embed images
+  if (picture && !validImageRef(picture)) return { error: 'bad_picture' };
+  if (pictureAbove && !validImageRef(pictureAbove)) return { error: 'bad_picture_above' };
 
   if (!above && !below && !picture && !pictureAbove) return { around: null };
   const out = { above, below, picture };
@@ -397,14 +399,27 @@ function messageText(text, guild, channel) {
   return embedCommand().resolveMessageText(text, { guild, channel });
 }
 
+
+/** Turn https URL or dynamic:<key> into a discord.js file payload entry. */
+function resolveAroundFile(ref, guildId) {
+  if (!ref) return null;
+  if (isDynamicImage(ref)) {
+    const key = dynamicImageKey(ref);
+    if (!Object.hasOwn(DYNAMIC_IMAGES, key)) return null;
+    const entry = DYNAMIC_IMAGES[key];
+    return new AttachmentBuilder(renderDynamic(key, entry, guildId), { name: entry.filename });
+  }
+  if (/^https:\/\/\S+$/i.test(ref)) return ref;
+  return null;
+}
+
 async function sendBelow(channel, around, guild) {
   if (!around?.below && !around?.picture) return { id: null };
   try {
+    const file = resolveAroundFile(around.picture, guild?.id);
     const msg = await channel.send({
       content: messageText(around.below, guild, channel) || undefined,
-      // discord.js fetches a URL and uploads it, so the picture is a real
-      // attachment rather than a link Discord may or may not unfurl.
-      files: around.picture ? [around.picture] : undefined,
+      files: file ? [file] : undefined,
       allowedMentions: { parse: [] },
     });
     return { id: msg.id };
@@ -451,10 +466,15 @@ async function send(guildId, body, { guild }) {
   const hasEmbeds = Array.isArray(payload.embeds) && payload.embeds.length > 0;
   if (!hasEmbeds && around?.pictureAbove) {
     try {
-      await channel.send({
-        files: [around.pictureAbove],
-        allowedMentions: { parse: [] },
-      });
+      const file = resolveAroundFile(around.pictureAbove, guild.id);
+      if (file) {
+        await channel.send({
+          files: [file],
+          allowedMentions: { parse: [] },
+        });
+      } else {
+        console.warn('[Panel] pictureAbove: unresolvable ref', around.pictureAbove);
+      }
     } catch (err) {
       console.warn('[Panel] pictureAbove failed:', err.message);
     }

@@ -2194,8 +2194,11 @@ function renderComposer() {
     if (draft.embeds.length) draft.around.pictureAbove = '';
     for (const key of ['picture', 'pictureAbove']) {
       const u = String(draft.around[key] || '').trim();
-      if (u && !/^https?:\/\//i.test(u)) {
-        toast('Image URLs must start with http:// or https://', 'bad');
+      if (!u) continue;
+      const okDyn = u.startsWith('dynamic:');
+      const okUrl = /^https?:\/\//i.test(u);
+      if (!okDyn && !okUrl) {
+        toast('Pick a generated image, upload one, or paste an https image URL.', 'bad');
         return;
       }
     }
@@ -3296,7 +3299,16 @@ function openEmbedPreview(draft) {
   // going where you meant.
   const around = draft.around || {};
   if (!draft.embeds?.length && around.pictureAbove) {
-    body.push(previewPicture(around.pictureAbove, 'big'));
+    if (String(around.pictureAbove).startsWith('dynamic:')) {
+      const img = el('img');
+      img.className = 'big';
+      img.alt = '';
+      img.hidden = true;
+      body.push(img);
+      loadDynamicPreview(img, around.pictureAbove.slice(8), revocables);
+    } else {
+      body.push(previewPicture(around.pictureAbove, 'big'));
+    }
     body.push(el('p', 'hint', 'Image above (own message)'));
   }
   if (around.above) body.push(el('p', 'demb-say', fillPlaceholders(around.above)));
