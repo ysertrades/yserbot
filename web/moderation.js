@@ -66,7 +66,13 @@ function read(guildId, guild) {
 
   // Newest first, and capped — the full log can run to thousands of entries
   // and nothing on screen can use them all.
-  const recentCases = cases.slice(-50).reverse().map(c => ({
+  // Cleared (forgiven) warnings are removed from the active case log so Clear
+  // actually takes them off the screen. Kicks, bans and timeouts stay.
+  const recentCases = cases
+    .filter(c => !(c.type === 'warn' && c.clearedAt))
+    .slice(-50)
+    .reverse()
+    .map(c => ({
     id: c.id,
     type: c.type,
     icon: CASE_ICON[c.type] || '•',
@@ -111,7 +117,7 @@ function read(guildId, guild) {
       roleId: config.reportRole || null,
     },
     cases: recentCases,
-    caseTotal: cases.length,
+    caseTotal: cases.filter(c => !(c.type === 'warn' && c.clearedAt)).length,
     warned,
     warnSettings: {
       threshold: Number(warnSettings.threshold) || 0,

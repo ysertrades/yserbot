@@ -5559,6 +5559,15 @@ function openCase(c) {
   if (c.type === 'warn' && !c.clearedAt && c.userId) {
     btns.push(arm('Clear warnings', true, async () => {
       const out = await post('warnclear', { userId: c.userId });
+      if (out && state.overview?.mod) {
+        const uid = c.userId;
+        state.overview.mod.warned = (state.overview.mod.warned || []).filter(x => x.userId !== uid);
+        state.overview.mod.cases = (state.overview.mod.cases || []).filter(x =>
+          !(x.type === 'warn' && x.userId === uid)
+        );
+        if (out.overview?.mod) state.overview.mod = out.overview.mod;
+        try { renderModeration(); } catch (_) {}
+      }
       if (out) closeSheet();
     }));
   }
@@ -5661,9 +5670,14 @@ function renderModeration() {
       })) return;
       clear.disabled = true;
       const out = await post('warnclear', { userId: w.userId });
-      // Optimistic: drop them from the warned list immediately
+      // Optimistic: drop them from warned list + case log immediately
       if (state.overview?.mod?.warned) {
         state.overview.mod.warned = state.overview.mod.warned.filter(x => x.userId !== w.userId);
+      }
+      if (state.overview?.mod?.cases) {
+        state.overview.mod.cases = state.overview.mod.cases.filter(x =>
+          !(x.type === 'warn' && x.userId === w.userId)
+        );
       }
       if (out?.overview?.mod) {
         state.overview.mod = out.overview.mod;
