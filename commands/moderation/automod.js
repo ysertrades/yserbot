@@ -281,25 +281,15 @@ async function handleLinkViolation(message, client) {
     link: request.link || originalContent.slice(0, 400),
   });
 
-  // Creative DM (no cooldown / request language)
-  try {
-    await message.author.send({
-      content:
-        `**Heads up from ${message.guild.name}**\n\n` +
-        `Your message was removed because it included a **${platform}** link.\n` +
-        `Invite links for Discord, Telegram, and WhatsApp aren't allowed here — keeps the room free of off-platform spam.\n\n` +
-        `Charts, news, and normal sites are fine. Staff have been notified.`,
-    });
-  } catch { /* DMs closed */ }
-
-  // Short in-channel notice (auto-deletes) — no Request Approval button
-  await sendPrivateNotice(message.channel, message.author, new EmbedBuilder()
-    .setColor(0xF39C12)
-    .setTitle('🔗 Invite removed')
-    .setDescription(
-      `${message.author}, **${platform}** invites aren't allowed here.\n` +
-      `Staff can review the report in the mod-log.`,
-    ), [], 12_000);
+  // In-channel warning — ping them first (no DM)
+  const warn = await message.channel.send({
+    content:
+      `${message.author} **Invite removed**\n` +
+      `That **${platform}** link isn't allowed here — keeps the room free of off-platform spam.\n` +
+      `Charts, news, and normal sites are fine. Staff have been notified.`,
+    allowedMentions: { users: [message.author.id] },
+  }).catch(() => null);
+  if (warn) setTimeout(() => warn.delete().catch(() => {}), 20_000);
 
   // Staff card in moderation log channel
   const logCh = getModLogChannel(message.guild);
