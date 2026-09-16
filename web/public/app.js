@@ -1877,14 +1877,14 @@ function renderComposer() {
     const plain = el('div', 'composer-plain');
     plain.append(
       el('h2', null, 'Plain text'),
-      el('p', 'muted', 'No embed — this is a normal Discord message. Write the body below, then Save.'),
+      el('p', 'muted', 'No embed — this posts as a normal Discord message.'),
       areaField('Message body', a.above, v => { a.above = v; }, 5),
       el('p', 'hint', 'Type #channel-name and it becomes a real channel link. Mentions and markdown work here.'),
-      disclosure('composer:plain-extra', 'Optional second line + picture', [
-        el('p', 'muted', 'Discord can only put one block of text in the main message. Anything here is sent as a second message right underneath.'),
-        areaField('Second message (optional)', a.below, v => { a.below = v; }, 3),
-        textField('Picture under it (URL)', a.picture, v => { a.picture = v; }),
-      ]),
+      textField('Image above the text (URL)', a.pictureAbove || '', v => { a.pictureAbove = v; }),
+      el('p', 'hint', 'Sent as its own message just above the text.'),
+      textField('Image below the text (URL)', a.picture || '', v => { a.picture = v; }),
+      el('p', 'hint', 'Sent under the text as a second message (optional note below).'),
+      areaField('Note under the image below (optional)', a.below, v => { a.below = v; }, 2),
     );
     head.append(plain);
   }
@@ -1963,6 +1963,8 @@ function renderComposer() {
   addEmbed.addEventListener('click', () => {
     const idx = draft.embeds.length;
     draft.embeds.push({ title: '', description: '', color: '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false });
+    // Leave plain-text mode — images live on embeds from here
+    a.pictureAbove = '';
     if (!state._composerOpen) state._composerOpen = {};
     state._composerOpen[`${draft.name || '_new'}:${idx}`] = true;
     renderComposer();
@@ -1980,8 +1982,8 @@ function renderComposer() {
     head.append(disclosure('composer:around', aroundLabel, [
       el('p', 'muted',
         draft.embeds.length > 1
-          ? 'Discord always stacks embeds in order (1, then 2, …). Text above sits once at the top of the whole stack — not between embeds. A note “below” is a second message under everything.'
-          : 'Plain text outside the embed: a line above it, or a note/picture under it. Discord order is always text → embed → buttons.'),
+          ? 'Discord stacks embeds in order. Text above sits once at the top of the stack — not between embeds. Put images on each embed. A note below is a second message under everything.'
+          : 'Plain text outside the embed. Put images on the embed (image / thumbnail), not as plain-text slots. Order is always text → embed → buttons.'),
       areaField(
         draft.embeds.length > 1 ? 'Above all embeds' : 'Above the embed',
         a.above, v => { a.above = v; }, 2,
@@ -2002,10 +2004,18 @@ function renderComposer() {
     const name = (draft.name || '').trim();
     if (!name) { toast('Give the message a name first.', 'bad'); return; }
     const around = draft.around || {};
-    const hasAround = !!(around.above || around.below || around.picture);
+    const hasAround = !!(around.above || around.below || around.picture || around.pictureAbove);
     if (!draft.embeds.length && !hasAround) {
-      toast('Add an embed, or write text above/below the message.', 'bad');
+      toast('Write a message body, add an image, or add an embed.', 'bad');
       return;
+    }
+    if (draft.embeds.length) draft.around.pictureAbove = '';
+    for (const key of ['picture', 'pictureAbove']) {
+      const u = String(draft.around[key] || '').trim();
+      if (u && !/^https?:\/\//i.test(u)) {
+        toast('Image URLs must start with http:// or https://', 'bad');
+        return;
+      }
     }
     for (let i = 0; i < draft.embeds.length; i++) {
       const e = draft.embeds[i];
@@ -3103,6 +3113,10 @@ function openEmbedPreview(draft) {
   // likeness — and seeing it above the box is the only way to tell it is
   // going where you meant.
   const around = draft.around || {};
+  if (!draft.embeds?.length && around.pictureAbove) {
+    body.push(previewPicture(around.pictureAbove, 'big'));
+    body.push(el('p', 'hint', 'Image above (own message)'));
+  }
   if (around.above) body.push(el('p', 'demb-say', fillPlaceholders(around.above)));
 
   draft.embeds.forEach(e => {
