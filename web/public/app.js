@@ -1807,7 +1807,7 @@ function newDraft(name = '') {
   return {
     name,
     embeds: [],
-    around: { above: '', below: '', picture: '' },
+    around: { above: '', below: '', picture: '', pictureAbove: '' },
     buttons: [], posts: [],
   };
 }
@@ -1859,7 +1859,8 @@ function renderComposer() {
   const draft = state.draft || JSON.parse(JSON.stringify(tpl));
   // Stored as null when nothing is set, so the editor always has one to bind
   // to rather than each field having to cope with it being absent.
-  draft.around = draft.around || { above: '', below: '', picture: '' };
+  draft.around = draft.around || { above: '', below: '', picture: '', pictureAbove: '' };
+  if (draft.around.pictureAbove == null) draft.around.pictureAbove = '';
   state.draft = draft;
 
   const parts = [];

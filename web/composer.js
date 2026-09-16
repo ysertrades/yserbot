@@ -165,12 +165,14 @@ function sanitizeAround(input) {
   const above = clean(input.above, LIMITS.content) || null;
   const below = clean(input.below, LIMITS.content) || null;
   const picture = clean(input.picture, 500) || null;
+  const pictureAbove = clean(input.pictureAbove, 500) || null;
   if (picture && !isHttpUrl(picture)) return { error: 'bad_picture' };
+  if (pictureAbove && !isHttpUrl(pictureAbove)) return { error: 'bad_picture_above' };
 
-  // Nothing set is stored as nothing, not as three nulls — a template that
-  // has never used this should read exactly as it did before it existed.
-  if (!above && !below && !picture) return { around: null };
-  return { around: { above, below, picture } };
+  if (!above && !below && !picture && !pictureAbove) return { around: null };
+  const out = { above, below, picture };
+  if (pictureAbove) out.pictureAbove = pictureAbove;
+  return { around: out };
 }
 
 // An image field is either a real URL or one of our generated-image markers.
@@ -256,8 +258,14 @@ function saveTemplate(guildId, body) {
     embeds.push(result.embed);
   }
 
-  const around = sanitizeAround(body.around);
+  let around = sanitizeAround(body.around);
   if (around.error) return around;
+
+  // Plain-text-only image slots — drop when the message has embeds
+  if (embeds.length && around.around?.pictureAbove) {
+    const { pictureAbove, ...rest } = around.around;
+    around = { around: (rest.above || rest.below || rest.picture) ? rest : null };
+  }
 
   const all = readJson('embeds.json', {});
   if (!all[guildId]) all[guildId] = {};
@@ -438,18 +446,33 @@ async function send(guildId, body, { guild }) {
   const content = [ping.text, messageText(typed, guild, channel)]
     .filter(Boolean).join('\n').slice(0, LIMITS.content) || null;
 
+  // Plain-text image above: sent as its own message first (Discord cannot
+  // put an attachment above content in a single message reliably).
+  const hasEmbeds = Array.isArray(payload.embeds) && payload.embeds.length > 0;
+  if (!hasEmbeds && around?.pictureAbove) {
+    try {
+      await channel.send({
+        files: [around.pictureAbove],
+        allowedMentions: { parse: [] },
+      });
+    } catch (err) {
+      console.warn('[Panel] pictureAbove failed:', err.message);
+    }
+  }
+
   let message;
   try {
-    message = await channel.send({
+    const sendPayload = {
       content,
-      embeds: payload.embeds,
-      files: payload.files,
       components: payload.components.length ? payload.components : undefined,
-      // Only ever the one target that was picked. The panel must never be a
-      // way to mass-ping a server by accident, so an @everyone sitting in a
-      // template's own text stays inert no matter who posts it.
       allowedMentions: ping.allowedMentions,
-    });
+    };
+    // Discord rejects some clients with empty embeds:[] — only include when present
+    if (hasEmbeds) {
+      sendPayload.embeds = payload.embeds;
+      if (payload.files?.length) sendPayload.files = payload.files;
+    }
+    message = await channel.send(sendPayload);
   } catch (err) {
     console.error('[Panel] send failed:', err.message);
     return { error: 'send_failed', detail: err.message.slice(0, 140) };

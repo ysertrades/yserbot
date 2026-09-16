@@ -496,7 +496,11 @@ function buildEmbedPayload(guild, name, ctx = {}) {
     }
   }
   if (cur.components.length > 0) rows.push(cur);
-  return { embeds: builtEmbeds, components: rows, files: collectDynamicAttachments(template, guild.id) };
+  return {
+    embeds: builtEmbeds,
+    components: rows,
+    files: builtEmbeds.length ? collectDynamicAttachments(template, guild.id) : [],
+  };
 }
 
 module.exports.buildEmbedPayload = buildEmbedPayload;
