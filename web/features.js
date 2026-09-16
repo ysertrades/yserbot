@@ -228,10 +228,8 @@ function read(guildId, guild) {
         .filter(m => !m.user?.bot)
         .slice(0, 500)
         .map(m => {
-          const nick = m.displayName || m.user?.globalName || m.user?.username || m.id;
-          const user = m.user?.username ? `@${m.user.username}` : '';
-          const label = user && user.slice(1) !== nick ? `${nick} (${user})` : (user || nick);
-          return { id: m.id, name: label, username: m.user?.username || '', displayName: nick };
+          const name = m.displayName || m.user?.globalName || m.user?.username || m.id;
+          return { id: m.id, name, username: m.user?.username || '', displayName: name };
         })
         .sort((a, b) => a.name.localeCompare(b.name))
     : [];

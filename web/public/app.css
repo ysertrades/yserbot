@@ -2585,12 +2585,18 @@ select.cselect-native {
 }
 
 
-/* Searchable cselect */
+
+
+/* cselect: scrollable list + optional search (Quick Action only) */
+.cselect-menu {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .cselect-search {
   position: sticky;
   top: 0;
-  z-index: 1;
-  padding: 0.4rem 0.5rem 0.35rem;
+  z-index: 2;
+  padding: 0.45rem 0.5rem;
   background: inherit;
   border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 }
@@ -2599,17 +2605,20 @@ select.cselect-native {
   box-sizing: border-box;
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
-  background: color-mix(in srgb, #000 25%, transparent);
+  background: color-mix(in srgb, #000 22%, transparent);
   color: inherit;
-  padding: 0.45rem 0.6rem;
+  padding: 0.4rem 0.55rem;
   font: inherit;
   outline: none;
 }
 .cselect-search input:focus {
-  border-color: color-mix(in srgb, #a78bfa 55%, transparent);
+  border-color: color-mix(in srgb, #a78bfa 50%, transparent);
+}
+.cselect-list {
+  /* options live here so search stays sticky while list scrolls */
 }
 .cselect-empty {
-  padding: 0.75rem 0.85rem;
+  padding: 0.7rem 0.85rem;
   opacity: 0.55;
   font-size: 0.9em;
 }

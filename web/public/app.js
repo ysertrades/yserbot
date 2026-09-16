@@ -1750,13 +1750,13 @@ function pickValues(label, options, values, onChange, { allNote = 'Nothing picke
 function pickMember(label, value, onChange) {
   const members = state.overview?.features?.members || [];
   const field = select(
-    members.length ? `${label}` : label,
+    label,
     value || '',
     members.map(m => ({ value: m.id, label: m.name })),
     v => onChange(v || null),
-    { blank: members.length ? 'Search or pick a member…' : 'No members loaded' },
+    { blank: members.length ? 'Pick a member…' : 'No members loaded' },
   );
-  // Searchable cselect (same dropdown system as the rest of the panel)
+  // Search only on this control (Quick Action) — not every dropdown
   const sel = field.querySelector('select');
   if (sel) sel.dataset.searchable = '1';
   return field;
@@ -7862,27 +7862,30 @@ function enhanceSelects(scope) {
       menu.style.width = width + 'px';
       menu.style.left = left + 'px';
       menu.style.right = 'auto';
+      menu.style.overflowY = 'auto';
+      menu.style.webkitOverflowScrolling = 'touch';
 
-      const prevVis = menu.hidden;
-      menu.hidden = false;
-      const need = Math.min(menu.scrollHeight || 200, Math.floor(vh * 0.5));
       const spaceBelow = vh - r.bottom - pad;
       const spaceAbove = r.top - pad;
-      let maxH = need;
-      if (spaceBelow >= Math.min(need, 160) || spaceBelow >= spaceAbove) {
-        maxH = Math.max(120, Math.min(need, spaceBelow));
+      const maxCap = Math.floor(vh * 0.55);
+      let maxH;
+      if (spaceBelow >= 160 || spaceBelow >= spaceAbove) {
+        maxH = Math.max(140, Math.min(maxCap, spaceBelow));
         menu.style.top = (r.bottom + 6) + 'px';
         menu.style.bottom = 'auto';
       } else {
-        maxH = Math.max(120, Math.min(need, spaceAbove));
+        maxH = Math.max(140, Math.min(maxCap, spaceAbove));
         menu.style.bottom = (vh - r.top + 6) + 'px';
         menu.style.top = 'auto';
       }
       menu.style.maxHeight = maxH + 'px';
-      if (prevVis) menu.hidden = true;
     };
 
-    const onScrollClose = () => softClose();
+    // Close only when the PAGE scrolls — not when scrolling the menu list
+    const onScrollClose = (e) => {
+      if (menu.contains(e.target)) return;
+      softClose();
+    };
     window.addEventListener('scroll', onScrollClose, true);
 
     const open = () => {
@@ -7898,11 +7901,35 @@ function enhanceSelects(scope) {
       });
 
       menu.replaceChildren();
-      const searchable = sel.dataset.searchable === '1' || sel.options.length > 12;
+      // Search ONLY on selects that opt in (Quick Action member)
+      const searchable = sel.dataset.searchable === '1';
       let filter = '';
+      let listHost = menu;
 
-      const appendOptions = () => {
-        menu.querySelectorAll('.cselect-option, .cselect-empty').forEach((n) => n.remove());
+      if (searchable) {
+        const searchWrap = document.createElement('div');
+        searchWrap.className = 'cselect-search';
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.placeholder = 'Search members…';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('keydown', (e) => e.stopPropagation());
+        input.addEventListener('input', () => {
+          filter = input.value || '';
+          paintOpts();
+        });
+        searchWrap.appendChild(input);
+        menu.appendChild(searchWrap);
+        listHost = document.createElement('div');
+        listHost.className = 'cselect-list';
+        menu.appendChild(listHost);
+        setTimeout(() => { try { input.focus(); } catch (_) {} }, 20);
+      }
+
+      const paintOpts = () => {
+        listHost.querySelectorAll('.cselect-option, .cselect-empty').forEach((n) => n.remove());
         const q = filter.trim().toLowerCase();
         let shown = 0;
         Array.from(sel.options).forEach((opt, i) => {
@@ -7923,38 +7950,18 @@ function enhanceSelects(scope) {
             syncLabel();
             close();
           });
-          menu.appendChild(o);
+          listHost.appendChild(o);
           shown++;
         });
         if (!shown) {
           const empty = document.createElement('div');
           empty.className = 'cselect-empty';
           empty.textContent = 'No matches';
-          menu.appendChild(empty);
+          listHost.appendChild(empty);
         }
-        place();
       };
 
-      if (searchable) {
-        const searchWrap = document.createElement('div');
-        searchWrap.className = 'cselect-search';
-        const input = document.createElement('input');
-        input.type = 'search';
-        input.placeholder = 'Search…';
-        input.autocomplete = 'off';
-        input.spellcheck = false;
-        input.addEventListener('click', (e) => e.stopPropagation());
-        input.addEventListener('keydown', (e) => e.stopPropagation());
-        input.addEventListener('input', () => {
-          filter = input.value || '';
-          appendOptions();
-        });
-        searchWrap.appendChild(input);
-        menu.appendChild(searchWrap);
-        setTimeout(() => input.focus(), 30);
-      }
-
-      appendOptions();
+      paintOpts();
       menu.hidden = false;
       menu.classList.remove('is-leaving');
       void menu.offsetWidth;
