@@ -1869,19 +1869,29 @@ function renderComposer() {
   head.append(el('h2', null, 'Message'));
   head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
 
+  const a = draft.around;
+
+  /* -- Plain text message (no embeds) ---------------------------------- */
   if (!draft.embeds.length) {
-    const empty = el('div', 'composer-empty-embeds');
-    empty.append(
-      el('p', 'muted', 'No embeds yet — this can be a plain text message, or add an embed below.'),
+    const plain = el('div', 'composer-plain');
+    plain.append(
+      el('h2', null, 'Plain text'),
+      el('p', 'muted', 'No embed — this is a normal Discord message. Write the body below, then Save.'),
+      areaField('Message body', a.above, v => { a.above = v; }, 5),
+      el('p', 'hint', 'Type #channel-name and it becomes a real channel link. Mentions and markdown work here.'),
+      disclosure('composer:plain-extra', 'Optional second line + picture', [
+        el('p', 'muted', 'Discord can only put one block of text in the main message. Anything here is sent as a second message right underneath.'),
+        areaField('Second message (optional)', a.below, v => { a.below = v; }, 3),
+        textField('Picture under it (URL)', a.picture, v => { a.picture = v; }),
+      ]),
     );
-    head.append(empty);
+    head.append(plain);
   }
 
+  /* -- Embeds (optional) ----------------------------------------------- */
   draft.embeds.forEach((e, i) => {
-    // Capture index so field/button handlers never target the wrong embed
     const embedIndex = i;
     const box = el('details', 'embed-box');
-    // Keep open state when re-rendering if user had this one open
     if (!state._composerOpen) state._composerOpen = {};
     const openKey = `${draft.name || '_new'}:${embedIndex}`;
     box.open = state._composerOpen[openKey] !== false && (state._composerOpen[openKey] === true || embedIndex === 0);
@@ -1957,17 +1967,32 @@ function renderComposer() {
     renderComposer();
   });
 
-  /* -- what goes around the embeds ------------------------------------- */
-  // Folded away, because most messages are just their embed and this would
-  // otherwise be three empty boxes on every one of them.
-  const a = draft.around;
-  head.append(disclosure('composer:around', 'Text and picture around it', [
-    el('p', 'muted', 'Plain writing outside the embed — a line of context over the top, a note or a picture under it. Both take #channel-name and turn it into a real channel link.'),
-    areaField('Above the embed', a.above, v => { a.above = v; }, 2),
-    areaField('Below the embed', a.below, v => { a.below = v; }, 2),
-    textField('Picture under it (URL)', a.picture, v => { a.picture = v; }),
-    el('p', 'hint', 'Discord always draws a message as text, then embed, then buttons — there is no room after the embed for words. So anything below is sent as a second message right underneath, and updating the post rewrites both.'),
-  ]));
+  /* -- Lines around ALL embeds (only when at least one embed exists) ----
+     Discord order is fixed for the whole message:
+       content (above) → embed 1 → embed 2 → … → buttons
+     “Below” is always a second message under the whole stack — never
+     between embeds, and not tied to a single embed. */
+  if (draft.embeds.length) {
+    const aroundLabel = draft.embeds.length > 1
+      ? 'Text around all embeds'
+      : 'Text around the embed';
+    head.append(disclosure('composer:around', aroundLabel, [
+      el('p', 'muted',
+        draft.embeds.length > 1
+          ? 'Discord always stacks embeds in order (1, then 2, …). Text above sits once at the top of the whole stack — not between embeds. A note “below” is a second message under everything.'
+          : 'Plain text outside the embed: a line above it, or a note/picture under it. Discord order is always text → embed → buttons.'),
+      areaField(
+        draft.embeds.length > 1 ? 'Above all embeds' : 'Above the embed',
+        a.above, v => { a.above = v; }, 2,
+      ),
+      areaField(
+        draft.embeds.length > 1 ? 'Second message under all embeds' : 'Second message under the embed',
+        a.below, v => { a.below = v; }, 2,
+      ),
+      textField('Picture under it (URL)', a.picture, v => { a.picture = v; }),
+      el('p', 'hint', 'You cannot place different text between two embeds — Discord does not allow that. Use the description inside each embed for per-embed copy.'),
+    ]));
+  }
 
   const saveRow = el('div', 'actions');
   const saveBtn = el('button', 'btn primary small', 'Save message');

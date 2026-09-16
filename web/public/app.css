@@ -2639,3 +2639,11 @@ select.cselect-native {
   padding: 0.75rem 0.25rem 0.25rem;
   opacity: 0.85;
 }
+
+.composer-plain {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.15rem 0 0.35rem;
+}
+.composer-plain > h2 {
+  margin-bottom: 0.25rem;
+}
