@@ -889,7 +889,12 @@ Object.assign(OPS, {
 
     if (url && !/^https:\/\//i.test(url)) return { error: 'bad_image' };
     if (url && url.length > 500) return { error: 'bad_image' };
-    if ((conf[guildId].brandAvatar || null) === url) return { unchanged: true };
+    // Only "unchanged" when there was no upload and the URL is identical.
+    // A fresh data upload always produces a new CDN URL and must save.
+    const hadUpload = !!(body?.data && String(body.data).startsWith('data:image/'));
+    if (!hadUpload && (conf[guildId].brandAvatar || null) === url) {
+      return { unchanged: true };
+    }
     conf[guildId].brandAvatar = url;
     writeJson('config.json', conf);
     return {

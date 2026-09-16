@@ -616,10 +616,27 @@ function renderIdentity(user) {
 }
 
 function renderGuildPicker() {
+  // Keep pill icons in sync with the live overview crest when available.
+  if (state.overview?.guild?.id && state.overview.guild.icon) {
+    const live = state.guilds.find(x => x.id === state.overview.guild.id);
+    if (live) live.icon = state.overview.guild.icon;
+  }
   $('#guilds').replaceChildren(...state.guilds.map(g => {
     const b = el('button');
     b.type = 'button';
-    if (g.icon) { const i = el('img'); i.src = g.icon; i.alt = ''; b.append(i); }
+    if (g.icon) {
+      const i = el('img');
+      i.src = g.icon;
+      i.alt = '';
+      i.referrerPolicy = 'no-referrer';
+      i.loading = 'lazy';
+      i.onerror = () => { i.remove(); };
+      b.append(i);
+    } else {
+      const ph = el('span', 'guild-ico-fallback');
+      ph.textContent = (g.name || '?').slice(0, 1).toUpperCase();
+      b.append(ph);
+    }
     b.append(el('span', null, g.name));
     if (g.id === state.guildId) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => selectGuild(g.id));
@@ -1111,10 +1128,26 @@ function renderWhop() {
   if (!list) return;
   const blocks = [];
 
-  /* ---- Tracking log (responsive up to 3 / row) ---- */
-  blocks.push(el("h3", null, "Tracking log"));
+  /* ---- Tracking log — collapsed by default ---- */
+  if (state.trackLogOpen == null) state.trackLogOpen = false;
+  const trackHead = el("div", "track-log-head");
+  trackHead.append(el("h3", null, "Tracking log"));
+  const trackToggle = el("button", "btn small track-log-toggle", state.trackLogOpen ? "Hide" : "Show");
+  trackToggle.type = "button";
+  trackToggle.setAttribute("aria-expanded", state.trackLogOpen ? "true" : "false");
+  trackToggle.addEventListener("click", () => {
+    state.trackLogOpen = !state.trackLogOpen;
+    if (typeof renderWhop === "function") renderWhop();
+  });
+  trackHead.append(trackToggle);
+  blocks.push(trackHead);
+
   if (!log.length) {
-    blocks.push(el("p", "muted", "Empty. Add a course from the library below (course + channel)."));
+    if (state.trackLogOpen) {
+      blocks.push(el("p", "muted track-log-body is-open", "Empty. Add a course from the library below (course + channel)."));
+    }
+  } else if (!state.trackLogOpen) {
+    blocks.push(el("p", "hint track-log-summary", `${log.length} course${log.length === 1 ? "" : "s"} tracked — press Show to manage channels and pings.`));
   } else {
     const pageSize = 3;
     const total = log.length;
@@ -1205,6 +1238,7 @@ function renderWhop() {
       pager.append(meta, dots, nav);
       desk.append(pager);
     }
+    desk.classList.add("track-log-body", "is-open");
     blocks.push(desk);
   }
 
@@ -1715,9 +1749,17 @@ function pickValues(label, options, values, onChange, { allNote = 'Nothing picke
  */
 function pickMember(label, value, onChange) {
   const members = state.overview?.features?.members || [];
-  return select(`${label} (${members.length})`, value || '',
+  const field = select(
+    members.length ? `${label}` : label,
+    value || '',
     members.map(m => ({ value: m.id, label: m.name })),
-    v => onChange(v || null), { blank: members.length ? 'Pick a member' : 'No members loaded' });
+    v => onChange(v || null),
+    { blank: members.length ? 'Search or pick a member…' : 'No members loaded' },
+  );
+  // Searchable cselect (same dropdown system as the rest of the panel)
+  const sel = field.querySelector('select');
+  if (sel) sel.dataset.searchable = '1';
+  return field;
 }
 
 function areaField(label, value, onInput, rows = 4) {
@@ -5022,12 +5064,19 @@ function renderBotProfile() {
       try {
         const img = await loadImageFromFile(file);
         studioHost.style.display = '';
-        openAvatarStudio(studioHost, img, file.name, async (dataUrl) => {
+        openAvatarStudio(studioHost, img, file.name, (dataUrl) => {
           imgDraft.url = '';
           imgDraft.data = dataUrl;
-          const prev = studioHost.parentElement?.querySelector('img.brand-prev');
-          // live preview
-          let preview = nodes.find?.(n => false);
+          uploadHint.textContent = (file.name || 'Photo') + ' · framed and ready to save';
+          // Live preview under the uploader
+          let prev = studioHost.parentElement?.querySelector('img.brand-prev');
+          if (!prev) {
+            prev = el('img', 'brand-prev');
+            prev.alt = '';
+            prev.style.cssText = 'width:64px;height:64px;border-radius:12px;object-fit:cover;display:block;margin:0.4rem 0';
+            studioHost.parentElement?.insertBefore(prev, studioHost);
+          }
+          prev.src = dataUrl;
         });
       } catch (err) {
         console.warn(err);
@@ -5040,17 +5089,25 @@ function renderBotProfile() {
     const saveImg = el('button', 'btn primary small', 'Save server image');
     saveImg.type = 'button';
     saveImg.addEventListener('click', async () => {
+      if (!imgDraft.data && !(imgDraft.url && imgDraft.url.trim())) {
+        toast('Pick a photo or paste an https image URL first.', 'bad');
+        return;
+      }
       saveImg.disabled = true;
       saveImg.textContent = 'Saving…';
       try {
         const payload = imgDraft.data
           ? { data: imgDraft.data }
-          : { url: imgDraft.url };
+          : { url: String(imgDraft.url || '').trim() };
         const res = await post('bot-profile-server-image', payload);
-        if (res?.ok || res?.unchanged) {
+        if (res?.ok) {
           imgDraft.data = null;
-          try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
+          if (res.overview) state.overview = res.overview;
+          else try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
           renderBotProfile();
+          toast('Server bot image saved.', 'good');
+        } else if (res?.unchanged) {
+          toast('That image is already set for this server.');
         }
       } finally {
         saveImg.disabled = false;
@@ -5604,15 +5661,24 @@ function renderModeration() {
       })) return;
       clear.disabled = true;
       const out = await post('warnclear', { userId: w.userId });
-      if (out?.ok !== false) {
+      // Optimistic: drop them from the warned list immediately
+      if (state.overview?.mod?.warned) {
+        state.overview.mod.warned = state.overview.mod.warned.filter(x => x.userId !== w.userId);
+      }
+      if (out?.overview?.mod) {
+        state.overview.mod = out.overview.mod;
+      } else if (out?.ok !== false) {
         try {
           const fresh = await get(`/api/guild/${state.guildId}`);
-          if (fresh?.guild?.id === state.guildId) {
-            state.overview = fresh;
-            renderModeration();
-          }
+          if (fresh?.mod) state.overview.mod = fresh.mod;
+          else if (fresh?.guild) state.overview = fresh;
         } catch {}
-        toast('Warnings cleared.', 'good');
+      }
+      renderModeration();
+      if (out?.ok !== false && out?.unchanged !== true) toast('Warnings cleared.', 'good');
+      else if (out?.unchanged) {
+        // Still remove from UI if backend said nothing left to clear
+        renderModeration();
       } else {
         clear.disabled = false;
       }
@@ -5716,7 +5782,7 @@ function renderModeration() {
     });
     timeoutField.style.display = qa.action === 'timeout' ? '' : 'none';
     qaForm.replaceChildren(
-      textField('Discord user ID', qa.userId, v => { qa.userId = v.trim(); }),
+      pickMember('Member', qa.userId, v => { qa.userId = v || ''; }),
       select('Action', qa.action, [
         { value: 'warn', label: 'Warn' },
         { value: 'timeout', label: 'Timeout' },
@@ -5729,14 +5795,16 @@ function renderModeration() {
       timeoutField,
       areaField('Reason', qa.reason, v => { qa.reason = v; }, 2),
       actions(async () => {
-        if (!/^\d{5,20}$/.test(qa.userId)) {
-          toast('Enter a valid Discord user ID.', 'bad');
+        if (!/^\d{5,25}$/.test(qa.userId || '')) {
+          toast('Pick a member from the list.', 'bad');
           return;
         }
         const label = qa.action === 'timeout' ? 'timeout' : qa.action;
+        const who = (state.overview?.features?.members || []).find(m => m.id === qa.userId);
+        const whoName = who?.displayName || who?.name || qa.userId;
         if (!await askConfirm({
-          title: `${label[0].toUpperCase() + label.slice(1)} this member?`,
-          message: `User ID ${qa.userId} will be ${label === 'timeout' ? 'timed out' : label + 'ed'} from the panel. A case is logged and they are DMed when possible.`,
+          title: `${label[0].toUpperCase() + label.slice(1)} ${whoName}?`,
+          message: `${whoName} will be ${label === 'timeout' ? 'timed out' : label + 'ed'} from the panel. A case is logged and they are DMed when possible.`,
           confirmLabel: 'Do it', danger: qa.action === 'ban' || qa.action === 'kick',
         })) return;
         await post('modaction', {
@@ -7750,14 +7818,15 @@ function enhanceSelects(scope) {
     menu.hidden = true;
     menu.setAttribute('role', 'listbox');
     document.body.appendChild(menu);
+
     const syncLabel = () => {
       const opt = sel.options[sel.selectedIndex];
       val.textContent = opt ? (opt.textContent || opt.value || '—') : '—';
     };
     syncLabel();
+
     let closeTimer = null;
     const close = () => {
-      // Instant clear used after option pick
       if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
       wrap.dataset.open = '';
       btn.setAttribute('aria-expanded', 'false');
@@ -7779,7 +7848,8 @@ function enhanceSelects(scope) {
         closeTimer = null;
       }, 160);
     };
-        const place = () => {
+
+    const place = () => {
       const r = btn.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
@@ -7793,85 +7863,117 @@ function enhanceSelects(scope) {
       menu.style.left = left + 'px';
       menu.style.right = 'auto';
 
-      // Measure after temporary show for height-aware flip
       const prevVis = menu.hidden;
       menu.hidden = false;
       const need = Math.min(menu.scrollHeight || 200, Math.floor(vh * 0.5));
       const spaceBelow = vh - r.bottom - pad;
       const spaceAbove = r.top - pad;
-      let openUp = false;
       let maxH = need;
       if (spaceBelow >= Math.min(need, 160) || spaceBelow >= spaceAbove) {
-        openUp = false;
         maxH = Math.max(120, Math.min(need, spaceBelow));
         menu.style.top = (r.bottom + 6) + 'px';
         menu.style.bottom = 'auto';
       } else {
-        openUp = true;
         maxH = Math.max(120, Math.min(need, spaceAbove));
         menu.style.bottom = (vh - r.top + 6) + 'px';
         menu.style.top = 'auto';
       }
       menu.style.maxHeight = maxH + 'px';
-      menu.dataset.flip = openUp ? '1' : '';
       if (prevVis) menu.hidden = true;
     };
-    const onScrollClose = (e) => {
-      if (wrap.dataset.open !== '1') return;
-      // Allow scrolling the menu list itself — only dismiss when page/panel moves
-      const t = e.target;
-      if (t && (menu.contains(t) || t === menu)) return;
-      softClose();
-    };
+
+    const onScrollClose = () => softClose();
     window.addEventListener('scroll', onScrollClose, true);
+
     const open = () => {
       document.querySelectorAll('.cselect-menu').forEach((m) => {
         m.hidden = true;
         m.replaceChildren();
+        m.classList.remove('is-open', 'is-leaving');
       });
       document.querySelectorAll('.cselect[data-open="1"]').forEach((w) => {
         w.dataset.open = '';
         const b = w.querySelector('.cselect-trigger');
         if (b) b.setAttribute('aria-expanded', 'false');
       });
+
       menu.replaceChildren();
-      Array.from(sel.options).forEach((opt, i) => {
-        const o = document.createElement('button');
-        o.type = 'button';
-        o.className = 'cselect-option';
-        o.setAttribute('role', 'option');
-        o.textContent = opt.textContent || opt.value || '—';
-        if (opt.disabled) o.disabled = true;
-        if (i === sel.selectedIndex) o.setAttribute('aria-selected', 'true');
-        o.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (opt.disabled) return;
-          sel.selectedIndex = i;
-          sel.dispatchEvent(new Event('change', { bubbles: true }));
-          syncLabel();
-          close();
+      const searchable = sel.dataset.searchable === '1' || sel.options.length > 12;
+      let filter = '';
+
+      const appendOptions = () => {
+        menu.querySelectorAll('.cselect-option, .cselect-empty').forEach((n) => n.remove());
+        const q = filter.trim().toLowerCase();
+        let shown = 0;
+        Array.from(sel.options).forEach((opt, i) => {
+          const text = opt.textContent || opt.value || '—';
+          if (q && !text.toLowerCase().includes(q) && !(opt.value || '').includes(q)) return;
+          const o = document.createElement('button');
+          o.type = 'button';
+          o.className = 'cselect-option' + (opt.selected ? ' is-selected' : '');
+          o.setAttribute('role', 'option');
+          o.textContent = text;
+          if (opt.disabled) o.disabled = true;
+          o.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (opt.disabled) return;
+            sel.selectedIndex = i;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            syncLabel();
+            close();
+          });
+          menu.appendChild(o);
+          shown++;
         });
-        menu.appendChild(o);
-      });
+        if (!shown) {
+          const empty = document.createElement('div');
+          empty.className = 'cselect-empty';
+          empty.textContent = 'No matches';
+          menu.appendChild(empty);
+        }
+        place();
+      };
+
+      if (searchable) {
+        const searchWrap = document.createElement('div');
+        searchWrap.className = 'cselect-search';
+        const input = document.createElement('input');
+        input.type = 'search';
+        input.placeholder = 'Search…';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('keydown', (e) => e.stopPropagation());
+        input.addEventListener('input', () => {
+          filter = input.value || '';
+          appendOptions();
+        });
+        searchWrap.appendChild(input);
+        menu.appendChild(searchWrap);
+        setTimeout(() => input.focus(), 30);
+      }
+
+      appendOptions();
       menu.hidden = false;
       menu.classList.remove('is-leaving');
-      // force reflow so enter transition plays
       void menu.offsetWidth;
       menu.classList.add('is-open');
       wrap.dataset.open = '1';
       btn.setAttribute('aria-expanded', 'true');
       place();
     };
+
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (wrap.dataset.open === '1') close();
+      if (wrap.dataset.open === '1') softClose();
       else open();
     });
     sel.addEventListener('change', syncLabel);
   });
 }
+
 document.addEventListener('click', (e) => {
   if (e.target.closest && (e.target.closest('.cselect') || e.target.closest('.cselect-menu'))) return;
   document.querySelectorAll('.cselect-menu.is-open, .cselect-menu:not([hidden])').forEach((m) => {

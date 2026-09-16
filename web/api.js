@@ -64,7 +64,7 @@ function me(session, client) {
     .filter(id => client.guilds.cache.has(id))
     .map(id => {
       const g = client.guilds.cache.get(id);
-      return { id: g.id, name: g.name, icon: g.iconURL({ size: 128 }), members: g.memberCount };
+      return { id: g.id, name: g.name, icon: g.iconURL({ size: 128, extension: 'png', forceStatic: true }) || null, members: g.memberCount };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -129,7 +129,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     guild: {
       id: guild.id,
       name: guild.name,
-      icon: guild.iconURL({ size: 128 }),
+      icon: guild.iconURL({ size: 128, extension: 'png', forceStatic: true }) || null,
       members: guild.memberCount,
       // Not cache.size — that counts categories and every open thread too, so
       // it reads far higher than the channel list you actually see.

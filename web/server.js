@@ -41,7 +41,7 @@ const calendar = require('./calendar');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // Raised from 64KB so a bot-avatar data URI (resized client-side) fits.
-const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_BODY_BYTES = 4 * 1024 * 1024; // server-image / avatar data URIs
 const RATE_LIMIT = { windowMs: 60_000, max: 120 };
 
 /* ─── rate limiting ──────────────────────────────────────────────────────── */
