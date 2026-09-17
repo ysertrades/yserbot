@@ -44,6 +44,17 @@ module.exports = {
     const guildId = message.guildId || message.guild?.id;
     if (guildId && message.id) forgetPanelPosts(guildId, message.id);
 
+    // Giveaway cards are bot messages (often uncached/partial). Still drop
+    // panel Live/Ended rows when the channel message is deleted by anyone.
+    if (message.id) {
+      try {
+        require('../commands/utility/giveaway.js').purgeByMessageId?.(message.id, guildId);
+      } catch {}
+      try {
+        require('../commands/economy/coinsgiveaway.js').purgeByMessageId?.(message.id, guildId);
+      } catch {}
+    }
+
     if (!message.guild || message.partial) return; // can't read content of an uncached (partial) message
     if (message.author?.bot) return;
     if (isDeleteLogSuppressed(message.id)) return; // already logged by auto-mod or /purge itself

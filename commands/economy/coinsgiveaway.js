@@ -986,3 +986,43 @@ module.exports.performReroll    = performReroll;
 module.exports.getActive        = getActive;
 module.exports.ACTIVE_FILE      = ACTIVE_FILE;
 module.exports.ENDED_FILE       = ENDED_FILE;
+
+function purgeByMessageId(messageId, guildId) {
+  const mid = String(messageId || '');
+  if (!mid) return { removed: false };
+  let removed = false;
+  try {
+    if (typeof coinsTimers !== 'undefined' && coinsTimers?.has?.(mid)) {
+      clearTimeout(coinsTimers.get(mid));
+      coinsTimers.delete(mid);
+    }
+  } catch {}
+  try { global.coinsGiveawayEntrants?.delete(mid); } catch {}
+
+  const active = readJson(ACTIVE_FILE, {});
+  if (active[mid]) {
+    const g = active[mid].guildId;
+    if (!guildId || !g || String(g) === String(guildId)) {
+      delete active[mid];
+      writeJson(ACTIVE_FILE, active);
+      removed = true;
+    }
+  }
+  const ended = readJson(ENDED_FILE, {});
+  const guilds = guildId ? [String(guildId)] : Object.keys(ended);
+  for (const gid of guilds) {
+    const bag = ended[gid];
+    if (!bag || typeof bag !== 'object') continue;
+    for (const [sid, rec] of Object.entries(bag)) {
+      if (String(rec?.messageId || '') === mid) {
+        delete bag[sid];
+        removed = true;
+      }
+    }
+    if (bag && Object.keys(bag).length === 0) delete ended[gid];
+  }
+  if (removed) writeJson(ENDED_FILE, ended);
+  return { removed };
+}
+
+module.exports.purgeByMessageId = purgeByMessageId;

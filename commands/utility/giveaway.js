@@ -1436,6 +1436,59 @@ module.exports = {
   },
 };
 
+
+/**
+ * When a giveaway announcement is deleted in Discord, drop every panel
+ * record keyed by that message id (active timer + ended / empty slots).
+ * Safe to call for any message id; no-ops if nothing matches.
+ */
+function purgeByMessageId(messageId, guildId) {
+  const mid = String(messageId || '');
+  if (!mid) return { removed: false };
+
+  let removed = false;
+
+  // Live timer + memory
+  try {
+    if (typeof giveawayTimers !== 'undefined' && giveawayTimers.has(mid)) {
+      clearTimeout(giveawayTimers.get(mid));
+      giveawayTimers.delete(mid);
+    }
+  } catch {}
+  try { global.giveawayEntrants?.delete(mid); } catch {}
+  try { global.giveawayMeta?.delete(mid); } catch {}
+
+  const active = readJson(ACTIVE_FILE, {});
+  if (active[mid]) {
+    const g = active[mid].guildId;
+    if (!guildId || !g || String(g) === String(guildId)) {
+      delete active[mid];
+      writeJson(ACTIVE_FILE, active);
+      removed = true;
+    }
+  }
+
+  // Ended (including empty / needsRestart)
+  const ended = readJson('giveaways_ended.json', {});
+  const guilds = guildId ? [String(guildId)] : Object.keys(ended);
+  for (const gid of guilds) {
+    const bag = ended[gid];
+    if (!bag || typeof bag !== 'object') continue;
+    for (const [sid, rec] of Object.entries(bag)) {
+      if (String(rec?.messageId || '') === mid) {
+        delete bag[sid];
+        removed = true;
+      }
+    }
+    if (bag && Object.keys(bag).length === 0) delete ended[gid];
+  }
+  if (removed) writeJson('giveaways_ended.json', ended);
+
+  return { removed };
+}
+
+
+module.exports.purgeByMessageId = purgeByMessageId;
 module.exports.getActiveGiveaway    = getActiveGiveaway;
 module.exports.persistGiveawayEntry = persistGiveawayEntry;
 module.exports.restoreGiveaways     = restoreGiveaways;

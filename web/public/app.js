@@ -3009,6 +3009,31 @@ function buildLiveDropCard(x, { phase }) {
       restart.title = 'Launch this drop again with fresh settings';
       restart.addEventListener('click', () => openRestartGiveaway(x));
       act.append(restart);
+
+      const del = el('button', 'btn small danger', 'Delete');
+      del.type = 'button';
+      del.title = 'Remove from panel and delete the channel message if it still exists';
+      del.addEventListener('click', async () => {
+        if (!await askConfirm({
+          title: 'Delete this empty giveaway?',
+          message: 'Removes it from the panel and deletes the Discord message when possible.',
+          confirmLabel: 'Delete',
+          danger: true,
+        })) return;
+        del.disabled = true;
+        const out = await post('giveawaydelete', { shortId: x.shortId, kind: x.kind || 'prize' });
+        if (out && out.ok !== false && out.error == null) {
+          optimisticGawRemove(x.shortId);
+          await leaveNode(d);
+          try { renderGiveaways(); } catch (_) {}
+          softRefreshOverview();
+          toast('Empty giveaway removed.', 'good');
+        } else {
+          del.disabled = false;
+          toast('Could not delete — try again.', 'bad');
+        }
+      });
+      act.append(del);
     } else {
       const open = el('button', 'btn small primary', 'Send prize');
       open.type = 'button';
