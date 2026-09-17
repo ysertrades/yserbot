@@ -55,7 +55,8 @@ const PRIZE_DEFAULTS = {
  * @returns {Buffer} PNG image data
  */
 function generatePrizeGiveawayBannerImage(copy = {}) {
-  const { pill, heading, subtitle, tagline, dropId } = { ...PRIZE_DEFAULTS, ...copy };
+  const { pill, heading, subtitle, tagline, dropId, noEntries } = { ...PRIZE_DEFAULTS, ...copy };
+  const empty = !!noEntries;
   const W = 1000, H = 400;
   const png = new PNG({ width: W, height: H, colorType: 6 });
 
@@ -121,12 +122,35 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
 
   // ── Signature, under the gift ─────────────────────────────────────────────
   drawFlowSignature(png, Math.round(176 - signatureWidth() / 2), 306, {
-    chip: PURPLE, primary: TEXT, caption: SUBTLE,
+    chip: empty ? [220, 60, 70, 255] : PURPLE, primary: TEXT, caption: SUBTLE,
     chipAlpha: 0.18, borderAlpha: 0.45, captionAlpha: 0.85,
-    // Under QUANTLAB: drop id only (never ORIGINAL DESIGN / never colour arrays)
     captionText: dropId ? ('QL-' + String(dropId)).toUpperCase().slice(0, 16) : '',
   });
 
+  // Soft red "no entries" light — same layout, whole card reads closed/empty
+  if (empty) {
+    const RED = [220, 48, 58, 255];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        // Edge vignette + light overall wash (does not crush text)
+        const nx = Math.min(x, W - 1 - x) / (W * 0.12);
+        const ny = Math.min(y, H - 1 - y) / (H * 0.18);
+        const edge = Math.max(0, 1 - Math.min(nx, ny));
+        const a = 0.10 + edge * edge * 0.28;
+        setPxBlend(png, x, y, RED, a);
+      }
+    }
+    // Corner pulses
+    for (const [cx, cy] of [[48, 48], [W - 48, 48], [48, H - 48], [W - 48, H - 48]]) {
+      for (let y = cy - 36; y <= cy + 36; y++) {
+        for (let x = cx - 36; x <= cx + 36; x++) {
+          const d = Math.hypot(x - cx, y - cy) / 36;
+          if (d >= 1) continue;
+          setPxBlend(png, x, y, RED, (1 - d) * (1 - d) * 0.35);
+        }
+      }
+    }
+  }
 
   return PNG.sync.write(png);
 }

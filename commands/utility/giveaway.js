@@ -62,14 +62,23 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
         const w = Math.max(1, Number(opts.winners) || 1);
         const prizeText = String(opts.prize || '').trim();
         if (opts.ended) {
-          // Ended-only art: never keep live "HIT ENTER" / Studio enter copy
-          const sub = prizeText
-            ? prizeText.slice(0, 42).toUpperCase()
-            : (w === 1 ? 'ONE WINNER' : (w + ' WINNERS'));
-          const endedHeading = w === 1 ? 'WINNER SELECTED' : 'WINNERS SELECTED';
-          // Two-line tagline so the band under the rule stays filled (same as live)
-          const endedTagline =
-            'THE DRAW IS LOCKED. TAP REVEAL BELOW TO SEE IF FORTUNE FOUND YOU.';
+          const noEntries = !!opts.noEntries || Number(opts.entryCount) === 0;
+          let endedHeading, sub, endedTagline;
+          if (noEntries) {
+            endedHeading = 'NO ENTRIES';
+            sub = prizeText
+              ? prizeText.slice(0, 42).toUpperCase()
+              : 'NOBODY JOINED';
+            endedTagline =
+              'THIS DROP CLOSED EMPTY. NO WINNER TO DRAW — TRY THE NEXT ONE.';
+          } else {
+            sub = prizeText
+              ? prizeText.slice(0, 42).toUpperCase()
+              : (w === 1 ? 'ONE WINNER' : (w + ' WINNERS'));
+            endedHeading = w === 1 ? 'WINNER SELECTED' : 'WINNERS SELECTED';
+            endedTagline =
+              'THE DRAW IS LOCKED. TAP REVEAL BELOW TO SEE IF FORTUNE FOUND YOU.';
+          }
           copy = {
             ...copy,
             pill: '',
@@ -77,12 +86,13 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
             subtitle: sub,
             tagline: endedTagline,
             dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
+            noEntries,
           };
-          // Hard override after spread — Studio "enter" wording must not stick
           copy.tagline = endedTagline;
           copy.heading = endedHeading;
           copy.subtitle = sub;
           copy.pill = '';
+          copy.noEntries = noEntries;
         } else {
           copy = {
             ...copy,
@@ -646,31 +656,80 @@ async function launchGiveaway(interaction, data, sessionId) {
   });
 }
 
-// ── Pick winners (secure, weighted, deduped) ───────────────────────────────────
-// `pool` may contain duplicate userIds (bonus entries) — the shuffle is
-// weighted toward users with more entries, but each winner is still unique.
+// ── Fair draw ────────────────────────────────────────────────────────────────
+// Every entrant starts with 1 ticket (equal base chance).
+// Bonus role adds +1 ticket only (2 total) — extra chance, not a takeover.
+// Hard cap MAX_TICKETS so multi-bonus setups cannot dominate the pool.
+// Winners are drawn by weighted sampling *without replacement* so each person
+// can win at most once, and probability ∝ their tickets / remaining tickets.
+
+const BASE_TICKETS = 1;
+const BONUS_ROLE_EXTRA = 1;   // classic "2× entries" = one extra ticket
+const MAX_TICKETS_PER_USER = 3;
 
 function pickWinners(pool, count) {
-  const shuffled = [...pool];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = randomInt(i + 1);
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  // pool may list the same id multiple times (tickets). Build weights, then
+  // sample without replacement.
+  const weights = new Map();
+  for (const id of pool || []) {
+    if (!id) continue;
+    weights.set(id, (weights.get(id) || 0) + 1);
   }
   const winners = [];
-  const seen = new Set();
-  for (const id of shuffled) {
-    if (seen.has(id)) continue;
-    seen.add(id);
-    winners.push(id);
-    if (winners.length >= count) break;
+  const remaining = new Map(weights);
+  const n = Math.min(Math.max(1, count | 0), remaining.size);
+  for (let w = 0; w < n; w++) {
+    let total = 0;
+    for (const v of remaining.values()) total += v;
+    if (total <= 0) break;
+    let r = randomInt(total); // 0 .. total-1
+    let chosen = null;
+    for (const [id, wt] of remaining) {
+      r -= wt;
+      if (r < 0) { chosen = id; break; }
+    }
+    if (chosen == null) {
+      // Fallback: first remaining key
+      chosen = remaining.keys().next().value;
+    }
+    winners.push(chosen);
+    remaining.delete(chosen);
   }
   return winners;
 }
 
-// Equal odds for every entrant — one slot each, no role multipliers.
-// (Bonus-role 2× entries used to stack the draw; hosts asked for a flat field.)
+/**
+ * Build a ticket list: 1 per entrant, +bonus if they hold the bonus role.
+ * Returns an array of userIds with duplicates for extra tickets.
+ */
 async function buildWeightedPool(entrantIds, guild, bonusRoleId) {
-  return Array.isArray(entrantIds) ? [...entrantIds] : [];
+  const ids = Array.isArray(entrantIds) ? [...new Set(entrantIds.map(String))] : [];
+  if (!ids.length) return [];
+
+  const pool = [];
+  const bonus = bonusRoleId ? String(bonusRoleId) : null;
+
+  // Prefetch members when we need role checks
+  let members = null;
+  if (bonus && guild?.members) {
+    try {
+      if (guild.members.fetch) {
+        await guild.members.fetch({ user: ids }).catch(() => null);
+      }
+      members = guild.members.cache;
+    } catch { members = guild.members.cache; }
+  }
+
+  for (const id of ids) {
+    let tickets = BASE_TICKETS;
+    if (bonus && members) {
+      const m = members.get(id);
+      if (m?.roles?.cache?.has(bonus)) tickets += BONUS_ROLE_EXTRA;
+    }
+    tickets = Math.min(MAX_TICKETS_PER_USER, Math.max(BASE_TICKETS, tickets));
+    for (let i = 0; i < tickets; i++) pool.push(id);
+  }
+  return pool;
 }
 
 async function dmWinners(client, guild, winnerIds, prize, hostId, { rerolled = false } = {}) {
@@ -717,6 +776,8 @@ async function endGiveaway(message, meta) {
           dropId: (meta && meta.dropId) || undefined,
           prize,
           ended: true,
+          noEntries: true,
+          entryCount: 0,
         });
       } else if (imageUrl && /^https:\/\//i.test(String(imageUrl))) {
         emptyBanner = { url: String(imageUrl), files: [] };
