@@ -40,6 +40,30 @@ const PURPLE_L = LIGHT.purpleLight;
 const PURPLE_D = LIGHT.purpleDeep;
 const CYAN   = LIGHT.cyan;
 const SKY    = LIGHT.sky;
+// Soft rose/coral for empty-state headings — sits with purple brand, not neon red
+const ROSE_A = [232, 96, 118, 255];
+const ROSE_B = [196, 64, 96, 255];
+
+/** Centered text with a left→right colour blend (per glyph). */
+function drawCenteredGradientText(png, text, cx, y, scale, c0, c1) {
+  const s = String(text || '');
+  if (!s) return;
+  const total = textWidth(s, scale);
+  let x = Math.round(cx - total / 2);
+  const n = Math.max(1, s.length - 1);
+  for (let i = 0; i < s.length; i++) {
+    const t = n === 0 ? 0 : i / n;
+    const col = [
+      Math.round(c0[0] + (c1[0] - c0[0]) * t),
+      Math.round(c0[1] + (c1[1] - c0[1]) * t),
+      Math.round(c0[2] + (c1[2] - c0[2]) * t),
+      255,
+    ];
+    const ch = s[i];
+    drawText(png, ch, x, y, scale, col);
+    x += textWidth(ch, scale);
+  }
+}
 
 // Passing nothing has to produce a finished card — the same rule the other
 // two banners follow, so the no-arg render keeps its cache entry.
@@ -104,9 +128,16 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
   const width = right - left;
 
   const headScale = fitScale(heading, width, 6, 2);
-  drawTextCentered(png, heading, cx, 108 + (6 - headScale) * GLYPH_H / 2, headScale, TEXT);
+  const headY = 108 + (6 - headScale) * GLYPH_H / 2;
+  if (empty) {
+    // Same layout as a normal end card — only the heading uses a soft brand
+    // rose→coral gradient (no full-card red wash).
+    drawCenteredGradientText(png, heading, cx, headY, headScale, ROSE_A, ROSE_B);
+  } else {
+    drawTextCentered(png, heading, cx, headY, headScale, TEXT);
+  }
 
-  drawTextCentered(png, subtitle, cx, 108 + 6 * GLYPH_H + 14, fitScale(subtitle, width, 3, 1), PURPLE_L);
+  drawTextCentered(png, subtitle, cx, 108 + 6 * GLYPH_H + 14, fitScale(subtitle, width, 3, 1), empty ? ROSE_A : PURPLE_L);
 
   // The one signature gradient rule — sky → periwinkle, sparingly, as the
   // brand book asks — under the heading, where a hero surface belongs.
@@ -122,35 +153,10 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
 
   // ── Signature, under the gift ─────────────────────────────────────────────
   drawFlowSignature(png, Math.round(176 - signatureWidth() / 2), 306, {
-    chip: empty ? [220, 60, 70, 255] : PURPLE, primary: TEXT, caption: SUBTLE,
+    chip: PURPLE, primary: TEXT, caption: SUBTLE,
     chipAlpha: 0.18, borderAlpha: 0.45, captionAlpha: 0.85,
     captionText: dropId ? ('QL-' + String(dropId)).toUpperCase().slice(0, 16) : '',
   });
-
-  // Soft red "no entries" light — same layout, whole card reads closed/empty
-  if (empty) {
-    const RED = [220, 48, 58, 255];
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        // Edge vignette + light overall wash (does not crush text)
-        const nx = Math.min(x, W - 1 - x) / (W * 0.12);
-        const ny = Math.min(y, H - 1 - y) / (H * 0.18);
-        const edge = Math.max(0, 1 - Math.min(nx, ny));
-        const a = 0.10 + edge * edge * 0.28;
-        setPxBlend(png, x, y, RED, a);
-      }
-    }
-    // Corner pulses
-    for (const [cx, cy] of [[48, 48], [W - 48, 48], [48, H - 48], [W - 48, H - 48]]) {
-      for (let y = cy - 36; y <= cy + 36; y++) {
-        for (let x = cx - 36; x <= cx + 36; x++) {
-          const d = Math.hypot(x - cx, y - cy) / 36;
-          if (d >= 1) continue;
-          setPxBlend(png, x, y, RED, (1 - d) * (1 - d) * 0.35);
-        }
-      }
-    }
-  }
 
   return PNG.sync.write(png);
 }
