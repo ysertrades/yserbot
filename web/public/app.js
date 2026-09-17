@@ -1103,10 +1103,11 @@ function renderWhop() {
 
   children.push(textField("Company ID", draft.companyId, v => { draft.companyId = v; }, { placeholder: "biz_…" }));
   children.push(el("p", "hint", "Required. Example: biz_61…"));
-  children.push(textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 10; }));
+  children.push(textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 2; }));
+  children.push(el("p", "hint", "How often Discord is checked for new lessons (minimum 2). Lower = closer to instant."));
   children.push(toggle("Only video lessons", draft.onlyVideos, v => { draft.onlyVideos = v; }));
-  children.push(textField("Button label", draft.buttonLabel, v => { draft.buttonLabel = v; }, { placeholder: "open course" }));
-  children.push(el("p", "hint", "Link on each post opens your Whop automatically."));
+  children.push(textField("Button label", draft.buttonLabel, v => { draft.buttonLabel = v; }, { placeholder: "Open course" }));
+  children.push(el("p", "hint", "Each alert includes course name, course app, and banner art when available."));
 
   if (d.lastError) children.push(el("p", "hint bad", String(d.lastError)));
   else if (d.lastScanAt) children.push(el("p", "hint", "Last scan · " + new Date(d.lastScanAt).toLocaleString()));
@@ -1161,13 +1162,15 @@ function renderWhop() {
     const grid = el("div", "track-grid");
     for (const e of slice) {
       const card = el("div", "track-card");
+      const kind = e.type === 'app' ? 'Course app' : 'Course';
       card.append(
-        el("p", "track-title", e.title || e.id),
+        el("p", "track-title", (e.type === 'app' ? '▦ ' : '') + (e.title || e.id)),
         el("p", "track-meta",
-          (e.channel ? ("#" + e.channel + " · ") : "")
-          + (e.knownCount || 0) + " lessons"
-          + (e.baselined ? " · baselined" : " · warming up")
-          + (e.addedAt ? (" · " + new Date(e.addedAt).toLocaleDateString()) : "")
+          kind
+          + (e.experienceName && e.type !== 'app' ? (" · " + e.experienceName) : "")
+          + (e.channel ? (" · #" + e.channel) : "")
+          + " · " + (e.knownCount || 0) + " lessons"
+          + (e.baselined ? " · live" : " · warming up")
         )
       );
       let ch = e.channelId || null;
@@ -1242,16 +1245,65 @@ function renderWhop() {
     blocks.push(desk);
   }
 
-  /* ---- Course library from scan ---- */
-  blocks.push(el("h3", null, "Course library"));
+  /* ---- Course apps (experiences that host courses) ---- */
+  const apps = Array.isArray(d.apps) ? d.apps : [];
+  blocks.push(el("h3", null, "Course apps"));
+  if (d.companyTitle) {
+    blocks.push(el("p", "hint", "Workspace · " + d.companyTitle));
+  }
+  if (!apps.length) {
+    blocks.push(el("p", "muted", "No course apps yet. Scan after saving API key + Company ID — apps appear when courses are linked to them."));
+  } else {
+    const freeApps = apps.filter(a => !a.inLog);
+    blocks.push(el("p", "hint", apps.length + " app(s) · track a whole app to catch every new lesson in every course inside it."));
+    if (freeApps.length) {
+      let appId = null, appCh = null, appRole = null;
+      blocks.push(select(
+        "Course app",
+        "",
+        freeApps.map(a => ({
+          value: a.id,
+          label: (a.name || a.id) + (a.courseCount != null ? (" · " + a.courseCount + " course(s)") : ""),
+        })),
+        v => { appId = v || null; },
+        { blank: "Choose a course app…" },
+      ));
+      blocks.push(pickOne("Channel for this app", "channel", null, v => { appCh = v; }));
+      blocks.push(pickOne("Ping role (optional)", "role", null, v => { appRole = v; }));
+      const appRow = el("div", "actions");
+      const appBtn = el("button", "btn primary small", "Track entire app");
+      appBtn.type = "button";
+      appBtn.addEventListener("click", async () => {
+        if (!appId) { toast("Choose a course app.", "bad"); return; }
+        if (!appCh) { toast("Choose a channel.", "bad"); return; }
+        appBtn.disabled = true;
+        try {
+          await post("whop", {
+            op: "add_app",
+            experienceId: appId,
+            channelId: appCh,
+            mentionRoleId: appRole,
+          });
+          toast("Course app tracked — existing lessons baselined.", "good");
+        } finally { appBtn.disabled = false; }
+      });
+      appRow.append(appBtn);
+      blocks.push(appRow);
+    } else {
+      blocks.push(el("p", "muted", "Every course app is already in the tracking log."));
+    }
+  }
+
+  /* ---- Single courses from scan ---- */
+  blocks.push(el("h3", null, "Courses"));
   if (!catalog.length) {
     blocks.push(el("p", "muted", "No library yet. Save API key + Company ID, then press Scan courses."));
   } else {
     const available = catalog.filter(c => !c.inLog);
-    blocks.push(el("p", "hint", catalog.length + " course(s) scanned · " + available.length + " available to add"));
+    blocks.push(el("p", "hint", catalog.length + " course(s) · " + available.length + " not tracked yet (or only via an app)"));
 
     if (!available.length) {
-      blocks.push(el("p", "muted", "Every scanned course is already in the tracking log."));
+      blocks.push(el("p", "muted", "Every scanned course is already tracked individually."));
     } else {
       let pickId = null;
       let pickCh = null;
@@ -1259,7 +1311,9 @@ function renderWhop() {
 
       const options = available.map(c => ({
         value: c.id,
-        label: (c.title || c.id) + (c.lessonsCount != null ? (" · " + c.lessonsCount + " lessons") : ""),
+        label: (c.title || c.id)
+          + (c.experienceName ? (" · " + c.experienceName) : "")
+          + (c.lessonsCount != null ? (" · " + c.lessonsCount + " lessons") : ""),
       }));
 
       blocks.push(select("Course", "", options, v => { pickId = v || null; }, { blank: "Choose a course…" }));
@@ -1267,7 +1321,7 @@ function renderWhop() {
       blocks.push(pickOne("Ping role (optional)", "role", null, v => { pickRole = v; }));
 
       const addRow = el("div", "actions");
-      const addBtn = el("button", "btn primary small", "Add to tracking log");
+      const addBtn = el("button", "btn primary small", "Track this course");
       addBtn.type = "button";
       addBtn.addEventListener("click", async () => {
         if (!pickId) { toast("Choose a course.", "bad"); return; }
@@ -1280,23 +1334,11 @@ function renderWhop() {
             channelId: pickCh,
             mentionRoleId: pickRole,
           });
-          toast("Added to tracking log.", "good");
+          toast("Course tracked.", "good");
         } finally { addBtn.disabled = false; }
       });
       addRow.append(addBtn);
       blocks.push(addRow);
-
-      // Also list names so user can see what was found
-      const ul = el("div", "items");
-      for (const c of catalog) {
-        const line = el("p", "hint",
-          (c.inLog ? "✓ " : "· ") + (c.title || c.id)
-          + (c.lessonsCount != null ? (" · " + c.lessonsCount + " lessons") : "")
-          + (c.inLog ? " (in log)" : "")
-        );
-        ul.append(line);
-      }
-      blocks.push(ul);
     }
   }
 

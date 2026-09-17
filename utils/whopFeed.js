@@ -16,12 +16,14 @@ const DEFAULTS = {
   apiKey: null,
   companyId: null,
   companyRoute: null,
+  companyTitle: null,   // public name of the Whop / course workspace
   pollMinutes: 10,
   onlyVideos: true,
   maxPerCheck: 3,
-  buttonLabel: 'open course',
-  catalog: [],
-  log: [],
+  buttonLabel: 'Open course',
+  catalog: [],          // courses (each carries experienceId + experienceName)
+  apps: [],             // course apps (experiences that host courses)
+  log: [],              // tracked courses and/or whole apps
   lastScanAt: 0,
   lastError: null,
 };
@@ -50,6 +52,7 @@ function getSettings(guildId) {
     catalog: Array.isArray(stored.catalog)
       ? stored.catalog
       : (Array.isArray(stored.courses) ? stored.courses : []),
+    apps: Array.isArray(stored.apps) ? stored.apps : [],
     log,
     pollMinutes: Math.min(120, Math.max(2, Number(stored.pollMinutes) || 10)),
     maxPerCheck: Math.min(10, Math.max(1, Number(stored.maxPerCheck) || 3)),
@@ -185,6 +188,7 @@ async function listCourses(apiKey, settings) {
         if (cursor) params.after = cursor;
         const data = await whopFetch(apiKey, '/courses', params);
         for (const c of (data?.data || [])) {
+          const exp = c.experience || {};
           out.push({
             id: c.id,
             title: c.title || c.id,
@@ -192,7 +196,8 @@ async function listCourses(apiKey, settings) {
             chaptersCount: c.chapters_count ?? null,
             lessonsCount: c.total_lessons_count ?? null,
             cover: pickCover(c),
-            experienceId: c.experience?.id || c.experience_id || null,
+            experienceId: exp.id || c.experience_id || null,
+            experienceName: exp.name || exp.title || exp.app_name || null,
           });
         }
         if (!data?.page_info?.has_next_page) break;
@@ -204,6 +209,55 @@ async function listCourses(apiKey, settings) {
     }
   }
   throw lastErr || new Error('list_courses_failed');
+}
+
+
+/** Course apps = experiences under the company that host courses. */
+async function listExperiences(apiKey, settings) {
+  if (!settings.companyId) return [];
+  const scopes = [
+    { company_id: settings.companyId },
+    { account_id: settings.companyId },
+  ];
+  let lastErr = null;
+  for (const scope of scopes) {
+    try {
+      const out = [];
+      let cursor = null;
+      for (let page = 0; page < 15; page++) {
+        const params = { first: 50, ...scope };
+        if (cursor) params.after = cursor;
+        const data = await whopFetch(apiKey, '/experiences', params);
+        for (const x of (data?.data || [])) {
+          const id = x.id;
+          if (!id) continue;
+          out.push({
+            id,
+            name: x.name || x.title || x.app?.name || id,
+            description: x.description || null,
+            appName: x.app?.name || x.app_name || null,
+            image: pickCover(x) || (typeof x.image_url === 'string' ? x.image_url : null),
+          });
+        }
+        if (!data?.page_info?.has_next_page) break;
+        cursor = data.page_info.end_cursor;
+      }
+      return out;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (lastErr) console.warn('[WHOP] listExperiences:', lastErr.message);
+  return [];
+}
+
+async function retrieveExperience(apiKey, experienceId) {
+  if (!experienceId) return null;
+  try {
+    return await whopFetch(apiKey, `/experiences/${experienceId}`);
+  } catch {
+    return null;
+  }
 }
 
 async function listLessons(apiKey, courseId) {
@@ -273,16 +327,58 @@ async function scanCourses(guildId) {
   if (!s.apiKey) throw Object.assign(new Error('no_api_key'), { detail: 'API key missing.' });
   if (!s.companyId) throw Object.assign(new Error('missing_company'), { detail: 'Company ID (biz_…) required.' });
 
-  // Resolve public route for buttons if missing
   let companyRoute = s.companyRoute;
-  if (!companyRoute) {
-    companyRoute = await fetchCompanyRoute(s.apiKey, s.companyId);
+  let companyTitle = s.companyTitle;
+  if (!companyRoute || !companyTitle) {
+    try {
+      const resolved = await resolveCompany(s.apiKey);
+      if (resolved?.companyRoute) companyRoute = resolved.companyRoute;
+      if (resolved?.title) companyTitle = resolved.title;
+    } catch { /* */ }
+    if (!companyRoute) companyRoute = await fetchCompanyRoute(s.apiKey, s.companyId);
   }
 
-  const catalog = await listCourses(s.apiKey, s);
+  const [catalog, appsRaw] = await Promise.all([
+    listCourses(s.apiKey, s),
+    listExperiences(s.apiKey, s),
+  ]);
+
+  // Fill missing experience names from the apps list
+  const appById = Object.fromEntries(appsRaw.map(a => [a.id, a]));
+  for (const c of catalog) {
+    if (!c.experienceName && c.experienceId && appById[c.experienceId]) {
+      c.experienceName = appById[c.experienceId].name;
+    }
+  }
+
+  // Course apps = experiences that actually host at least one course
+  const usedExp = new Set(catalog.map(c => c.experienceId).filter(Boolean));
+  let apps = appsRaw.filter(a => usedExp.has(a.id));
+  // If API hid experiences, still surface apps from course data
+  if (!apps.length && usedExp.size) {
+    apps = [...usedExp].map(id => {
+      const sample = catalog.find(c => c.experienceId === id);
+      return {
+        id,
+        name: sample?.experienceName || id,
+        description: null,
+        appName: 'Courses',
+        image: sample?.cover || null,
+        courseCount: catalog.filter(c => c.experienceId === id).length,
+      };
+    });
+  } else {
+    apps = apps.map(a => ({
+      ...a,
+      courseCount: catalog.filter(c => c.experienceId === a.id).length,
+    }));
+  }
+
   setSettings(guildId, {
     catalog,
+    apps,
     companyRoute: companyRoute || s.companyRoute,
+    companyTitle: companyTitle || s.companyTitle,
     lastScanAt: Date.now(),
     lastError: null,
   });
@@ -303,10 +399,12 @@ async function addToLog(guildId, courseId, { channelId = null, mentionRoleId = n
   }
 
   let entry = {
+    type: 'course',
     id: fromCatalog.id,
     title: fromCatalog.title,
     cover,
     experienceId: fromCatalog.experienceId || null,
+    experienceName: fromCatalog.experienceName || null,
     channelId: channelId || null,
     mentionRoleId: mentionRoleId || null,
     known: {},
@@ -320,6 +418,65 @@ async function addToLog(guildId, courseId, { channelId = null, mentionRoleId = n
   const log = [...s.log, entry];
   setSettings(guildId, { log, lastError: null });
   return { ok: true, settings: getSettings(guildId) };
+}
+
+
+/** Track an entire course app (experience) — every course under it. */
+async function addAppToLog(guildId, experienceId, { channelId = null, mentionRoleId = null } = {}) {
+  const s = getSettings(guildId);
+  if (s.log.some(e => e.type === 'app' && e.id === experienceId)) {
+    return { ok: true, already: true, settings: s };
+  }
+
+  const fromApps = (s.apps || []).find(a => a.id === experienceId);
+  const courses = (s.catalog || []).filter(c => c.experienceId === experienceId);
+  if (!fromApps && !courses.length) return { error: 'unknown_app' };
+
+  let entry = {
+    type: 'app',
+    id: experienceId,
+    title: fromApps?.name || courses[0]?.experienceName || experienceId,
+    cover: fromApps?.image || courses[0]?.cover || null,
+    experienceId,
+    experienceName: fromApps?.name || courses[0]?.experienceName || null,
+    channelId: channelId || null,
+    mentionRoleId: mentionRoleId || null,
+    known: {},
+    baselined: false,
+    addedAt: Date.now(),
+  };
+
+  if (s.apiKey) entry = await baselineAppEntry(s.apiKey, entry, courses.map(c => c.id));
+
+  const log = [...s.log, entry];
+  setSettings(guildId, { log, lastError: null });
+  return { ok: true, settings: getSettings(guildId) };
+}
+
+async function baselineAppEntry(apiKey, entry, courseIds) {
+  const known = { ...(entry.known || {}) };
+  const ids = courseIds?.length
+    ? courseIds
+    : (await listCourses(apiKey, { companyId: null })).map(c => c.id); // fallback unused
+  // Prefer explicit course ids from catalog
+  let list = courseIds;
+  if (!list || !list.length) {
+    try {
+      // Re-list all courses and filter by experience
+      const all = [];
+      // listCourses needs company — caller passes ids when possible
+    } catch { /* */ }
+  }
+  const targets = Array.isArray(courseIds) ? courseIds : [];
+  for (const cid of targets) {
+    try {
+      const lessons = await listLessons(apiKey, cid);
+      for (const l of lessons) known[l.id] = true;
+    } catch (err) {
+      console.warn(`[WHOP] baseline app course ${cid}:`, err.message);
+    }
+  }
+  return { ...entry, known, baselined: true };
 }
 
 function removeFromLog(guildId, courseId) {
@@ -420,12 +577,62 @@ async function newLessons(guildId) {
     fresh.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
     const batch = fresh.slice(0, s.maxPerCheck);
 
+    // App-level: scan every course under this experience
+    if (e.type === 'app') {
+      const courseIds = (s.catalog || [])
+        .filter(c => c.experienceId === e.id)
+        .map(c => c.id);
+      // Also pick up courses not yet in catalog by reusing catalog only
+      for (const cid of courseIds) {
+        let lessons;
+        try { lessons = await listLessons(s.apiKey, cid); }
+        catch (err) {
+          console.warn(`[WHOP] listLessons ${cid}:`, err.message);
+          continue;
+        }
+        const courseMeta = (s.catalog || []).find(c => c.id === cid) || {};
+        const fresh = [];
+        for (const lesson of lessons) {
+          if (known[lesson.id]) continue;
+          if (s.onlyVideos && lesson.lessonType !== 'video') {
+            known[lesson.id] = true;
+            continue;
+          }
+          if (lesson.visibility === 'hidden') {
+            known[lesson.id] = true;
+            continue;
+          }
+          fresh.push(lesson);
+        }
+        fresh.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+        const batch = fresh.slice(0, s.maxPerCheck);
+        for (const lesson of batch) {
+          posts.push({
+            ...lesson,
+            courseId: cid,
+            courseTitle: courseMeta.title || cid,
+            courseCover: courseMeta.cover || e.cover || null,
+            appName: e.experienceName || e.title || s.companyTitle || 'Courses',
+            companyTitle: s.companyTitle || null,
+            lessonUrl: lessonLink(s, { experienceId: e.id }),
+            channelId: e.channelId,
+            mentionRoleId: e.mentionRoleId || null,
+          });
+          known[lesson.id] = true;
+        }
+      }
+      nextLog.push({ ...e, known, baselined: true });
+      continue;
+    }
+
     for (const lesson of batch) {
       posts.push({
         ...lesson,
         courseId: e.id,
         courseTitle: e.title,
         courseCover: e.cover || null,
+        appName: e.experienceName || s.companyTitle || 'Courses',
+        companyTitle: s.companyTitle || null,
         lessonUrl: lessonLink(s, e),
         channelId: e.channelId,
         mentionRoleId: e.mentionRoleId || null,
@@ -449,9 +656,11 @@ module.exports = {
   resolveCompany,
   fetchCompanyRoute,
   listCourses,
+  listExperiences,
   listLessons,
   scanCourses,
   addToLog,
+  addAppToLog,
   removeFromLog,
   updateLogEntry,
   baselineAll,

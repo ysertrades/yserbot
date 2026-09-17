@@ -22,8 +22,9 @@ function buildLessonEmbed(guildId, lesson) {
   const embed = messageStyle.build(guildId, 'whop.lesson', {
     at: lesson.createdAt ? new Date(lesson.createdAt) : null,
     tokens: {
-      title: lesson.title || 'new lesson',
+      title: lesson.title || 'New lesson',
       course: lesson.courseTitle || '',
+      app: lesson.appName || lesson.companyTitle || 'Courses',
       type: lesson.lessonType || 'video',
       url: '',
       server: '',
@@ -51,11 +52,12 @@ function buildLessonEmbed(guildId, lesson) {
   if (!embed.data?.image?.url) {
     try {
       const courseName = (lesson.courseTitle || 'COURSE').toUpperCase().slice(0, 28);
+      const appLine = (lesson.appName || lesson.companyTitle || 'COURSES').toUpperCase().slice(0, 32);
       const png = generateWhopBannerImage({
         pill: 'NEW LESSON',
         heading: courseName,
         subtitle: (lesson.title || 'NEW LESSON').toUpperCase().slice(0, 40),
-        tagline: 'A NEW LESSON JUST DROPPED IN THIS COURSE.',
+        tagline: appLine + ' · A NEW LESSON JUST DROPPED.',
       });
       const name = 'whop-lesson.png';
       files.push(new AttachmentBuilder(png, { name }));
@@ -115,6 +117,12 @@ async function checkGuild(client, guildId) {
   let settings = whop.getSettings(guildId);
   if (!settings.enabled || !settings.apiKey || !settings.log.length) return;
 
+  // Near-immediate: poll interval is minutes, but the runner ticks every 60s.
+  // Skip if last successful check was within the configured window (min 1m).
+  const intervalMs = Math.max(60_000, (Number(settings.pollMinutes) || 2) * 60_000);
+  const last = Number(settings.lastCheckAt) || 0;
+  if (last && Date.now() - last < intervalMs - 5_000) return;
+
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
 
@@ -143,7 +151,7 @@ async function checkGuild(client, guildId) {
     await sleep(GAP_MS);
   }
 
-  whop.setSettings(guildId, { lastError: null });
+  whop.setSettings(guildId, { lastError: null, lastCheckAt: Date.now() });
 }
 
 async function runTick(client) {

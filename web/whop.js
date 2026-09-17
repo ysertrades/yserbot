@@ -32,18 +32,31 @@ function read(guildId, guild) {
     onlyVideos: !!s.onlyVideos,
     maxPerCheck: s.maxPerCheck,
     buttonLabel: s.buttonLabel,
+    companyTitle: s.companyTitle || null,
     catalog: (s.catalog || []).map(c => ({
       id: c.id,
       title: c.title,
       tagline: c.tagline,
       lessonsCount: c.lessonsCount,
       cover: c.cover,
-      inLog: s.log.some(e => e.id === c.id),
+      experienceId: c.experienceId || null,
+      experienceName: c.experienceName || null,
+      inLog: s.log.some(e => e.type !== 'app' && e.id === c.id),
+    })),
+    apps: (s.apps || []).map(a => ({
+      id: a.id,
+      name: a.name,
+      appName: a.appName || 'Courses',
+      courseCount: a.courseCount ?? (s.catalog || []).filter(c => c.experienceId === a.id).length,
+      image: a.image || null,
+      inLog: s.log.some(e => e.type === 'app' && e.id === a.id),
     })),
     log: s.log.map(e => ({
       id: e.id,
+      type: e.type || 'course',
       title: e.title,
       cover: e.cover,
+      experienceName: e.experienceName || null,
       channelId: e.channelId,
       channel: channelName(e.channelId),
       mentionRoleId: e.mentionRoleId,
@@ -139,6 +152,19 @@ async function saveSettings(guildId, body, { guild }) {
     });
     if (r.error) return r;
     return { ok: true, changed: r.already ? ['already in log'] : ['added to log (baselined — no flood)'] };
+  }
+
+  if (body.op === 'add_app' && body.experienceId) {
+    const ch = channelIn(guild, body.channelId);
+    if (!ch.ok || !ch.value) return { error: 'bad_channel', detail: 'Pick a channel before adding the app.' };
+    const role = roleIn(guild, body.mentionRoleId);
+    if (!role.ok) return { error: 'bad_role' };
+    const r = await whop.addAppToLog(guildId, String(body.experienceId), {
+      channelId: ch.value,
+      mentionRoleId: role.value,
+    });
+    if (r.error) return r;
+    return { ok: true, changed: r.already ? ['app already tracked'] : ['course app tracked (all courses baselined)'] };
   }
 
   if (body.op === 'remove' && body.courseId) {
