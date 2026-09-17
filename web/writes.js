@@ -494,6 +494,12 @@ Object.assign(OPS, {
     }
     return r;
   },
+  async giveawayrestart(guildId, body, ctx) {
+    const r = await giveaways.restartEmpty(guildId, body, ctx);
+    if (r.ok) await announce(ctx.client, guildId, ctx.session,
+      `🔁 Restarted empty giveaway **${r.label}** in #${r.channelName}`, 'giveaways');
+    return r;
+  },
   async giveawayclearhistory(guildId, body, ctx) {
     const r = giveaways.clearHistory(guildId);
     if (r.ok) {

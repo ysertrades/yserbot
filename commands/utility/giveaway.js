@@ -803,6 +803,32 @@ async function endGiveaway(message, meta) {
     } catch (err) {
       console.error('[GIVEAWAY END] empty V2 update failed:', err.message ?? err);
     }
+
+    // Keep in panel Live as "empty — restart" (not a prize-send, not history yet)
+    const shortId = (meta && meta.dropId) || genId(guildId);
+    const allEnded = readJson('giveaways_ended.json', {});
+    if (!allEnded[guildId]) allEnded[guildId] = {};
+    allEnded[guildId][shortId] = {
+      prize,
+      hostId,
+      winnersCount: winnersCount || 1,
+      imageUrl: imageUrl || null,
+      messageId: message.id,
+      channelId: message.channelId,
+      entrants: [],
+      bonusRoleId: bonusRoleId || null,
+      requiredRoleId: (meta && meta.requiredRoleId) || null,
+      minAccountAgeDays: (meta && meta.minAccountAgeDays) || 0,
+      currentWinners: [],
+      createdAt: createdAt || null,
+      endedAt: Date.now(),
+      revealed: true,
+      prizeDmSent: false,
+      empty: true,          // panel: Restart instead of Send prize
+      needsRestart: true,
+    };
+    writeJson('giveaways_ended.json', allEnded);
+
     removeActiveGiveaway(message.id);
     global.giveawayEntrants.delete(message.id);
     global.giveawayMeta?.delete(message.id);

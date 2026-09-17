@@ -103,6 +103,15 @@ function list(guildId, guild) {
       endedAt: d.endedAt ?? d.createdAt ?? null,
       prizeDmSent: !!d.prizeDmSent,
       revealed: !!d.revealed,
+      empty: !!d.empty || ((d.entrants || []).length === 0 && !(d.currentWinners || []).length),
+      needsRestart: !!d.needsRestart || !!d.empty,
+      messageId: d.messageId || null,
+      channelId: d.channelId || null,
+      imageUrl: d.imageUrl || null,
+      hostId: d.hostId || null,
+      requiredRoleId: d.requiredRoleId || null,
+      bonusRoleId: d.bonusRoleId || null,
+      minAccountAgeDays: d.minAccountAgeDays || 0,
       winnersList: winnersOf(d.currentWinners),
     })),
     ...Object.entries(coinsEnded).map(([shortId, d]) => ({
@@ -413,6 +422,98 @@ async function removeParticipant(guildId, body, { guild }) {
   return { ok: true, count: normalized.size, removed: uid };
 }
 
+
+/**
+ * Relaunch a giveaway that ended with zero entries.
+ * Posts a fresh live drop; marks the empty record so it leaves the Live strip.
+ */
+async function restartEmpty(guildId, body, { guild, client, session }) {
+  const shortId = String(body.shortId || '').trim().toLowerCase();
+  if (!shortId) return { error: 'bad_id' };
+
+  const all = readJson(PRIZE_ENDED, {});
+  const rec = all[guildId]?.[shortId];
+  if (!rec) return { error: 'unknown_giveaway' };
+  const isEmpty = !!rec.empty || (!(rec.entrants || []).length && !(rec.currentWinners || []).length);
+  if (!isEmpty) return { error: 'not_empty', detail: 'Only empty (no-entry) drops can be restarted this way.' };
+
+  const prize = String(body.prize || rec.prize || '').trim().slice(0, 200);
+  if (!prize) return { error: 'bad_prize' };
+
+  const winners = Math.min(100, Math.max(1, Number(body.winners) || rec.winnersCount || 1));
+  const durationMs = typeof body.duration === 'string'
+    ? (require('../utils/duration').parseDuration
+        ? require('../utils/duration').parseDuration(body.duration)
+        : null)
+    : (Number.isInteger(Number(body.minutes)) ? Number(body.minutes) * 60000 : null);
+
+  // Fallback duration parser if shared util differs
+  let ms = durationMs;
+  if (!ms && typeof body.duration === 'string') {
+    const m = String(body.duration).trim().match(/^(\d+)\s*([smhd])$/i);
+    if (m) {
+      const n = Number(m[1]);
+      const u = m[2].toLowerCase();
+      ms = n * ({ s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[u] || 0);
+    }
+  }
+  if (!ms && Number(body.durationMs) > 0) ms = Number(body.durationMs);
+  if (!ms || ms < 10_000 || ms > 30 * 24 * 3_600_000) return { error: 'bad_duration' };
+
+  const channelId = String(body.channelId || rec.channelId || '');
+  const channel = guild.channels.cache.get(channelId);
+  if (!channel?.isTextBased?.()) return { error: 'bad_channel' };
+
+  let mention = null;
+  if (body.mention === '@everyone' || body.mention === '@here') mention = body.mention;
+  else if (body.mention) {
+    if (!guild.roles.cache.has(String(body.mention))) return { error: 'bad_mention' };
+    mention = `<@&${body.mention}>`;
+  }
+
+  const hostId = body.hostId && guild.members.cache.get(String(body.hostId))
+    ? String(body.hostId)
+    : (rec.hostId || session?.uid);
+  const imageUrl = body.imageUrl != null ? body.imageUrl : (rec.imageUrl || 'dynamic:prizeGiveawayBanner');
+
+  const giveawayCmd = () => require('../commands/utility/giveaway.js');
+  const hostUser = guild.members.cache.get(hostId)?.user;
+  const out = await giveawayCmd().postGiveaway(
+    guild,
+    hostId,
+    hostUser?.displayAvatarURL?.({ size: 128 }) || client?.user?.displayAvatarURL?.() || null,
+    {
+      prize,
+      durationMs: ms,
+      winners,
+      imageUrl,
+      mention,
+      channelId: channel.id,
+      guildId,
+      requiredRoleId: body.requiredRoleId || rec.requiredRoleId || null,
+      bonusRoleId: body.bonusRoleId || rec.bonusRoleId || null,
+      minAccountAgeDays: Number(body.minAccountAgeDays) || rec.minAccountAgeDays || 0,
+    },
+  );
+
+  // Leave Live strip: mark empty record finished (history only)
+  rec.prizeDmSent = true;
+  rec.needsRestart = false;
+  rec.restartedAt = Date.now();
+  rec.restartedTo = out.message?.id || null;
+  all[guildId][shortId] = rec;
+  writeJson(PRIZE_ENDED, all);
+
+  return {
+    ok: true,
+    shortId,
+    messageId: out.message.id,
+    channelName: channel.name,
+    endsAt: out.endTime,
+    label: prize,
+  };
+}
+
 module.exports = {
   sendPrize, list, create, endNow, reroll, remove, clearHistory,
-  participants, removeParticipant };
+  participants, removeParticipant, restartEmpty };

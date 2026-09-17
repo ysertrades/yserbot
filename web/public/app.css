@@ -2730,3 +2730,9 @@ select.cselect-native {
   align-self: center;
   white-space: nowrap;
 }
+
+.drop-card .empty-dot {
+  background: color-mix(in srgb, #ef4444 22%, transparent);
+  color: #fca5a5;
+  border: 1px solid color-mix(in srgb, #ef4444 35%, transparent);
+}

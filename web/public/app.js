@@ -2935,7 +2935,12 @@ function buildLiveDropCard(x, { phase }) {
   if (gid) d.dataset.gawId = gid;
   const top = el('div', 'drop-card-top');
   top.append(el('span', 'kind prize', 'PRIZE'));
-  const badge = el('span', phase === 'ended' ? 'ended-dot' : 'live-dot', phase === 'ended' ? 'ENDED' : 'LIVE');
+  const emptyDrop = phase === 'ended' && !!(x.empty || x.needsRestart || (Number(x.entrants) === 0 && !(x.winnersList || []).length));
+  const badge = el(
+    'span',
+    phase === 'ended' ? (emptyDrop ? 'ended-dot empty-dot' : 'ended-dot') : 'live-dot',
+    phase === 'ended' ? (emptyDrop ? 'EMPTY' : 'ENDED') : 'LIVE',
+  );
   top.append(badge);
   d.append(top);
   d.append(el('div', 'drop-card-title', x.title || 'Drop'));
@@ -2947,14 +2952,19 @@ function buildLiveDropCard(x, { phase }) {
     d.append(timeBox);
     d.append(c.bar);
   } else if (phase === 'ended') {
-    d.append(el('p', 'hint', `Waiting for prize message → Send to winner${(x.winnersList?.length > 1 || x.winners > 1) ? 's' : ''}`));
-    if (x.winnersList?.length) {
-      const w = el('div', 'drop-winners');
-      for (const win of x.winnersList) {
-        const chip = el('span', 'winner-chip', win.name || win.id || 'Winner');
-        w.append(chip);
+    const emptyDrop = !!(x.empty || x.needsRestart || (Number(x.entrants) === 0 && !(x.winnersList || []).length));
+    if (emptyDrop) {
+      d.append(el('p', 'hint', 'Ended with no entries — restart to run it again.'));
+    } else {
+      d.append(el('p', 'hint', `Waiting for prize message → Send to winner${(x.winnersList?.length > 1 || x.winners > 1) ? 's' : ''}`));
+      if (x.winnersList?.length) {
+        const w = el('div', 'drop-winners');
+        for (const win of x.winnersList) {
+          const chip = el('span', 'winner-chip', win.name || win.id || 'Winner');
+          w.append(chip);
+        }
+        d.append(w);
       }
-      d.append(w);
     }
   }
 
@@ -2992,10 +3002,19 @@ function buildLiveDropCard(x, { phase }) {
     });
     act.append(end);
   } else {
-    const open = el('button', 'btn small primary', 'Send prize');
-    open.type = 'button';
-    open.addEventListener('click', () => openEndedGiveaway(x));
-    act.append(open);
+    const emptyDrop = !!(x.empty || x.needsRestart || (Number(x.entrants) === 0 && !(x.winnersList || []).length));
+    if (emptyDrop) {
+      const restart = el('button', 'btn small primary', 'Restart');
+      restart.type = 'button';
+      restart.title = 'Launch this drop again with fresh settings';
+      restart.addEventListener('click', () => openRestartGiveaway(x));
+      act.append(restart);
+    } else {
+      const open = el('button', 'btn small primary', 'Send prize');
+      open.type = 'button';
+      open.addEventListener('click', () => openEndedGiveaway(x));
+      act.append(open);
+    }
   }
   d.append(act);
   return d;
@@ -3008,6 +3027,110 @@ function buildLiveDropCard(x, { phase }) {
  * are the two destructive-ish things you can do to a finished giveaway, and
  * putting them behind a deliberate tap keeps them off a list you scroll past.
  */
+
+/**
+ * Restart sheet for a giveaway that ended with zero entries.
+ * Same family as Send prize sheet — channel, duration, ping, winners, then launch.
+ */
+function openRestartGiveaway(x) {
+  const draft = {
+    prize: x.title || '',
+    winners: Number(x.winners) || 1,
+    duration: '1h',
+    channelId: x.channelId || '',
+    mention: null,
+    hostId: x.hostId || null,
+    requiredRoleId: x.requiredRoleId || null,
+    bonusRoleId: x.bonusRoleId || null,
+    minAccountAgeDays: Number(x.minAccountAgeDays) || 0,
+    imageUrl: x.imageUrl || 'dynamic:prizeGiveawayBanner',
+  };
+
+  const body = [];
+  body.push(el('p', 'muted', 'This drop closed with nobody entered. Set the relaunch options and go live again — same prize, fresh timer.'));
+  body.push(textField('Prize', draft.prize, v => { draft.prize = v; }));
+  body.push(textField('Winners', String(draft.winners), v => {
+    const n = parseInt(String(v).trim(), 10);
+    if (Number.isInteger(n) && n >= 1 && n <= 100) draft.winners = n;
+  }));
+
+  const durBox = el('div', 'field');
+  durBox.append(el('label', null, 'How long it runs'));
+  const chips = el('div', 'chipset drop-chips');
+  const paintDur = () => {
+    chips.replaceChildren();
+    for (const val of ['30m', '1h', '6h', '24h', '7d']) {
+      const b = el('button', 'chip-toggle' + (draft.duration === val ? ' on' : ''), val);
+      b.type = 'button';
+      b.addEventListener('click', () => { draft.duration = val; paintDur(); });
+      chips.append(b);
+    }
+  };
+  paintDur();
+  durBox.append(chips);
+  if (typeof durationField === 'function') {
+    durBox.append(durationField('Custom', draft.duration, v => { draft.duration = v; paintDur(); }, { hideChips: true }));
+  } else {
+    durBox.append(textField('Custom (e.g. 90m)', draft.duration, v => { draft.duration = v; }));
+  }
+  body.push(durBox);
+
+  body.push(pickOne('Channel', 'channel', draft.channelId, v => { draft.channelId = v; }, { blank: 'Where it posts' }));
+  if (typeof mentionPicker === 'function') {
+    body.push(mentionPicker('Optional ping', draft.mention, v => { draft.mention = v; }));
+  }
+  body.push(pickOne('Required role', 'role', draft.requiredRoleId, v => { draft.requiredRoleId = v; }, { blank: 'Anyone can enter' }));
+  body.push(pickOne('Bonus role (extra chance)', 'role', draft.bonusRoleId, v => { draft.bonusRoleId = v; }, { blank: 'No bonus role' }));
+
+  const admins = state.overview?.features?.admins || [];
+  if (admins.length) {
+    body.push(select(
+      'Host',
+      draft.hostId || '',
+      admins.map(a => ({ value: a.id, label: a.name })),
+      v => { draft.hostId = v || null; },
+      { blank: 'Pick an admin' },
+    ));
+  }
+
+  if (x.shortId) body.push(sheetRow('Previous drop', el('span', 'v mono', 'QL-' + x.shortId)));
+
+  const actions = [];
+  const go = el('button', 'btn primary', 'Restart giveaway');
+  go.type = 'button';
+  go.addEventListener('click', async () => {
+    if (!draft.prize.trim()) { toast('Set a prize name.', 'bad'); return; }
+    if (!draft.channelId) { toast('Pick a channel.', 'bad'); return; }
+    go.disabled = true;
+    try {
+      const res = await post('giveawayrestart', {
+        shortId: x.shortId,
+        prize: draft.prize.trim(),
+        winners: draft.winners,
+        duration: draft.duration,
+        channelId: draft.channelId,
+        mention: draft.mention,
+        hostId: draft.hostId,
+        requiredRoleId: draft.requiredRoleId,
+        bonusRoleId: draft.bonusRoleId,
+        minAccountAgeDays: draft.minAccountAgeDays,
+        imageUrl: draft.imageUrl,
+      });
+      if (res?.ok) {
+        toast('Giveaway restarted in #' + (res.channelName || 'channel') + '.', 'good');
+        closeSheet?.();
+        softRefreshOverview();
+        try { renderGiveaways(); } catch (_) {}
+      }
+    } finally {
+      go.disabled = false;
+    }
+  });
+  actions.push(go);
+
+  openSheet('Restart · ' + (x.title || 'Giveaway'), body, actions);
+}
+
 function openEndedGiveaway(x) {
   const body = [
     sheetRow('Kind', x.kind === 'coins' ? 'Coins giveaway' : 'Prize giveaway'),
