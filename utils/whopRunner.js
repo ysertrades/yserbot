@@ -1,6 +1,6 @@
 'use strict';
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder } = require('discord.js');
+const { AttachmentBuilder } = require('discord.js');
 const whop = require('./whopFeed');
 const messageStyle = require('./messageStyle');
 const { generateWhopBannerImage } = require('./whopVisual');
@@ -10,118 +10,135 @@ const GAP_MS = 2_500;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /**
- * Lesson alert embed.
- *
- * The course cover is always the full-width banner (setImage), not the small
- * corner thumbnail — that is what makes the course art read as a real banner
- * in Discord. If the cover URL is missing or Discord refuses it, we fall back
- * to a generated QuantLab banner that still carries the course name.
+ * Lesson alerts use the same Components V2 card language as giveaways:
+ * accent container, compact lines, full-width banner, divider, action button,
+ * divider, quiet footer. Less copy, more structure.
  */
+
+const IS_COMPONENTS_V2 = 1 << 15;
+const ACCENT = 0x9397EE; // QuantLab periwinkle — same family as giveaway cards
+
 function typeLabel(t) {
   const x = String(t || '').toLowerCase();
-  if (x === 'video') return 'Video lesson';
-  if (x === 'pdf') return 'PDF lesson';
+  if (x === 'video') return 'Video';
+  if (x === 'pdf') return 'PDF';
   if (x === 'multi') return 'Lesson';
   if (x === 'quiz') return 'Quiz';
-  if (x === 'knowledge_check') return 'Knowledge check';
+  if (x === 'knowledge_check') return 'Check';
   if (x === 'text') return 'Reading';
   return 'Lesson';
 }
 
-function buildLessonEmbed(guildId, lesson) {
-  const app = lesson.appName || lesson.companyTitle || '';
-  const course = lesson.courseTitle || '';
-  const embed = messageStyle.build(guildId, 'whop.lesson', {
-    at: lesson.createdAt ? new Date(lesson.createdAt) : null,
-    tokens: {
-      title: lesson.title || 'New lesson',
-      course,
-      app: app || 'Course app',
-      type: typeLabel(lesson.lessonType),
-      url: lesson.lessonUrl || '',
-      server: '',
-      user: '',
-    },
-  });
-  if (!embed) return { embed: null, files: [] };
+function resolveLessonUrl(settings, lesson) {
+  let url = lesson.lessonUrl
+    || (settings.companyRoute ? `https://whop.com/${encodeURIComponent(settings.companyRoute)}` : null)
+    || (settings.companyId ? `https://whop.com/${encodeURIComponent(settings.companyId)}` : null);
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  try { new URL(url); } catch { return null; }
+  return url;
+}
 
-  const files = [];
-  const banner = typeof lesson.courseCover === 'string' ? lesson.courseCover.trim() : '';
+/**
+ * Giveaway-style V2 card for a new lesson.
+ *
+ *   # New lesson
+ *   Lesson / Course / App
+ *   [banner]
+ *   ───
+ *   [ View lesson ]
+ *   ───
+ *   -# QuantLab · Video
+ */
+function buildLessonV2(guild, settings, lesson, imageUrl) {
+  const title = String(lesson.title || 'New lesson').slice(0, 120);
+  const course = String(lesson.courseTitle || '').slice(0, 80);
+  const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 80);
+  const kind = typeLabel(lesson.lessonType);
 
-  if (banner && /^https:\/\//i.test(banner)) {
-    try {
-      // Always full-width so the course art reads as a banner, not a chip.
-      // The Appearance "thumbnail" toggle is intentionally ignored here —
-      // a 80×80 corner image is never a course banner.
-      embed.setImage(banner);
-    } catch {
-      // Bad URL — fall through to generated banner.
-    }
+  const lines = [
+    'Lesson: **' + title + '**',
+    course ? ('Course: **' + course + '**') : null,
+    app ? ('App: **' + app + '**') : null,
+  ].filter(Boolean).join('\n');
+
+  const kids = [];
+  kids.push({ type: 10, content: ('# New lesson\n\n' + lines).slice(0, 4000) });
+
+  if (imageUrl && (/^https:\/\//i.test(imageUrl) || /^attachment:\/\//i.test(imageUrl))) {
+    kids.push({ type: 12, items: [{ media: { url: imageUrl } }] });
   }
 
-  // No usable cover (or setImage failed silently): draw a branded banner so
-  // the alert still looks finished instead of a bare text card.
-  if (!embed.data?.image?.url) {
+  kids.push({ type: 14, divider: true, spacing: 1 });
+
+  const url = resolveLessonUrl(settings, lesson);
+  const label = (settings.buttonLabel && settings.buttonLabel !== 'Open course')
+    ? String(settings.buttonLabel).slice(0, 80)
+    : 'View lesson';
+  if (url) {
+    kids.push({
+      type: 1,
+      components: [{ type: 2, style: 5, label, url }],
+    });
+    kids.push({ type: 14, divider: true, spacing: 1 });
+  }
+
+  kids.push({
+    type: 10,
+    content: ('-# QuantLab · ' + kind).slice(0, 4000),
+  });
+
+  return {
+    flags: IS_COMPONENTS_V2,
+    components: [{
+      type: 17,
+      accent_color: ACCENT,
+      components: kids.filter(Boolean),
+    }],
+  };
+}
+
+async function resolveBanner(lesson) {
+  const files = [];
+  let imageUrl = null;
+  const banner = typeof lesson.courseCover === 'string' ? lesson.courseCover.trim() : '';
+  if (banner && /^https:\/\//i.test(banner)) {
+    imageUrl = banner;
+  } else {
     try {
       const courseName = (lesson.courseTitle || 'COURSE').toUpperCase().slice(0, 28);
-      const appLine = (lesson.appName || lesson.companyTitle || 'COURSES').toUpperCase().slice(0, 32);
+      const appLine = (lesson.appName || lesson.companyTitle || 'APP').toUpperCase().slice(0, 32);
       const png = generateWhopBannerImage({
         pill: 'NEW LESSON',
         heading: courseName,
         subtitle: (lesson.title || 'NEW LESSON').toUpperCase().slice(0, 40),
-        tagline: appLine + ' · A NEW LESSON JUST DROPPED.',
+        tagline: appLine + ' · JUST DROPPED.',
       });
       const name = 'whop-lesson.png';
       files.push(new AttachmentBuilder(png, { name }));
-      embed.setImage(`attachment://${name}`);
+      imageUrl = `attachment://${name}`;
     } catch (err) {
       console.warn('[WHOP] generated banner failed:', err.message);
     }
   }
-
-  return { embed, files };
-}
-
-function buildButtonRow(settings, lesson) {
-  let url = lesson.lessonUrl
-    || (settings.companyRoute ? `https://whop.com/${encodeURIComponent(settings.companyRoute)}` : null)
-    || (settings.companyId ? `https://whop.com/${encodeURIComponent(settings.companyId)}` : null);
-
-  if (!url || !/^https?:\/\//i.test(url)) return null;
-
-  try {
-    // eslint-disable-next-line no-new
-    new URL(url);
-  } catch {
-    return null;
-  }
-
-  const label = (settings.buttonLabel && settings.buttonLabel !== 'Open course')
-    ? settings.buttonLabel
-    : 'View lesson';
-
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setStyle(ButtonStyle.Link)
-      .setURL(url)
-      .setLabel(String(label).slice(0, 80)),
-  );
+  return { imageUrl, files };
 }
 
 async function postLesson(guild, settings, lesson) {
   const channel = guild.channels.cache.get(lesson.channelId);
   if (!channel || !channel.isTextBased?.()) return false;
 
-  const { embed, files } = buildLessonEmbed(guild.id, lesson);
-  if (!embed) return false;
+  // Appearance can still disable the feed entirely
+  const style = messageStyle.styleFor(guild.id, 'whop.lesson');
+  if (style && style.enabled === false) return false;
 
+  const { imageUrl, files } = await resolveBanner(lesson);
+  const v2 = buildLessonV2(guild, settings, lesson, imageUrl);
   const roleId = lesson.mentionRoleId || null;
-  const row = buildButtonRow(settings, lesson);
 
   await channel.send({
     content: roleId ? `<@&${roleId}>` : undefined,
-    embeds: [embed],
-    components: row ? [row] : [],
+    flags: v2.flags,
+    components: v2.components,
     files: files.length ? files : undefined,
     allowedMentions: roleId ? { roles: [roleId] } : { parse: [] },
   });
