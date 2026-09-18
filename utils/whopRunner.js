@@ -17,16 +17,28 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  * in Discord. If the cover URL is missing or Discord refuses it, we fall back
  * to a generated QuantLab banner that still carries the course name.
  */
+function typeLabel(t) {
+  const x = String(t || '').toLowerCase();
+  if (x === 'video') return 'Video lesson';
+  if (x === 'pdf') return 'PDF lesson';
+  if (x === 'multi') return 'Lesson';
+  if (x === 'quiz') return 'Quiz';
+  if (x === 'knowledge_check') return 'Knowledge check';
+  if (x === 'text') return 'Reading';
+  return 'Lesson';
+}
+
 function buildLessonEmbed(guildId, lesson) {
-  const style = messageStyle.styleFor(guildId, 'whop.lesson');
+  const app = lesson.appName || lesson.companyTitle || '';
+  const course = lesson.courseTitle || '';
   const embed = messageStyle.build(guildId, 'whop.lesson', {
     at: lesson.createdAt ? new Date(lesson.createdAt) : null,
     tokens: {
       title: lesson.title || 'New lesson',
-      course: lesson.courseTitle || '',
-      app: lesson.appName || lesson.companyTitle || 'Courses',
-      type: lesson.lessonType || 'video',
-      url: '',
+      course,
+      app: app || 'Course app',
+      type: typeLabel(lesson.lessonType),
+      url: lesson.lessonUrl || '',
       server: '',
       user: '',
     },
@@ -78,18 +90,21 @@ function buildButtonRow(settings, lesson) {
   if (!url || !/^https?:\/\//i.test(url)) return null;
 
   try {
-    // Discord rejects some malformed URLs silently
     // eslint-disable-next-line no-new
     new URL(url);
   } catch {
     return null;
   }
 
+  const label = (settings.buttonLabel && settings.buttonLabel !== 'Open course')
+    ? settings.buttonLabel
+    : 'View lesson';
+
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setStyle(ButtonStyle.Link)
       .setURL(url)
-      .setLabel((settings.buttonLabel || 'open course').slice(0, 80)),
+      .setLabel(String(label).slice(0, 80)),
   );
 }
 

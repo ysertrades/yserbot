@@ -2736,3 +2736,16 @@ select.cselect-native {
   color: #fca5a5;
   border: 1px solid color-mix(in srgb, #ef4444 35%, transparent);
 }
+
+.whop-app-group {
+  margin: 12px 0 18px;
+  padding: 12px 14px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--stroke, #2a2a35) 80%, transparent);
+  background: color-mix(in srgb, var(--panel, #12121a) 92%, transparent);
+}
+.whop-app-group-title {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}

@@ -448,9 +448,9 @@ const CATALOGUE = {
     defaults: {
       enabled: true,
       color: BRAND.purple,
-      title: 'New lesson',
-      body: '**{title}**\n\n{course}\n{app}',
-      footer: '{app} · {type}',
+      title: 'New lesson dropped',
+      body: '**{title}**\n\nCourse · **{course}**\nApp · **{app}**',
+      footer: '{type}',
       thumbnail: false,
       timestamp: true,
     },

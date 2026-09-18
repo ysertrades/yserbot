@@ -1294,51 +1294,67 @@ function renderWhop() {
     }
   }
 
-  /* ---- Single courses from scan ---- */
+  /* ---- Single courses from scan (grouped by course app) ---- */
   blocks.push(el("h3", null, "Courses"));
   if (!catalog.length) {
     blocks.push(el("p", "muted", "No library yet. Save API key + Company ID, then press Scan courses."));
   } else {
     const available = catalog.filter(c => !c.inLog);
-    blocks.push(el("p", "hint", catalog.length + " course(s) · " + available.length + " not tracked yet (or only via an app)"));
+    blocks.push(el("p", "hint",
+      catalog.length + " course(s) in library · "
+      + available.length + " available to track · grouped by course app"));
 
     if (!available.length) {
       blocks.push(el("p", "muted", "Every scanned course is already tracked individually."));
     } else {
-      let pickId = null;
-      let pickCh = null;
-      let pickRole = null;
+      // Group by experience (course app)
+      const groups = new Map();
+      for (const c of available) {
+        const key = c.experienceId || "_none";
+        const label = c.experienceName || (c.experienceId ? ("App " + String(c.experienceId).slice(0, 10)) : "Ungrouped");
+        if (!groups.has(key)) groups.set(key, { label, items: [] });
+        groups.get(key).items.push(c);
+      }
+      const ordered = [...groups.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
 
-      const options = available.map(c => ({
-        value: c.id,
-        label: (c.title || c.id)
-          + (c.experienceName ? (" · " + c.experienceName) : "")
-          + (c.lessonsCount != null ? (" · " + c.lessonsCount + " lessons") : ""),
-      }));
+      for (const [, g] of ordered) {
+        const head = el("div", "whop-app-group");
+        head.append(el("div", "whop-app-group-title", g.label));
+        head.append(el("p", "hint", g.items.length + " course" + (g.items.length === 1 ? "" : "s")));
 
-      blocks.push(select("Course", "", options, v => { pickId = v || null; }, { blank: "Choose a course…" }));
-      blocks.push(pickOne("Channel for this course", "channel", null, v => { pickCh = v; }));
-      blocks.push(pickOne("Ping role (optional)", "role", null, v => { pickRole = v; }));
+        let pickId = null;
+        let pickCh = null;
+        let pickRole = null;
+        const options = g.items.map(c => ({
+          value: c.id,
+          label: (c.title || c.id)
+            + (c.lessonsCount != null ? (" · " + c.lessonsCount + " lessons") : ""),
+        }));
+        head.append(select("Course", "", options, v => { pickId = v || null; }, { blank: "Choose a course in this app…" }));
+        head.append(pickOne("Channel", "channel", null, v => { pickCh = v; }));
+        head.append(pickOne("Ping role (optional)", "role", null, v => { pickRole = v; }));
 
-      const addRow = el("div", "actions");
-      const addBtn = el("button", "btn primary small", "Track this course");
-      addBtn.type = "button";
-      addBtn.addEventListener("click", async () => {
-        if (!pickId) { toast("Choose a course.", "bad"); return; }
-        if (!pickCh) { toast("Choose a channel for this course.", "bad"); return; }
-        addBtn.disabled = true;
-        try {
-          await post("whop", {
-            op: "add",
-            courseId: pickId,
-            channelId: pickCh,
-            mentionRoleId: pickRole,
-          });
-          toast("Course tracked.", "good");
-        } finally { addBtn.disabled = false; }
-      });
-      addRow.append(addBtn);
-      blocks.push(addRow);
+        const addRow = el("div", "actions");
+        const addBtn = el("button", "btn primary small", "Track course");
+        addBtn.type = "button";
+        addBtn.addEventListener("click", async () => {
+          if (!pickId) { toast("Choose a course.", "bad"); return; }
+          if (!pickCh) { toast("Choose a channel.", "bad"); return; }
+          addBtn.disabled = true;
+          try {
+            await post("whop", {
+              op: "add",
+              courseId: pickId,
+              channelId: pickCh,
+              mentionRoleId: pickRole,
+            });
+            toast("Course tracked.", "good");
+          } finally { addBtn.disabled = false; }
+        });
+        addRow.append(addBtn);
+        head.append(addRow);
+        blocks.push(head);
+      }
     }
   }
 

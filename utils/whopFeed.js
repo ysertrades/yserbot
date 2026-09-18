@@ -188,6 +188,9 @@ async function listCourses(apiKey, settings) {
         if (cursor) params.after = cursor;
         const data = await whopFetch(apiKey, '/courses', params);
         for (const c of (data?.data || [])) {
+          const vis = String(c.visibility || c.status || 'visible').toLowerCase();
+          // Drop archived / deleted / hidden courses so Scan matches the live library
+          if (['hidden', 'deleted', 'archived', 'inactive', 'removed'].includes(vis)) continue;
           const exp = c.experience || {};
           out.push({
             id: c.id,
@@ -197,7 +200,8 @@ async function listCourses(apiKey, settings) {
             lessonsCount: c.total_lessons_count ?? null,
             cover: pickCover(c),
             experienceId: exp.id || c.experience_id || null,
-            experienceName: exp.name || exp.title || exp.app_name || null,
+            experienceName: exp.name || exp.title || exp.app_name || exp.app?.name || null,
+            visibility: vis,
           });
         }
         if (!data?.page_info?.has_next_page) break;
@@ -268,12 +272,26 @@ async function listLessons(apiKey, courseId) {
     if (cursor) params.after = cursor;
     const data = await whopFetch(apiKey, '/course_lessons', params);
     for (const l of (data?.data || [])) {
+      const video = l.video_asset || l.mux_asset || l.muxAsset || null;
+      const pdf = l.main_pdf || l.pdf || null;
+      const videoReady = !!(
+        (video && (video.signed_playback_id || video.playback_id || video.signedPlaybackId
+          || video.status === 'ready' || video.finished_uploading_at || video.duration_seconds > 0))
+        || l.embed_id
+      );
+      const pdfReady = !!(pdf && (pdf.source_url || pdf.url || pdf.id || pdf.filename));
+      const contentLen = String(l.content || '').trim().length;
       out.push({
         id: l.id,
-        title: l.title || 'Untitled lesson',
+        title: (l.title || '').trim() || 'Untitled lesson',
         lessonType: l.lesson_type || 'text',
         createdAt: l.created_at || null,
         visibility: l.visibility || 'visible',
+        videoReady,
+        pdfReady,
+        hasContent: contentLen >= 40,
+        embedId: l.embed_id || null,
+        chapterId: l.chapter?.id || l.chapter_id || null,
       });
     }
     if (!data?.page_info?.has_next_page) break;
@@ -282,15 +300,61 @@ async function listLessons(apiKey, courseId) {
   return out;
 }
 
-function lessonLink(settings, entry) {
-  if (settings.companyRoute) {
-    return `https://whop.com/${encodeURIComponent(settings.companyRoute)}`;
+/**
+ * Draft lessons appear in the API the moment "Add lesson" is clicked
+ * (often titled "Lesson 2", type multi/text, no video/pdf yet).
+ * Only announce when the creator finished naming + attached media.
+ */
+function isPlaceholderTitle(title) {
+  const t = String(title || '').trim();
+  if (!t) return true;
+  if (/^untitled\b/i.test(t)) return true;
+  if (/^lesson\s*\d+$/i.test(t)) return true;
+  if (/^new\s+lesson$/i.test(t)) return true;
+  return false;
+}
+
+function isLessonReady(lesson) {
+  if (!lesson || lesson.visibility === 'hidden') return false;
+  if (isPlaceholderTitle(lesson.title)) return false;
+  const type = String(lesson.lessonType || 'text').toLowerCase();
+  if (type === 'video') return !!lesson.videoReady;
+  if (type === 'pdf') return !!lesson.pdfReady;
+  if (type === 'multi') {
+    // Multi is ready once it has a real name AND (video or pdf or real body)
+    return !!(lesson.videoReady || lesson.pdfReady || lesson.hasContent);
   }
-  if (entry?.experienceId) {
-    return `https://whop.com/experiences/${entry.experienceId}`;
+  // text / quiz / knowledge_check — require a real title + body (no empty shells)
+  if (type === 'text') return !!lesson.hasContent;
+  // quizzes etc: named is enough (they are intentional content units)
+  if (type === 'quiz' || type === 'knowledge_check') return true;
+  return !!(lesson.videoReady || lesson.pdfReady || lesson.hasContent);
+}
+
+/**
+ * Prefer a lesson-deep link; fall back to course → experience → company.
+ * Whop consumer URLs vary; these patterns are the ones that open in-app.
+ */
+function lessonLink(settings, entry, lesson) {
+  const route = settings.companyRoute ? encodeURIComponent(settings.companyRoute) : null;
+  const courseId = entry?.courseId || entry?.id || null;
+  const lessonId = lesson?.id || null;
+  const expId = entry?.experienceId || null;
+
+  if (route && courseId && lessonId) {
+    // Deep-link into the specific lesson when possible
+    return `https://whop.com/${route}/courses/${encodeURIComponent(courseId)}?lesson=${encodeURIComponent(lessonId)}`;
+  }
+  if (route && courseId) {
+    return `https://whop.com/${route}/courses/${encodeURIComponent(courseId)}`;
+  }
+  if (route) {
+    return `https://whop.com/${route}`;
+  }
+  if (expId) {
+    return `https://whop.com/experiences/${encodeURIComponent(expId)}`;
   }
   if (settings.companyId) {
-    // Fallback deep link by company id (Whop accepts biz routes in some clients)
     return `https://whop.com/${encodeURIComponent(settings.companyId)}`;
   }
   return null;
@@ -563,13 +627,19 @@ async function newLessons(guildId) {
 
     for (const lesson of lessons) {
       if (known[lesson.id]) continue;
-      if (s.onlyVideos && lesson.lessonType !== 'video') {
-        known[lesson.id] = true; // remember non-videos so they never flood later
-        continue;
-      }
       if (lesson.visibility === 'hidden') {
         known[lesson.id] = true;
         continue;
+      }
+      // Draft shells stay unknown until ready (video/pdf + real name)
+      if (!isLessonReady(lesson)) continue;
+      // Optional: skip pure text if host only wants media drops
+      if (s.onlyVideos && !['video', 'pdf', 'multi'].includes(String(lesson.lessonType || '').toLowerCase())) {
+        known[lesson.id] = true;
+        continue;
+      }
+      if (s.onlyVideos && lesson.lessonType === 'multi' && !lesson.videoReady && !lesson.pdfReady) {
+        continue; // multi without media still draft
       }
       fresh.push(lesson);
     }
@@ -594,12 +664,16 @@ async function newLessons(guildId) {
         const fresh = [];
         for (const lesson of lessons) {
           if (known[lesson.id]) continue;
-          if (s.onlyVideos && lesson.lessonType !== 'video') {
+          if (lesson.visibility === 'hidden') {
             known[lesson.id] = true;
             continue;
           }
-          if (lesson.visibility === 'hidden') {
+          if (!isLessonReady(lesson)) continue;
+          if (s.onlyVideos && !['video', 'pdf', 'multi'].includes(String(lesson.lessonType || '').toLowerCase())) {
             known[lesson.id] = true;
+            continue;
+          }
+          if (s.onlyVideos && lesson.lessonType === 'multi' && !lesson.videoReady && !lesson.pdfReady) {
             continue;
           }
           fresh.push(lesson);
@@ -612,9 +686,10 @@ async function newLessons(guildId) {
             courseId: cid,
             courseTitle: courseMeta.title || cid,
             courseCover: courseMeta.cover || e.cover || null,
-            appName: e.experienceName || e.title || s.companyTitle || 'Courses',
+            appName: e.experienceName || e.title || courseMeta.experienceName || s.companyTitle || 'Course app',
             companyTitle: s.companyTitle || null,
-            lessonUrl: lessonLink(s, { experienceId: e.id }),
+            experienceId: e.id,
+            lessonUrl: lessonLink(s, { id: cid, courseId: cid, experienceId: e.id }, lesson),
             channelId: e.channelId,
             mentionRoleId: e.mentionRoleId || null,
           });
@@ -631,9 +706,10 @@ async function newLessons(guildId) {
         courseId: e.id,
         courseTitle: e.title,
         courseCover: e.cover || null,
-        appName: e.experienceName || s.companyTitle || 'Courses',
+        appName: e.experienceName || s.companyTitle || 'Course app',
         companyTitle: s.companyTitle || null,
-        lessonUrl: lessonLink(s, e),
+        experienceId: e.experienceId || null,
+        lessonUrl: lessonLink(s, e, lesson),
         channelId: e.channelId,
         mentionRoleId: e.mentionRoleId || null,
       });
@@ -666,5 +742,7 @@ module.exports = {
   baselineAll,
   newLessons,
   lessonLink,
+  isLessonReady,
+  isPlaceholderTitle,
   pickCover,
 };
