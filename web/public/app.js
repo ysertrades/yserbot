@@ -1307,15 +1307,20 @@ function renderWhop() {
     if (!available.length) {
       blocks.push(el("p", "muted", "Every scanned course is already tracked individually."));
     } else {
-      // Group by experience (course app)
+      // Group only by real course apps (skip orphan / deleted rows without experienceId)
       const groups = new Map();
       for (const c of available) {
-        const key = c.experienceId || "_none";
-        const label = c.experienceName || (c.experienceId ? ("App " + String(c.experienceId).slice(0, 10)) : "Ungrouped");
+        if (!c.experienceId) continue;
+        const key = String(c.experienceId);
+        const fromApps = (Array.isArray(d.apps) ? d.apps : []).find(a => a.id === c.experienceId);
+        const label = c.experienceName || fromApps?.name || ("App · " + key.slice(0, 12));
         if (!groups.has(key)) groups.set(key, { label, items: [] });
         groups.get(key).items.push(c);
       }
       const ordered = [...groups.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
+      if (!ordered.length) {
+        blocks.push(el("p", "muted", "No live courses linked to a course app. Run Scan again after publishing courses inside an app."));
+      }
 
       for (const [, g] of ordered) {
         const head = el("div", "whop-app-group");

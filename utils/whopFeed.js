@@ -188,10 +188,16 @@ async function listCourses(apiKey, settings) {
         if (cursor) params.after = cursor;
         const data = await whopFetch(apiKey, '/courses', params);
         for (const c of (data?.data || [])) {
-          const vis = String(c.visibility || c.status || 'visible').toLowerCase();
-          // Drop archived / deleted / hidden courses so Scan matches the live library
-          if (['hidden', 'deleted', 'archived', 'inactive', 'removed'].includes(vis)) continue;
-          const exp = c.experience || {};
+          // Only skip courses Whop marks as gone — do not filter "hidden"/unknown
+          // (those values are inconsistent and were wiping the live library).
+          const vis = String(c.visibility || c.status || '').toLowerCase();
+          if (vis && ['deleted', 'archived', 'removed'].includes(vis)) continue;
+          if (c.deleted_at || c.archived_at) continue;
+          const exp = c.experience || c.experience_obj || {};
+          const experienceId = exp.id || c.experience_id || c.experienceId || null;
+          const experienceName =
+            exp.name || exp.title || exp.app_name || exp.app?.name
+            || c.experience_name || null;
           out.push({
             id: c.id,
             title: c.title || c.id,
@@ -199,9 +205,9 @@ async function listCourses(apiKey, settings) {
             chaptersCount: c.chapters_count ?? null,
             lessonsCount: c.total_lessons_count ?? null,
             cover: pickCover(c),
-            experienceId: exp.id || c.experience_id || null,
-            experienceName: exp.name || exp.title || exp.app_name || exp.app?.name || null,
-            visibility: vis,
+            experienceId,
+            experienceName,
+            visibility: vis || 'visible',
           });
         }
         if (!data?.page_info?.has_next_page) break;
@@ -402,44 +408,79 @@ async function scanCourses(guildId) {
     if (!companyRoute) companyRoute = await fetchCompanyRoute(s.apiKey, s.companyId);
   }
 
-  const [catalog, appsRaw] = await Promise.all([
-    listCourses(s.apiKey, s),
-    listExperiences(s.apiKey, s),
-  ]);
+  let catalog = await listCourses(s.apiKey, s);
+  let appsRaw = [];
+  try {
+    appsRaw = await listExperiences(s.apiKey, s);
+  } catch (err) {
+    console.warn('[WHOP] listExperiences:', err.message);
+    appsRaw = [];
+  }
 
-  // Fill missing experience names from the apps list
-  const appById = Object.fromEntries(appsRaw.map(a => [a.id, a]));
+  // Enrich courses missing experienceId (common on list endpoint)
+  for (let i = 0; i < catalog.length; i++) {
+    const c = catalog[i];
+    if (c.experienceId) continue;
+    try {
+      const full = await retrieveCourse(s.apiKey, c.id);
+      if (!full) continue;
+      const exp = full.experience || {};
+      const experienceId = exp.id || full.experience_id || null;
+      const experienceName = exp.name || exp.title || exp.app?.name || null;
+      catalog[i] = {
+        ...c,
+        cover: c.cover || pickCover(full),
+        experienceId: experienceId || c.experienceId,
+        experienceName: experienceName || c.experienceName,
+        lessonsCount: c.lessonsCount ?? full.total_lessons_count ?? null,
+      };
+    } catch { /* keep row */ }
+  }
+
+  const appById = Object.fromEntries((appsRaw || []).map(a => [a.id, a]));
   for (const c of catalog) {
-    if (!c.experienceName && c.experienceId && appById[c.experienceId]) {
-      c.experienceName = appById[c.experienceId].name;
+    if (c.experienceId && appById[c.experienceId]) {
+      if (!c.experienceName) c.experienceName = appById[c.experienceId].name;
     }
   }
 
-  // Course apps = experiences that actually host at least one course
-  const usedExp = new Set(catalog.map(c => c.experienceId).filter(Boolean));
-  let apps = appsRaw.filter(a => usedExp.has(a.id));
-  // If API hid experiences, still surface apps from course data
-  if (!apps.length && usedExp.size) {
-    apps = [...usedExp].map(id => {
-      const sample = catalog.find(c => c.experienceId === id);
-      return {
-        id,
-        name: sample?.experienceName || id,
-        description: null,
-        appName: 'Courses',
-        image: sample?.cover || null,
-        courseCount: catalog.filter(c => c.experienceId === id).length,
-      };
+  // Live library = courses that belong to a course app.
+  // Rows with no experience are almost always deleted / detached leftovers — drop them.
+  const live = catalog.filter(c => !!c.experienceId);
+  const dropped = catalog.length - live.length;
+  if (dropped) console.log(`[WHOP] scan: dropped ${dropped} course(s) with no course app`);
+
+  // Apps = every experience that hosts ≥1 live course (API list ∪ derived from courses)
+  const usedExp = new Set(live.map(c => c.experienceId));
+  const appsMap = new Map();
+  for (const a of appsRaw || []) {
+    if (!usedExp.has(a.id)) continue;
+    appsMap.set(a.id, {
+      id: a.id,
+      name: a.name || a.appName || a.id,
+      description: a.description || null,
+      appName: a.appName || null,
+      image: a.image || null,
+      courseCount: live.filter(c => c.experienceId === a.id).length,
     });
-  } else {
-    apps = apps.map(a => ({
-      ...a,
-      courseCount: catalog.filter(c => c.experienceId === a.id).length,
-    }));
   }
+  for (const id of usedExp) {
+    if (appsMap.has(id)) continue;
+    const sample = live.find(c => c.experienceId === id);
+    appsMap.set(id, {
+      id,
+      name: sample?.experienceName || id,
+      description: null,
+      appName: null,
+      image: sample?.cover || null,
+      courseCount: live.filter(c => c.experienceId === id).length,
+    });
+  }
+  const apps = [...appsMap.values()].sort((a, b) =>
+    String(a.name).localeCompare(String(b.name)));
 
   setSettings(guildId, {
-    catalog,
+    catalog: live,
     apps,
     companyRoute: companyRoute || s.companyRoute,
     companyTitle: companyTitle || s.companyTitle,
