@@ -166,19 +166,66 @@ async function retrieveCourse(apiKey, courseId) {
   }
 }
 
-async function listCourses(apiKey, settings) {
+function pickExperience(c) {
+  if (!c || typeof c !== 'object') return { id: null, name: null };
+  const exp = c.experience || c.experience_obj || null;
+  if (typeof exp === 'string' && exp) return { id: exp, name: null };
+  if (exp && typeof exp === 'object') {
+    return {
+      id: exp.id || exp.experience_id || null,
+      name: exp.name || exp.title || exp.app?.name || exp.app_name || null,
+    };
+  }
+  return {
+    id: c.experience_id || c.experienceId || c.app_id || c.appId || null,
+    name: c.experience_name || c.app_name || c.app?.name || null,
+  };
+}
+
+function mapCourse(c) {
+  if (!c?.id) return null;
+  const vis = String(c.visibility || c.status || '').toLowerCase();
+  if (['deleted', 'archived', 'removed'].includes(vis)) return null;
+  if (c.deleted_at || c.archived_at) return null;
+  const exp = pickExperience(c);
+  return {
+    id: c.id,
+    title: c.title || c.name || c.id,
+    tagline: c.tagline || null,
+    chaptersCount: c.chapters_count ?? null,
+    lessonsCount: c.total_lessons_count ?? c.lessons_count ?? null,
+    cover: pickCover(c),
+    experienceId: exp.id || null,
+    experienceName: exp.name || null,
+    visibility: vis || 'visible',
+  };
+}
+
+async function listCourses(apiKey, settings, extra = {}) {
   if (!settings.companyId) {
     throw Object.assign(new Error('missing_company'), {
       detail: 'Set Company ID (biz_…) and Save before scanning.',
     });
   }
 
-  const scopes = [
-    { company_id: settings.companyId },
-    { account_id: settings.companyId },
-  ];
+  // Whop docs: courses accept account_id (company) and/or experience_id.
+  // company_id is accepted by the SDK but often returns 200 + [] — never stop on empty.
+  const scopes = [];
+  const expId = extra.experience_id || extra.experienceId || null;
+  const rest = { ...extra };
+  delete rest.experienceId;
+  if (expId) {
+    scopes.push({ experience_id: expId });
+    scopes.push({ account_id: settings.companyId, experience_id: expId });
+    scopes.push({ company_id: settings.companyId, experience_id: expId });
+  } else {
+    scopes.push({ account_id: settings.companyId, ...rest });
+    scopes.push({ company_id: settings.companyId, ...rest });
+  }
 
   let lastErr = null;
+  let best = [];
+  let gotOk = false;
   for (const scope of scopes) {
     try {
       const out = [];
@@ -187,49 +234,37 @@ async function listCourses(apiKey, settings) {
         const params = { first: 50, ...scope };
         if (cursor) params.after = cursor;
         const data = await whopFetch(apiKey, '/courses', params);
-        for (const c of (data?.data || [])) {
-          // Only skip courses Whop marks as gone — do not filter "hidden"/unknown
-          // (those values are inconsistent and were wiping the live library).
-          const vis = String(c.visibility || c.status || '').toLowerCase();
-          if (vis && ['deleted', 'archived', 'removed'].includes(vis)) continue;
-          if (c.deleted_at || c.archived_at) continue;
-          const exp = c.experience || c.experience_obj || {};
-          const experienceId = exp.id || c.experience_id || c.experienceId || null;
-          const experienceName =
-            exp.name || exp.title || exp.app_name || exp.app?.name
-            || c.experience_name || null;
-          out.push({
-            id: c.id,
-            title: c.title || c.id,
-            tagline: c.tagline || null,
-            chaptersCount: c.chapters_count ?? null,
-            lessonsCount: c.total_lessons_count ?? null,
-            cover: pickCover(c),
-            experienceId,
-            experienceName,
-            visibility: vis || 'visible',
-          });
+        const rows = data?.data || data?.courses || (Array.isArray(data) ? data : []);
+        for (const c of rows) {
+          const mapped = mapCourse(c);
+          if (mapped) out.push(mapped);
         }
         if (!data?.page_info?.has_next_page) break;
         cursor = data.page_info.end_cursor;
       }
-      return out;
+      gotOk = true;
+      if (out.length > best.length) best = out;
+      if (out.length) return out;
     } catch (err) {
       lastErr = err;
     }
   }
-  throw lastErr || new Error('list_courses_failed');
+  if (best.length) return best;
+  if (!gotOk && lastErr) throw lastErr;
+  return best;
 }
 
 
 /** Course apps = experiences under the company that host courses. */
 async function listExperiences(apiKey, settings) {
   if (!settings.companyId) return [];
+  // Docs require account_id (biz_…). company_id often 200+[] — keep trying.
   const scopes = [
-    { company_id: settings.companyId },
     { account_id: settings.companyId },
+    { company_id: settings.companyId },
   ];
   let lastErr = null;
+  let best = [];
   for (const scope of scopes) {
     try {
       const out = [];
@@ -238,7 +273,8 @@ async function listExperiences(apiKey, settings) {
         const params = { first: 50, ...scope };
         if (cursor) params.after = cursor;
         const data = await whopFetch(apiKey, '/experiences', params);
-        for (const x of (data?.data || [])) {
+        const rows = data?.data || data?.experiences || (Array.isArray(data) ? data : []);
+        for (const x of rows) {
           const id = x.id;
           if (!id) continue;
           out.push({
@@ -246,19 +282,26 @@ async function listExperiences(apiKey, settings) {
             name: x.name || x.title || x.app?.name || id,
             description: x.description || null,
             appName: x.app?.name || x.app_name || null,
-            image: pickCover(x) || (typeof x.image_url === 'string' ? x.image_url : null),
+            image: pickCover(x) || (typeof x.image_url === 'string' ? x.image_url : null)
+              || (typeof x.image?.url === 'string' ? x.image.url : null),
           });
         }
         if (!data?.page_info?.has_next_page) break;
         cursor = data.page_info.end_cursor;
       }
-      return out;
+      if (out.length > best.length) best = out;
+      if (out.length) break;
     } catch (err) {
       lastErr = err;
     }
   }
-  if (lastErr) console.warn('[WHOP] listExperiences:', lastErr.message);
-  return [];
+  if (lastErr && !best.length) console.warn('[WHOP] listExperiences:', lastErr.message);
+
+  // Prefer the Courses app experiences; if none match, keep every experience
+  // so scan still has something to attach courses to.
+  const courseApps = best.filter(a =>
+    /course/i.test(String(a.appName || '')) || /course/i.test(String(a.name || '')));
+  return courseApps.length ? courseApps : best;
 }
 
 async function retrieveExperience(apiKey, experienceId) {
@@ -408,7 +451,6 @@ async function scanCourses(guildId) {
     if (!companyRoute) companyRoute = await fetchCompanyRoute(s.apiKey, s.companyId);
   }
 
-  let catalog = await listCourses(s.apiKey, s);
   let appsRaw = [];
   try {
     appsRaw = await listExperiences(s.apiKey, s);
@@ -417,70 +459,87 @@ async function scanCourses(guildId) {
     appsRaw = [];
   }
 
-  // Enrich courses missing experienceId (common on list endpoint)
-  for (let i = 0; i < catalog.length; i++) {
-    const c = catalog[i];
-    if (c.experienceId) continue;
-    try {
-      const full = await retrieveCourse(s.apiKey, c.id);
-      if (!full) continue;
-      const exp = full.experience || {};
-      const experienceId = exp.id || full.experience_id || null;
-      const experienceName = exp.name || exp.title || exp.app?.name || null;
-      catalog[i] = {
-        ...c,
-        cover: c.cover || pickCover(full),
-        experienceId: experienceId || c.experienceId,
-        experienceName: experienceName || c.experienceName,
-        lessonsCount: c.lessonsCount ?? full.total_lessons_count ?? null,
-      };
-    } catch { /* keep row */ }
+  let catalog = [];
+  try {
+    catalog = await listCourses(s.apiKey, s);
+  } catch (err) {
+    console.warn('[WHOP] listCourses:', err.message);
+    catalog = [];
   }
+
+  // Pull courses per course-app so experienceId is always set (list-all often omits it).
+  const byId = new Map(catalog.map(c => [c.id, c]));
+  const appSlice = (appsRaw || []).slice(0, 30);
+  for (const app of appSlice) {
+    let rows = [];
+    try {
+      rows = await listCourses(s.apiKey, s, { experience_id: app.id });
+    } catch {
+      rows = [];
+    }
+    for (const c of rows) {
+      const prev = byId.get(c.id) || c;
+      byId.set(c.id, {
+        ...prev,
+        ...c,
+        experienceId: c.experienceId || app.id,
+        experienceName: c.experienceName || app.name || prev.experienceName,
+        cover: c.cover || prev.cover,
+      });
+    }
+  }
+  catalog = [...byId.values()];
 
   const appById = Object.fromEntries((appsRaw || []).map(a => [a.id, a]));
   for (const c of catalog) {
-    if (c.experienceId && appById[c.experienceId]) {
-      if (!c.experienceName) c.experienceName = appById[c.experienceId].name;
+    if (c.experienceId && appById[c.experienceId] && !c.experienceName) {
+      c.experienceName = appById[c.experienceId].name;
     }
   }
 
-  // Live library = courses that belong to a course app.
-  // Rows with no experience are almost always deleted / detached leftovers — drop them.
-  const live = catalog.filter(c => !!c.experienceId);
-  const dropped = catalog.length - live.length;
-  if (dropped) console.log(`[WHOP] scan: dropped ${dropped} course(s) with no course app`);
+  // If the company has a single course app, every course belongs to it.
+  if (appsRaw.length === 1) {
+    const only = appsRaw[0];
+    for (const c of catalog) {
+      if (!c.experienceId) {
+        c.experienceId = only.id;
+        c.experienceName = c.experienceName || only.name;
+      }
+    }
+  }
 
-  // Apps = every experience that hosts ≥1 live course (API list ∪ derived from courses)
-  const usedExp = new Set(live.map(c => c.experienceId));
+  // ALWAYS keep the full library — never empty the catalog because experience is missing.
   const appsMap = new Map();
   for (const a of appsRaw || []) {
-    if (!usedExp.has(a.id)) continue;
     appsMap.set(a.id, {
       id: a.id,
       name: a.name || a.appName || a.id,
       description: a.description || null,
       appName: a.appName || null,
       image: a.image || null,
-      courseCount: live.filter(c => c.experienceId === a.id).length,
+      courseCount: catalog.filter(c => c.experienceId === a.id).length,
     });
   }
-  for (const id of usedExp) {
-    if (appsMap.has(id)) continue;
-    const sample = live.find(c => c.experienceId === id);
-    appsMap.set(id, {
-      id,
-      name: sample?.experienceName || id,
+  for (const c of catalog) {
+    if (!c.experienceId || appsMap.has(c.experienceId)) continue;
+    appsMap.set(c.experienceId, {
+      id: c.experienceId,
+      name: c.experienceName || c.experienceId,
       description: null,
       appName: null,
-      image: sample?.cover || null,
-      courseCount: live.filter(c => c.experienceId === id).length,
+      image: c.cover || null,
+      courseCount: catalog.filter(x => x.experienceId === c.experienceId).length,
     });
   }
-  const apps = [...appsMap.values()].sort((a, b) =>
-    String(a.name).localeCompare(String(b.name)));
+  const allApps = [...appsMap.values()];
+  const withCourses = allApps.filter(a => (a.courseCount || 0) > 0);
+  const courseNamed = allApps.filter(a =>
+    /course/i.test(String(a.appName || '')) || /course/i.test(String(a.name || '')));
+  const apps = (withCourses.length ? withCourses : (courseNamed.length ? courseNamed : allApps))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   setSettings(guildId, {
-    catalog: live,
+    catalog,
     apps,
     companyRoute: companyRoute || s.companyRoute,
     companyTitle: companyTitle || s.companyTitle,

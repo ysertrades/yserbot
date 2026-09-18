@@ -1252,7 +1252,7 @@ function renderWhop() {
     blocks.push(el("p", "hint", "Workspace · " + d.companyTitle));
   }
   if (!apps.length) {
-    blocks.push(el("p", "muted", "No course apps yet. Scan after saving API key + Company ID — apps appear when courses are linked to them."));
+    blocks.push(el("p", "muted", "No course apps in this scan. Courses below still list if Whop returned any."));
   } else {
     const freeApps = apps.filter(a => !a.inLog);
     blocks.push(el("p", "hint", apps.length + " app(s) · track a whole app to catch every new lesson in every course inside it."));
@@ -1307,19 +1307,25 @@ function renderWhop() {
     if (!available.length) {
       blocks.push(el("p", "muted", "Every scanned course is already tracked individually."));
     } else {
-      // Group only by real course apps (skip orphan / deleted rows without experienceId)
+      // Group by course app. Missing experienceId still shows — attach to the
+      // only app when there is one, otherwise a library group so Scan is never empty.
+      const appList = Array.isArray(d.apps) ? d.apps : [];
+      const onlyApp = appList.length === 1 ? appList[0] : null;
       const groups = new Map();
       for (const c of available) {
-        if (!c.experienceId) continue;
-        const key = String(c.experienceId);
-        const fromApps = (Array.isArray(d.apps) ? d.apps : []).find(a => a.id === c.experienceId);
-        const label = c.experienceName || fromApps?.name || ("App · " + key.slice(0, 12));
+        let expId = c.experienceId || (onlyApp && onlyApp.id) || "_library";
+        const fromApps = appList.find(a => a.id === expId);
+        const label = c.experienceName
+          || fromApps?.name
+          || (onlyApp && onlyApp.name)
+          || (d.companyTitle ? (d.companyTitle + " · courses") : "Courses");
+        const key = String(expId);
         if (!groups.has(key)) groups.set(key, { label, items: [] });
         groups.get(key).items.push(c);
       }
       const ordered = [...groups.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
       if (!ordered.length) {
-        blocks.push(el("p", "muted", "No live courses linked to a course app. Run Scan again after publishing courses inside an app."));
+        blocks.push(el("p", "muted", "Scan returned no courses. Check API key + Company ID, then Scan again."));
       }
 
       for (const [, g] of ordered) {
