@@ -600,6 +600,14 @@ Object.assign(OPS, {
     return r;
   },
 
+  async memberdm(guildId, body, ctx) {
+    const r = await moderationPanel.memberDm(guildId, body, ctx);
+    if (r.error) return r;
+    await announce(ctx.client, guildId, ctx.session,
+      `✉️ DM sent to <@${r.userId}>`, 'moderation');
+    return r;
+  },
+
   /* -- link approval requests -------------------------------------------- */
   async linkrequest(guildId, body, ctx) {
     const r = await links.decide(guildId, body, ctx);

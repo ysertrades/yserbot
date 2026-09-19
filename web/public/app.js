@@ -711,20 +711,65 @@ function memberRankLabel(m) {
   return null;
 }
 
-function renderMembersRoster() {
+function rolePill(r, { removable = false, onRemove = null } = {}) {
+  const chip = el('span', 'role-pill');
+  const color = r.color || null;
+  if (color) {
+    chip.style.setProperty('--role-c', color);
+    chip.classList.add('has-color');
+  }
+  const dot = el('span', 'role-pill-dot');
+  if (color) dot.style.background = color;
+  chip.append(dot, document.createTextNode(r.name || 'role'));
+  if (removable && onRemove) {
+    const rm = el('button', 'role-pill-x', '\u00d7');
+    rm.type = 'button';
+    rm.title = 'Remove role';
+    rm.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onRemove();
+    });
+    chip.append(rm);
+  }
+  return chip;
+}
+
+function memberMatchesQuery(m, q) {
+  if (!q) return true;
+  const hay = [
+    m.displayName, m.name, m.username, m.id,
+    ...((m.roles || []).map(r => r.name)),
+  ].filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(q);
+}
+
+function renderMembersRoster(filter = null) {
   const host = document.getElementById('members-roster');
   const countEl = document.getElementById('members-count');
+  const search = document.getElementById('members-search');
   if (!host) return;
+
   const members = state.overview?.features?.members || [];
-  if (countEl) countEl.textContent = String(members.length);
+  const q = (filter != null ? filter : (search?.value || '')).trim().toLowerCase();
+  const shown = q ? members.filter(m => memberMatchesQuery(m, q)) : members;
+
+  if (countEl) {
+    countEl.textContent = q
+      ? String(shown.length) + ' / ' + String(members.length)
+      : String(members.length);
+  }
 
   if (!members.length) {
-    host.replaceChildren(el('div', 'muted', 'No members loaded yet — refresh in a moment.'));
+    host.replaceChildren(el('div', 'muted members-empty', 'No members loaded yet \u2014 refresh in a moment.'));
+    return;
+  }
+  if (!shown.length) {
+    host.replaceChildren(el('div', 'muted members-empty', 'No members match that search.'));
     return;
   }
 
   const list = el('div', 'members-list');
-  for (const m of members) {
+  for (const m of shown) {
     const row = el('div', 'member-row' + (m.isOwner ? ' is-owner' : m.isAdmin ? ' is-admin' : ''));
     const av = el('div', 'member-av');
     if (m.avatar) {
@@ -744,8 +789,14 @@ function renderMembersRoster() {
     if (rank) nameLine.append(el('span', 'member-rank', rank));
     info.append(nameLine);
     if (m.username) info.append(el('div', 'member-user', '@' + m.username));
-    const roleBits = (m.roles || []).slice(0, 4).map(r => r.name).filter(Boolean);
-    if (roleBits.length) info.append(el('div', 'member-roles', roleBits.join(' · ')));
+
+    const roleRow = el('div', 'member-roles');
+    const roles = (m.roles || []).slice(0, 5);
+    for (const r of roles) roleRow.append(rolePill(r));
+    if ((m.roles || []).length > 5) {
+      roleRow.append(el('span', 'role-pill more', '+' + String((m.roles.length) - 5)));
+    }
+    if (roles.length) info.append(roleRow);
     row.append(info);
 
     const check = el('button', 'btn small member-check', 'Check');
@@ -758,6 +809,17 @@ function renderMembersRoster() {
     list.append(row);
   }
   host.replaceChildren(list);
+}
+
+function bindMembersSearch() {
+  const search = document.getElementById('members-search');
+  if (!search || search.dataset.bound) return;
+  search.dataset.bound = '1';
+  let timer = null;
+  search.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => renderMembersRoster(search.value), 120);
+  });
 }
 
 async function openMemberPad(m) {
@@ -793,25 +855,17 @@ async function openMemberPad(m) {
     chips.append(el('span', 'muted', 'No roles'));
   } else {
     for (const r of current) {
-      const chip = el('span', 'member-chip');
-      if (r.color) chip.style.borderColor = r.color;
-      chip.append(document.createTextNode(r.name));
-      const rm = el('button', 'member-chip-x', '×');
-      rm.type = 'button';
-      rm.title = 'Remove role';
-      rm.addEventListener('click', async () => {
-        rm.disabled = true;
-        const out = await post('memberrole', { userId: m.id, roleId: r.id, op: 'remove' });
-        if (out?.ok) {
-          m.roles = out.roles || (m.roles || []).filter(x => x.id !== r.id);
-          openMemberPad(m);
-          renderMembersRoster();
-        } else {
-          rm.disabled = false;
-        }
-      });
-      chip.append(rm);
-      chips.append(chip);
+      chips.append(rolePill(r, {
+        removable: true,
+        onRemove: async () => {
+          const out = await post('memberrole', { userId: m.id, roleId: r.id, op: 'remove' });
+          if (out && out.ok) {
+            m.roles = out.roles || (m.roles || []).filter(x => x.id !== r.id);
+            openMemberPad(m);
+            renderMembersRoster();
+          }
+        },
+      }));
     }
   }
   roleWrap.append(chips);
@@ -822,7 +876,7 @@ async function openMemberPad(m) {
     const assign = el('div', 'member-pad-assign');
     assign.append(el('div', 'member-pad-label', 'Assign role'));
     const sel = el('select');
-    sel.append(Object.assign(el('option'), { value: '', textContent: 'Pick a role…' }));
+    sel.append(Object.assign(el('option'), { value: '', textContent: 'Pick a role\u2026' }));
     for (const r of assignable) {
       sel.append(Object.assign(el('option'), { value: r.id, textContent: r.name }));
     }
@@ -832,7 +886,7 @@ async function openMemberPad(m) {
       if (!sel.value) return;
       addBtn.disabled = true;
       const out = await post('memberrole', { userId: m.id, roleId: sel.value, op: 'add' });
-      if (out?.ok) {
+      if (out && out.ok) {
         m.roles = out.roles || m.roles;
         openMemberPad(m);
         renderMembersRoster();
@@ -846,20 +900,43 @@ async function openMemberPad(m) {
     body.push(assign);
   }
 
+  const msgBox = el('div', 'member-pad-dm');
+  msgBox.append(el('div', 'member-pad-label', 'Send a message'));
+  const ta = el('textarea');
+  ta.rows = 3;
+  ta.placeholder = 'Write a private message the bot will DM them\u2026';
+  ta.maxLength = 1800;
+  const sendRow = el('div', 'member-pad-dm-row');
+  const sendBtn = el('button', 'btn small primary', 'Send DM');
+  sendBtn.type = 'button';
+  sendBtn.addEventListener('click', async () => {
+    const message = ta.value.trim();
+    if (!message) return;
+    sendBtn.disabled = true;
+    const out = await post('memberdm', { userId: m.id, message: message });
+    if (out && out.ok) ta.value = '';
+    sendBtn.disabled = false;
+  });
+  sendRow.append(sendBtn);
+  msgBox.append(ta, sendRow);
+  body.push(msgBox);
+
   const acts = el('div', 'member-pad-actions');
   acts.append(el('div', 'member-pad-label', 'Moderation'));
   const grid = el('div', 'member-pad-grid');
 
-  const runMod = async (action, extra = {}) => {
-    const reason = window.prompt('Reason for ' + action + ' (optional):', '') ?? '';
-    const out = await post('modaction', { action, userId: m.id, reason, ...extra });
-    if (out?.ok) {
+  const runMod = async (action, extra) => {
+    extra = extra || {};
+    const reason = window.prompt('Reason for ' + action + ' (optional):', '') || '';
+    const payload = Object.assign({ action: action, userId: m.id, reason: reason }, extra);
+    const out = await post('modaction', payload);
+    if (out && out.ok) {
       closeSheet();
       try {
         const data = await get('/api/guild/' + state.guildId);
         if (data) { state.overview = data; renderOverviewCards(); renderMembersRoster(); }
-      } catch (_) {}
-    } else if (out?.error) {
+      } catch (err) {}
+    } else if (out && out.error) {
       window.alert(out.detail || out.error);
     }
   };
@@ -872,17 +949,17 @@ async function openMemberPad(m) {
   };
 
   grid.append(
-    mk('Warn', '', () => runMod('warn')),
-    mk('Timeout 10m', '', () => runMod('timeout', { timeoutMinutes: 10 })),
-    mk('Timeout 1h', '', () => runMod('timeout', { timeoutMinutes: 60 })),
-    mk('Kick', 'danger', () => runMod('kick')),
-    mk('Ban', 'danger', () => runMod('ban')),
+    mk('Warn', '', function() { return runMod('warn'); }),
+    mk('Timeout 10m', '', function() { return runMod('timeout', { timeoutMinutes: 10 }); }),
+    mk('Timeout 1h', '', function() { return runMod('timeout', { timeoutMinutes: 60 }); }),
+    mk('Kick', 'danger', function() { return runMod('kick'); }),
+    mk('Ban', 'danger', function() { return runMod('ban'); })
   );
   acts.append(grid);
   body.push(acts);
 
   openSheet(m.displayName || m.name || 'Member', body, [
-    Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
+    Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: function() { closeSheet(); } }),
   ]);
 }
 

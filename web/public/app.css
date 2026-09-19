@@ -2774,35 +2774,42 @@ select.cselect-native {
   margin-top: 2px;
 }
 
-
 /* ── Overview members roster ─────────────────────────────────────────── */
 .members-panel { grid-column: 1 / -1; }
-.members-hint { margin: 0 0 0.75rem; font-size: 0.85rem; }
+.members-search-wrap { margin: 0 0 0.75rem; }
+.members-search {
+  width: 100%; box-sizing: border-box;
+  padding: 0.6rem 0.85rem 0.6rem 2.25rem;
+  border-radius: 12px; border: 1px solid var(--rule);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='M11 11l3.5 3.5'/%3E%3C/svg%3E")
+    0.75rem 50% / 16px no-repeat,
+    color-mix(in oklab, var(--panel) 80%, black);
+  color: var(--ink); font-size: 0.9rem; outline: none;
+}
+.members-search:focus {
+  border-color: color-mix(in oklab, #9397EE 55%, var(--rule));
+  box-shadow: 0 0 0 3px color-mix(in oklab, #9397EE 18%, transparent);
+}
+.members-search::placeholder { color: var(--muted); opacity: 0.75; }
 .members-roster {
-  max-height: 420px;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  border: 1px solid var(--rule);
-  border-radius: 14px;
+  max-height: 440px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--rule); border-radius: 14px;
   background: color-mix(in oklab, var(--panel) 88%, black);
 }
+.members-empty { padding: 1.25rem 1rem; text-align: center; }
 .members-list { display: flex; flex-direction: column; }
 .member-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.7rem 0.85rem;
-  border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--rule);
 }
 .member-row:last-child { border-bottom: none; }
-.member-row.is-owner { background: color-mix(in oklab, #9397EE 12%, transparent); }
-.member-row.is-admin:not(.is-owner) { background: color-mix(in oklab, #9397EE 6%, transparent); }
+.member-row.is-owner { background: color-mix(in oklab, #9397EE 10%, transparent); }
+.member-row.is-admin:not(.is-owner) { background: color-mix(in oklab, #9397EE 5%, transparent); }
 .member-av {
-  width: 36px; height: 36px; border-radius: 50%;
-  overflow: hidden; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
   background: color-mix(in oklab, var(--ink) 12%, transparent);
-  display: grid; place-items: center;
-  font-weight: 600; font-size: 0.85rem;
+  display: grid; place-items: center; font-weight: 600; font-size: 0.85rem;
 }
 .member-av img { width: 100%; height: 100%; object-fit: cover; }
 .member-info { flex: 1; min-width: 0; }
@@ -2813,30 +2820,45 @@ select.cselect-native {
 }
 .member-rank {
   font-size: 0.65rem; font-weight: 700; letter-spacing: 0.04em;
-  text-transform: uppercase; padding: 0.12rem 0.4rem;
-  border-radius: 999px;
-  background: color-mix(in oklab, #9397EE 22%, transparent);
-  color: #c5c8ff;
-  flex-shrink: 0;
+  text-transform: uppercase; padding: 0.12rem 0.4rem; border-radius: 999px;
+  background: color-mix(in oklab, #9397EE 22%, transparent); color: #c5c8ff; flex-shrink: 0;
 }
-.member-user, .member-roles {
+.member-user {
   font-size: 0.75rem; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.member-roles { margin-top: 0.1rem; opacity: 0.9; }
-.member-check { flex-shrink: 0; }
-
-.member-pad-hero {
-  display: flex; align-items: center; gap: 1rem;
-  padding: 0.4rem 0 0.2rem;
+.member-roles { display: flex; flex-wrap: wrap; gap: 0.28rem; margin-top: 0.28rem; }
+.role-pill {
+  display: inline-flex; align-items: center; gap: 0.3rem; max-width: 140px;
+  padding: 0.12rem 0.45rem 0.12rem 0.35rem; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 500; line-height: 1.3;
+  color: color-mix(in oklab, var(--ink) 88%, transparent);
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink) 10%, transparent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.role-pill.has-color {
+  background: color-mix(in oklab, var(--role-c) 14%, transparent);
+  border-color: color-mix(in oklab, var(--role-c) 28%, transparent);
+  color: color-mix(in oklab, var(--role-c) 55%, var(--ink));
+}
+.role-pill-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: color-mix(in oklab, var(--ink) 35%, transparent);
+}
+.role-pill.more { opacity: 0.7; font-weight: 600; }
+.role-pill-x {
+  border: 0; background: transparent; color: inherit; opacity: 0.55;
+  cursor: pointer; font-size: 0.85rem; line-height: 1; padding: 0 0.05rem; margin-left: 0.05rem;
+}
+.role-pill-x:hover { opacity: 1; color: #f87171; }
+.member-check { flex-shrink: 0; }
+.member-pad-hero { display: flex; align-items: center; gap: 1rem; padding: 0.4rem 0 0.2rem; }
 .member-pad-av {
-  width: 72px; height: 72px; border-radius: 18px;
-  overflow: hidden; flex-shrink: 0;
+  width: 72px; height: 72px; border-radius: 18px; overflow: hidden; flex-shrink: 0;
   background: linear-gradient(145deg, #9397EE33, #9397EE11);
   border: 1px solid color-mix(in oklab, #9397EE 35%, transparent);
-  display: grid; place-items: center;
-  font-size: 1.4rem; font-weight: 700;
+  display: grid; place-items: center; font-size: 1.4rem; font-weight: 700;
 }
 .member-pad-av img { width: 100%; height: 100%; object-fit: cover; }
 .member-pad-meta { min-width: 0; }
@@ -2844,22 +2866,11 @@ select.cselect-native {
 .member-pad-user { color: var(--muted); font-size: 0.88rem; margin-top: 0.15rem; }
 .member-pad-label {
   font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--muted);
-  margin-bottom: 0.45rem;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 0.45rem;
 }
-.member-pad-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.member-chip {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  padding: 0.25rem 0.55rem; border-radius: 999px;
-  font-size: 0.8rem;
-  border: 1px solid var(--rule);
-  background: color-mix(in oklab, var(--panel) 70%, black);
-}
-.member-chip-x {
-  border: 0; background: transparent; color: var(--muted);
-  cursor: pointer; font-size: 0.95rem; line-height: 1; padding: 0 0.1rem;
-}
-.member-chip-x:hover { color: #f87171; }
+.member-pad-roles, .member-pad-assign, .member-pad-actions, .member-pad-dm { margin-top: 0.15rem; }
+.member-pad-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.member-pad-chips .role-pill { max-width: none; font-size: 0.75rem; padding: 0.2rem 0.5rem; }
 .member-pad-assign-row { display: flex; gap: 0.5rem; align-items: center; }
 .member-pad-assign-row select {
   flex: 1; min-width: 0;
@@ -2867,9 +2878,16 @@ select.cselect-native {
   border: 1px solid var(--rule); border-radius: 10px;
   color: var(--ink); padding: 0.45rem 0.6rem;
 }
-.member-pad-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
+.member-pad-dm textarea {
+  width: 100%; box-sizing: border-box; min-height: 72px; resize: vertical;
+  padding: 0.55rem 0.7rem; border-radius: 12px; border: 1px solid var(--rule);
+  background: color-mix(in oklab, var(--panel) 80%, black);
+  color: var(--ink); font: inherit; font-size: 0.88rem; outline: none;
 }
+.member-pad-dm textarea:focus {
+  border-color: color-mix(in oklab, #9397EE 55%, var(--rule));
+  box-shadow: 0 0 0 3px color-mix(in oklab, #9397EE 18%, transparent);
+}
+.member-pad-dm-row { display: flex; justify-content: flex-end; margin-top: 0.45rem; }
+.member-pad-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
 .member-pad-grid .btn { width: 100%; justify-content: center; }
