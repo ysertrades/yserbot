@@ -9,8 +9,12 @@ const TICK_MS = 60_000;
 const GAP_MS = 2_500;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/** Same flag giveaways use — Components V2 */
 const IS_COMPONENTS_V2 = 1 << 15;
 const ACCENT = 0x9397EE;
+
+/** Re-scan course library this often so the panel stays current without a manual Scan. */
+const CATALOG_REFRESH_MS = 5 * 60_000;
 
 function typeLabel(t) {
   const x = String(t || '').toLowerCase();
@@ -25,6 +29,8 @@ function typeLabel(t) {
 
 function resolveLessonUrl(settings, lesson) {
   let url = lesson.lessonUrl
+    || (lesson.experienceId ? `https://whop.com/experiences/${encodeURIComponent(lesson.experienceId)}` : null)
+    || (settings.companyRoute ? `https://whop.com/joined/${encodeURIComponent(settings.companyRoute)}` : null)
     || (settings.companyRoute ? `https://whop.com/${encodeURIComponent(settings.companyRoute)}` : null)
     || (settings.companyId ? `https://whop.com/${encodeURIComponent(settings.companyId)}` : null);
   if (!url || !/^https?:\/\//i.test(url)) return null;
@@ -32,20 +38,35 @@ function resolveLessonUrl(settings, lesson) {
   return url;
 }
 
-function buildLessonV2(guild, settings, lesson, imageUrl) {
+/**
+ * Components V2 lesson card — same structure as giveaway V2:
+ * text → media → separator → link button → separator → footer
+ * Mentions go inside the container (not top-level content).
+ */
+function buildLessonV2(settings, lesson, imageUrl, mention) {
   const title = String(lesson.title || 'New lesson').slice(0, 120);
-  const course = String(lesson.courseTitle || '').slice(0, 80);
-  const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 80);
+  const course = String(lesson.courseTitle || '').slice(0, 100);
+  const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
   const kind = typeLabel(lesson.lessonType);
+  const workspace = String(settings.companyTitle || settings.companyRoute || '').slice(0, 80);
 
-  const lines = [
-    'Lesson: **' + title + '**',
-    course ? ('Course: **' + course + '**') : null,
-    app ? ('App: **' + app + '**') : null,
+  const bodyLines = [
+    '**' + title + '**',
+    '',
+    course ? ('📚 **Course** · ' + course) : null,
+    app ? ('▦ **App** · ' + app) : null,
+    workspace ? ('🏢 **Whop** · ' + workspace) : null,
+    '🎬 **Type** · ' + kind,
   ].filter(Boolean).join('\n');
 
   const kids = [];
-  kids.push({ type: 10, content: ('# New lesson\n\n' + lines).slice(0, 4000) });
+  if (mention) {
+    kids.push({ type: 10, content: String(mention).slice(0, 4000) });
+  }
+  kids.push({
+    type: 10,
+    content: ('# New lesson\n\n' + bodyLines).slice(0, 4000),
+  });
 
   if (imageUrl && (/^https:\/\//i.test(imageUrl) || /^attachment:\/\//i.test(imageUrl))) {
     kids.push({ type: 12, items: [{ media: { url: imageUrl } }] });
@@ -59,11 +80,18 @@ function buildLessonV2(guild, settings, lesson, imageUrl) {
     && settings.buttonLabel !== 'open course')
     ? String(settings.buttonLabel).slice(0, 80)
     : 'View lesson';
+
   if (url) {
     kids.push({
       type: 1,
       components: [{ type: 2, style: 5, label, url }],
     });
+    const pathHint = [
+      'Open the **' + (app || 'Courses') + '** app',
+      course ? ('→ **' + course + '**') : null,
+      '→ **' + title + '**',
+    ].filter(Boolean).join(' ');
+    kids.push({ type: 10, content: pathHint.slice(0, 4000) });
     kids.push({ type: 14, divider: true, spacing: 1 });
   }
 
@@ -90,17 +118,17 @@ function buildLessonEmbed(settings, lesson, imageUrl) {
   const url = resolveLessonUrl(settings, lesson);
   const embed = new EmbedBuilder()
     .setColor(ACCENT)
-    .setTitle('New lesson')
+    .setTitle(title)
     .setDescription(
       [
-        '**' + title + '**',
-        course ? ('Course: ' + course) : null,
-        app ? ('App: ' + app) : null,
+        course ? ('📚 Course · **' + course + '**') : null,
+        app ? ('▦ App · **' + app + '**') : null,
+        '🎬 Type · **' + kind + '**',
+        url ? ('\n[Open on Whop](' + url + ')') : null,
       ].filter(Boolean).join('\n')
     )
     .setFooter({ text: 'QuantLab · ' + kind });
   if (imageUrl && /^https:\/\//i.test(imageUrl)) embed.setImage(imageUrl);
-  if (url) embed.setURL(url);
   return embed;
 }
 
@@ -145,35 +173,62 @@ async function postLesson(guild, settings, lesson) {
 
   const { imageUrl, files } = await resolveBanner(lesson);
   const roleId = lesson.mentionRoleId || null;
-  const mention = roleId ? `<@&${roleId}>` : undefined;
+  const mention = roleId ? `<@&${roleId}>` : null;
   const allowedMentions = roleId ? { roles: [roleId] } : { parse: [] };
 
   try {
-    const v2 = buildLessonV2(guild, settings, lesson, imageUrl);
-    const payload = {
+    const v2 = buildLessonV2(settings, lesson, imageUrl, mention);
+    await channel.send({
       flags: v2.flags,
       components: v2.components,
       files: files.length ? files : undefined,
       allowedMentions,
-    };
-    if (mention) payload.content = mention;
-    await channel.send(payload);
+    });
     return true;
   } catch (err) {
-    console.warn(`[WHOP] V2 post failed (${err.message}) — falling back to embed`);
-    try {
-      const embed = buildLessonEmbed(settings, lesson, imageUrl && /^https:\/\//i.test(imageUrl) ? imageUrl : null);
-      await channel.send({
-        content: mention,
-        embeds: [embed],
-        files: files.length ? files : undefined,
-        allowedMentions,
-      });
-      return true;
-    } catch (err2) {
-      console.error(`[WHOP] embed fallback failed:`, err2.message);
-      throw err2;
-    }
+    console.warn(`[WHOP] V2 post failed (${err.message}) — trying V2 without media`);
+  }
+
+  try {
+    const v2 = buildLessonV2(settings, lesson, null, mention);
+    await channel.send({
+      flags: v2.flags,
+      components: v2.components,
+      files: files.length ? files : undefined,
+      allowedMentions,
+    });
+    return true;
+  } catch (err) {
+    console.warn(`[WHOP] V2 no-media failed (${err.message}) — falling back to embed`);
+  }
+
+  try {
+    const embed = buildLessonEmbed(
+      settings,
+      lesson,
+      imageUrl && /^https:\/\//i.test(imageUrl) ? imageUrl : null,
+    );
+    await channel.send({
+      content: mention || undefined,
+      embeds: [embed],
+      files: files.length ? files : undefined,
+      allowedMentions,
+    });
+    return true;
+  } catch (err2) {
+    console.error(`[WHOP] embed fallback failed:`, err2.message);
+    throw err2;
+  }
+}
+
+async function maybeRefreshCatalog(guildId, settings) {
+  const last = Number(settings.lastScanAt) || 0;
+  if (last && Date.now() - last < CATALOG_REFRESH_MS) return;
+  try {
+    console.log(`[WHOP] auto-scan library ${guildId}`);
+    await whop.scanCourses(guildId);
+  } catch (err) {
+    console.warn(`[WHOP] auto-scan failed:`, err.message || err);
   }
 }
 
@@ -189,6 +244,9 @@ async function checkGuild(client, guildId) {
   if (!guild) return;
 
   console.log(`[WHOP] check ${guildId} · ${settings.log.length} tracked · every ${settings.pollMinutes || 2}m`);
+
+  await maybeRefreshCatalog(guildId, settings);
+  settings = whop.getSettings(guildId);
 
   const needsBaseline = settings.log.some(e => !e.baselined);
   if (needsBaseline) {
