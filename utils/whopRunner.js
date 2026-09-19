@@ -1,6 +1,6 @@
 'use strict';
 
-const { AttachmentBuilder } = require('discord.js');
+const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
 const whop = require('./whopFeed');
 const messageStyle = require('./messageStyle');
 const { generateWhopBannerImage } = require('./whopVisual');
@@ -9,14 +9,8 @@ const TICK_MS = 60_000;
 const GAP_MS = 2_500;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/**
- * Lesson alerts use the same Components V2 card language as giveaways:
- * accent container, compact lines, full-width banner, divider, action button,
- * divider, quiet footer. Less copy, more structure.
- */
-
 const IS_COMPONENTS_V2 = 1 << 15;
-const ACCENT = 0x9397EE; // QuantLab periwinkle — same family as giveaway cards
+const ACCENT = 0x9397EE;
 
 function typeLabel(t) {
   const x = String(t || '').toLowerCase();
@@ -38,17 +32,6 @@ function resolveLessonUrl(settings, lesson) {
   return url;
 }
 
-/**
- * Giveaway-style V2 card for a new lesson.
- *
- *   # New lesson
- *   Lesson / Course / App
- *   [banner]
- *   ───
- *   [ View lesson ]
- *   ───
- *   -# QuantLab · Video
- */
 function buildLessonV2(guild, settings, lesson, imageUrl) {
   const title = String(lesson.title || 'New lesson').slice(0, 120);
   const course = String(lesson.courseTitle || '').slice(0, 80);
@@ -97,6 +80,28 @@ function buildLessonV2(guild, settings, lesson, imageUrl) {
   };
 }
 
+function buildLessonEmbed(settings, lesson, imageUrl) {
+  const title = String(lesson.title || 'New lesson').slice(0, 256);
+  const course = String(lesson.courseTitle || '').slice(0, 100);
+  const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
+  const kind = typeLabel(lesson.lessonType);
+  const url = resolveLessonUrl(settings, lesson);
+  const embed = new EmbedBuilder()
+    .setColor(ACCENT)
+    .setTitle('New lesson')
+    .setDescription(
+      [
+        '**' + title + '**',
+        course ? ('Course: ' + course) : null,
+        app ? ('App: ' + app) : null,
+      ].filter(Boolean).join('\n')
+    )
+    .setFooter({ text: 'QuantLab · ' + kind });
+  if (imageUrl && /^https:\/\//i.test(imageUrl)) embed.setImage(imageUrl);
+  if (url) embed.setURL(url);
+  return embed;
+}
+
 async function resolveBanner(lesson) {
   const files = [];
   let imageUrl = null;
@@ -125,32 +130,54 @@ async function resolveBanner(lesson) {
 
 async function postLesson(guild, settings, lesson) {
   const channel = guild.channels.cache.get(lesson.channelId);
-  if (!channel || !channel.isTextBased?.()) return false;
+  if (!channel || !channel.isTextBased?.()) {
+    console.warn(`[WHOP] post: channel missing ${lesson.channelId}`);
+    return false;
+  }
 
-  // Appearance can still disable the feed entirely
   const style = messageStyle.styleFor(guild.id, 'whop.lesson');
-  if (style && style.enabled === false) return false;
+  if (style && style.enabled === false) {
+    console.warn(`[WHOP] post: whop.lesson style disabled for ${guild.id}`);
+    return false;
+  }
 
   const { imageUrl, files } = await resolveBanner(lesson);
-  const v2 = buildLessonV2(guild, settings, lesson, imageUrl);
   const roleId = lesson.mentionRoleId || null;
+  const mention = roleId ? `<@&${roleId}>` : undefined;
+  const allowedMentions = roleId ? { roles: [roleId] } : { parse: [] };
 
-  await channel.send({
-    content: roleId ? `<@&${roleId}>` : undefined,
-    flags: v2.flags,
-    components: v2.components,
-    files: files.length ? files : undefined,
-    allowedMentions: roleId ? { roles: [roleId] } : { parse: [] },
-  });
-  return true;
+  try {
+    const v2 = buildLessonV2(guild, settings, lesson, imageUrl);
+    await channel.send({
+      content: mention,
+      flags: v2.flags,
+      components: v2.components,
+      files: files.length ? files : undefined,
+      allowedMentions,
+    });
+    return true;
+  } catch (err) {
+    console.warn(`[WHOP] V2 post failed (${err.message}) — falling back to embed`);
+    try {
+      const embed = buildLessonEmbed(settings, lesson, imageUrl && /^https:\/\//i.test(imageUrl) ? imageUrl : null);
+      await channel.send({
+        content: mention,
+        embeds: [embed],
+        files: files.length ? files : undefined,
+        allowedMentions,
+      });
+      return true;
+    } catch (err2) {
+      console.error(`[WHOP] embed fallback failed:`, err2.message);
+      throw err2;
+    }
+  }
 }
 
 async function checkGuild(client, guildId) {
   let settings = whop.getSettings(guildId);
   if (!settings.enabled || !settings.apiKey || !settings.log.length) return;
 
-  // Near-immediate: poll interval is minutes, but the runner ticks every 60s.
-  // Skip if last successful check was within the configured window (min 1m).
   const intervalMs = Math.max(60_000, (Number(settings.pollMinutes) || 2) * 60_000);
   const last = Number(settings.lastCheckAt) || 0;
   if (last && Date.now() - last < intervalMs - 5_000) return;
@@ -158,7 +185,8 @@ async function checkGuild(client, guildId) {
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
 
-  // Safety: baseline anything not ready before considering posts
+  console.log(`[WHOP] check ${guildId} · ${settings.log.length} tracked · every ${settings.pollMinutes || 2}m`);
+
   const needsBaseline = settings.log.some(e => !e.baselined);
   if (needsBaseline) {
     await whop.baselineAll(guildId);
@@ -174,9 +202,15 @@ async function checkGuild(client, guildId) {
     return;
   }
 
-  for (const lesson of result.posts || []) {
+  const posts = result.posts || [];
+  if (!posts.length) {
+    console.log(`[WHOP] ${guildId}: no new lessons`);
+  }
+
+  for (const lesson of posts) {
     try {
-      await postLesson(guild, settings, lesson);
+      const ok = await postLesson(guild, settings, lesson);
+      console.log(`[WHOP] post ${lesson.id} (${lesson.title}): ${ok ? 'ok' : 'skipped'}`);
     } catch (err) {
       console.error(`[WHOP] post ${lesson.id}:`, err.message);
     }
@@ -204,6 +238,7 @@ function startWhopRunner(client) {
   const tick = () => runTick(client).catch(err => console.error('[WHOP RUNNER]', err));
   setTimeout(tick, 12_000);
   timer = setInterval(tick, TICK_MS);
+  console.log('[WHOP] runner started (tick every 60s)');
   return timer;
 }
 
