@@ -734,13 +734,26 @@ function rolePill(r, { removable = false, onRemove = null } = {}) {
   return chip;
 }
 
-function memberMatchesQuery(m, q) {
-  if (!q) return true;
-  const hay = [
-    m.displayName, m.name, m.username, m.id,
-    ...((m.roles || []).map(r => r.name)),
-  ].filter(Boolean).join(' ').toLowerCase();
-  return hay.includes(q);
+function memberSearchScore(m, q) {
+  if (!q) return 1;
+  const name = String(m.displayName || m.name || '').toLowerCase();
+  const user = String(m.username || '').toLowerCase();
+  const id = String(m.id || '');
+  const roles = ((m.roles || []).map(r => String(r.name || '').toLowerCase())).join(' ');
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return 1;
+
+  let score = 0;
+  for (const tok of tokens) {
+    if (name.startsWith(tok)) score += 40;
+    else if (name.includes(tok)) score += 20;
+    else if (user.startsWith(tok)) score += 35;
+    else if (user.includes(tok)) score += 18;
+    else if (id.includes(tok)) score += 10;
+    else if (roles.includes(tok)) score += 8;
+    else return 0;
+  }
+  return score;
 }
 
 function renderMembersRoster(filter = null) {
@@ -750,8 +763,17 @@ function renderMembersRoster(filter = null) {
   if (!host) return;
 
   const members = state.overview?.features?.members || [];
-  const q = (filter != null ? filter : (search?.value || '')).trim().toLowerCase();
-  const shown = q ? members.filter(m => memberMatchesQuery(m, q)) : members;
+  const q = (filter != null ? String(filter) : (search?.value || '')).trim().toLowerCase();
+  let shown;
+  if (!q) {
+    shown = members.slice();
+  } else {
+    shown = members
+      .map(m => ({ m, s: memberSearchScore(m, q) }))
+      .filter(x => x.s > 0)
+      .sort((a, b) => b.s - a.s)
+      .map(x => x.m);
+  }
 
   if (countEl) {
     countEl.textContent = q
@@ -813,13 +835,17 @@ function renderMembersRoster(filter = null) {
 
 function bindMembersSearch() {
   const search = document.getElementById('members-search');
-  if (!search || search.dataset.bound) return;
+  if (!search) return;
+  if (search.dataset.bound) return;
   search.dataset.bound = '1';
   let timer = null;
-  search.addEventListener('input', () => {
+  const run = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => renderMembersRoster(search.value), 120);
-  });
+    timer = setTimeout(() => renderMembersRoster(search.value), 40);
+  };
+  search.addEventListener('input', run);
+  search.addEventListener('search', run);
+  search.addEventListener('keyup', run);
 }
 
 async function openMemberPad(m) {
@@ -1002,6 +1028,7 @@ function renderOverviewCards() {
 function renderOverview() {
   if (!state.overview) return;
   renderOverviewCards();
+  bindMembersSearch();
   renderMembersRoster();
   if (isEditing() || sheetIsOpen()) {
     liveMissed = true;
