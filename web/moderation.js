@@ -4,16 +4,6 @@
  * web/moderation.js
  *
  * The moderation surface, for the panel.
- *
- * Reports, the case log, per-member warnings and the settings that govern
- * them. All of it existed only as slash commands and channel messages, which
- * means a report is noticed when someone happens to be looking at the report
- * channel, and a member's history is only visible by running /warnings against
- * them one at a time.
- *
- * Acting on a report goes through utils/modActions — the same path /warn and
- * the report card's buttons use — so a case number, a DM and a mod-log entry
- * are produced identically wherever the decision was made.
  */
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
@@ -22,9 +12,8 @@ const modActions = require('../utils/modActions');
 const { getAutoModSettings } = require('../utils/modConfig');
 const { humanAge } = require('../utils/linkInsight');
 
-const CASE_ICON = { warn: '⚠️', kick: '👢', ban: '🔨', timeout: '🔇', mute: '🔇', unban: '🔓', unmute: '🔊' };
+const CASE_ICON = { warn: '\u26a0\ufe0f', kick: '\ud83d\udc62', ban: '\ud83d\udd28', timeout: '\ud83d\udd07', mute: '\ud83d\udd07', unban: '\ud83d\udd13', unmute: '\ud83d\udd0a' };
 
-/** When a Discord id was minted — every snowflake carries its own timestamp. */
 function snowflakeTime(id) {
   try { return Number((BigInt(id) >> 22n) + 1420070400000n); }
   catch { return NaN; }
@@ -49,7 +38,6 @@ function describeReport(r, guild) {
     handledBy: r.handledBy,
     handledAt: r.handledAt,
     createdAt: r.createdAt,
-    // Whether they are still here decides which actions are even possible.
     inServer: !!guild?.members?.cache?.get(r.targetId),
     accountAge: humanAge(snowflakeTime(r.targetId)),
     priorReports: history.total - (r.status === 'open' ? 1 : 0),
@@ -58,16 +46,11 @@ function describeReport(r, guild) {
   };
 }
 
-/** Everything the Moderation screen shows. */
 function read(guildId, guild) {
   const config = readJson('config.json', {})[guildId] || {};
   const automod = getAutoModSettings(guildId);
   const cases = modActions.casesFor(guildId);
 
-  // Newest first, and capped — the full log can run to thousands of entries
-  // and nothing on screen can use them all.
-  // Cleared (forgiven) warnings are removed from the active case log so Clear
-  // actually takes them off the screen. Kicks, bans and timeouts stay.
   const recentCases = cases
     .filter(c => !(c.type === 'warn' && c.clearedAt))
     .slice(-50)
@@ -75,7 +58,7 @@ function read(guildId, guild) {
     .map(c => ({
     id: c.id,
     type: c.type,
-    icon: CASE_ICON[c.type] || '•',
+    icon: CASE_ICON[c.type] || '\u2022',
     userId: c.userId,
     userName: nameOf(guild, c.userId, c.userTag),
     userTag: c.userTag || null,
@@ -88,13 +71,8 @@ function read(guildId, guild) {
     inServer: !!guild?.members?.cache?.get(c.userId),
   }));
 
-  // Members with at least one warning, worst first — the list a moderator
-  // actually wants, rather than one lookup at a time through /warnings.
   const byUser = new Map();
   for (const c of cases) {
-    // A cleared warning stays in the log as history, but it is not a strike any
-    // more — it must not keep a member on this list after a moderator has
-    // forgiven them.
     if (c.type !== 'warn' || c.clearedAt) continue;
     const seen = byUser.get(c.userId) || { userId: c.userId, tag: c.userTag, count: 0, last: 0 };
     seen.count++;
@@ -131,12 +109,7 @@ function read(guildId, guild) {
       customWords: automod.customWords || [],
     },
     logChannelId: config.logsChannel || null,
-    // The role a new member is given the moment they join — /config also
-    // sets this, so a server run half from Discord and half from the panel
-    // still only has the one place this actually lives.
     autoRole: config.autoRole || null,
-    // Only real, assignable roles: Discord manages a bot's own integration
-    // role, and @everyone isn't a role you'd ever hand someone on join.
     roles: guild?.roles?.cache
       ? guild.roles.cache
         .filter(r => !r.managed && r.id !== guild.id)
@@ -146,13 +119,9 @@ function read(guildId, guild) {
   };
 }
 
-/* ─── acting on a report ─────────────────────────────────────────────────── */
-
 async function act(guildId, body, { client, session, guild }) {
   const id = String(body.reportId || '');
   const record = reports.get(id);
-  // A report from another server must not be actionable here, however the id
-  // was come by.
   if (!record || record.guildId !== guildId) return { error: 'unknown_report' };
   if (record.status !== 'open') return { error: 'already_handled', status: record.status };
 
@@ -161,15 +130,12 @@ async function act(guildId, body, { client, session, guild }) {
 
   if (action === 'dismiss') {
     reports.update(id, { status: 'dismissed', handledBy: by, handledAt: Date.now(), action: 'dismiss' });
-    await strikeCard(guild, record, `✅ Dismissed by ${by}`, 0x95a5a6);
+    await strikeCard(guild, record, `\u2705 Dismissed by ${by}`, 0x95a5a6);
     return { ok: true, action: 'dismiss', targetTag: record.targetTag, targetId: record.targetId };
   }
 
   if (!Object.hasOwn(modActions.ACTIONS, action)) return { error: 'bad_action' };
 
-  // Falling back to what the report recorded rather than refusing outright:
-  // a deleted or unreachable account is exactly the case where a ban still
-  // needs to be possible, and the tag is only wanted for the case record.
   const fetched = await client.users?.fetch?.(record.targetId).catch(() => null);
   const targetUser = fetched || { id: record.targetId, tag: record.targetTag || record.targetId };
   const member = guild?.members?.cache?.get(record.targetId) || null;
@@ -186,7 +152,7 @@ async function act(guildId, body, { client, session, guild }) {
   if (!result.ok) return { error: result.error, detail: result.detail };
 
   reports.update(id, { status: 'actioned', handledBy: by, handledAt: Date.now(), action });
-  await strikeCard(guild, record, `✅ Handled by ${by} — ${result.label}`, 0x2ecc71);
+  await strikeCard(guild, record, `\u2705 Handled by ${by} \u2014 ${result.label}`, 0x2ecc71);
 
   return {
     ok: true, action, label: result.label, caseId: result.caseId,
@@ -194,7 +160,6 @@ async function act(guildId, body, { client, session, guild }) {
   };
 }
 
-/** Marks the original card in the report channel as dealt with. */
 async function strikeCard(guild, record, footer, colour) {
   try {
     if (!record.messageId) return;
@@ -204,10 +169,8 @@ async function strikeCard(guild, record, footer, colour) {
     const { EmbedBuilder } = require('discord.js');
     const updated = EmbedBuilder.from(message.embeds[0]).setColor(colour).setFooter({ text: footer });
     await message.edit({ embeds: [updated], components: [] });
-  } catch { /* the card may be gone; the decision itself still stands */ }
+  } catch { /* */ }
 }
-
-/* ─── warnings ───────────────────────────────────────────────────────────── */
 
 function clearWarnings(guildId, body, { guild }) {
   const userId = String(body.userId || '');
@@ -216,8 +179,6 @@ function clearWarnings(guildId, body, { guild }) {
   if (!removed) return { unchanged: true };
   return { ok: true, userId, removed, name: nameOf(guild, userId, userId) };
 }
-
-/* ─── settings ───────────────────────────────────────────────────────────── */
 
 function saveWarnSettings(guildId, body) {
   const config = readJson('config.json', {});
@@ -230,8 +191,6 @@ function saveWarnSettings(guildId, body) {
     const n = Number(body.threshold);
     if (!Number.isInteger(n) || n < 0 || n > 50) return { error: 'bad_threshold' };
     if (n !== (Number(current.threshold) || 0)) {
-      // Zero is the off switch — a threshold of nothing would fire on the
-      // first warning, which is not what "no auto-punish" should mean.
       if (n === 0) delete next.threshold;
       else next.threshold = n;
       changed.push(n === 0 ? 'auto-punish off' : `auto-punish at ${n} warnings`);
@@ -244,7 +203,6 @@ function saveWarnSettings(guildId, body) {
   }
   if ('muteMinutes' in body) {
     const n = Number(body.muteMinutes);
-    // Discord's own ceiling for a timeout is 28 days.
     if (!Number.isInteger(n) || n < 1 || n > 40320) return { error: 'bad_duration' };
     const ms = n * 60000;
     if (ms !== (Number(current.muteDuration) || 3600000)) { next.muteDuration = ms; changed.push(`mute ${n}m`); }
@@ -256,10 +214,6 @@ function saveWarnSettings(guildId, body) {
   return { ok: true, changed };
 }
 
-/**
- * The join role. `null`/`''` turns the feature off — a member still joins
- * normally, just with no role handed to them automatically.
- */
 function saveAutoRole(guildId, body, { guild }) {
   const incoming = body.roleId;
   const config = readJson('config.json', {});
@@ -283,11 +237,6 @@ function saveAutoRole(guildId, body, { guild }) {
   return { ok: true, roleId: value, roleName, changed: [value ? `auto-role: ${roleName}` : 'auto-role turned off'] };
 }
 
-
-/**
- * Quick moderation from the panel (not tied to a report).
- * Same path as slash commands / report buttons — case + DM + mod-log.
- */
 async function modAction(guildId, body, { client, session, guild }) {
   const action = String(body.action || '');
   if (!Object.hasOwn(modActions.ACTIONS, action)) return { error: 'bad_action' };
@@ -330,5 +279,44 @@ async function modAction(guildId, body, { client, session, guild }) {
   };
 }
 
-module.exports = { read, act, clearWarnings, saveWarnSettings, saveAutoRole, modAction };
+/**
+ * Add or remove a role on a member from the panel member pad.
+ */
+async function memberRole(guildId, body, { client, session, guild }) {
+  const op = String(body.op || '').toLowerCase();
+  if (op !== 'add' && op !== 'remove') return { error: 'bad_op' };
+  const userId = String(body.userId || '').trim();
+  const roleId = String(body.roleId || '').trim();
+  if (!/^\d{5,20}$/.test(userId)) return { error: 'bad_user' };
+  if (!/^\d{5,20}$/.test(roleId)) return { error: 'bad_role' };
+  if (!guild?.roles?.cache?.has(roleId)) return { error: 'unknown_role' };
+  const role = guild.roles.cache.get(roleId);
+  if (role.managed || role.id === guild.id) return { error: 'role_not_assignable' };
 
+  const member = guild.members.cache.get(userId)
+    || await guild.members.fetch(userId).catch(() => null);
+  if (!member) return { error: 'not_in_server' };
+
+  try {
+    if (op === 'add') await member.roles.add(roleId, `Panel role add by ${session.name}`);
+    else await member.roles.remove(roleId, `Panel role remove by ${session.name}`);
+  } catch (err) {
+    return { error: 'discord_refused', detail: String(err.message || err).slice(0, 140) };
+  }
+
+  const roles = [...(member.roles?.cache?.values?.() || [])]
+    .filter(r => r.id !== guild.id && !r.managed)
+    .sort((a, b) => (b.position || 0) - (a.position || 0))
+    .map(r => ({ id: r.id, name: r.name, color: r.hexColor && r.hexColor !== '#000000' ? r.hexColor : null }));
+
+  return {
+    ok: true,
+    op,
+    userId,
+    roleId,
+    roleName: role.name,
+    roles,
+  };
+}
+
+module.exports = { read, act, clearWarnings, saveWarnSettings, saveAutoRole, modAction, memberRole };
