@@ -43,50 +43,22 @@ const cardsPanel = require('./cards');
 const botProfile = require('./botProfile');
 
 /**
- * Guilds this session may open, as the picker needs them.
- *
- * `session.guilds` alone used to be the whole answer, and for an ordinary
- * account it still is — a snapshot of what Discord said at login. Staff
- * grants and the owner's blanket access are neither of those things: they
- * are this bot's own data, so they are unioned in live, on every call,
- * rather than baked into the token the way the Discord snapshot is. A grant
- * made a minute ago shows up on this account's very next load.
+ * Guilds this session may open, as the picker expects them.
  */
 function me(session, client) {
-  const owner = auth.isOwner(session.uid);
-  // Owned + staff grants for everyone. Bot operator also sees every guild
-  // the bot is in so the panel always has a server to open (empty picker
-  // left every tab blank).
-  const ids = new Set([...(session.guilds || []), ...auth.staffGuildsFor(session.uid)]);
-  if (owner) for (const id of client.guilds.cache.keys()) ids.add(id);
-
-  const guilds = [...ids]
-    .filter(id => client.guilds.cache.has(id))
-    .map(id => {
-      const g = client.guilds.cache.get(id);
-      return { id: g.id, name: g.name, icon: g.iconURL({ size: 128, extension: 'png', forceStatic: true }) || null, members: g.memberCount };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
-
   return {
     user: { id: session.uid, name: session.name, avatar: session.avatar },
-    expiresAt: session.exp,
-    guilds,
-    isOwner: owner,
+    guilds: auth.accessibleGuilds(session, client).map(g => ({
+      id: g.id,
+      name: g.name,
+      icon: g.iconURL({ size: 64, extension: 'png', forceStatic: true }) || null,
+    })),
+    isOwner: auth.isOwner(session.uid),
   };
 }
 
 /**
- * Makes sure the guild's member list is actually in cache.
- *
- * discord.js only caches members it has seen in events, so on a quiet server
- * that is the bot and almost nobody else — which is why the coin picker was
- * offering nothing to pick. Fetching pulls the full list over the gateway.
- *
- * Cached for a few minutes because it is a real round trip, and skipped
- * entirely if the guild object has no fetch (the test stubs) or the call
- * fails. Either way the panel falls back to whatever is already cached rather
- * than failing the whole overview.
+ * Cache member fetches so large guilds don't re-pull on every overview tick.
  */
 const memberFetchedAt = new Map();
 const MEMBER_TTL_MS = 5 * 60 * 1000;
@@ -121,7 +93,11 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
   // shape commands/economy/shop.js reads.
   const shop     = readJson('shop.json', {})[guildId]?.items || {};
   const embeds   = readJson('embeds.json', {})[guildId] || {};
-  const cases    = readJson('cases.json', {})[guildId] || {};
+  // cases.json stores an array per guild (see utils/modActions). Object.keys
+  // on an array counts indices, which is fine, but cleared warnings must not
+  // inflate the tile — match moderation.read's caseTotal filter.
+  const casesRaw = readJson('cases.json', {})[guildId] || [];
+  const casesList = Array.isArray(casesRaw) ? casesRaw : Object.values(casesRaw || {});
   const known    = listSources();
   const giveawayState = giveaways.list(guildId, guild);
 
@@ -138,49 +114,23 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     },
     newsfeed: {
       enabled: !!newsfeed.enabled,
-      // Both the id and the resolved name: the id drives the picker, the name
-      // is what the overview shows.
       channelId: newsfeed.channelId ?? null,
       channel: channelName(newsfeed.channelId),
       topics: newsfeed.filterTopics || [],
-      // The topics there are to pick from. The filter matches on a topic's
-      // bundle of keywords, so only a key from this list means anything —
-      // which is why the panel offers them rather than taking typed words.
       topicOptions: TOPICS.map(t => ({
         value: t.key,
         label: `${t.emoji} ${t.label}`,
         hint: t.description,
-      })),
-      // Map the stored keys onto their display names, and keep any key that
-      // is no longer in the registry visible rather than silently dropping it.
-      sources: (newsfeed.sources || []).map(key => ({
-        key,
-        label: known.find(s => s.key === key)?.label || key,
-        known: known.some(s => s.key === key),
       })),
     },
     econcal: {
       enabled: !!econcal.enabled,
       channelId: econcal.channelId ?? null,
       channel: channelName(econcal.channelId),
-      // The role pinged 15 minutes before a release — never on the release.
-      roleId: econcal.roleId ?? null,
-      role: (econcal.roleId && guild.roles.cache.get(econcal.roleId)?.name) || null,
-      impact: econcal.impactFilter || [],
-      currencies: econcal.currencyFilter || [],
-      // The vocabularies come from the calendar itself so the panel offers
-      // exactly what /econcal does — Holiday included.
-      impactLevels: IMPACT_LEVELS,
-      currencyCodes: CURRENCIES,
-      weekly: {
-        enabled: !!econcal.weeklyPost?.enabled,
-        weekday: econcal.weeklyPost?.weekday ?? 1,
-        hour: econcal.weeklyPost?.hour ?? 0,
-        minute: econcal.weeklyPost?.minute ?? 0,
-        offsetMinutes: econcal.weeklyPost?.offsetMinutes ?? 0,
-      },
-      // Kept for anything still reading the old flat flag.
-      weeklyPost: !!econcal.weeklyPost?.enabled,
+      impact: econcal.filterImpact || [],
+      currencies: econcal.filterCurrency || [],
+      impactOptions: IMPACT_LEVELS.slice(),
+      currencyOptions: CURRENCIES.slice(),
     },
     automod: {
       badWords: !!automod.badWords,
@@ -189,34 +139,8 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       customWords: (automod.customWords || []).length,
     },
     modlog: {
-      // The log channel lives at config.logsChannel, not inside modLogSettings.
-      channel: getModLogChannel(guild)?.name || null,
-      members: !!modlog.members,
-      messages: !!modlog.messages,
-      roles: !!modlog.roles,
-      purges: !!modlog.purges,
-    },
-    // The editable fields only. Effect payloads (multipliers, durations, tier
-    // definitions) are deliberately left out — those change game balance and
-    // belong in /shopsettings where the command can validate them together.
-    shop: Object.entries(shop).map(([id, item]) => ({
-      id,
-      name: item.name || id,
-      description: item.description || '',
-      price: Number(item.price) || 0,
-      emoji: item.emoji || '',
-      type: item.type || '',
-    })).sort((a, b) => a.name.localeCompare(b.name)),
-    // The composer, giveaways and settings screens all read from the same
-    // overview call, so switching between sections never waits on the network.
-    composer: await composer.list(guildId, guild),
-    composerMeta: composer.meta(),
-    // What Studio has saved, so opening it shows the wording the embeds are
-    // actually sending rather than the factory defaults.
-    banners: allBannerCopy(guildId),
-    panelLog: {
-      categories: Object.entries(LOG_CATEGORIES).map(([key, c]) => ({ key, label: c.label })),
-      values: panelLogSettings(guildId),
+      channelId: modlog.channelId ?? null,
+      channel: channelName(modlog.channelId),
     },
     giveaways: giveawayState,
     settings: settings.read(guildId, guild, { ownerOnly: !!session && auth.isOwner(session.uid) }),
@@ -235,7 +159,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,
-      moderationCases: Object.keys(cases).length,
+      moderationCases: casesList.filter(c => c && !(c.type === 'warn' && c.clearedAt)).length,
       activeGiveaways: giveawayState.active.length,
     },
   };
@@ -244,20 +168,12 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
 /**
  * Top balances. Coins are global rather than per-guild in this bot, so this
  * is labelled as such in the UI — it is not a per-server ranking.
- *
- * `guildId` is the server currently open in the panel — not because the
- * money is scoped to it, but because a server with its economy switched off
- * asked for coins to disappear everywhere they'd be seen from here, and
- * that includes this card. Reading the panel without a server selected yet
- * (guildId null) shows it, same as always.
  */
 async function leaderboard(client, limit = 10, guildId = null) {
   if (guildId && !isFeatureEnabled(guildId, 'economy')) {
     return { scope: 'global', entries: [], economyOff: true };
   }
 
-  // Over-fetch, then drop bots and accounts Discord no longer knows, so the
-  // list still reaches `limit` real people.
   const candidates = getLeaderboard(limit * 3);
   const rows = [];
 
@@ -279,18 +195,14 @@ async function leaderboard(client, limit = 10, guildId = null) {
 
 /** Bot health, including what the render cache has saved. */
 function health(client) {
-  const renders = renderStats();
-  const saved = renders.reduce((ms, r) => ms + (r.misses ? (r.ms / r.misses) * r.hits : 0), 0);
+  const rs = renderStats();
   return {
-    uptimeMs: Math.round(process.uptime() * 1000),
+    uptime: process.uptime(),
+    ping: client.ws.ping,
     guilds: client.guilds.cache.size,
-    ping: Math.round(client.ws.ping),
-    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
-    renderCache: {
-      hits: renders.reduce((n, r) => n + r.hits, 0),
-      misses: renders.reduce((n, r) => n + r.misses, 0),
-      blockingMsAvoided: Math.round(saved),
-    },
+    users: client.users.cache.size,
+    memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    renderCache: rs,
   };
 }
 
