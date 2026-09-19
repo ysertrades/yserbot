@@ -704,6 +704,188 @@ function paintTiles(specs) {
  * Split out because the live stream repaints these on every change and must
  * not go near a form while it is being filled in.
  */
+
+function memberRankLabel(m) {
+  if (m.isOwner) return 'Owner';
+  if (m.isAdmin) return 'Admin';
+  return null;
+}
+
+function renderMembersRoster() {
+  const host = document.getElementById('members-roster');
+  const countEl = document.getElementById('members-count');
+  if (!host) return;
+  const members = state.overview?.features?.members || [];
+  if (countEl) countEl.textContent = String(members.length);
+
+  if (!members.length) {
+    host.replaceChildren(el('div', 'muted', 'No members loaded yet — refresh in a moment.'));
+    return;
+  }
+
+  const list = el('div', 'members-list');
+  for (const m of members) {
+    const row = el('div', 'member-row' + (m.isOwner ? ' is-owner' : m.isAdmin ? ' is-admin' : ''));
+    const av = el('div', 'member-av');
+    if (m.avatar) {
+      const img = el('img');
+      img.src = m.avatar;
+      img.alt = '';
+      av.append(img);
+    } else {
+      av.append(el('span', null, (m.name || '?').slice(0, 1).toUpperCase()));
+    }
+    row.append(av);
+
+    const info = el('div', 'member-info');
+    const nameLine = el('div', 'member-name');
+    nameLine.append(document.createTextNode(m.displayName || m.name || m.id));
+    const rank = memberRankLabel(m);
+    if (rank) nameLine.append(el('span', 'member-rank', rank));
+    info.append(nameLine);
+    if (m.username) info.append(el('div', 'member-user', '@' + m.username));
+    const roleBits = (m.roles || []).slice(0, 4).map(r => r.name).filter(Boolean);
+    if (roleBits.length) info.append(el('div', 'member-roles', roleBits.join(' · ')));
+    row.append(info);
+
+    const check = el('button', 'btn small member-check', 'Check');
+    check.type = 'button';
+    check.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openMemberPad(m);
+    });
+    row.append(check);
+    list.append(row);
+  }
+  host.replaceChildren(list);
+}
+
+async function openMemberPad(m) {
+  const roles = roleList();
+  const memberRoles = new Set((m.roles || []).map(r => r.id));
+
+  const head = el('div', 'member-pad-hero');
+  const av = el('div', 'member-pad-av');
+  if (m.avatar) {
+    const img = el('img');
+    img.src = m.avatar.replace('size=64', 'size=128');
+    img.alt = '';
+    av.append(img);
+  } else {
+    av.append(el('span', null, (m.name || '?').slice(0, 1).toUpperCase()));
+  }
+  head.append(av);
+
+  const meta = el('div', 'member-pad-meta');
+  meta.append(el('div', 'member-pad-name', m.displayName || m.name || m.id));
+  if (m.username) meta.append(el('div', 'member-pad-user', '@' + m.username));
+  const rank = memberRankLabel(m);
+  if (rank) meta.append(el('span', 'member-rank', rank));
+  head.append(meta);
+
+  const body = [head];
+
+  const roleWrap = el('div', 'member-pad-roles');
+  roleWrap.append(el('div', 'member-pad-label', 'Roles'));
+  const chips = el('div', 'member-pad-chips');
+  const current = (m.roles || []);
+  if (!current.length) {
+    chips.append(el('span', 'muted', 'No roles'));
+  } else {
+    for (const r of current) {
+      const chip = el('span', 'member-chip');
+      if (r.color) chip.style.borderColor = r.color;
+      chip.append(document.createTextNode(r.name));
+      const rm = el('button', 'member-chip-x', '×');
+      rm.type = 'button';
+      rm.title = 'Remove role';
+      rm.addEventListener('click', async () => {
+        rm.disabled = true;
+        const out = await post('memberrole', { userId: m.id, roleId: r.id, op: 'remove' });
+        if (out?.ok) {
+          m.roles = out.roles || (m.roles || []).filter(x => x.id !== r.id);
+          openMemberPad(m);
+          renderMembersRoster();
+        } else {
+          rm.disabled = false;
+        }
+      });
+      chip.append(rm);
+      chips.append(chip);
+    }
+  }
+  roleWrap.append(chips);
+  body.push(roleWrap);
+
+  const assignable = roles.filter(r => !memberRoles.has(r.id));
+  if (assignable.length) {
+    const assign = el('div', 'member-pad-assign');
+    assign.append(el('div', 'member-pad-label', 'Assign role'));
+    const sel = el('select');
+    sel.append(Object.assign(el('option'), { value: '', textContent: 'Pick a role…' }));
+    for (const r of assignable) {
+      sel.append(Object.assign(el('option'), { value: r.id, textContent: r.name }));
+    }
+    const addBtn = el('button', 'btn small', 'Add');
+    addBtn.type = 'button';
+    addBtn.addEventListener('click', async () => {
+      if (!sel.value) return;
+      addBtn.disabled = true;
+      const out = await post('memberrole', { userId: m.id, roleId: sel.value, op: 'add' });
+      if (out?.ok) {
+        m.roles = out.roles || m.roles;
+        openMemberPad(m);
+        renderMembersRoster();
+      } else {
+        addBtn.disabled = false;
+      }
+    });
+    const row = el('div', 'member-pad-assign-row');
+    row.append(sel, addBtn);
+    assign.append(row);
+    body.push(assign);
+  }
+
+  const acts = el('div', 'member-pad-actions');
+  acts.append(el('div', 'member-pad-label', 'Moderation'));
+  const grid = el('div', 'member-pad-grid');
+
+  const runMod = async (action, extra = {}) => {
+    const reason = window.prompt('Reason for ' + action + ' (optional):', '') ?? '';
+    const out = await post('modaction', { action, userId: m.id, reason, ...extra });
+    if (out?.ok) {
+      closeSheet();
+      try {
+        const data = await get('/api/guild/' + state.guildId);
+        if (data) { state.overview = data; renderOverviewCards(); renderMembersRoster(); }
+      } catch (_) {}
+    } else if (out?.error) {
+      window.alert(out.detail || out.error);
+    }
+  };
+
+  const mk = (label, cls, fn) => {
+    const b = el('button', 'btn small ' + (cls || ''), label);
+    b.type = 'button';
+    b.addEventListener('click', fn);
+    return b;
+  };
+
+  grid.append(
+    mk('Warn', '', () => runMod('warn')),
+    mk('Timeout 10m', '', () => runMod('timeout', { timeoutMinutes: 10 })),
+    mk('Timeout 1h', '', () => runMod('timeout', { timeoutMinutes: 60 })),
+    mk('Kick', 'danger', () => runMod('kick')),
+    mk('Ban', 'danger', () => runMod('ban')),
+  );
+  acts.append(grid);
+  body.push(acts);
+
+  openSheet(m.displayName || m.name || 'Member', body, [
+    Object.assign(el('button', 'btn', 'Close'), { type: 'button', onclick: () => closeSheet() }),
+  ]);
+}
+
 function renderOverviewCards() {
   const d = state.overview;
   if (!d) return;
@@ -743,6 +925,7 @@ function renderOverviewCards() {
 function renderOverview() {
   if (!state.overview) return;
   renderOverviewCards();
+  renderMembersRoster();
   if (isEditing() || sheetIsOpen()) {
     liveMissed = true;
     return;

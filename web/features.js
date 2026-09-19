@@ -226,12 +226,37 @@ function read(guildId, guild) {
   out.members = guild.members?.cache
     ? [...guild.members.cache.values()]
         .filter(m => !m.user?.bot)
-        .slice(0, 500)
         .map(m => {
           const name = m.displayName || m.user?.globalName || m.user?.username || m.id;
-          return { id: m.id, name, username: m.user?.username || '', displayName: name };
+          const isOwner = m.id === guild.ownerId;
+          let isAdmin = false;
+          try {
+            isAdmin = !!(m.permissions?.has?.('Administrator') || m.permissions?.has?.('ManageGuild'));
+          } catch {}
+          const roles = [...(m.roles?.cache?.values?.() || [])]
+            .filter(r => r.id !== guild.id && !r.managed)
+            .sort((a, b) => (b.position || 0) - (a.position || 0))
+            .map(r => ({
+              id: r.id, name: r.name,
+              color: r.hexColor && r.hexColor !== '#000000' ? r.hexColor : null,
+            }));
+          let avatar = null;
+          try {
+            avatar = m.displayAvatarURL?.({ size: 64, extension: 'png', forceStatic: true })
+              || m.user?.displayAvatarURL?.({ size: 64 }) || null;
+          } catch {}
+          return {
+            id: m.id, name, username: m.user?.username || '', displayName: name,
+            avatar, roles, isOwner, isAdmin: isAdmin || isOwner,
+            joinedAt: m.joinedTimestamp || null,
+          };
         })
-        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => {
+          if (a.isOwner !== b.isOwner) return a.isOwner ? -1 : 1;
+          if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        })
+        .slice(0, 500)
     : [];
 
   // Admins for Drop Desk host picker — Manage Guild or Administrator, non-bots.

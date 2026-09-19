@@ -591,6 +591,15 @@ Object.assign(OPS, {
     return r;
   },
 
+  async memberrole(guildId, body, ctx) {
+    const r = await moderationPanel.memberRole(guildId, body, ctx);
+    if (r.error) return r;
+    const verb = r.op === 'add' ? 'added' : 'removed';
+    await announce(ctx.client, guildId, ctx.session,
+      `🎭 Role **${r.roleName}** ${verb} for <@${r.userId}>`, 'moderation');
+    return r;
+  },
+
   /* -- link approval requests -------------------------------------------- */
   async linkrequest(guildId, body, ctx) {
     const r = await links.decide(guildId, body, ctx);
