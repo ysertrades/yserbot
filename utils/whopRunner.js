@@ -5,8 +5,8 @@ const whop = require('./whopFeed');
 const messageStyle = require('./messageStyle');
 const { generateWhopBannerImage } = require('./whopVisual');
 
-const TICK_MS = 60_000;
-const GAP_MS = 2_500;
+const TICK_MS = 15_000;
+const GAP_MS = 1_500;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** Same flag giveaways use — Components V2 */
@@ -40,7 +40,7 @@ function resolveLessonUrl(settings, lesson) {
 
 /**
  * Components V2 lesson card:
- * NEW LESSON · QUANTLAB
+ * NEW LESSON ✦ QUANTLAB
  * ## lesson title   (## keeps gap under eyebrow tight vs #)
  * [banner]
  * ────
@@ -55,7 +55,7 @@ function buildLessonV2(settings, lesson, imageUrl, mention) {
 
   // ## instead of # — same hierarchy, much less vertical space under the eyebrow
   const header = [
-    '-# NEW LESSON  ·  QUANTLAB',
+    '-# NEW LESSON  ✦  QUANTLAB',
     '## ' + title,
   ].join('\n');
 
@@ -120,7 +120,7 @@ function buildLessonEmbed(settings, lesson, imageUrl) {
     .setTitle(title)
     .setDescription(
       [
-        '-# NEW LESSON  ·  QUANTLAB',
+        '-# NEW LESSON  ✦  QUANTLAB',
         path ? ('\n' + path) : null,
         url ? ('\n[Open on Whop](' + url + ')') : null,
       ].filter(Boolean).join('\n')
@@ -233,14 +233,14 @@ async function checkGuild(client, guildId) {
   let settings = whop.getSettings(guildId);
   if (!settings.enabled || !settings.apiKey || !settings.log.length) return;
 
-  const intervalMs = Math.max(60_000, (Number(settings.pollMinutes) || 2) * 60_000);
+  const intervalMs = Math.max(15_000, (Number(settings.pollMinutes) || 1) * 60_000);
   const last = Number(settings.lastCheckAt) || 0;
   if (last && Date.now() - last < intervalMs - 5_000) return;
 
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
 
-  console.log(`[WHOP] check ${guildId} · ${settings.log.length} tracked · every ${settings.pollMinutes || 2}m`);
+  console.log(`[WHOP] check ${guildId} · ${settings.log.length} tracked · every ${settings.pollMinutes || 1}m`);
 
   await maybeRefreshCatalog(guildId, settings);
   settings = whop.getSettings(guildId);
@@ -294,9 +294,9 @@ let timer = null;
 
 function startWhopRunner(client) {
   const tick = () => runTick(client).catch(err => console.error('[WHOP RUNNER]', err));
-  setTimeout(tick, 12_000);
+  setTimeout(tick, 5_000);
   timer = setInterval(tick, TICK_MS);
-  console.log('[WHOP] runner started (tick every 60s)');
+  console.log('[WHOP] runner started (tick every 15s)');
   return timer;
 }
 
