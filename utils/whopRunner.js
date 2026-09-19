@@ -40,33 +40,39 @@ function resolveLessonUrl(settings, lesson) {
 
 /**
  * Components V2 lesson card — same structure as giveaway V2:
- * text → media → separator → link button → separator → footer
+ * eyebrow → hero lesson title → meta bullets → media → separator → button → footer
  * Mentions go inside the container (not top-level content).
  */
 function buildLessonV2(settings, lesson, imageUrl, mention) {
-  const title = String(lesson.title || 'New lesson').slice(0, 120);
+  const title = String(lesson.title || 'Untitled lesson').slice(0, 120);
   const course = String(lesson.courseTitle || '').slice(0, 100);
   const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
   const kind = typeLabel(lesson.lessonType);
   const workspace = String(settings.companyTitle || settings.companyRoute || '').slice(0, 80);
 
-  const bodyLines = [
-    '**' + title + '**',
-    '',
-    course ? ('📚 **Course** · ' + course) : null,
-    app ? ('▦ **App** · ' + app) : null,
-    workspace ? ('🏢 **Whop** · ' + workspace) : null,
-    '🎬 **Type** · ' + kind,
+  // Hero = lesson name (# heading). Eyebrow = small "NEW LESSON · type".
+  // Meta sits as a clean bullet list so nothing feels stacked.
+  const eyebrow = '-# NEW LESSON  ·  ' + kind.toUpperCase();
+  const hero = '# ' + title;
+  const meta = [
+    course ? ('•  **Course**  —  ' + course) : null,
+    app ? ('•  **App**  —  ' + app) : null,
+    workspace ? ('•  **Whop**  —  ' + workspace) : null,
   ].filter(Boolean).join('\n');
 
   const kids = [];
   if (mention) {
     kids.push({ type: 10, content: String(mention).slice(0, 4000) });
   }
+  // Block 1: eyebrow + hero title
   kids.push({
     type: 10,
-    content: ('# New lesson\n\n' + bodyLines).slice(0, 4000),
+    content: (eyebrow + '\n\n' + hero).slice(0, 4000),
   });
+  // Block 2: meta list (own text node = natural spacing from the title)
+  if (meta) {
+    kids.push({ type: 10, content: meta.slice(0, 4000) });
+  }
 
   if (imageUrl && (/^https:\/\//i.test(imageUrl) || /^attachment:\/\//i.test(imageUrl))) {
     kids.push({ type: 12, items: [{ media: { url: imageUrl } }] });
@@ -86,18 +92,23 @@ function buildLessonV2(settings, lesson, imageUrl, mention) {
       type: 1,
       components: [{ type: 2, style: 5, label, url }],
     });
-    const pathHint = [
-      'Open the **' + (app || 'Courses') + '** app',
-      course ? ('→ **' + course + '**') : null,
-      '→ **' + title + '**',
-    ].filter(Boolean).join(' ');
-    kids.push({ type: 10, content: pathHint.slice(0, 4000) });
+    const pathBits = [
+      app || null,
+      course || null,
+      title,
+    ].filter(Boolean);
+    if (pathBits.length) {
+      kids.push({
+        type: 10,
+        content: ('-# ' + pathBits.join('  →  ')).slice(0, 4000),
+      });
+    }
     kids.push({ type: 14, divider: true, spacing: 1 });
   }
 
   kids.push({
     type: 10,
-    content: ('-# QuantLab · ' + kind).slice(0, 4000),
+    content: ('-# QuantLab  ·  ' + kind).slice(0, 4000),
   });
 
   return {
@@ -111,7 +122,7 @@ function buildLessonV2(settings, lesson, imageUrl, mention) {
 }
 
 function buildLessonEmbed(settings, lesson, imageUrl) {
-  const title = String(lesson.title || 'New lesson').slice(0, 256);
+  const title = String(lesson.title || 'Untitled lesson').slice(0, 256);
   const course = String(lesson.courseTitle || '').slice(0, 100);
   const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
   const kind = typeLabel(lesson.lessonType);
@@ -121,13 +132,14 @@ function buildLessonEmbed(settings, lesson, imageUrl) {
     .setTitle(title)
     .setDescription(
       [
-        course ? ('📚 Course · **' + course + '**') : null,
-        app ? ('▦ App · **' + app + '**') : null,
-        '🎬 Type · **' + kind + '**',
+        '-# NEW LESSON  ·  ' + kind.toUpperCase(),
+        '',
+        course ? ('•  **Course**  —  ' + course) : null,
+        app ? ('•  **App**  —  ' + app) : null,
         url ? ('\n[Open on Whop](' + url + ')') : null,
       ].filter(Boolean).join('\n')
     )
-    .setFooter({ text: 'QuantLab · ' + kind });
+    .setFooter({ text: 'QuantLab  ·  ' + kind });
   if (imageUrl && /^https:\/\//i.test(imageUrl)) embed.setImage(imageUrl);
   return embed;
 }
