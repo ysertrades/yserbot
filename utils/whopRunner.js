@@ -39,41 +39,36 @@ function resolveLessonUrl(settings, lesson) {
 }
 
 /**
- * Components V2 lesson card — same structure as giveaway V2:
- * eyebrow → hero lesson title → meta → media → separator → button → footer
- * Single text block keeps vertical spacing tight (no blank gaps).
- * Mentions go inside the container (not top-level content).
+ * Components V2 lesson card:
+ * NEW LESSON · QUANTLAB
+ * # lesson title
+ * [banner]
+ * ────
+ * [View lesson]
+ * go to **App** → **Course** → **Lesson**
  */
 function buildLessonV2(settings, lesson, imageUrl, mention) {
   const title = String(lesson.title || 'Untitled lesson').slice(0, 120);
   const course = String(lesson.courseTitle || '').slice(0, 100);
   const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
   const kind = typeLabel(lesson.lessonType);
-  const workspace = String(settings.companyTitle || settings.companyRoute || '').slice(0, 80);
 
-  // Tight header: small eyebrow, then hero title on the next line (no blank gap).
-  // Meta lines stay compact under the title in the same text block.
-  const lines = [
-    '-# NEW LESSON  ·  ' + kind.toUpperCase(),
+  // Header only: eyebrow + hero title (no Course/App/Whop under the title)
+  const header = [
+    '-# NEW LESSON  ·  QUANTLAB',
     '# ' + title,
-  ];
-  if (course) lines.push('**Course**  ·  ' + course);
-  if (app) lines.push('**App**  ·  ' + app);
-  if (workspace) lines.push('**Whop**  ·  ' + workspace);
+  ].join('\n');
 
   const kids = [];
   if (mention) {
     kids.push({ type: 10, content: String(mention).slice(0, 4000) });
   }
-
-  // Single text block = tight vertical rhythm (no extra Text Display gaps)
-  kids.push({ type: 10, content: lines.join('\n').slice(0, 4000) });
+  kids.push({ type: 10, content: header.slice(0, 4000) });
 
   if (imageUrl && (/^https:\/\//i.test(imageUrl) || /^attachment:\/\//i.test(imageUrl))) {
     kids.push({ type: 12, items: [{ media: { url: imageUrl } }] });
   }
 
-  // Small separator (spacing: 1) before the action
   kids.push({ type: 14, divider: true, spacing: 1 });
 
   const url = resolveLessonUrl(settings, lesson);
@@ -84,26 +79,20 @@ function buildLessonV2(settings, lesson, imageUrl, mention) {
     : 'View lesson';
 
   if (url) {
-    // Link button inside the card (Components V2 style 5)
     kids.push({
       type: 1,
       components: [{ type: 2, style: 5, label, url }],
     });
-    // Soft path under the button so members know where to look on Whop
-    const pathBits = [app || null, course || null, title].filter(Boolean);
-    if (pathBits.length) {
+
+    // Directing path only: "go to" plain, names bold, joined with →
+    const boldBits = [app, course, title].filter(Boolean).map(s => '**' + s + '**');
+    if (boldBits.length) {
       kids.push({
         type: 10,
-        content: ('-# ' + pathBits.join('  →  ')).slice(0, 4000),
+        content: ('-# go to  ' + boldBits.join('  →  ')).slice(0, 4000),
       });
     }
-    kids.push({ type: 14, divider: true, spacing: 1 });
   }
-
-  kids.push({
-    type: 10,
-    content: ('-# QuantLab  ·  ' + kind).slice(0, 4000),
-  });
 
   return {
     flags: IS_COMPONENTS_V2,
@@ -121,19 +110,18 @@ function buildLessonEmbed(settings, lesson, imageUrl) {
   const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
   const kind = typeLabel(lesson.lessonType);
   const url = resolveLessonUrl(settings, lesson);
+  const boldBits = [app, course, title].filter(Boolean).map(s => '**' + s + '**');
+  const path = boldBits.length ? ('go to  ' + boldBits.join('  →  ')) : null;
   const embed = new EmbedBuilder()
     .setColor(ACCENT)
     .setTitle(title)
     .setDescription(
       [
-        '-# NEW LESSON  ·  ' + kind.toUpperCase(),
-        '',
-        course ? ('•  **Course**  —  ' + course) : null,
-        app ? ('•  **App**  —  ' + app) : null,
+        '-# NEW LESSON  ·  QUANTLAB',
+        path ? ('\n' + path) : null,
         url ? ('\n[Open on Whop](' + url + ')') : null,
       ].filter(Boolean).join('\n')
-    )
-    .setFooter({ text: 'QuantLab  ·  ' + kind });
+    );
   if (imageUrl && /^https:\/\//i.test(imageUrl)) embed.setImage(imageUrl);
   return embed;
 }
