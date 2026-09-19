@@ -41,22 +41,22 @@ function resolveLessonUrl(settings, lesson) {
 /**
  * Components V2 lesson card:
  * NEW LESSON · QUANTLAB
- * # lesson title
+ * ## lesson title   (## keeps gap under eyebrow tight vs #)
  * [banner]
  * ────
  * [View lesson]
+ * ────
  * go to **App** → **Course** → **Lesson**
  */
 function buildLessonV2(settings, lesson, imageUrl, mention) {
   const title = String(lesson.title || 'Untitled lesson').slice(0, 120);
   const course = String(lesson.courseTitle || '').slice(0, 100);
   const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
-  const kind = typeLabel(lesson.lessonType);
 
-  // Header only: eyebrow + hero title (no Course/App/Whop under the title)
+  // ## instead of # — same hierarchy, much less vertical space under the eyebrow
   const header = [
     '-# NEW LESSON  ·  QUANTLAB',
-    '# ' + title,
+    '## ' + title,
   ].join('\n');
 
   const kids = [];
@@ -69,6 +69,7 @@ function buildLessonV2(settings, lesson, imageUrl, mention) {
     kids.push({ type: 12, items: [{ media: { url: imageUrl } }] });
   }
 
+  // Separator above the button
   kids.push({ type: 14, divider: true, spacing: 1 });
 
   const url = resolveLessonUrl(settings, lesson);
@@ -84,7 +85,10 @@ function buildLessonV2(settings, lesson, imageUrl, mention) {
       components: [{ type: 2, style: 5, label, url }],
     });
 
-    // Directing path only: "go to" plain, names bold, joined with →
+    // Separator between button and directing footer
+    kids.push({ type: 14, divider: true, spacing: 1 });
+
+    // Directing path: "go to" plain, names bold, joined with →
     const boldBits = [app, course, title].filter(Boolean).map(s => '**' + s + '**');
     if (boldBits.length) {
       kids.push({
@@ -108,7 +112,6 @@ function buildLessonEmbed(settings, lesson, imageUrl) {
   const title = String(lesson.title || 'Untitled lesson').slice(0, 256);
   const course = String(lesson.courseTitle || '').slice(0, 100);
   const app = String(lesson.appName || lesson.companyTitle || '').slice(0, 100);
-  const kind = typeLabel(lesson.lessonType);
   const url = resolveLessonUrl(settings, lesson);
   const boldBits = [app, course, title].filter(Boolean).map(s => '**' + s + '**');
   const path = boldBits.length ? ('go to  ' + boldBits.join('  →  ')) : null;
