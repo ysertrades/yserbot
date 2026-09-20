@@ -3010,3 +3010,42 @@ select.cselect-native {
     box-sizing: border-box !important;
   }
 }
+
+
+/* Member mod pad — join + account age */
+.member-pad-timeline {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+  width: 100%;
+  min-width: 0;
+}
+.member-pad-time-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #7c6cff) 22%, var(--rule, #2a2d38));
+  background: color-mix(in srgb, var(--accent, #7c6cff) 6%, var(--sunken, #12141a));
+  min-width: 0;
+}
+.member-pad-time-k {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted, #8b90a0);
+}
+.member-pad-time-v {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--ink, #e8eaf0);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 52rem) {
+  .member-pad-timeline { grid-template-columns: 1fr; }
+}

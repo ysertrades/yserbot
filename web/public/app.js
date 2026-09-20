@@ -848,7 +848,37 @@ function bindMembersSearch() {
   search.addEventListener('keyup', run);
 }
 
-async function openMemberPad(m) {
+async 
+function formatAccountAge(ts) {
+  if (!ts) return null;
+  const ms = Date.now() - Number(ts);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const days = Math.floor(ms / 86400000);
+  if (days < 1) {
+    const hours = Math.floor(ms / 3600000);
+    return hours <= 1 ? 'just now' : hours + 'h old';
+  }
+  if (days < 30) return days + 'd old';
+  if (days < 365) {
+    const mo = Math.floor(days / 30);
+    return mo === 1 ? '1 month old' : mo + ' months old';
+  }
+  const y = Math.floor(days / 365);
+  const rem = Math.floor((days % 365) / 30);
+  if (rem <= 0) return y === 1 ? '1 year old' : y + ' years old';
+  return y + 'y ' + rem + 'mo old';
+}
+
+function formatJoinedLine(ts) {
+  if (!ts) return null;
+  const d = new Date(Number(ts));
+  if (isNaN(d.getTime())) return null;
+  const abs = d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+  const rel = typeof relativeTime === 'function' ? relativeTime(ts) : null;
+  return rel ? abs + ' · ' + rel : abs;
+}
+
+function openMemberPad(m) {
   const roles = roleList();
   const memberRoles = new Set((m.roles || []).map(r => r.id));
 
@@ -869,6 +899,30 @@ async function openMemberPad(m) {
   if (m.username) meta.append(el('div', 'member-pad-user', '@' + m.username));
   const rank = memberRankLabel(m);
   if (rank) meta.append(el('span', 'member-rank', rank));
+
+  const timeline = el('div', 'member-pad-timeline');
+  const joinedLine = formatJoinedLine(m.joinedAt);
+  const ageLine = formatAccountAge(m.accountCreatedAt);
+  const joinCard = el('div', 'member-pad-time-card');
+  joinCard.append(
+    el('span', 'member-pad-time-k', 'Joined server'),
+    el('span', 'member-pad-time-v', joinedLine || 'Unknown'),
+  );
+  const ageCard = el('div', 'member-pad-time-card');
+  let ageDetail = ageLine || 'Unknown';
+  if (m.accountCreatedAt) {
+    const created = new Date(Number(m.accountCreatedAt));
+    if (!isNaN(created.getTime())) {
+      ageDetail = ageLine + ' · since ' + created.toLocaleDateString([], { month: 'short', year: 'numeric' });
+    }
+  }
+  ageCard.append(
+    el('span', 'member-pad-time-k', 'Account age'),
+    el('span', 'member-pad-time-v', ageDetail),
+  );
+  timeline.append(joinCard, ageCard);
+  meta.append(timeline);
+
   head.append(meta);
 
   const body = [head];

@@ -249,6 +249,7 @@ function read(guildId, guild) {
             id: m.id, name, username: m.user?.username || '', displayName: name,
             avatar, roles, isOwner, isAdmin: isAdmin || isOwner,
             joinedAt: m.joinedTimestamp || null,
+            accountCreatedAt: m.user?.createdTimestamp || null,
           };
         })
         .sort((a, b) => {
