@@ -1030,6 +1030,7 @@ function renderOverview() {
   renderOverviewCards();
   bindMembersSearch();
   renderMembersRoster();
+  try { syncFeatureNav(); } catch {}
   if (isEditing() || sheetIsOpen()) {
     liveMissed = true;
     return;

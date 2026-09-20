@@ -294,7 +294,7 @@ let timer = null;
 
 function startWhopRunner(client) {
   const tick = () => runTick(client).catch(err => console.error('[WHOP RUNNER]', err));
-  setTimeout(tick, 5_000);
+  setTimeout(tick, 2_000);
   timer = setInterval(tick, TICK_MS);
   console.log('[WHOP] runner started (tick every 15s)');
   return timer;

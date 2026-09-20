@@ -251,14 +251,18 @@ async function leaderboard(client, limit = 10, guildId = null) {
 
 /** Bot health, including what the render cache has saved. */
 function health(client) {
-  const rs = renderStats();
+  const renders = renderStats();
+  const saved = renders.reduce((ms, r) => ms + (r.misses ? (r.ms / r.misses) * r.hits : 0), 0);
   return {
-    uptime: process.uptime(),
-    ping: client.ws.ping,
+    uptimeMs: Math.round(process.uptime() * 1000),
     guilds: client.guilds.cache.size,
-    users: client.users.cache.size,
-    memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-    renderCache: rs,
+    ping: Math.round(client.ws.ping),
+    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    renderCache: {
+      hits: renders.reduce((n, r) => n + r.hits, 0),
+      misses: renders.reduce((n, r) => n + r.misses, 0),
+      blockingMsAvoided: Math.round(saved),
+    },
   };
 }
 
