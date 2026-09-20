@@ -1245,7 +1245,7 @@ module.exports = {
   // ── Button handler ──────────────────────────────────────────────────────────
   async handleSetupButton(interaction) {
     ensureSessions();
-    const [, action, sessionId] = interaction.customId.split(':');
+    let [, action, sessionId] = interaction.customId.split(':');
     const data = global.giveawaySessions.get(sessionId);
 
     if (!data)
@@ -1281,12 +1281,84 @@ module.exports = {
       return interaction.update(buildChannelPickerView(sessionId));
     }
 
+    if (action === 'image') {
+      const emb = new EmbedBuilder()
+        .setColor(GOLD)
+        .setTitle('🖼️  Giveaway banner')
+        .setDescription(
+          'Pick how to set the prize image.\n\n' +
+          '**Upload** — send a picture in chat (60s)\n' +
+          '**Paste URL** — use a direct image link\n' +
+          '**Clear** — remove the current image',
+        );
+      const rows = [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`gaw_setup:imageupload:${sessionId}`).setLabel('Upload picture').setEmoji('📤').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`gaw_setup:imageurl:${sessionId}`).setLabel('Paste URL').setEmoji('🔗').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`gaw_setup:imageclear:${sessionId}`).setLabel('Clear').setEmoji('🧹').setStyle(ButtonStyle.Danger).setDisabled(!data.imageUrl),
+        ),
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`gaw_setup:panel:${sessionId}`).setLabel('← Back').setStyle(ButtonStyle.Secondary),
+        ),
+      ];
+      return interaction.update({ embeds: [emb], components: rows });
+    }
+
+    if (action === 'imageclear') {
+      data.imageUrl = null;
+      return interaction.update({ embeds: [buildSetupEmbed(data, interaction.guild)], components: buildSetupRows(sessionId, data) });
+    }
+
+    if (action === 'imageupload') {
+      await interaction.update({
+        embeds: [new EmbedBuilder().setColor(GOLD).setTitle('📤  Upload a picture')
+          .setDescription('Send **one image** in this channel within **60 seconds**.\nGIF / PNG / JPG work best.\n\nWaiting…')],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`gaw_setup:panel:${sessionId}`).setLabel('← Cancel').setStyle(ButtonStyle.Secondary),
+          ),
+        ],
+      });
+      try {
+        const collected = await interaction.channel.awaitMessages({
+          filter: (m) => m.author.id === interaction.user.id && m.attachments.size > 0,
+          max: 1,
+          time: 60_000,
+          errors: ['time'],
+        });
+        const msg = collected.first();
+        const att = msg.attachments.find(a => (a.contentType || '').startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(a.name || ''));
+        if (!att) {
+          return interaction.editReply({
+            embeds: [buildSetupEmbed(data, interaction.guild)],
+            components: buildSetupRows(sessionId, data),
+            content: '❌ That file was not an image. Try again from **Image**.',
+          }).catch(() => {});
+        }
+        data.imageUrl = att.proxyURL || att.url;
+        await msg.delete().catch(() => {});
+        return interaction.editReply({
+          content: null,
+          embeds: [buildSetupEmbed(data, interaction.guild)],
+          components: buildSetupRows(sessionId, data),
+        });
+      } catch {
+        return interaction.editReply({
+          content: '⌛ Timed out — no image received.',
+          embeds: [buildSetupEmbed(data, interaction.guild)],
+          components: buildSetupRows(sessionId, data),
+        }).catch(() => {});
+      }
+    }
+
+    if (action === 'imageurl') action = 'image';
+
     // Everything else still opens a modal
     const defs = {
       prize:    { title: '🏆  Set Prize',    label: 'Prize',                            ph: 'e.g. Nitro Classic, $10 Gift Card', max: 100, req: true },
       duration: { title: '⏱️  Set Duration', label: 'Duration',                         ph: '1h  |  30m  |  2d',                 max: 10,  req: true },
       winners:  { title: '👥  Set Winners',   label: `Number of winners (1–${MAX_WINNERS})`, ph: '1',                            max: 2,   req: true },
-      image:    { title: '🖼️  Set Image URL', label: 'Image URL',                       ph: 'https://example.com/image.png',     max: 500, req: false },
+      image:    { title: '🖼️  Paste image URL', label: 'Direct image URL',              ph: 'https://cdn.discordapp.com/...',     max: 500, req: false },
       mention:  { title: '📣  Set Mention',   label: '@everyone, @here, or a role ID',   ph: '@everyone',                         max: 100, req: false },
       minage:   { title: '🕰️  Min. Account Age', label: 'Minimum account age in days (0 = off)', ph: '7',                        max: 5,   req: false },
     };

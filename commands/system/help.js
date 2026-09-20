@@ -4,6 +4,7 @@ const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('disc
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson }           = require('../../utils/jsonStorage');
 const { MOD_COMMANDS, ADMIN_COMMANDS } = require('./cmd');
+const { groupForCommand, isFeatureEnabled } = require('../../utils/featureToggles');
 
 // ── Command catalogue ──────────────────────────────────────────────────────────
 // Each entry: [name, short description]. Categories are declared here and
@@ -80,6 +81,7 @@ const MOD_CATALOGUE = [
 // Discord caps an embed field's value at 1024 chars — split into multiple
 // fields (numbered) rather than assuming any one category stays under that.
 function categoryFields(name, list, maxLen = 1024) {
+  if (!list || !list.length) return [];
   const lines = list.map(([cmdName, desc]) => `\`/${cmdName}\` — ${desc}`);
   const chunks = [];
   let current = '';
@@ -121,15 +123,22 @@ module.exports = {
     const canUseAdmin = isAdmin
       || (setup.adminRoles.length > 0 && setup.adminRoles.some(id => member.roles.cache.has(id)));
 
-    // ── Build field list — categories in A-Z order by name ────────────────────
+    // ── Build field list — hide commands whose feature group is off ─────────
+    const guildId = interaction.guild?.id;
+    const enabledOnly = (list) => list.filter(([cmdName]) => {
+      const key = groupForCommand(cmdName);
+      if (!key) return true;
+      return isFeatureEnabled(guildId, key);
+    });
+
     const fields = [];
 
-    if (canUseAdmin) fields.push(...categoryFields('⚙️ Admin & Setup', ADMIN_CATALOGUE));
-    fields.push(...categoryFields('🎉 Community', COMMUNITY_CMDS));
-    fields.push(...categoryFields('💰 Economy',   ECONOMY_CMDS));
-    fields.push(...categoryFields('📈 Futures',   FUTURES_CMDS));
-    fields.push(...categoryFields('ℹ️ General',   GENERAL_CMDS));
-    if (canUseMod) fields.push(...categoryFields('🛡️ Moderation', MOD_CATALOGUE));
+    if (canUseAdmin) fields.push(...categoryFields('⚙️ Admin & Setup', enabledOnly(ADMIN_CATALOGUE)));
+    fields.push(...categoryFields('🎉 Community', enabledOnly(COMMUNITY_CMDS)));
+    fields.push(...categoryFields('💰 Economy',   enabledOnly(ECONOMY_CMDS)));
+    fields.push(...categoryFields('📈 Futures',   enabledOnly(FUTURES_CMDS)));
+    fields.push(...categoryFields('ℹ️ General',   enabledOnly(GENERAL_CMDS)));
+    if (canUseMod) fields.push(...categoryFields('🛡️ Moderation', enabledOnly(MOD_CATALOGUE)));
 
     // ── Tier badge for footer ──────────────────────────────────────────────────
     const tier = isAdmin ? '👑 Administrator'
