@@ -353,9 +353,8 @@ async function route(req, res, client) {
     // The CSRF token rides along with identity so the page always has a fresh
     // one without a separate round trip.
     if (p === '/api/me') {
-      if (!client?.isReady?.()) {
-        return json(res, 503, { error: 'starting', message: 'Discord gateway not ready yet' });
-      }
+      // Do NOT block on client.isReady() — that caused "Bot not responding"
+      // while Discord was still connecting. Empty guilds is acceptable.
       // Hand back a fresh token when this one is getting old, so an account in
       // regular use is never bounced back to the sign-in screen mid-task.
       const renewed = auth.refreshed(session);
