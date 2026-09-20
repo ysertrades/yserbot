@@ -253,7 +253,6 @@ async function get(path) {
   return res.json();
 }
 
-
 /**
  * @param {object} opts
  *   quiet — no "Saved" toast. For the operations that read rather than write:
@@ -471,23 +470,21 @@ function sheetRow(label, value) {
 /* ── screens ───────────────────────────────────────────────────────────── */
 
 function showLogin() {
-  try {
-    if (embedded) wireEmbeddedLogin();
-    const code = new URLSearchParams(location.search).get('error');
-    const p = document.getElementById('login-error');
-    if (p) {
-      if (code) {
-        p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
-        p.classList.remove('soft');
-        p.hidden = false;
-      } else if (embedded) {
-        p.textContent = 'This opens Discord in a new tab. Come back here once it says you are signed in.';
-        p.classList.add('soft');
-        p.hidden = false;
-      }
-    }
-  } catch (e) {
-    console.warn('[Panel] showLogin extras failed', e);
+  if (embedded) wireEmbeddedLogin();
+
+  const code = new URLSearchParams(location.search).get('error');
+  if (code) {
+    const p = $('#login-error');
+    p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
+    p.classList.remove('soft');
+    p.hidden = false;
+  } else if (embedded) {
+    // Set expectations before the tab switch, rather than leaving you looking
+    // at a page that appears to have done nothing.
+    const p = $('#login-error');
+    p.textContent = 'This opens Discord in a new tab. Come back here once it says you are signed in.';
+    p.classList.add('soft');
+    p.hidden = false;
   }
   root.dataset.state = 'login';
 }
@@ -851,8 +848,7 @@ function bindMembersSearch() {
   search.addEventListener('keyup', run);
 }
 
-async 
-function formatAccountAge(ts) {
+async function formatAccountAge(ts) {
   if (!ts) return null;
   const ms = Date.now() - Number(ts);
   if (!Number.isFinite(ms) || ms < 0) return null;
@@ -898,7 +894,7 @@ function openMemberPad(m) {
   head.append(av);
 
   const meta = el('div', 'member-pad-meta');
-  meta.append(el('div', 'member-pad-name', m.displayName || m.name || m.id));
+meta.append(el('div', 'member-pad-name', m.displayName || m.name || m.id));
   if (m.username) meta.append(el('div', 'member-pad-user', '@' + m.username));
   const rank = memberRankLabel(m);
   if (rank) meta.append(el('span', 'member-rank', rank));
@@ -9042,10 +9038,6 @@ async function main() {
   try {
     me = await get('/api/me');
   } catch (err) {
-    if (err.status === 408) {
-      console.warn('[Panel] /api/me timed out — bot may be restarting');
-      return showLogin();
-    }
     if (err.status === 503 && err.body?.missing) return showSetup(err.body.missing);
 
     // A stored token that no longer works is worse than none — it would keep

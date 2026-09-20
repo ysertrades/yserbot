@@ -76,23 +76,25 @@ for (const file of eventFiles) {
     }
 }
 
-// Open panel HTTP as soon as Mongo is up so Loading is never blocked on Discord.
+// Connect to MongoDB (warm the cache) before logging into Discord so every
+// command handler has storage available from the very first interaction.
 (async () => {
   await connectMongo(process.env.MONGODB_URI);
+  // Draw the embed-template images once now, while nothing is waiting on the
+  // bot. Each render blocks the thread for 60-210 ms, so paying for all seven
+  // here keeps that stall out of every later interaction.
+  await warmRenderCache();
 
-  try {
-    startPanel(client);
-  } catch (err) {
-    console.error('[Panel] failed to start (bot keeps running):', err);
-  }
-
+  // The panel reads the bot's live guild list, so it starts once the gateway
+  // is up. Wrapped because nothing about the web server is worth taking the
+  // bot offline for — if it can't start, the bot still runs Discord normally.
   client.once(Events.ClientReady, () => {
-    console.log(`[Panel] Discord ready — guilds: ${client.guilds.cache.size}`);
-    warmRenderCache().catch(err =>
-      console.warn('[RenderCache] warm failed:', err.message || err));
+    try {
+      startPanel(client);
+    } catch (err) {
+      console.error('[Panel] failed to start (bot keeps running):', err);
+    }
   });
 
-  client.login(process.env.TOKEN).catch(err => {
-    console.error('[Discord] login failed:', err.message || err);
-  });
+  client.login(process.env.TOKEN);
 })();
