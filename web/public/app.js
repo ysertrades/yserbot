@@ -242,15 +242,33 @@ function toast(message, kind = '') {
 
 const authHeaders = () => (state.token ? { authorization: `Bearer ${state.token}` } : {});
 
-async function get(path) {
-  const res = await fetch(path, { credentials: 'same-origin', headers: authHeaders() });
-  if (!res.ok) {
-    const err = new Error(`${path} → ${res.status}`);
-    err.status = res.status;
-    err.body = await res.json().catch(() => ({}));
+async function get(path, { timeoutMs = 20000 } = {}) {
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+  try {
+    const res = await fetch(path, {
+      credentials: 'same-origin',
+      headers: authHeaders(),
+      signal: ctrl?.signal,
+    });
+    if (!res.ok) {
+      const err = new Error(`${path} → ${res.status}`);
+      err.status = res.status;
+      err.body = await res.json().catch(() => ({}));
+      throw err;
+    }
+    return res.json();
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      const e = new Error(`${path} → timeout`);
+      e.status = 408;
+      e.body = { error: 'timeout' };
+      throw e;
+    }
     throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  return res.json();
 }
 
 /**
@@ -9037,8 +9055,12 @@ async function main() {
 
   let me;
   try {
-    me = await get('/api/me');
+    me = await get('/api/me', { timeoutMs: 20000 });
   } catch (err) {
+    if (err.status === 408) {
+      console.warn('[Panel] /api/me timed out — bot may be restarting');
+      return showLogin();
+    }
     if (err.status === 503 && err.body?.missing) return showSetup(err.body.missing);
 
     // A stored token that no longer works is worse than none — it would keep

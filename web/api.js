@@ -106,8 +106,11 @@ async function ensureMembers(guild) {
 /** Everything the overview screen shows for one guild. */
 async function guildOverview(guildId, client, session = null, opts = {}) {
   const guild = client.guilds.cache.get(guildId);
-  // Bot-profile saves must not wait on a full member fetch — that is what
-  // made "Save global profile" look frozen on larger servers.
+  if (!guild) {
+    const err = new Error('guild_not_found');
+    err.code = 'guild_not_found';
+    throw err;
+  }
   if (!opts.skipMembers) await ensureMembers(guild);
 
   const newsfeed = getNewsFeedSettings(guildId);
