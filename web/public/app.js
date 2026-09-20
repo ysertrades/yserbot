@@ -242,14 +242,11 @@ function toast(message, kind = '') {
 
 const authHeaders = () => (state.token ? { authorization: `Bearer ${state.token}` } : {});
 
-async function get(path, { timeoutMs = 10000 } = {}) {
-  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
-  try {
+async function get(path, { timeoutMs = 8000 } = {}) {
+  const fetchPromise = (async () => {
     const res = await fetch(path, {
       credentials: 'same-origin',
       headers: authHeaders(),
-      signal: ctrl?.signal,
     });
     if (!res.ok) {
       const err = new Error(`${path} → ${res.status}`);
@@ -258,17 +255,16 @@ async function get(path, { timeoutMs = 10000 } = {}) {
       throw err;
     }
     return res.json();
-  } catch (err) {
-    if (err?.name === 'AbortError') {
+  })();
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
       const e = new Error(`${path} → timeout`);
       e.status = 408;
       e.body = { error: 'timeout' };
-      throw e;
-    }
-    throw err;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+      reject(e);
+    }, timeoutMs);
+  });
+  return Promise.race([fetchPromise, timeoutPromise]);
 }
 
 /**
@@ -488,21 +484,23 @@ function sheetRow(label, value) {
 /* ── screens ───────────────────────────────────────────────────────────── */
 
 function showLogin() {
-  if (embedded) wireEmbeddedLogin();
-
-  const code = new URLSearchParams(location.search).get('error');
-  if (code) {
-    const p = $('#login-error');
-    p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
-    p.classList.remove('soft');
-    p.hidden = false;
-  } else if (embedded) {
-    // Set expectations before the tab switch, rather than leaving you looking
-    // at a page that appears to have done nothing.
-    const p = $('#login-error');
-    p.textContent = 'This opens Discord in a new tab. Come back here once it says you are signed in.';
-    p.classList.add('soft');
-    p.hidden = false;
+  try {
+    if (embedded) wireEmbeddedLogin();
+    const code = new URLSearchParams(location.search).get('error');
+    const p = document.getElementById('login-error');
+    if (p) {
+      if (code) {
+        p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
+        p.classList.remove('soft');
+        p.hidden = false;
+      } else if (embedded) {
+        p.textContent = 'This opens Discord in a new tab. Come back here once it says you are signed in.';
+        p.classList.add('soft');
+        p.hidden = false;
+      }
+    }
+  } catch (e) {
+    console.warn('[Panel] showLogin extras failed', e);
   }
   root.dataset.state = 'login';
 }
