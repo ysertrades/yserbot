@@ -242,30 +242,17 @@ function toast(message, kind = '') {
 
 const authHeaders = () => (state.token ? { authorization: `Bearer ${state.token}` } : {});
 
-async function get(path, { timeoutMs = 8000 } = {}) {
-  const fetchPromise = (async () => {
-    const res = await fetch(path, {
-      credentials: 'same-origin',
-      headers: authHeaders(),
-    });
-    if (!res.ok) {
-      const err = new Error(`${path} → ${res.status}`);
-      err.status = res.status;
-      err.body = await res.json().catch(() => ({}));
-      throw err;
-    }
-    return res.json();
-  })();
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => {
-      const e = new Error(`${path} → timeout`);
-      e.status = 408;
-      e.body = { error: 'timeout' };
-      reject(e);
-    }, timeoutMs);
-  });
-  return Promise.race([fetchPromise, timeoutPromise]);
+async function get(path) {
+  const res = await fetch(path, { credentials: 'same-origin', headers: authHeaders() });
+  if (!res.ok) {
+    const err = new Error(`${path} → ${res.status}`);
+    err.status = res.status;
+    err.body = await res.json().catch(() => ({}));
+    throw err;
+  }
+  return res.json();
 }
+
 
 /**
  * @param {object} opts
@@ -9053,7 +9040,7 @@ async function main() {
 
   let me;
   try {
-    me = await get('/api/me', { timeoutMs: 12000 });
+    me = await get('/api/me');
   } catch (err) {
     if (err.status === 408) {
       console.warn('[Panel] /api/me timed out — bot may be restarting');
