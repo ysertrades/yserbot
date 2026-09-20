@@ -40,7 +40,11 @@
 <main id="main">
 
   <section class="view" data-view="loading">
-    <div class="panel center"><p class="muted">Loading…</p></div>
+    <div class="panel center" id="boot-panel">
+      <p class="muted" id="boot-msg">Loading…</p>
+      <p class="hint soft" id="boot-hint" hidden style="margin-top:0.75rem"></p>
+      <button type="button" class="btn primary" id="boot-retry" hidden style="margin-top:1rem">Try again</button>
+    </div>
   </section>
 
   <section class="view" data-view="login">
@@ -663,5 +667,27 @@
 
 <script src="/app.js"></script>
 <script src="/stability.js"></script>
+<script>
+(function () {
+  function stillLoading() {
+    return document.documentElement.getAttribute('data-state') === 'loading';
+  }
+  function showStuck(msg, detail) {
+    if (!stillLoading()) return;
+    var m = document.getElementById('boot-msg');
+    var h = document.getElementById('boot-hint');
+    var b = document.getElementById('boot-retry');
+    if (m) m.textContent = msg;
+    if (h) { h.hidden = false; h.textContent = detail; }
+    if (b) { b.hidden = false; b.onclick = function () { location.reload(); }; }
+  }
+  setTimeout(function () {
+    if (stillLoading()) showStuck('Still loading…', 'Waiting for the bot. If this does not change, the process is down or stuck on Discord login.');
+  }, 5000);
+  setTimeout(function () {
+    if (stillLoading()) showStuck('Bot not responding', 'On the host, confirm Ready! and Panel listening, then tap Try again.');
+  }, 12000);
+})();
+</script>
 </body>
 </html>

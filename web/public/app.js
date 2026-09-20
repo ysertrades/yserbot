@@ -242,7 +242,7 @@ function toast(message, kind = '') {
 
 const authHeaders = () => (state.token ? { authorization: `Bearer ${state.token}` } : {});
 
-async function get(path, { timeoutMs = 20000 } = {}) {
+async function get(path, { timeoutMs = 10000 } = {}) {
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
@@ -9055,7 +9055,7 @@ async function main() {
 
   let me;
   try {
-    me = await get('/api/me', { timeoutMs: 20000 });
+    me = await get('/api/me', { timeoutMs: 10000 });
   } catch (err) {
     if (err.status === 408) {
       console.warn('[Panel] /api/me timed out — bot may be restarting');
