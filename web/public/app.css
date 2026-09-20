@@ -887,6 +887,7 @@ html[data-entered] .embed-box[open] .body { animation: none; }
   padding: 0.55rem 1.15rem calc(1.15rem + env(safe-area-inset-bottom));
   box-shadow: 0 -20px 55px rgba(0, 0, 0, 0.55);
   animation: sheetUp var(--slow) var(--ease) both;
+  scrollbar-gutter: stable;
 }
 @media (min-width: 620px) {
   .sheet-wrap { align-items: center; }
@@ -904,7 +905,13 @@ html[data-entered] .embed-box[open] .body { animation: none; }
 }
 .sheet-x:hover { color: var(--ink); }
 
-.sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; margin-top: 0.8rem; }
+.sheet-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 0.8rem;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
 .sheet-body > * + * { margin-top: 0.8rem; }
 .sheet .actions { margin-top: 0.95rem; }
 .sheet .actions:empty { display: none; }

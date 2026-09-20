@@ -848,33 +848,48 @@ function bindMembersSearch() {
   search.addEventListener('keyup', run);
 }
 
-async function formatAccountAge(ts) {
-  if (!ts) return null;
+function formatAccountAge(ts) {
+  if (ts == null || ts === '') return null;
   const ms = Date.now() - Number(ts);
   if (!Number.isFinite(ms) || ms < 0) return null;
   const days = Math.floor(ms / 86400000);
   if (days < 1) {
     const hours = Math.floor(ms / 3600000);
-    return hours <= 1 ? 'just now' : hours + 'h old';
+    return hours <= 1 ? 'just now' : (hours + 'h old');
   }
   if (days < 30) return days + 'd old';
   if (days < 365) {
     const mo = Math.floor(days / 30);
-    return mo === 1 ? '1 month old' : mo + ' months old';
+    return mo === 1 ? '1 month old' : (mo + ' months old');
   }
   const y = Math.floor(days / 365);
   const rem = Math.floor((days % 365) / 30);
-  if (rem <= 0) return y === 1 ? '1 year old' : y + ' years old';
+  if (rem <= 0) return y === 1 ? '1 year old' : (y + ' years old');
   return y + 'y ' + rem + 'mo old';
 }
 
-function formatJoinedLine(ts) {
-  if (!ts) return null;
+function formatCalendarDate(ts, opts) {
   const d = new Date(Number(ts));
   if (isNaN(d.getTime())) return null;
-  const abs = d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
-  const rel = typeof relativeTime === 'function' ? relativeTime(ts) : null;
-  return rel ? abs + ' · ' + rel : abs;
+  try {
+    return d.toLocaleDateString(undefined, opts);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+}
+
+function formatJoinedLine(ts) {
+  if (ts == null || ts === '') return null;
+  const abs = formatCalendarDate(ts, { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!abs) return null;
+  let rel = null;
+  try {
+    if (typeof relativeTime === 'function') {
+      const r = relativeTime(ts);
+      if (typeof r === 'string' && r.trim() && r !== '[]') rel = r.trim();
+    }
+  } catch (_) {}
+  return rel ? (abs + ' · ' + rel) : abs;
 }
 
 function openMemberPad(m) {
@@ -905,15 +920,13 @@ meta.append(el('div', 'member-pad-name', m.displayName || m.name || m.id));
   const joinCard = el('div', 'member-pad-time-card');
   joinCard.append(
     el('span', 'member-pad-time-k', 'Joined server'),
-    el('span', 'member-pad-time-v', joinedLine || 'Unknown'),
+    el('span', 'member-pad-time-v', (typeof joinedLine === 'string' && joinedLine) || 'Unknown'),
   );
   const ageCard = el('div', 'member-pad-time-card');
-  let ageDetail = ageLine || 'Unknown';
-  if (m.accountCreatedAt) {
-    const created = new Date(Number(m.accountCreatedAt));
-    if (!isNaN(created.getTime())) {
-      ageDetail = ageLine + ' · since ' + created.toLocaleDateString([], { month: 'short', year: 'numeric' });
-    }
+  let ageDetail = (typeof ageLine === 'string' && ageLine) || 'Unknown';
+  if (typeof ageLine === 'string' && ageLine && m.accountCreatedAt) {
+    const since = formatCalendarDate(m.accountCreatedAt, { month: 'short', year: 'numeric' });
+    if (since) ageDetail = ageLine + ' · since ' + since;
   }
   ageCard.append(
     el('span', 'member-pad-time-k', 'Account age'),
