@@ -1368,7 +1368,7 @@ function renderWhop() {
     apiKey: "",
     unlockKey: false,
     companyId: d.companyId || "",
-    pollMinutes: d.pollMinutes || 10,
+    pollMinutes: d.pollMinutes != null ? d.pollMinutes : 0.5,
     onlyVideos: d.onlyVideos !== false,
     buttonLabel: d.buttonLabel || "open course",
   };
@@ -1391,8 +1391,8 @@ function renderWhop() {
 
   children.push(textField("Company ID", draft.companyId, v => { draft.companyId = v; }, { placeholder: "biz_…" }));
   children.push(el("p", "hint", "Required. Example: biz_61…"));
-  children.push(textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 2; }));
-  children.push(el("p", "hint", "How often Discord is checked for new lessons (minimum 2). Lower = closer to instant."));
+  children.push(textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 0.5; }));
+  children.push(el("p", "hint", "How often to look for new lessons. Use 0.5 for ~30s, 0.25 for ~15s (fastest)."));
   children.push(toggle("Only video lessons", draft.onlyVideos, v => { draft.onlyVideos = v; }));
   children.push(textField("Button label", draft.buttonLabel, v => { draft.buttonLabel = v; }, { placeholder: "Open course" }));
   children.push(el("p", "hint", "Each alert includes course name, course app, and banner art when available."));

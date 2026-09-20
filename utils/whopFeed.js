@@ -12,7 +12,7 @@ const DEFAULTS = {
   companyId: null,
   companyRoute: null,
   companyTitle: null,
-  pollMinutes: 1,
+  pollMinutes: 0.5,
   onlyVideos: true,
   maxPerCheck: 3,
   buttonLabel: 'Open course',
@@ -46,7 +46,7 @@ function getSettings(guildId) {
     catalog: Array.isArray(stored.catalog) ? stored.catalog : (Array.isArray(stored.courses) ? stored.courses : []),
     apps: Array.isArray(stored.apps) ? stored.apps : [],
     log,
-    pollMinutes: Math.min(120, Math.max(1, Number(stored.pollMinutes) || 1)),
+    pollMinutes: Math.min(120, Math.max(0.25, Number(stored.pollMinutes) || 0.5)),
     maxPerCheck: Math.min(10, Math.max(1, Number(stored.maxPerCheck) || 3)),
     buttonLabel: (stored.buttonLabel || DEFAULTS.buttonLabel).slice(0, 80),
   };

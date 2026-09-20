@@ -117,11 +117,12 @@ async function saveSettings(guildId, body, { guild }) {
 
   if ('pollMinutes' in body) {
     const n = Number(body.pollMinutes);
-    if (!Number.isFinite(n) || n < 2 || n > 120) return { error: 'bad_interval' };
-    const v = Math.round(n);
+    if (!Number.isFinite(n) || n < 0.25 || n > 120) return { error: 'bad_interval' };
+    const v = Math.round(n * 100) / 100;
     if (v !== current.pollMinutes) {
       patch.pollMinutes = v;
-      changed.push(`every ${v}m`);
+      const label = v < 1 ? `${Math.round(v * 60)}s` : `${v}m`;
+      changed.push(`every ${label}`);
     }
   }
 

@@ -5,8 +5,8 @@ const whop = require('./whopFeed');
 const messageStyle = require('./messageStyle');
 const { generateWhopBannerImage } = require('./whopVisual');
 
-const TICK_MS = 15_000;
-const GAP_MS = 1_500;
+const TICK_MS = 10_000;
+const GAP_MS = 400;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** Same flag giveaways use — Components V2 */
@@ -233,14 +233,16 @@ async function checkGuild(client, guildId) {
   let settings = whop.getSettings(guildId);
   if (!settings.enabled || !settings.apiKey || !settings.log.length) return;
 
-  const intervalMs = Math.max(15_000, (Number(settings.pollMinutes) || 1) * 60_000);
+  const intervalMs = Math.max(15_000, (Number(settings.pollMinutes) || 0.5) * 60_000);
   const last = Number(settings.lastCheckAt) || 0;
   if (last && Date.now() - last < intervalMs - 5_000) return;
 
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
 
-  console.log(`[WHOP] check ${guildId} · ${settings.log.length} tracked · every ${settings.pollMinutes || 1}m`);
+  const mins = Number(settings.pollMinutes) || 0.5;
+  const every = mins < 1 ? `${Math.round(mins * 60)}s` : `${mins}m`;
+  console.log(`[WHOP] check ${guildId} · ${settings.log.length} tracked · every ${every}`);
 
   await maybeRefreshCatalog(guildId, settings);
   settings = whop.getSettings(guildId);
@@ -294,9 +296,9 @@ let timer = null;
 
 function startWhopRunner(client) {
   const tick = () => runTick(client).catch(err => console.error('[WHOP RUNNER]', err));
-  setTimeout(tick, 2_000);
+  setTimeout(tick, 1_000);
   timer = setInterval(tick, TICK_MS);
-  console.log('[WHOP] runner started (tick every 15s)');
+  console.log('[WHOP] runner started (tick every 10s)');
   return timer;
 }
 
