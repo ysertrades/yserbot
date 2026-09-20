@@ -132,9 +132,18 @@ function buildLessonEmbed(settings, lesson, imageUrl) {
 async function resolveBanner(lesson) {
   const files = [];
   let imageUrl = null;
-  const banner = typeof lesson.courseCover === 'string' ? lesson.courseCover.trim() : '';
-  if (banner && /^https:\/\//i.test(banner)) {
-    imageUrl = banner;
+  const lessonUrl = typeof lesson.lessonBanner === 'string' ? lesson.lessonBanner.trim() : '';
+  const kind = lesson.lessonBannerKind || null;
+  const courseUrl = typeof lesson.courseCover === 'string' ? lesson.courseCover.trim() : '';
+  const courseOk = courseUrl && /^https:\/\//i.test(courseUrl);
+  const lessonOk = lessonUrl && /^https:\/\//i.test(lessonUrl);
+
+  if (lessonOk && kind === 'upload') {
+    imageUrl = lessonUrl;
+  } else if (courseOk) {
+    imageUrl = courseUrl;
+  } else if (lessonOk && kind === 'frame') {
+    imageUrl = lessonUrl;
   } else {
     try {
       const courseName = (lesson.courseTitle || 'COURSE').toUpperCase().slice(0, 28);

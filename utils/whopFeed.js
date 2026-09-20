@@ -251,6 +251,41 @@ async function listExperiences(apiKey, settings) {
   return courseApps.length ? courseApps : best;
 }
 
+/** Auto video-frame / mux thumb — not a hand-uploaded banner. */
+function isAutoVideoFrameUrl(u) {
+  const s = String(u || '').toLowerCase();
+  if (!s) return false;
+  return /mux\.com|image\.mux|stream\.mux|videodelivery\.net|cloudflarestream|\/thumbnails?\/|storyboard|animated\.gif|[?&]time=\d|frame\.jpe?g|thumbnail\.jpe?g/.test(s)
+    || /\/video[^/]*\/(thumb|poster|frame)/.test(s);
+}
+
+function pickLessonBanner(l) {
+  const candidates = [
+    l?.thumbnail?.source_url, l?.thumbnail?.url, l?.thumbnail?.optimized_url,
+    typeof l?.thumbnail === 'string' ? l.thumbnail : null,
+    typeof l?.cover_image === 'string' ? l.cover_image : null,
+    l?.cover_image?.source_url, l?.cover_image?.url, l?.cover_image?.optimized_url,
+    typeof l?.cover === 'string' ? l.cover : null, l?.cover?.source_url, l?.cover?.url,
+    typeof l?.banner === 'string' ? l.banner : null, l?.banner?.source_url, l?.banner?.url,
+    typeof l?.image === 'string' ? l.image : null, l?.image?.source_url, l?.image?.url,
+    l?.video_asset?.thumbnail_url, l?.video_asset?.poster_url, l?.mux_asset?.thumbnail_url,
+    l?.video?.thumbnail_url, l?.video?.poster_url,
+  ].filter(u => typeof u === 'string' && /^https:\/\//i.test(u.trim())).map(u => u.trim());
+
+  if (!candidates.length) return { url: null, kind: null };
+
+  const uploads = candidates.filter(u => !isAutoVideoFrameUrl(u));
+  const frames = candidates.filter(u => isAutoVideoFrameUrl(u));
+  const rank = (u) => (/w=\d{3,}|width=\d{3,}|original|source|large|full/i.test(u) ? 2 : 0)
+    + (/optimized|thumb|small|64|128|256/i.test(u) ? -1 : 0) + Math.min(u.length, 200) / 200;
+  uploads.sort((a, b) => rank(b) - rank(a));
+  frames.sort((a, b) => rank(b) - rank(a));
+
+  if (uploads.length) return { url: uploads[0], kind: 'upload' };
+  if (frames.length) return { url: frames[0], kind: 'frame' };
+  return { url: candidates[0], kind: 'frame' };
+}
+
 function mapLesson(l) {
   if (!l?.id) return null;
   const video = l.video_asset || l.mux_asset || l.muxAsset || l.video || null;
@@ -266,6 +301,7 @@ function mapLesson(l) {
   );
   const pdfReady = !!(pdf && (pdf.source_url || pdf.url || pdf.id || pdf.filename));
   const contentLen = String(l.content || '').trim().length;
+  const banner = pickLessonBanner(l);
   return {
     id: l.id,
     title: (l.title || '').trim() || 'Untitled lesson',
@@ -277,6 +313,8 @@ function mapLesson(l) {
     hasContent: contentLen >= 40,
     embedId: l.embed_id || null,
     chapterId: l.chapter?.id || l.chapter_id || null,
+    lessonBanner: banner.url,
+    lessonBannerKind: banner.kind,
   };
 }
 
@@ -302,16 +340,26 @@ async function retrieveLesson(apiKey, lessonId) {
   try { return await whopFetch(apiKey, `/course_lessons/${lessonId}`); } catch { return null; }
 }
 
-async function enrichLesson(apiKey, lesson) {
+async function enrichLesson(apiKey, lesson, { force = false } = {}) {
   if (!lesson?.id) return lesson;
-  if (lesson.videoReady || lesson.pdfReady || lesson.hasContent) return lesson;
+  const needsFull = force
+    || !(lesson.videoReady || lesson.pdfReady || lesson.hasContent)
+    || !lesson.lessonBannerKind;
+  if (!needsFull) return lesson;
   const type = String(lesson.lessonType || '').toLowerCase();
-  if (type && !['video', 'pdf', 'multi', '', 'text'].includes(type)) return lesson;
+  if (!force && type && !['video', 'pdf', 'multi', '', 'text'].includes(type)) return lesson;
   const full = await retrieveLesson(apiKey, lesson.id);
   if (!full) return lesson;
   const mapped = mapLesson(full);
   if (!mapped) return lesson;
-  return { ...lesson, ...mapped, title: mapped.title || lesson.title, lessonType: mapped.lessonType || lesson.lessonType };
+  return {
+    ...lesson,
+    ...mapped,
+    title: mapped.title || lesson.title,
+    lessonType: mapped.lessonType || lesson.lessonType,
+    lessonBanner: mapped.lessonBanner || lesson.lessonBanner || null,
+    lessonBannerKind: mapped.lessonBannerKind || lesson.lessonBannerKind || null,
+  };
 }
 
 function isPlaceholderTitle(title) {
@@ -368,7 +416,11 @@ async function baselineEntry(apiKey, entry) {
   const known = { ...(entry.known || {}) };
   try {
     const lessons = await listLessons(apiKey, entry.id);
-    for (const l of lessons) known[l.id] = true;
+    for (let l of lessons) {
+      l = await enrichLesson(apiKey, l);
+      if (considerLesson(l, true) === 'draft') continue;
+      known[l.id] = true;
+    }
   } catch (err) {
     console.warn(`[WHOP] baseline ${entry.id}:`, err.message);
   }
@@ -394,7 +446,11 @@ async function baselineAppEntry(apiKey, entry, courseIds) {
   for (const cid of targets) {
     try {
       const lessons = await listLessons(apiKey, cid);
-      for (const l of lessons) known[l.id] = true;
+      for (let l of lessons) {
+        l = await enrichLesson(apiKey, l);
+        if (considerLesson(l, true) === 'draft') continue;
+        known[l.id] = true;
+      }
     } catch (err) {
       console.warn(`[WHOP] baseline app course ${cid}:`, err.message);
     }
@@ -588,8 +644,14 @@ async function newLessons(guildId) {
         }
         const courseMeta = (s.catalog || []).find(c => c.id === cid) || {};
         for (let lesson of lessons) {
+          if (known[lesson.id]) {
+            lesson = await enrichLesson(s.apiKey, lesson);
+            const d = considerLesson(lesson, s.onlyVideos);
+            if (d === 'draft') delete known[lesson.id];
+            else continue;
+          }
           if (known[lesson.id]) continue;
-          lesson = await enrichLesson(s.apiKey, lesson);
+          lesson = await enrichLesson(s.apiKey, lesson, { force: true });
           const decision = considerLesson(lesson, s.onlyVideos);
           if (decision === 'skip_hide' || decision === 'skip_text') {
             known[lesson.id] = true;
@@ -648,8 +710,14 @@ async function newLessons(guildId) {
     const known = { ...(e.known || {}) };
     const fresh = [];
     for (let lesson of lessons) {
+      if (known[lesson.id]) {
+        lesson = await enrichLesson(s.apiKey, lesson);
+        const d = considerLesson(lesson, s.onlyVideos);
+        if (d === 'draft') delete known[lesson.id];
+        else continue;
+      }
       if (known[lesson.id]) continue;
-      lesson = await enrichLesson(s.apiKey, lesson);
+      lesson = await enrichLesson(s.apiKey, lesson, { force: true });
       const decision = considerLesson(lesson, s.onlyVideos);
       if (decision === 'skip_hide' || decision === 'skip_text') {
         known[lesson.id] = true;
@@ -686,5 +754,5 @@ module.exports = {
   FILE, DEFAULTS, getSettings, setSettings, maskKey,
   resolveCompany, fetchCompanyRoute, listCourses, listExperiences, listLessons,
   scanCourses, addToLog, addAppToLog, removeFromLog, updateLogEntry,
-  baselineAll, newLessons, lessonLink, isLessonReady, isPlaceholderTitle, pickCover,
+  baselineAll, newLessons, lessonLink, isLessonReady, isPlaceholderTitle, pickCover, pickLessonBanner, isAutoVideoFrameUrl,
 };
