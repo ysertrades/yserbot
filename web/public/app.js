@@ -9055,10 +9055,42 @@ async function main() {
 
   let me;
   try {
-    me = await get('/api/me', { timeoutMs: 10000 });
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        me = await get('/api/me', { timeoutMs: 8000 });
+        break;
+      } catch (err) {
+        const starting = err.status === 503 && err.body?.error === 'starting';
+        const timeout = err.status === 408;
+        if ((starting || timeout) && attempt < 19) {
+          try {
+            const msg = document.getElementById('boot-msg');
+            if (msg) msg.textContent = starting ? 'Connecting to Discord…' : 'Waiting for bot…';
+            const hint = document.getElementById('boot-hint');
+            if (hint) {
+              hint.hidden = false;
+              hint.textContent = 'The panel is up; the bot is still finishing startup.';
+            }
+          } catch (_) {}
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!me) {
+      const e = new Error('/api/me empty');
+      e.status = 503;
+      e.body = { error: 'starting' };
+      throw e;
+    }
   } catch (err) {
     if (err.status === 408) {
       console.warn('[Panel] /api/me timed out — bot may be restarting');
+      return showLogin();
+    }
+    if (err.status === 503 && err.body?.error === 'starting') {
+      console.warn('[Panel] bot still starting after retries');
       return showLogin();
     }
     if (err.status === 503 && err.body?.missing) return showSetup(err.body.missing);

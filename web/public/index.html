@@ -665,29 +665,8 @@
   </div>
 </div>
 
-<script src="/app.js"></script>
-<script src="/stability.js"></script>
-<script>
-(function () {
-  function stillLoading() {
-    return document.documentElement.getAttribute('data-state') === 'loading';
-  }
-  function showStuck(msg, detail) {
-    if (!stillLoading()) return;
-    var m = document.getElementById('boot-msg');
-    var h = document.getElementById('boot-hint');
-    var b = document.getElementById('boot-retry');
-    if (m) m.textContent = msg;
-    if (h) { h.hidden = false; h.textContent = detail; }
-    if (b) { b.hidden = false; b.onclick = function () { location.reload(); }; }
-  }
-  setTimeout(function () {
-    if (stillLoading()) showStuck('Still loading…', 'Waiting for the bot. If this does not change, the process is down or stuck on Discord login.');
-  }, 5000);
-  setTimeout(function () {
-    if (stillLoading()) showStuck('Bot not responding', 'On the host, confirm Ready! and Panel listening, then tap Try again.');
-  }, 12000);
-})();
-</script>
+<script src="/boot.js"></script>
+<script src="/app.js?v=boot3"></script>
+<script src="/stability.js?v=boot3"></script>
 </body>
 </html>
