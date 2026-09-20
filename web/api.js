@@ -203,7 +203,8 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     panelLog: panelLogSettings(guildId),
     panelLogCategories: LOG_CATEGORIES,
     bannerCopy: allBannerCopy(guildId),
-    composer: composer.list(guildId),
+    composer: await composer.list(guildId, guild),
+    composerMeta: composer.meta(),
     counts: {
       shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,

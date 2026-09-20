@@ -1071,8 +1071,8 @@ function renderOverview() {
   /* Drop form first — must not sit behind economy renders that can throw */
   renderGiveawayForm();
   try { renderCoins(); } catch (e) { console.warn('[panel] renderCoins', e); }
-  renderSchedules();
-  renderAutoreplies();
+  try { renderSchedules(); } catch (e) { console.warn('[panel] renderSchedules', e); }
+  try { renderAutoreplies(); } catch (e) { console.warn('[panel] renderAutoreplies', e); }
   renderLevels();
   renderLevelRoles();
   renderLevelBadges();
@@ -2269,8 +2269,15 @@ function imageSourceField(label, value, onChange, opts = {}) {
 
 function renderComposerIndex() {
   const wrap = $('#tpl-index');
-  const list = state.overview?.composer || [];
-  if (!list.length) { wrap.replaceChildren(el('p', 'muted', 'No messages yet.')); return; }
+  const raw = state.overview?.composer;
+  const list = Array.isArray(raw) ? raw : [];
+  if (!list.length) {
+    wrap.replaceChildren(
+      el('p', 'muted', 'No messages yet.'),
+      el('p', 'hint', 'Press New to create one, or build a template in Studio first.'),
+    );
+    return;
+  }
   wrap.replaceChildren(...list.map(t => {
     const b = el('button', 'tpl-entry');
     b.type = 'button';
@@ -2340,8 +2347,9 @@ function templatePick(value, onChange) {
 function renderComposer() {
   renderComposerIndex();
   const body = $('#composer-body');
-  const list = state.overview?.composer || [];
-  const meta = state.overview?.composerMeta;
+  const raw = state.overview?.composer;
+  const list = Array.isArray(raw) ? raw : [];
+  const meta = state.overview?.composerMeta || {};
 
   const tpl = state.draft || list.find(t => t.name === state.tplName);
   if (!tpl) {
@@ -7669,7 +7677,9 @@ function renderCoins() {
 /* ── automation ────────────────────────────────────────────────────────── */
 
 function templateOptions() {
-  return (state.overview?.composer || []).map(t => ({ value: t.name, label: t.name }));
+  const raw = state.overview?.composer;
+  const list = Array.isArray(raw) ? raw : [];
+  return list.map(t => ({ value: t.name, label: t.name }));
 }
 
 // The browser's offset in minutes east of UTC — getTimezoneOffset() reports the
@@ -8785,8 +8795,11 @@ function showSection(name) {
   // Paint heavy editors only when their tab is opened (stops flash + lag).
   if (name === 'appearance' && prev !== 'appearance') renderAppearance();
   if (name === 'automation' && prev !== 'automation') {
-    renderSchedules();
-    renderAutoreplies();
+    try { renderSchedules(); } catch (e) { console.warn('[panel] renderSchedules', e); }
+    try { renderAutoreplies(); } catch (e) { console.warn('[panel] renderAutoreplies', e); }
+  }
+  if (name === 'composer' && prev !== 'composer') {
+    try { renderComposer(); } catch (e) { console.warn('[panel] renderComposer', e); }
   }
   if (name === 'giveaways') {
     renderGiveaways();
