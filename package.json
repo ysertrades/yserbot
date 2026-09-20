@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "deploy": "node deploy-commands.js"
+    "deploy": "node deploy-commands.js",
+    "smoke": "node scripts/smoke-panel-contracts.js",
+    "audit:static": "node scripts/smoke-full-audit.js",
+    "audit": "npm run smoke && npm run audit:static"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.100",

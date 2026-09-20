@@ -1,0 +1,14 @@
+# Full audit checklist
+- [ ] node --check changed JS
+- [ ] npm run smoke
+- [ ] npm run audit:static
+- [ ] health uptimeMs/memoryMb
+- [ ] await composer.list + Array.isArray
+- [ ] staffGuildsFor only
+- [ ] syncFeatureNav
+- [ ] Whop poll >= 0.25
+- [ ] automation/composer hosts render
+- [ ] feature execute gate + help filter
+- [ ] runners on ready
+- [ ] mobile overflow lock
+- [ ] REG ids in report
