@@ -254,9 +254,33 @@ h2 {
 /* ── rows ────────────────────────────────────────────────────────────── */
 .rows { display: flex; flex-direction: column; gap: 0.7rem; }
 .panel > .muted + .rows, .panel > .hint + .rows { margin-top: 1rem; }
-.row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; font-size: 0.9rem; }
-.row .k { color: var(--soft); }
-.row .v { font-family: var(--mono); font-size: 0.85rem; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.row .k {
+  color: var(--soft);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row .v {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  flex: 0 1 auto;
+  max-width: 58%;
+  min-width: 0;
+}
 .row .v.dim { color: var(--muted); }
 
 .pill {
@@ -2815,7 +2839,9 @@ select.cselect-native {
 .member-row {
   display: flex; align-items: center; gap: 0.75rem;
   padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--rule);
+  min-width: 0; width: 100%; box-sizing: border-box;
 }
+.member-info { min-width: 0; flex: 1 1 auto; overflow: hidden; }
 .member-row:last-child { border-bottom: none; }
 .member-row.is-owner { background: color-mix(in oklab, #9397EE 10%, transparent); }
 .member-row.is-admin:not(.is-owner) { background: color-mix(in oklab, #9397EE 5%, transparent); }
@@ -2906,14 +2932,81 @@ select.cselect-native {
 .member-pad-grid .btn { width: 100%; justify-content: center; }
 
 
-/* mobile overflow guard — keep overview cards inside the viewport */
+/* ── Mobile layout lock: no horizontal scroll, cards fit the phone ── */
 @media (max-width: 52rem) {
-  html, body { overflow-x: hidden; max-width: 100vw; }
-  #main, .workspace-body, .section, .grid, .panel, .tiles, .members-panel {
-    max-width: 100%;
-    box-sizing: border-box;
+  html, body {
+    overflow-x: clip !important;
+    max-width: 100vw !important;
+  }
+  html[data-state="panel"] body {
+    overflow-x: clip !important;
+  }
+  #main,
+  .app-shell,
+  .workspace,
+  .workspace-body,
+  .section,
+  .grid,
+  .panel,
+  .tiles,
+  .members-panel,
+  .members-roster,
+  .members-list {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+  }
+  .workspace-body {
+    padding: 0.85rem 0.75rem 2.5rem !important;
+    overflow-x: clip !important;
+  }
+  .workspace-top {
+    padding: 0.75rem 0.85rem !important;
+  }
+  .panel {
+    padding: 0.9rem 0.85rem !important;
+    overflow: hidden;
   }
   .tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.5rem !important;
+  }
+  .tile {
+    padding: 0.7rem 0.75rem;
+    min-width: 0;
+  }
+  .tile .n { font-size: 1.15rem; }
+  .member-row {
+    gap: 0.5rem !important;
+    padding: 0.65rem 0.55rem !important;
+    min-width: 0;
+  }
+  .member-info {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    overflow: hidden !important;
+  }
+  .member-name,
+  .member-user {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .member-roles {
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .member-check {
+    flex: 0 0 auto !important;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  .row { gap: 0.5rem; }
+  .sidebar {
+    width: 100% !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
   }
 }
