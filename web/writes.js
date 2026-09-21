@@ -819,6 +819,15 @@ Object.assign(OPS, {
     }
     return r;
   },
+  
+  async leveltrading(guildId, body, ctx) {
+    const levelingEngine = require('../utils/levelingEngine');
+    const r = levelingEngine.saveTradingSettings(guildId, body);
+    if (r.error) return r;
+    await announce(ctx.client, guildId, ctx.session, 'Updated trading rank rules.');
+    return r;
+  },
+
   async schedulenew(guildId, body, ctx) {
     const r = features.createSchedule(guildId, { ...body, createdBy: ctx.session.uid }, ctx.guild);
     if (r.ok) {

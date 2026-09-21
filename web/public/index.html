@@ -510,9 +510,38 @@
 
     <!-- ── Engagement ──────────────────────────────────────────────────── -->
     <div class="section" data-section="engagement">
+      <div class="panel" id="rank-health-panel">
+        <h2>Trading rank</h2>
+        <p class="muted">XP for charts, setups, journal, and QuantLab share — not for chat spam.</p>
+        <div id="rank-health" class="rank-health"></div>
+      </div>
+
       <div class="panel">
-        <h2>Levelling</h2>
-        <p class="muted">XP, cooldowns, and how ranks grow in this server.</p>
+        <h2>Mode &amp; sources</h2>
+        <p class="muted">Trading mode pays only configured signals. Legacy mode is the old per-message XP.</p>
+        <div id="rank-sources" class="form"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Signal rules</h2>
+        <p class="muted">Per-type XP range, cooldown, and daily caps. Normal chat is not a signal.</p>
+        <div id="rank-signals"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Live board</h2>
+        <p class="muted">Who is climbing and how — mix of share, chart, journal, setup today.</p>
+        <div id="rank-board"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Recent grants</h2>
+        <div id="rank-ledger" class="items"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Curve (legacy fields)</h2>
+        <p class="muted">Level curve still uses base XP and multiplier. In trading mode, only signal XP feeds the curve.</p>
         <form id="form-levels" class="form"></form>
       </div>
       <div class="panel">
@@ -522,13 +551,13 @@
 
       <div class="panel">
         <h2>Level badges</h2>
-        <p class="muted">Awarded automatically the moment a member reaches the level — the way badges work whether or not this server's economy is switched on.</p>
+        <p class="muted">Awarded automatically the moment a member reaches the level.</p>
         <div id="levelbadges" class="items"></div>
       </div>
 
       <div class="panel">
         <h2>Reset levels</h2>
-        <p class="muted">Puts every member in this server back to level 1 and clears their XP. Level reward roles and level badges stay configured — only progress resets. This cannot be undone.</p>
+        <p class="muted">Puts every member back to level 1 and clears XP. Roles and badges stay configured.</p>
         <div id="levels-reset"></div>
       </div>
 

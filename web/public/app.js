@@ -1143,6 +1143,11 @@ function renderOverview() {
   renderLevelRoles();
   renderLevelBadges();
   renderLevelsReset();
+  renderRankHealth();
+  renderRankSources();
+  renderRankSignals();
+  renderRankBoard();
+  renderRankLedger();
   try { renderLottery(); } catch (e) { console.warn('[panel] renderLottery', e); }
   startTicking();
 }
@@ -8048,6 +8053,267 @@ function renderAutoreplies() {
 }
 
 /* ── engagement ────────────────────────────────────────────────────────── */
+
+
+/* ── trading rank (engagement) ─────────────────────────────────────────── */
+
+function rankTrading() {
+  return state.overview?.features?.levels?.trading || null;
+}
+
+function renderRankHealth() {
+  const host = $('#rank-health');
+  if (!host) return;
+  const t = rankTrading();
+  if (!t) {
+    host.replaceChildren(el('p', 'muted', 'Load a server to see rank stats.'));
+    return;
+  }
+  const st = t.stats || {};
+  const mix = st.mix || {};
+  const totalMix = Object.values(mix).reduce((a, b) => a + b, 0) || 1;
+  const row = el('div', 'rank-kpi-row');
+  const tiles = [
+    ['Mode', t.mode === 'legacy' ? 'Legacy chat XP' : 'Trading signals'],
+    ['Tracked', String(st.tracked || 0)],
+    ['XP today', num(st.todayXp || 0)],
+    ['Grants today', String(st.todayGrants || 0)],
+  ];
+  for (const [lab, val] of tiles) {
+    const card = el('div', 'rank-kpi');
+    card.append(el('div', 'rank-kpi-v', val), el('div', 'rank-kpi-k', lab));
+    row.append(card);
+  }
+  host.replaceChildren(row);
+
+  // Mix bars
+  const mixBox = el('div', 'rank-mix');
+  mixBox.append(el('div', 'rank-mix-label', 'Today XP mix'));
+  const bars = el('div', 'rank-mix-bars');
+  const order = ['share', 'chart', 'journal', 'journal_create', 'setup', 'legacy'];
+  const labels = { share: 'Share', chart: 'Chart', journal: 'Journal', journal_create: 'Thread', setup: 'Setup', legacy: 'Chat' };
+  for (const k of order) {
+    const xp = mix[k] || 0;
+    if (!xp && k === 'legacy' && t.mode !== 'legacy') continue;
+    const pct = Math.round((xp / totalMix) * 100);
+    const line = el('div', 'rank-mix-line');
+    line.append(el('span', 'rank-mix-name', labels[k] || k));
+    const track = el('div', 'rank-mix-track');
+    const fill = el('div', 'rank-mix-fill');
+    fill.style.width = Math.max(xp ? 4 : 0, pct) + '%';
+    track.append(fill);
+    line.append(track, el('span', 'rank-mix-pct', xp ? (pct + '%') : '—'));
+    bars.append(line);
+  }
+  mixBox.append(bars);
+  host.append(mixBox);
+}
+
+function renderRankSources() {
+  const host = $('#rank-sources');
+  if (!host) return;
+  const t = rankTrading();
+  if (!t) { host.replaceChildren(); return; }
+  const draft = {
+    mode: t.mode || 'trading',
+    dailyXpCap: t.dailyXpCap ?? 400,
+    earnChannels: [...(t.sources?.earnChannels || [])],
+    denyChannels: [...(t.sources?.denyChannels || [])],
+    forumChannels: [...(t.sources?.forumChannels || [])],
+    tradeShareChannels: [...(t.sources?.tradeShareChannels || [])],
+  };
+  const opts = (t.channelOpts || []).map(c => ({
+    value: c.id,
+    label: (c.kind === 'forum' ? 'Forum · ' : '#') + c.name,
+  }));
+  const forumOpts = (t.channelOpts || []).filter(c => c.kind === 'forum').map(c => ({
+    value: c.id, label: 'Forum · ' + c.name,
+  }));
+  const textOpts = (t.channelOpts || []).filter(c => c.kind !== 'forum').map(c => ({
+    value: c.id, label: '#' + c.name,
+  }));
+
+  function multiNote(ids, allOpts) {
+    if (!ids.length) return el('p', 'hint', 'None selected');
+    const names = ids.map(id => (allOpts.find(o => o.value === id) || {}).label || id);
+    return el('p', 'hint', names.join(' · '));
+  }
+
+  function channelMulti(label, key, listOpts) {
+    const box = el('div', 'field');
+    box.append(el('label', null, label));
+    const sel = el('select');
+    sel.multiple = true;
+    sel.size = Math.min(6, Math.max(3, listOpts.length || 3));
+    for (const o of listOpts) {
+      const opt = document.createElement('option');
+      opt.value = o.value;
+      opt.textContent = o.label;
+      if (draft[key].includes(o.value)) opt.selected = true;
+      sel.append(opt);
+    }
+    sel.addEventListener('change', () => {
+      draft[key] = [...sel.selectedOptions].map(o => o.value);
+      note.replaceChildren(...[]);
+      const n = multiNote(draft[key], listOpts);
+      note.replaceWith(n);
+      // keep ref - simpler re-render note text
+    });
+    const note = multiNote(draft[key], listOpts);
+    box.append(sel, note);
+    // fix note update
+    sel.addEventListener('change', () => {
+      draft[key] = [...sel.selectedOptions].map(o => o.value);
+      note.textContent = draft[key].length
+        ? draft[key].map(id => (listOpts.find(o => o.value === id) || {}).label || id).join(' · ')
+        : 'None selected';
+    });
+    return box;
+  }
+
+  const modeField = el('div', 'field');
+  modeField.append(el('label', null, 'Rank mode'));
+  const modeSel = el('select');
+  for (const [v, lab] of [['trading', 'Trading signals (recommended)'], ['legacy', 'Legacy — any message XP']]) {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = lab;
+    if (draft.mode === v) o.selected = true;
+    modeSel.append(o);
+  }
+  modeSel.addEventListener('change', () => { draft.mode = modeSel.value; });
+  modeField.append(modeSel);
+
+  const cap = textField('Daily XP cap (all signals)', String(draft.dailyXpCap), v => {
+    draft.dailyXpCap = Number(v) || 0;
+  });
+
+  const save = el('button', 'btn primary', 'Save sources');
+  save.type = 'button';
+  save.addEventListener('click', async () => {
+    await post('leveltrading', {
+      mode: draft.mode,
+      dailyXpCap: draft.dailyXpCap,
+      earnChannels: draft.earnChannels,
+      denyChannels: draft.denyChannels,
+      forumChannels: draft.forumChannels,
+      tradeShareChannels: draft.tradeShareChannels,
+    });
+  });
+
+  host.replaceChildren(
+    modeField,
+    cap,
+    channelMulti('Earn channels (charts / setups)', 'earnChannels', textOpts),
+    channelMulti('Journal forums', 'forumChannels', forumOpts.length ? forumOpts : opts),
+    channelMulti('Trade-share channels (optional boost)', 'tradeShareChannels', textOpts),
+    channelMulti('Deny channels (always 0 XP)', 'denyChannels', textOpts),
+    el('div', 'actions', null),
+  );
+  const actionsRow = host.querySelector('.actions') || el('div', 'actions');
+  if (!host.contains(actionsRow)) host.append(actionsRow);
+  actionsRow.replaceChildren(save);
+}
+
+function renderRankSignals() {
+  const host = $('#rank-signals');
+  if (!host) return;
+  const t = rankTrading();
+  if (!t?.signals?.length) { host.replaceChildren(el('p', 'muted', 'No signals.')); return; }
+
+  const draft = {};
+  for (const s of t.signals) {
+    draft[s.type] = {
+      enabled: !!s.enabled,
+      baseMin: s.baseMin,
+      baseMax: s.baseMax,
+      cooldownMs: s.cooldownMs,
+      dailyCountCap: s.dailyCountCap,
+    };
+  }
+
+  const grid = el('div', 'rank-signal-grid');
+  for (const s of t.signals) {
+    const card = el('div', 'rank-signal-card');
+    const head = el('div', 'rank-signal-head');
+    head.append(el('div', 'rank-signal-title', s.label));
+    const tog = el('button', 'btn small ' + (draft[s.type].enabled ? 'primary' : ''), draft[s.type].enabled ? 'On' : 'Off');
+    tog.type = 'button';
+    tog.addEventListener('click', () => {
+      draft[s.type].enabled = !draft[s.type].enabled;
+      tog.textContent = draft[s.type].enabled ? 'On' : 'Off';
+      tog.className = 'btn small ' + (draft[s.type].enabled ? 'primary' : '');
+    });
+    head.append(tog);
+    card.append(head);
+    card.append(el('p', 'hint', s.description || ''));
+    const d = draft[s.type];
+    card.append(
+      textField('XP min', String(d.baseMin), v => { d.baseMin = Number(v) || 0; }),
+      textField('XP max', String(d.baseMax), v => { d.baseMax = Number(v) || 0; }),
+      textField('Cooldown (ms)', String(d.cooldownMs), v => { d.cooldownMs = Number(v) || 0; }),
+      textField('Daily count cap', String(d.dailyCountCap), v => { d.dailyCountCap = Number(v) || 0; }),
+    );
+    grid.append(card);
+  }
+  const save = el('button', 'btn primary', 'Save signal rules');
+  save.type = 'button';
+  save.addEventListener('click', async () => {
+    await post('leveltrading', { signals: draft });
+  });
+  host.replaceChildren(grid, el('div', 'actions'));
+  host.querySelector('.actions').append(save);
+}
+
+function renderRankBoard() {
+  const host = $('#rank-board');
+  if (!host) return;
+  const t = rankTrading();
+  const rows = t?.leaderboard || [];
+  if (!rows.length) {
+    host.replaceChildren(el('p', 'muted', 'No members tracked yet — trading posts will appear here.'));
+    return;
+  }
+  const table = el('div', 'rank-board-list');
+  for (const u of rows.slice(0, 25)) {
+    const row = el('div', 'rank-board-row');
+    const left = el('div', 'rank-board-left');
+    left.append(el('div', 'rank-board-name', u.name));
+    left.append(el('div', 'rank-board-sub', `Level ${u.level} · ${num(u.totalXp)} XP total · ${num(u.dayXp)} today`));
+    const chips = el('div', 'rank-board-chips');
+    const by = u.dayBySignal || {};
+    for (const [k, v] of Object.entries(by)) {
+      if (!v?.xp) continue;
+      chips.append(el('span', 'rank-chip', `${k.replace(/_/g, ' ')} +${v.xp}`));
+    }
+    if (!chips.childNodes.length) chips.append(el('span', 'rank-chip dim', 'no grants today'));
+    left.append(chips);
+    row.append(left);
+    table.append(row);
+  }
+  host.replaceChildren(table);
+}
+
+function renderRankLedger() {
+  const host = $('#rank-ledger');
+  if (!host) return;
+  const t = rankTrading();
+  const ledger = t?.ledger || [];
+  if (!ledger.length) {
+    host.replaceChildren(el('p', 'muted', 'Grants and denials will list here.'));
+    return;
+  }
+  const nodes = [];
+  for (const e of ledger.slice(0, 30)) {
+    const line = el('div', 'post-row');
+    const when = e.at ? relativeTime(e.at) : '';
+    const who = (t.leaderboard || []).find(u => u.id === e.userId)?.name || e.userId;
+    const status = e.ok ? `+${e.xp} XP` : (e.reason || 'denied');
+    line.append(el('span', 'k', `${who} · ${String(e.type || '').replace(/_/g, ' ')} · ${status}`));
+    line.append(el('span', 'hint', when));
+    nodes.push(line);
+  }
+  host.replaceChildren(...nodes);
+}
 
 function renderLevels() {
   const lv = state.overview?.features?.levels;

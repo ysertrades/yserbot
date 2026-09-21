@@ -27,6 +27,7 @@ const {
 const { todaysSlotUTC, REWARD: LOTTERY_REWARD, drawStatus } = require('../utils/lotteryRunner');
 const { normaliseMention } = require('../utils/mentionTarget');
 const { parseDuration, formatDuration } = require('../utils/duration');
+const levelingEngine = require('../utils/levelingEngine');
 
 // Exactly what utils/scheduler.js implements — anything not listed here is
 // treated as daily by computeNextRun, so a value the runner does not know
@@ -218,7 +219,9 @@ function read(guildId, guild) {
     })).sort((a, b) => a.level - b.level),
     badgeCatalog: Object.entries(BADGE_DEFS).map(([id, b]) => ({ id, label: b.label, emoji: b.emoji })),
     tracked: Object.keys(lv.users || {}).length,
-  };
+  
+    trading: levelingEngine.panelSnapshot(guildId, guild),
+};
 
   // Members the panel can act on. Capped, because a large server would make
   // the overview payload enormous — and a picker nobody can scroll is no
