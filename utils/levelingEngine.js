@@ -61,7 +61,7 @@ const SIGNAL_DEFS = {
 };
 
 const TRADE_WORDS = /\b(long|short|buy|sell|entry|sl|tp|stop\s*loss|take\s*profit|bias|bullish|bearish|fvg|order\s*block|\bob\b|liquidity|sweep|bos|choch|imt|ict|smc|support|resistance|breakout|retest|scalp|swing|nq|mnq|es|mes|gc|mgc|eur|gbp|usd|gold|nasdaq|spy|qqq)\b/i;
-const PAIR_LIKE = /\b([A-Z]{2,6}[\s\/\-]?[A-Z]{2,6}|[A-Z]{1,5}\d{1,4}|MNQ|MES|NQ|ES|GC|MGC|6E|6B)\b/;
+const PAIR_LIKE = /\b([A-Z]{2,6}[\s\/\-]?[A-Z]{2,6}|[A-Z]{1,5}\d{1,4}|MNQ|MES|MES|NQ|ES|GC|MGC|6E|6B)\b/;
 
 function dayKey(ts = Date.now()) {
   return new Date(ts).toISOString().slice(0, 10);
@@ -120,8 +120,14 @@ function ensureGuild(all, guildId) {
 function ensureUser(g, userId) {
   if (!g.users[userId]) {
     g.users[userId] = {
-      xp: 0, level: 1, messages: 0, lastMessage: 0, totalXp: 0,
-      lastBySignal: {}, dayKey: dayKey(), dayStats: { totalXp: 0, bySignal: {} },
+      xp: 0,
+      level: 1,
+      messages: 0,
+      lastMessage: 0,
+      totalXp: 0,
+      lastBySignal: {},
+      dayKey: dayKey(),
+      dayStats: { totalXp: 0, bySignal: {} },
     };
   }
   const u = g.users[userId];
@@ -155,6 +161,7 @@ function hasMedia(message) {
     const t = String(a.contentType || '');
     return t.startsWith('image/') || t.startsWith('video/') || /\.(png|jpe?g|gif|webp|mp4|mov|webm)$/i.test(a.name || a.url || '');
   })) return true;
+  // stickers don't count as charts
   return false;
 }
 
@@ -170,7 +177,7 @@ function isForumThread(channel) {
   if (!channel) return false;
   if (channel.isThread?.()) {
     const parent = channel.parent;
-    if (!parent) return true;
+    if (!parent) return true; // treat as thread; ownership still checked
     return parent.type === ChannelType.GuildForum || parent.type === 15;
   }
   return false;
@@ -185,9 +192,13 @@ function threadOwnerId(channel, journalOwners) {
   if (!channel?.isThread?.()) return null;
   const stored = journalOwners?.[channel.id];
   if (stored) return stored;
+  // Discord: ownerId on thread, or starterMessage author when available
   return channel.ownerId || null;
 }
 
+/**
+ * Classify a message into a trading signal, or null (no XP).
+ */
 function classifyMessage(message, settings) {
   const channelId = message.channelId;
   const deny = new Set(settings.denyChannels || []);
@@ -198,10 +209,12 @@ function classifyMessage(message, settings) {
   const shares = settings.tradeShareChannels || [];
   const strict = earn.length > 0 || forums.length > 0 || shares.length > 0;
 
+  // Forum journal path
   if (isForumThread(message.channel)) {
     const forumId = parentForumId(message.channel);
     if (forums.length && forumId && !forums.includes(forumId)) return null;
     if (strict && forums.length === 0) return null;
+    const owner = threadOwnerId(message.channel, null); // caller passes owners at award time
     return { type: 'journal', needsOwner: true, channelId };
   }
 
@@ -214,7 +227,7 @@ function classifyMessage(message, settings) {
 
   if (hasMedia(message)) return { type: 'chart', channelId };
   if (looksLikeSetup(message.content)) return { type: 'setup', channelId };
-  return null;
+  return null; // normal chat → no XP in trading mode
 }
 
 function rollXp(cfg) {
@@ -243,6 +256,9 @@ function applyLevelUps(user, settings) {
   return ups;
 }
 
+/**
+ * Award XP for a classified signal. Returns result object.
+ */
 function award(guildId, userId, signalType, meta = {}) {
   const all = loadAll();
   const g = ensureGuild(all, guildId);
@@ -251,8 +267,13 @@ function award(guildId, userId, signalType, meta = {}) {
   const cfg = signalConfig(settings, signalType);
   const now = Date.now();
 
-  if (!cfg.enabled) return { ok: false, reason: 'disabled', type: signalType };
-  if (user.xpMuteUntil && user.xpMuteUntil > now) return { ok: false, reason: 'muted', type: signalType };
+  if (!cfg.enabled) {
+    return { ok: false, reason: 'disabled', type: signalType };
+  }
+
+  if (user.xpMuteUntil && user.xpMuteUntil > now) {
+    return { ok: false, reason: 'muted', type: signalType };
+  }
 
   const last = user.lastBySignal[signalType] || 0;
   if (cfg.cooldownMs > 0 && now - last < cfg.cooldownMs) {
@@ -269,6 +290,7 @@ function award(guildId, userId, signalType, meta = {}) {
     return { ok: false, reason: 'daily_xp_cap', type: signalType };
   }
 
+  // Simple content fingerprint anti-dupe (text)
   const fp = meta.fingerprint;
   if (fp) {
     if (!g.recentFingerprints) g.recentFingerprints = {};
@@ -277,6 +299,7 @@ function award(guildId, userId, signalType, meta = {}) {
       return { ok: false, reason: 'duplicate', type: signalType };
     }
     g.recentFingerprints[`${userId}:${fp}`] = now;
+    // prune occasionally
     const keys = Object.keys(g.recentFingerprints);
     if (keys.length > 2000) {
       for (const k of keys.slice(0, 500)) delete g.recentFingerprints[k];
@@ -300,14 +323,27 @@ function award(guildId, userId, signalType, meta = {}) {
   const levelsGained = applyLevelUps(user, settings);
 
   pushLedger(g, {
-    at: now, userId, type: signalType, xp,
-    channelId: meta.channelId || null, ok: true,
+    at: now,
+    userId,
+    type: signalType,
+    xp,
+    channelId: meta.channelId || null,
+    ok: true,
   });
 
   saveAll(all);
-  return { ok: true, type: signalType, xp, level: user.level, levelsGained, totalXp: user.totalXp, user };
+  return {
+    ok: true,
+    type: signalType,
+    xp,
+    level: user.level,
+    levelsGained,
+    totalXp: user.totalXp,
+    user,
+  };
 }
 
+/** Legacy random message XP (old behavior). */
 function awardLegacy(guildId, userId, meta = {}) {
   const all = loadAll();
   const g = ensureGuild(all, guildId);
@@ -345,6 +381,7 @@ function fingerprintContent(message) {
   const att = [...(message.attachments?.values?.() || [])].map(a => a.id || a.url).join(',');
   const raw = text + '|' + att;
   if (!raw || raw === '|') return null;
+  // cheap hash
   let h = 0;
   for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
   return String(h);
@@ -364,6 +401,7 @@ async function processMessage(message) {
     });
   }
 
+  // trading mode
   let signal = classifyMessage(message, settings);
   if (!signal) return null;
 
@@ -371,12 +409,18 @@ async function processMessage(message) {
     const owner = threadOwnerId(message.channel, g.journalOwners);
     if (!owner || owner !== message.author.id) {
       pushLedger(g, {
-        at: Date.now(), userId: message.author.id, type: 'journal', xp: 0,
-        channelId: message.channelId, ok: false, reason: 'not_owner',
+        at: Date.now(),
+        userId: message.author.id,
+        type: 'journal',
+        xp: 0,
+        channelId: message.channelId,
+        ok: false,
+        reason: 'not_owner',
       });
       saveAll(all);
       return { ok: false, reason: 'not_owner', type: 'journal' };
     }
+    // register owner if missing
     if (message.channel.isThread?.() && !g.journalOwners[message.channel.id]) {
       g.journalOwners[message.channel.id] = owner;
       saveAll(all);
@@ -400,7 +444,7 @@ async function processThreadCreate(thread) {
   const parentId = thread.parentId;
   const forums = settings.forumChannels || [];
   if (forums.length && parentId && !forums.includes(parentId)) return null;
-  if (!forums.length) return null;
+  if (!forums.length) return null; // must configure forums for journal_create
 
   const ownerId = thread.ownerId;
   if (!ownerId) return null;
@@ -418,7 +462,8 @@ function panelSnapshot(guildId, guild) {
     const member = guild?.members?.cache?.get(id);
     const name = member?.displayName || member?.user?.username || id;
     return {
-      id, name,
+      id,
+      name,
       level: u.level || 1,
       xp: u.xp || 0,
       totalXp: u.totalXp || 0,

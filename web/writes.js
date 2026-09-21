@@ -450,7 +450,7 @@ Object.assign(OPS, {
   async giveawaystart(guildId, body, ctx) {
     const r = await giveaways.create(guildId, body, ctx);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🎟️ Started a **${r.label}** giveaway in #${r.channelName} — ${r.winners} winner${r.winners === 1 ? '' : 's'}, ends <t:${Math.floor(r.endsAt / 1000)}:R>`, 'giveaways');
     }
     return r;
@@ -481,7 +481,7 @@ Object.assign(OPS, {
   async giveawaysendprize(guildId, body, ctx) {
     const r = await giveaways.sendPrize(guildId, body, ctx);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🎁 Prize DM sent for drop \`${body.shortId || body.id}\` — ${r.sent}/${r.total} delivered`, 'giveaways');
     }
     return r;
@@ -489,7 +489,7 @@ Object.assign(OPS, {
   async giveawaydelete(guildId, body, ctx) {
     const r = await giveaways.remove(guildId, body, ctx);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🗑️ Removed finished giveaway **${r.title}** (\`${r.shortId}\`) from the panel — channel message deleted when possible`, 'giveaways');
     }
     return r;
@@ -503,7 +503,7 @@ Object.assign(OPS, {
   async giveawayclearhistory(guildId, body, ctx) {
     const r = giveaways.clearHistory(guildId);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🗑️ Cleared **${r.removed}** finished drop${r.removed === 1 ? '' : 's'} from the panel history`, 'giveaways');
     }
     return r;
@@ -519,7 +519,7 @@ Object.assign(OPS, {
   async whopscan(guildId, body, ctx) {
     const r = await whopPanel.scan(guildId);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `📚 **Whop** scanned — ${r.courses} course(s), ${r.selected} selected`, 'whop');
     }
     return r;
@@ -551,7 +551,7 @@ Object.assign(OPS, {
 
   async featuretoggles(guildId, body, ctx) {
     const r = await featureToggles.save(guildId, body, ctx);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🧩 **Features** — ${r.changed.join('; ')}`, 'settings');
+    if (r.ok) announce(ctx.client, guildId, ctx.session, `🧩 **Features** — ${r.changed.join('; ')}`, 'settings').catch(() => {});
     return r;
   },
 
@@ -567,7 +567,7 @@ Object.assign(OPS, {
   async warnclear(guildId, body, ctx) {
     const r = moderationPanel.clearWarnings(guildId, body, ctx);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `⚠️ Cleared **${r.removed}** warning${r.removed === 1 ? '' : 's'} for <@${r.userId}>`, 'moderation');
     }
     return r;
@@ -585,7 +585,7 @@ Object.assign(OPS, {
   async modaction(guildId, body, ctx) {
     const r = await moderationPanel.modAction(guildId, body, ctx);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🛡️ **${r.label}** <@${r.targetId}> · case #${r.caseId}`, 'moderation');
     }
     return r;
@@ -627,7 +627,7 @@ Object.assign(OPS, {
   async linkrevoke(guildId, body, ctx) {
     const r = links.revoke(guildId, body, ctx);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🔗 Link permission revoked for <@${r.userId}> — they must ask again`, 'moderation');
     }
     return r;
@@ -649,7 +649,7 @@ Object.assign(OPS, {
   async ticketclose(guildId, body, ctx) {
     const r = await tickets.close(guildId, body, ctx);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🎫 Closed ticket **#${r.name}**${r.ownerId ? ` (opened by <@${r.ownerId}>)` : ''}`, 'tickets');
     }
     return r;
@@ -796,7 +796,7 @@ Object.assign(OPS, {
   async levelrole(guildId, body, ctx) {
     const r = features.saveLevelRole(guildId, body, ctx.guild);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session, r.removed
+      announce(ctx.client, guildId, ctx.session, r.removed
         ? `📈 Level ${r.removed} reward role removed`
         : `📈 Level ${r.level} now grants <@&${r.roleId}>`, 'features');
     }
@@ -805,7 +805,7 @@ Object.assign(OPS, {
   async levelbadge(guildId, body, ctx) {
     const r = features.saveLevelBadge(guildId, body);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session, r.removed
+      announce(ctx.client, guildId, ctx.session, r.removed
         ? `🎖️ Level ${r.removed} badge award removed`
         : `🎖️ Level ${r.level} now awards the **${r.badgeId}** badge`, 'features');
     }
@@ -824,14 +824,15 @@ Object.assign(OPS, {
     const levelingEngine = require('../utils/levelingEngine');
     const r = levelingEngine.saveTradingSettings(guildId, body);
     if (r.error) return r;
-    await announce(ctx.client, guildId, ctx.session, 'Updated trading rank rules.');
+    // Don't wait on Discord log — panel must feel instant
+    announce(ctx.client, guildId, ctx.session, 'Updated trading rank rules.').catch(() => {});
     return r;
   },
 
   async schedulenew(guildId, body, ctx) {
     const r = features.createSchedule(guildId, { ...body, createdBy: ctx.session.uid }, ctx.guild);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session,
+      announce(ctx.client, guildId, ctx.session,
         `🗓️ Scheduled **${r.embedName}** in #${r.channelName} — first run <t:${Math.floor(r.time / 1000)}:F>`, 'automation');
     }
     return r;
@@ -839,7 +840,7 @@ Object.assign(OPS, {
   async schedule(guildId, body, ctx) {
     const r = features.saveSchedule(guildId, body, ctx.guild);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session, r.removed
+      announce(ctx.client, guildId, ctx.session, r.removed
         ? `🗓️ Scheduled post \`${r.removed}\` deleted`
         : `🗓️ Scheduled post \`${r.id}\` — ${r.changed.join(', ')} changed`, 'automation');
     }
@@ -848,7 +849,7 @@ Object.assign(OPS, {
   async autoreply(guildId, body, ctx) {
     const r = features.saveAutoreply(guildId, body);
     if (r.ok) {
-      await announce(ctx.client, guildId, ctx.session, r.removed
+      announce(ctx.client, guildId, ctx.session, r.removed
         ? `💬 Auto-reply \`${r.removed}\` removed`
         : `💬 Auto-reply \`${r.key}\` ${r.isNew ? 'added' : 'updated'}`, 'automation');
     }

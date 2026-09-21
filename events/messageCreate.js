@@ -74,10 +74,6 @@ async function _handleLevelingBody(message) {
   const levelsGained = result.levelsGained || [];
   if (!levelsGained.length) return;
 
-  const { equip } = require('../utils/badgeManager');
-  const { BADGE_DEFS } = require('../utils/badges');
-  const { isOn } = require('../utils/messageStyle');
-
   for (const newLevel of levelsGained) {
     const levelRoles = guildData.roles || {};
     const roleId = levelRoles[newLevel];
@@ -90,10 +86,8 @@ async function _handleLevelingBody(message) {
     const badgeId = levelBadges[newLevel];
     let awardedBadge = null;
     if (badgeId && BADGE_DEFS[badgeId]) {
-      try {
-        const r = equip(userId, message.guild.id, badgeId);
-        if (r?.ok && !r.already) awardedBadge = BADGE_DEFS[badgeId];
-      } catch {}
+      const badgeResult = equip(userId, message.guild.id, badgeId);
+      if (badgeResult.ok && !badgeResult.already) awardedBadge = BADGE_DEFS[badgeId];
     }
 
     if (isOn(message.guild.id, 'member.levelup')) {
@@ -101,14 +95,65 @@ async function _handleLevelingBody(message) {
         ? String(result.type).replace(/_/g, ' ')
         : null;
       const lines = [
-        '-# quantlab \u00b7 level up',
-        `**${message.member?.displayName || message.author.username}** just reached **level ${newLevel}.**`,
+        '-# quantlab · level up',
+        `**${message.member.displayName}** just reached **level ${newLevel}.**`,
       ];
-      if (src) lines.push(`-# source \u00b7 ${src}`);
-      if (awardedBadge) lines.push(`-# ${awardedBadge.emoji} new badge equipped \u2014 ${awardedBadge.label}`);
-      lines.push(`-# ${(user.totalXp || 0).toLocaleString()} xp total`);
+      if (src) lines.push(`-# source · ${src}`);
+      if (awardedBadge) lines.push(`-# ${awardedBadge.emoji} new badge equipped — ${awardedBadge.label}`);
+      lines.push(`-# ${user.totalXp.toLocaleString()} xp total · ${(user.messages || 0).toLocaleString()} messages`);
       try { await message.channel.send({ content: lines.join('\n') }); } catch {}
     }
+  }
+}
+
+async function handleCardDrop(message) {
+  try {
+    const guildId = message.guild.id;
+    const cfg = getCardConfig(guildId);
+
+    // A drop channel, when one is set. It was on the panel long before
+    // anything read it, so picking one used to change nothing at all.
+    if (cfg.channelId && cfg.channelId !== message.channel.id) return;
+
+    // Increment per-channel counter
+    const key   = `${guildId}:${message.channel.id}`;
+    const count = (global.cardMessageCounts.get(key) || 0) + 1;
+
+    if (count < cfg.interval) {
+      global.cardMessageCounts.set(key, count);
+      return;
+    }
+
+    // Hit the threshold — reset and drop a card
+    global.cardMessageCounts.set(key, 0);
+
+    // ...and the chance roll, which was the panel's other dead setting. The
+    // counter still resets on a miss, so a low chance makes drops rarer rather
+    // than making the very next message drop one.
+    if (cfg.chance < 100 && Math.random() * 100 >= cfg.chance) return;
+
+    const card = pickRandomCard(guildId);
+    const { embed, files } = buildDropEmbed(card, false, cfg.claimSeconds);
+    const row   = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('card_grab').setLabel('🃏 Grab Card!').setStyle(ButtonStyle.Secondary),
+    );
+
+    const msg = await message.channel.send({ embeds: [embed], files, components: [row] });
+    global.cardDrops.set(msg.id, { card, grabbed: false, guildId });
+
+    // Expire once the claim window is up
+    setTimeout(async () => {
+      const drop = global.cardDrops.get(msg.id);
+      if (!drop || drop.grabbed) return;
+      global.cardDrops.delete(msg.id);
+      const { embed: expiredEmbed, files: expiredFiles } = buildDropEmbed(card, true);
+      const disabled = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('card_gone').setLabel('💨 Nobody grabbed it...').setStyle(ButtonStyle.Secondary).setDisabled(true),
+      );
+      await msg.edit({ embeds: [expiredEmbed], files: expiredFiles, components: [disabled], attachments: [] }).catch(() => {});
+    }, cfg.claimSeconds * 1000);
+  } catch (err) {
+    console.error('[CARD DROP]', err);
   }
 }
 
