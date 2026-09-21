@@ -3259,45 +3259,127 @@ select.cselect-native {
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Glass skin — fills only. Layout and structure unchanged.
+   Panel skin v2 — solid content wells, soft chrome, quiet hovers
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.bar,
-.sidebar,
-.panel,
-.tile,
-.sheet-card,
-.composer,
-.tpl-list,
-.studio .stage-frame,
-.members-panel,
-.workspace-body .panel {
-  background: rgba(255, 255, 255, 0.045) !important;
-  border-color: rgba(255, 255, 255, 0.09) !important;
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+.workspace,
+.workspace-body,
+.app-shell .workspace {
+  background: transparent;
 }
 
+/* Main cards: solid panel fill (not bright glass) */
+.panel,
+.tile,
+.members-panel,
+.workspace-body .panel {
+  background: var(--panel, #111113) !important;
+  border: 1px solid var(--line, #232327) !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 28px rgba(0, 0, 0, 0.28);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Only top bar + sidebar stay lightly frosted */
 .bar {
   background: rgba(11, 11, 12, 0.88) !important;
+  border-color: var(--line, #232327) !important;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
-
 .sidebar {
-  background: rgba(11, 11, 12, 0.85) !important;
+  background: rgba(11, 11, 12, 0.92) !important;
+  border-color: var(--line, #232327) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
+/* Quiet card hover — border only, almost no fill change */
 .panel:hover,
 .tile:hover {
-  background: rgba(255, 255, 255, 0.075) !important;
+  background: var(--panel, #111113) !important;
+  border-color: var(--line2, #303036) !important;
+}
+.tile:hover {
+  background: color-mix(in srgb, var(--panel2, #17171a) 50%, var(--panel, #111113)) !important;
+}
+
+/* Members well */
+.members-roster {
+  background: var(--inset, #0d0d0f) !important;
+  border: 1px solid var(--line, #232327) !important;
+  border-radius: 11px;
+  scrollbar-gutter: stable;
+}
+.members-search {
+  background: var(--inset, #0d0d0f) !important;
+  border: 1px solid var(--line, #232327) !important;
+}
+.members-search:focus {
+  border-color: var(--blue-line, #2a318a) !important;
+  box-shadow: 0 0 0 3px rgba(34, 51, 245, 0.18) !important;
+}
+
+/* Rows: flat list, no bright glass cards */
+.members-roster .member-row,
+.member-row {
+  border-bottom: 1px solid var(--line, #232327) !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.members-roster .member-row:last-child,
+.member-row:last-child {
+  border-bottom: none !important;
+}
+
+.member-row.is-owner {
+  background: linear-gradient(90deg, rgba(34, 51, 245, 0.10), transparent 55%) !important;
+}
+.member-row.is-admin:not(.is-owner) {
+  background: linear-gradient(90deg, rgba(34, 51, 245, 0.05), transparent 50%) !important;
+}
+
+/* Hover: subtle, not bright */
+.members-roster .member-row:hover,
+.member-row:hover {
+  background: rgba(255, 255, 255, 0.028) !important;
+  border-bottom-color: var(--line2, #303036) !important;
+}
+.member-row.is-owner:hover {
+  background: linear-gradient(90deg, rgba(34, 51, 245, 0.14), rgba(255, 255, 255, 0.02) 60%) !important;
+}
+.member-row.is-admin:not(.is-owner):hover {
+  background: linear-gradient(90deg, rgba(34, 51, 245, 0.08), rgba(255, 255, 255, 0.02) 55%) !important;
+}
+
+.member-row .btn,
+.member-row button {
+  background: var(--panel2, #17171a);
+  border: 1px solid var(--line, #232327);
+  color: var(--soft, #9CA3AF);
+}
+.member-row .btn:hover,
+.member-row button:hover {
+  background: var(--panel, #111113);
+  border-color: var(--line2, #303036);
+  color: var(--ink, #F3F4F6);
+}
+
+.sections button:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+.guilds button:hover {
+  background: var(--panel2, #17171a) !important;
   border-color: var(--line2, #303036) !important;
 }
 
 .field input,
 .field select,
 .field textarea,
-.members-search,
 .cselect-trigger {
   background: var(--inset, #0d0d0f);
   border-color: var(--line, #232327);
@@ -3308,36 +3390,22 @@ button.primary {
   background: var(--blue, #2233f5);
   border-color: var(--blue-line, #2a318a);
 }
-
 .btn.primary:hover,
 button.primary:hover {
   background: var(--blue2, #4d5cff);
 }
 
-:focus-visible {
-  outline: 2px solid var(--blue2, #4d5cff);
-  outline-offset: 2px;
-}
-
 .sheet-card {
-  background: rgba(17, 17, 19, 0.92) !important;
+  background: rgba(17, 17, 19, 0.94) !important;
   border: 1px solid var(--line, #232327) !important;
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  box-shadow: 0 12px 50px -8px rgba(34, 51, 245, 0.35);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
 }
 
-.members-roster .member-row,
-.members-roster .row,
-.member-row {
-  border: 1px solid var(--line, #232327);
-  background: var(--panel, #111113);
-  border-radius: 9px;
-  transition: transform 0.75s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s, border-color 0.2s, opacity 0.3s;
-}
-.members-roster .member-row:hover,
-.members-roster .row:hover,
-.member-row:hover {
-  border-color: var(--line2, #303036);
-  background: var(--panel2, #17171a);
+.composer,
+.tpl-list,
+.studio .stage-frame {
+  background: var(--panel, #111113) !important;
+  border-color: var(--line, #232327) !important;
 }
