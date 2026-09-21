@@ -3279,8 +3279,6 @@ main,
 .tile,
 .members-panel,
 .workspace-body .panel,
-.composer,
-.tpl-list,
 .studio .stage-frame,
 .sheet-card,
 .gaw {
@@ -3288,6 +3286,42 @@ main,
   border-color: rgba(255, 255, 255, 0.09) !important;
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+/* Composer / Appearance: two cards (list + editor), not one square */
+.composer {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  gap: 1.1rem;
+}
+
+.tpl-list,
+.composer-body,
+#composer-body,
+#appearance-body {
+  background: rgba(255, 255, 255, 0.045) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 14px !important;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  min-height: 12rem;
+  padding: 1rem 1.1rem;
+  box-sizing: border-box;
+}
+
+#composer-body:has(> p.muted:only-child) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 16rem;
+}
+#composer-body > p.muted {
+  text-align: center;
+  margin: 0;
+  max-width: 16rem;
 }
 
 .bar {
@@ -3328,7 +3362,14 @@ main,
 }
 .member-row:last-child { border-bottom: none !important; }
 .member-row:hover {
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: rgba(255, 255, 255, 0.012) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+.member-row.is-owner:hover {
+  background: linear-gradient(90deg, rgba(34, 51, 245, 0.06), rgba(255, 255, 255, 0.01) 55%) !important;
+}
+.member-row.is-admin:not(.is-owner):hover {
+  background: linear-gradient(90deg, rgba(34, 51, 245, 0.04), rgba(255, 255, 255, 0.01) 50%) !important;
 }
 
 .members-search,
