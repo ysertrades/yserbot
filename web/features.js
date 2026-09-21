@@ -1,9 +1,6 @@
 'use strict';
 
 /**
- * web/features.js
- *
- * RESTORED - see next commit for full file if truncated
+ * PLACEHOLDER_WILL_FAIL - need full content
  */
-
 module.exports = {};
