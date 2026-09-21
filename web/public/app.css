@@ -1987,7 +1987,7 @@ html[data-state="panel"] .bar { display: none !important; }
 .workspace-top { display: none !important; }
 
 .workspace-body {
-  margin: 0.85rem 1rem 1rem 0.75rem !important;
+  margin: 0.85rem 1rem 1rem 1rem !important;
   padding: 1.1rem 1.25rem 2rem !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   border-radius: 16px !important;
@@ -3407,4 +3407,73 @@ button.primary:hover {
 .sidebar-nav.sections button[aria-current="true"] .nav-label {
   color: var(--blue2, #4d5cff);
   font-weight: 500;
+}
+
+/* ── Mobile equal gutters: center content, equal L/R space ─────────────── */
+@media (max-width: 52rem) {
+  html, body {
+    overflow-x: clip !important;
+    max-width: 100vw !important;
+  }
+
+  #main,
+  .app-shell,
+  .workspace {
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .workspace-body {
+    width: auto !important;
+    max-width: 100% !important;
+    margin-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    margin-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    margin-top: 0.5rem !important;
+    margin-bottom: 0.85rem !important;
+    padding-left: 0.85rem !important;
+    padding-right: 0.85rem !important;
+    box-sizing: border-box !important;
+  }
+
+  .sidebar {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding-left: max(0.75rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.75rem, env(safe-area-inset-right)) !important;
+    box-sizing: border-box !important;
+  }
+
+  .content-toolbar {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .panel,
+  .members-panel,
+  .composer,
+  .tpl-list,
+  .composer-body,
+  #composer-body,
+  #appearance-body,
+  .section[data-active] {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .sidebar-nav.sections {
+    padding-left: 0.15rem !important;
+    padding-right: 0.15rem !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .sidebar-nav.sections::-webkit-scrollbar { display: none; }
 }
