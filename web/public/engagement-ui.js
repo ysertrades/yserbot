@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Engagement / Trading Rank panel UI.
- * Loaded after app.js so it can replace renderEngagement and re-run on tab switch.
+ * Safe: does not touch boot / main() — only runs after data-state=panel.
  */
 
 (function () {
@@ -13,8 +13,10 @@
   }
 
   function rankTrading() {
-    return (window.state && state.overview && state.overview.features && state.overview.features.levels
-      && state.overview.features.levels.trading) || null;
+    try {
+      return (window.state && state.overview && state.overview.features && state.overview.features.levels
+        && state.overview.features.levels.trading) || null;
+    } catch (e) { return null; }
   }
 
   function channelOpts(t) {
@@ -151,111 +153,120 @@
   }
 
   function renderEngagement() {
-    const setup = document.getElementById('rank-setup');
-    const board = document.getElementById('rank-board');
-    if (!setup && !board) return;
+    try {
+      const setup = document.getElementById('rank-setup');
+      const board = document.getElementById('rank-board');
+      if (!setup && !board) return;
 
-    if (!window.state || !state.overview) {
-      if (setup) setup.replaceChildren(el('p', 'muted', 'Loading server…'));
-      return;
-    }
-
-    const t = rankTrading();
-    const lv = state.overview.features && state.overview.features.levels;
-
-    if (setup) {
-      const draft = {
-        mode: (t && t.mode) || 'trading',
-        dailyXpCap: (t && t.dailyXpCap != null) ? t.dailyXpCap : 400,
-        earnChannels: [].concat((t && t.sources && t.sources.earnChannels) || []),
-        forumChannels: [].concat((t && t.sources && t.sources.forumChannels) || []),
-        tradeShareChannels: [].concat((t && t.sources && t.sources.tradeShareChannels) || []),
-      };
-      const opts = channelOpts(t);
-      const forums = opts.filter(o => o.kind === 'forum');
-      const texts = opts.filter(o => o.kind !== 'forum');
-      const nodes = [];
-
-      nodes.push(modeButtons(draft));
-      nodes.push(el('div', 'rank-section-label', 'Channels that count'));
-
-      if (texts.length) {
-        nodes.push(multiSelect('Chart & setup channels', draft.earnChannels, texts, ids => { draft.earnChannels = ids; }));
-        nodes.push(multiSelect('QuantLab trade-share channels', draft.tradeShareChannels, texts, ids => { draft.tradeShareChannels = ids; }));
-      } else {
-        nodes.push(el('p', 'hint', 'No channels loaded yet. Wait a moment, then click Engagement again.'));
-      }
-      if (forums.length) {
-        nodes.push(multiSelect('Journal forums (thread owner only)', draft.forumChannels, forums, ids => { draft.forumChannels = ids; }));
+      if (!window.state || !state.overview) {
+        if (setup) setup.replaceChildren(el('p', 'muted', 'Loading server…'));
+        return;
       }
 
-      nodes.push(textField('Daily XP cap per member', String(draft.dailyXpCap), v => {
-        draft.dailyXpCap = Math.max(0, Number(v) || 0);
-      }, '400'));
+      const t = rankTrading();
+      const lv = state.overview.features && state.overview.features.levels;
 
-      nodes.push(signalLegend(t));
+      if (setup) {
+        const draft = {
+          mode: (t && t.mode) || 'trading',
+          dailyXpCap: (t && t.dailyXpCap != null) ? t.dailyXpCap : 400,
+          earnChannels: [].concat((t && t.sources && t.sources.earnChannels) || []),
+          forumChannels: [].concat((t && t.sources && t.sources.forumChannels) || []),
+          tradeShareChannels: [].concat((t && t.sources && t.sources.tradeShareChannels) || []),
+        };
+        const opts = channelOpts(t);
+        const forums = opts.filter(o => o.kind === 'forum');
+        const texts = opts.filter(o => o.kind !== 'forum');
+        const nodes = [];
 
-      if (t && t.stats) {
-        const strip = el('div', 'rank-stats');
-        strip.append(el('span', null, (t.stats.tracked || 0) + ' ranked'));
-        strip.append(el('span', null, (t.stats.todayXp || 0) + ' XP today'));
-        strip.append(el('span', null, (t.stats.todayGrants || 0) + ' grants'));
-        nodes.push(strip);
+        nodes.push(modeButtons(draft));
+        nodes.push(el('div', 'rank-section-label', 'Channels that count'));
+
+        if (texts.length) {
+          nodes.push(multiSelect('Chart & setup channels', draft.earnChannels, texts, ids => { draft.earnChannels = ids; }));
+          nodes.push(multiSelect('QuantLab trade-share channels', draft.tradeShareChannels, texts, ids => { draft.tradeShareChannels = ids; }));
+        } else {
+          nodes.push(el('p', 'hint', 'No channels loaded yet. Wait a moment, then open Engagement again.'));
+        }
+        if (forums.length) {
+          nodes.push(multiSelect('Journal forums (thread owner only)', draft.forumChannels, forums, ids => { draft.forumChannels = ids; }));
+        }
+
+        nodes.push(textField('Daily XP cap per member', String(draft.dailyXpCap), v => {
+          draft.dailyXpCap = Math.max(0, Number(v) || 0);
+        }, '400'));
+
+        nodes.push(signalLegend(t));
+
+        if (t && t.stats) {
+          const strip = el('div', 'rank-stats');
+          strip.append(el('span', null, (t.stats.tracked || 0) + ' ranked'));
+          strip.append(el('span', null, (t.stats.todayXp || 0) + ' XP today'));
+          strip.append(el('span', null, (t.stats.todayGrants || 0) + ' grants'));
+          nodes.push(strip);
+        }
+
+        nodes.push(saveBtn(draft));
+        setup.replaceChildren(...nodes);
       }
 
-      nodes.push(saveBtn(draft));
-      setup.replaceChildren(...nodes);
-    }
-
-    if (board) {
-      const tag = document.getElementById('rank-board-tag');
-      const list = (t && t.leaderboard) || (lv && lv.leaderboard) || [];
-      if (tag) tag.textContent = list.length ? String(list.length) : '0';
-      if (!list.length) {
-        board.replaceChildren(el('p', 'muted', 'Nobody ranked yet. Post a chart or journal entry in a tracked channel.'));
-      } else {
-        const table = el('div', 'rank-board-list');
-        const numFn = (typeof num === 'function') ? num : (n => String(n));
-        list.slice(0, 15).forEach((u, i) => {
-          const row = el('div', 'rank-board-row');
-          const left = el('div', 'rank-board-left');
-          left.append(el('span', 'rank-board-pos', String(i + 1)));
-          left.append(el('span', 'rank-board-name', u.name || u.id));
-          left.append(el('span', 'rank-board-lvl', 'Lv ' + (u.level || 0)));
-          row.append(left);
-          row.append(el('span', 'rank-board-xp', numFn(u.totalXp || u.xp || 0) + ' XP'));
-          table.append(row);
-        });
-        board.replaceChildren(table);
+      if (board) {
+        const tag = document.getElementById('rank-board-tag');
+        const list = (t && t.leaderboard) || (lv && lv.leaderboard) || [];
+        if (tag) tag.textContent = list.length ? String(list.length) : '0';
+        if (!list.length) {
+          board.replaceChildren(el('p', 'muted', 'Nobody ranked yet. Post a chart or journal entry in a tracked channel.'));
+        } else {
+          const table = el('div', 'rank-board-list');
+          const numFn = (typeof num === 'function') ? num : (n => String(n));
+          list.slice(0, 15).forEach((u, i) => {
+            const row = el('div', 'rank-board-row');
+            const left = el('div', 'rank-board-left');
+            left.append(el('span', 'rank-board-pos', String(i + 1)));
+            left.append(el('span', 'rank-board-name', u.name || u.id));
+            left.append(el('span', 'rank-board-lvl', 'Lv ' + (u.level || 0)));
+            row.append(left);
+            row.append(el('span', 'rank-board-xp', numFn(u.totalXp || u.xp || 0) + ' XP'));
+            table.append(row);
+          });
+          board.replaceChildren(table);
+        }
       }
+    } catch (e) {
+      console.warn('[engagement-ui] render', e);
     }
   }
 
   window.renderEngagement = renderEngagement;
 
-  const prevShow = window.showSection;
-  if (typeof prevShow === 'function') {
-    window.showSection = function (name) {
-      const r = prevShow.apply(this, arguments);
-      if (name === 'engagement') {
-        try { renderEngagement(); } catch (e) { console.warn('[engagement-ui]', e); }
-        try { if (typeof renderLevels === 'function') renderLevels(); } catch (e) {}
+  function installHooks() {
+    try {
+      if (typeof window.showSection === 'function' && !window.showSection.__engagementWrapped) {
+        const prevShow = window.showSection;
+        const wrapped = function (name) {
+          const r = prevShow.apply(this, arguments);
+          if (name === 'engagement') {
+            try { renderEngagement(); } catch (e) {}
+            try { if (typeof renderLevels === 'function') renderLevels(); } catch (e) {}
+          }
+          return r;
+        };
+        wrapped.__engagementWrapped = true;
+        window.showSection = wrapped;
       }
-      return r;
-    };
+    } catch (e) {}
   }
 
+  // Never run during boot — only after panel is signed in
   let tries = 0;
-  const tick = setInterval(() => {
+  const tick = setInterval(function () {
     tries++;
-    if (window.state && state.overview) {
+    installHooks();
+    var ready = document.documentElement.dataset.state === 'panel';
+    if (ready && window.state && state.overview) {
       try { renderEngagement(); } catch (e) {}
-      if (tries > 3) clearInterval(tick);
+      clearInterval(tick);
     }
-    if (tries > 40) clearInterval(tick);
-  }, 500);
-
-  document.addEventListener('DOMContentLoaded', () => {
-    try { renderEngagement(); } catch (e) {}
-  });
+    if (tries > 60) clearInterval(tick);
+  }, 400);
 })();
