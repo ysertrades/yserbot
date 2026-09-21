@@ -5,33 +5,49 @@
    one hex, and the only colour is the accent: brand Purple. */
 
 :root {
-  /* Quant Lab product — exact design tokens */
-  --bg:      #0D0F12;
-  --surface: #16181D;
-  --raised:  #1A1D24;
-  --sunken:  #12141A;
-  --rule:    rgba(255, 255, 255, 0.08);
+  /* Quant Lab panel skin — solid dark + glass cards */
+  --bg:      #0b0b0c;
+  --surface: #111113;
+  --raised:  #17171a;
+  --sunken:  #0d0d0f;
+  --rule:    #232327;
+  --line:    #232327;
+  --line2:   #303036;
+  --panel:   #111113;
+  --panel2:  #17171a;
+  --inset:   #0d0d0f;
   --ink:     #F3F4F6;
   --soft:    #9CA3AF;
   --muted:   #6B7280;
-  --accent:  #8B5CF6;
-  --accent-2:#6366F1;
-  --accent-d:#2E1065;
-  --good:    #4FB6E8;
+  --accent:  #2233f5;
+  --accent-2:#4d5cff;
+  --accent-d:#11143b;
+  --blue:    #2233f5;
+  --blue2:   #4d5cff;
+  --blue-bg: #11143b;
+  --blue-line:#2a318a;
+  --gold:    #f5c451;
+  --silver:  #c6ccd8;
+  --bronze:  #d38b55;
+  --good:    #22c55e;
   --off:     #6B7280;
   --warn:    #F59E0B;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --radius:  16px;
-  --radius-sm: 12px;
+  --radius:  11px;
+  --radius-sm: 9px;
   --sidebar-w: 220px;
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.25);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.35);
   --gap-stack: 1.75rem;
 }
 
 * { box-sizing: border-box; }
 
 [hidden] { display: none !important; }
+
+html {
+  background: var(--bg);
+}
 
 body {
   margin: 0;
@@ -42,6 +58,28 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
+  position: relative;
+  min-height: 100%;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 420px at 55% -80px, rgba(34, 51, 245, 0.16), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: auto, 44px 44px, 44px 44px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── top bar ────────────────────────────────────────────────────────────── */
@@ -3217,4 +3255,89 @@ select.cselect-native {
   background: rgba(0,0,0,.25); color: inherit;
   border-radius: 10px; border: 1px solid rgba(255,255,255,.08);
   padding: 8px;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Glass skin — fills only. Layout and structure unchanged.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.bar,
+.sidebar,
+.panel,
+.tile,
+.sheet-card,
+.composer,
+.tpl-list,
+.studio .stage-frame,
+.members-panel,
+.workspace-body .panel {
+  background: rgba(255, 255, 255, 0.045) !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+.bar {
+  background: rgba(11, 11, 12, 0.88) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.sidebar {
+  background: rgba(11, 11, 12, 0.85) !important;
+}
+
+.panel:hover,
+.tile:hover {
+  background: rgba(255, 255, 255, 0.075) !important;
+  border-color: var(--line2, #303036) !important;
+}
+
+.field input,
+.field select,
+.field textarea,
+.members-search,
+.cselect-trigger {
+  background: var(--inset, #0d0d0f);
+  border-color: var(--line, #232327);
+}
+
+.btn.primary,
+button.primary {
+  background: var(--blue, #2233f5);
+  border-color: var(--blue-line, #2a318a);
+}
+
+.btn.primary:hover,
+button.primary:hover {
+  background: var(--blue2, #4d5cff);
+}
+
+:focus-visible {
+  outline: 2px solid var(--blue2, #4d5cff);
+  outline-offset: 2px;
+}
+
+.sheet-card {
+  background: rgba(17, 17, 19, 0.92) !important;
+  border: 1px solid var(--line, #232327) !important;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: 0 12px 50px -8px rgba(34, 51, 245, 0.35);
+}
+
+.members-roster .member-row,
+.members-roster .row,
+.member-row {
+  border: 1px solid var(--line, #232327);
+  background: var(--panel, #111113);
+  border-radius: 9px;
+  transition: transform 0.75s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.2s, border-color 0.2s, opacity 0.3s;
+}
+.members-roster .member-row:hover,
+.members-roster .row:hover,
+.member-row:hover {
+  border-color: var(--line2, #303036);
+  background: var(--panel2, #17171a);
 }
