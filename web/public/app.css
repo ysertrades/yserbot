@@ -5,39 +5,39 @@
    one hex, and the only colour is the accent: brand Purple. */
 
 :root {
-  /* Quant Lab panel skin — solid dark + glass cards */
-  --bg:      #0b0b0c;
-  --surface: #111113;
-  --raised:  #17171a;
-  --sunken:  #0d0d0f;
-  --rule:    #232327;
-  --line:    #232327;
-  --line2:   #303036;
-  --panel:   #111113;
-  --panel2:  #17171a;
-  --inset:   #0d0d0f;
-  --ink:     #F3F4F6;
-  --soft:    #9CA3AF;
-  --muted:   #6B7280;
-  --accent:  #2233f5;
-  --accent-2:#4d5cff;
-  --accent-d:#11143b;
-  --blue:    #2233f5;
-  --blue2:   #4d5cff;
-  --blue-bg: #11143b;
-  --blue-line:#2a318a;
+  /* QuantLab brand book 2026 — Dark Neutral only, soft purple accent */
+  --bg:      #15161D;
+  --surface: #15161D;
+  --raised:  #1A1B24;
+  --sunken:  #12131A;
+  --rule:    rgba(255, 255, 255, 0.08);
+  --line:    rgba(255, 255, 255, 0.08);
+  --line2:   rgba(255, 255, 255, 0.12);
+  --panel:   #15161D;
+  --panel2:  #1A1B24;
+  --inset:   #12131A;
+  --ink:     #EEF1F8;
+  --soft:    #8A90A0;
+  --muted:   #5B6270;
+  --accent:  #9397EE;
+  --accent-2:#A8ABF2;
+  --accent-d:#3A3F8F;
+  --blue:    #9397EE;
+  --blue2:   #A8ABF2;
+  --blue-bg: #1E1F35;
+  --blue-line:#3A3F8F;
   --gold:    #f5c451;
   --silver:  #c6ccd8;
   --bronze:  #d38b55;
-  --good:    #22c55e;
-  --off:     #6B7280;
-  --warn:    #F59E0B;
+  --good:    #4FB6E8;
+  --off:     #5B6270;
+  --warn:    #FFB020;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --radius:  11px;
-  --radius-sm: 9px;
+  --radius:  14px;
+  --radius-sm: 12px;
   --sidebar-w: 220px;
-  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.25);
   --gap-stack: 1.75rem;
 }
 
@@ -69,7 +69,7 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(900px 420px at 55% -80px, rgba(34, 51, 245, 0.16), transparent 70%),
+    radial-gradient(900px 420px at 55% -80px, rgba(147, 151, 238, 0.10), transparent 70%),
     linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
   background-size: auto, 44px 44px, 44px 44px;
@@ -1678,7 +1678,7 @@ html[data-state="panel"] .view[data-view="panel"] {
   gap: 1.1rem;
   padding: 1.15rem 0.75rem 1.5rem;
   border-right: 1px solid var(--rule);
-  background: #0B0D10;
+  background: var(--bg);
   overflow: auto;
 }
 
@@ -1733,10 +1733,11 @@ html[data-state="panel"] .view[data-view="panel"] {
 
 .sidebar-nav.sections button[aria-current="true"] {
   color: var(--accent);
-  background: var(--raised);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   border: 0 !important;
   border-bottom: 0 !important;
   box-shadow: none;
+  font-weight: 500;
 }
 .sidebar-nav.sections button[aria-current="true"] .nav-ico {
   color: var(--accent);
@@ -1929,9 +1930,9 @@ html[data-state="panel"] .view[data-view="panel"] {
   border-radius: 10px;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--ico, #8B5CF6) 18%, transparent);
-  color: var(--ico, #8B5CF6);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ico, #8B5CF6) 28%, transparent);
+  background: color-mix(in srgb, var(--ico, #9397EE) 18%, transparent);
+  color: var(--ico, #9397EE);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ico, #9397EE) 28%, transparent);
 }
 
 .nav-ico-wrap svg {
@@ -1945,12 +1946,13 @@ html[data-state="panel"] .view[data-view="panel"] {
 
 .sidebar-nav.sections button[aria-current="true"] {
   color: var(--accent) !important;
-  background: var(--raised) !important;
+  background: color-mix(in srgb, var(--accent) 10%, transparent) !important;
+  font-weight: 500 !important;
 }
 
 .sidebar-nav.sections button[aria-current="true"] .nav-ico-wrap {
-  background: color-mix(in srgb, var(--ico, var(--accent)) 28%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ico, var(--accent)) 45%, transparent);
+  background: color-mix(in srgb, var(--ico, var(--accent)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ico, var(--accent)) 28%, transparent);
 }
 
 .sidebar-nav.sections button::after {
@@ -3257,155 +3259,32 @@ select.cselect-native {
   padding: 8px;
 }
 
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Panel skin v2 — solid content wells, soft chrome, quiet hovers
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.workspace,
-.workspace-body,
-.app-shell .workspace {
-  background: transparent;
+/* ═══ Brand unify: one background everywhere ═══════════════════════════════ */
+html, body, .app-shell, .workspace, .workspace-body, .sidebar, main, #main {
+  background: var(--bg) !important;
 }
-
-/* Main cards: solid panel fill (not bright glass) */
-.panel,
-.tile,
-.members-panel,
-.workspace-body .panel {
-  background: var(--panel, #111113) !important;
-  border: 1px solid var(--line, #232327) !important;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 28px rgba(0, 0, 0, 0.28);
+.panel, .tile, .members-panel, .composer, .tpl-list, .studio .stage-frame,
+.workspace-body .panel, .sheet-card {
+  background: var(--bg) !important;
+  border-color: var(--rule) !important;
+  box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
-
-/* Only top bar + sidebar stay lightly frosted */
-.bar {
-  background: rgba(11, 11, 12, 0.88) !important;
-  border-color: var(--line, #232327) !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+.panel:hover, .tile:hover {
+  background: var(--raised) !important;
+  border-color: var(--line2) !important;
 }
-.sidebar {
-  background: rgba(11, 11, 12, 0.92) !important;
-  border-color: var(--line, #232327) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* Quiet card hover — border only, almost no fill change */
-.panel:hover,
-.tile:hover {
-  background: var(--panel, #111113) !important;
-  border-color: var(--line2, #303036) !important;
-}
-.tile:hover {
-  background: color-mix(in srgb, var(--panel2, #17171a) 50%, var(--panel, #111113)) !important;
-}
-
-/* Members well */
 .members-roster {
-  background: var(--inset, #0d0d0f) !important;
-  border: 1px solid var(--line, #232327) !important;
-  border-radius: 11px;
-  scrollbar-gutter: stable;
+  background: var(--sunken) !important;
+  border-color: var(--rule) !important;
 }
-.members-search {
-  background: var(--inset, #0d0d0f) !important;
-  border: 1px solid var(--line, #232327) !important;
+.bar {
+  background: var(--bg) !important;
+  border-color: var(--rule) !important;
+  backdrop-filter: none !important;
 }
-.members-search:focus {
-  border-color: var(--blue-line, #2a318a) !important;
-  box-shadow: 0 0 0 3px rgba(34, 51, 245, 0.18) !important;
-}
-
-/* Rows: flat list, no bright glass cards */
-.members-roster .member-row,
-.member-row {
-  border-bottom: 1px solid var(--line, #232327) !important;
-  background: transparent !important;
-  border-radius: 0 !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-top: none !important;
-  transition: background 0.18s ease, border-color 0.18s ease;
-}
-.members-roster .member-row:last-child,
-.member-row:last-child {
-  border-bottom: none !important;
-}
-
-.member-row.is-owner {
-  background: linear-gradient(90deg, rgba(34, 51, 245, 0.10), transparent 55%) !important;
-}
-.member-row.is-admin:not(.is-owner) {
-  background: linear-gradient(90deg, rgba(34, 51, 245, 0.05), transparent 50%) !important;
-}
-
-/* Hover: subtle, not bright */
-.members-roster .member-row:hover,
-.member-row:hover {
-  background: rgba(255, 255, 255, 0.028) !important;
-  border-bottom-color: var(--line2, #303036) !important;
-}
-.member-row.is-owner:hover {
-  background: linear-gradient(90deg, rgba(34, 51, 245, 0.14), rgba(255, 255, 255, 0.02) 60%) !important;
-}
-.member-row.is-admin:not(.is-owner):hover {
-  background: linear-gradient(90deg, rgba(34, 51, 245, 0.08), rgba(255, 255, 255, 0.02) 55%) !important;
-}
-
-.member-row .btn,
-.member-row button {
-  background: var(--panel2, #17171a);
-  border: 1px solid var(--line, #232327);
-  color: var(--soft, #9CA3AF);
-}
-.member-row .btn:hover,
-.member-row button:hover {
-  background: var(--panel, #111113);
-  border-color: var(--line2, #303036);
-  color: var(--ink, #F3F4F6);
-}
-
-.sections button:hover {
-  background: rgba(255, 255, 255, 0.03) !important;
-}
-.guilds button:hover {
-  background: var(--panel2, #17171a) !important;
-  border-color: var(--line2, #303036) !important;
-}
-
-.field input,
-.field select,
-.field textarea,
-.cselect-trigger {
-  background: var(--inset, #0d0d0f);
-  border-color: var(--line, #232327);
-}
-
-.btn.primary,
-button.primary {
-  background: var(--blue, #2233f5);
-  border-color: var(--blue-line, #2a318a);
-}
-.btn.primary:hover,
-button.primary:hover {
-  background: var(--blue2, #4d5cff);
-}
-
-.sheet-card {
-  background: rgba(17, 17, 19, 0.94) !important;
-  border: 1px solid var(--line, #232327) !important;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
-}
-
-.composer,
-.tpl-list,
-.studio .stage-frame {
-  background: var(--panel, #111113) !important;
-  border-color: var(--line, #232327) !important;
+.sidebar-nav.sections button[aria-current="true"] .nav-label {
+  color: var(--accent);
+  font-weight: 500;
 }
