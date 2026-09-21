@@ -2,6 +2,7 @@ const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { parseDuration, formatDuration } = require('../../utils/duration');
+const levelingEngine = require('../../utils/levelingEngine');
 
 // What the two anti-farming levers were fixed at before they could be set.
 const DEFAULT_COOLDOWN_MS = 20000;
@@ -76,7 +77,29 @@ module.exports = {
             .addRoleOption(opt => opt.setName('role').setDescription('Role to give').setRequired(true)))
         .addSubcommand(sub => sub.setName('removerole').setDescription('Remove level role reward')
             .addIntegerOption(opt => opt.setName('level').setDescription('Level').setMinValue(1).setMaxValue(1000).setRequired(true)))
-        .addSubcommand(sub => sub.setName('view').setDescription('View current leveling settings')),
+        .addSubcommand(sub => sub.setName('view').setDescription('View current leveling settings'))
+        .addSubcommand(sub => sub.setName('addxp').setDescription('Manually add XP to a member')
+            .addUserOption(o => o.setName('user').setDescription('Member').setRequired(true))
+            .addIntegerOption(o => o.setName('amount').setDescription('XP to add').setMinValue(1).setMaxValue(100000).setRequired(true))
+            .addStringOption(o => o.setName('reason').setDescription('Why (optional)')))
+        .addSubcommand(sub => sub.setName('removexp').setDescription('Manually remove XP from a member')
+            .addUserOption(o => o.setName('user').setDescription('Member').setRequired(true))
+            .addIntegerOption(o => o.setName('amount').setDescription('XP to remove').setMinValue(1).setMaxValue(100000).setRequired(true))
+            .addStringOption(o => o.setName('reason').setDescription('Why (optional)')))
+        .addSubcommand(sub => sub.setName('setlevel').setDescription('Set a member to a specific level')
+            .addUserOption(o => o.setName('user').setDescription('Member').setRequired(true))
+            .addIntegerOption(o => o.setName('level').setDescription('Level').setMinValue(1).setMaxValue(500).setRequired(true)))
+        .addSubcommand(sub => sub.setName('resetuser').setDescription('Clear one member from the leaderboard')
+            .addUserOption(o => o.setName('user').setDescription('Member').setRequired(true)))
+        .addSubcommand(sub => sub.setName('noxprole').setDescription('Block XP for everyone with a role')
+            .addRoleOption(o => o.setName('role').setDescription('Role to block (or clear)').setRequired(true))
+            .addBooleanOption(o => o.setName('enabled').setDescription('true = block, false = allow again').setRequired(true)))
+        .addSubcommand(sub => sub.setName('announce').setDescription('Level-up announcements on or off')
+            .addBooleanOption(o => o.setName('enabled').setDescription('Announce level-ups in chat').setRequired(true)))
+        .addSubcommand(sub => sub.setName('voice').setDescription('Voice-channel XP for tracked voice rooms')
+            .addBooleanOption(o => o.setName('enabled').setDescription('Enable voice XP').setRequired(true))
+            .addIntegerOption(o => o.setName('xp_per_minute').setDescription('XP per minute (1–50)').setMinValue(1).setMaxValue(50)))
+        .addSubcommand(sub => sub.setName('seasonreset').setDescription('Start a new seasonal cycle (keeps all-time XP)')),
     async execute(interaction) {
         const levels = readJson('levels.json', {});
         const guildId = interaction.guild.id;
@@ -167,6 +190,89 @@ module.exports = {
                 ],
             }, interaction.guild);
             await interaction.reply({ embeds: [embed] });
+
+        } else if (sub === 'addxp' || sub === 'removexp') {
+            const user = interaction.options.getUser('user', true);
+            const amount = interaction.options.getInteger('amount', true);
+            const reason = interaction.options.getString('reason') || sub;
+            const delta = sub === 'addxp' ? amount : -amount;
+            const r = levelingEngine.adminAdjustXp(guildId, user.id, delta, reason);
+            if (r.error) {
+                const embed = createServerEmbed('error', { title: 'Could not adjust XP', description: r.error }, interaction.guild);
+                return sendTempReply(interaction, embed);
+            }
+            const embed = createServerEmbed('success', {
+                title: sub === 'addxp' ? 'XP added' : 'XP removed',
+                description: `**${user.username}** · ${delta > 0 ? '+' : ''}${delta} XP → level **${r.level}** · **${r.totalXp.toLocaleString()}** total`,
+            }, interaction.guild);
+            await sendTempReply(interaction, embed);
+        } else if (sub === 'setlevel') {
+            const user = interaction.options.getUser('user', true);
+            const level = interaction.options.getInteger('level', true);
+            const r = levelingEngine.adminSetLevel(guildId, user.id, level);
+            const embed = createServerEmbed('success', {
+                title: 'Level set',
+                description: `**${user.username}** is now level **${r.level}** · **${r.totalXp.toLocaleString()}** total XP`,
+            }, interaction.guild);
+            await sendTempReply(interaction, embed);
+        } else if (sub === 'resetuser') {
+            const user = interaction.options.getUser('user', true);
+            levelingEngine.adminResetUser(guildId, user.id);
+            const embed = createServerEmbed('success', {
+                title: 'Member reset',
+                description: `**${user.username}** was cleared from the rank board.`,
+            }, interaction.guild);
+            await sendTempReply(interaction, embed);
+        } else if (sub === 'noxprole') {
+            const role = interaction.options.getRole('role', true);
+            const enabled = interaction.options.getBoolean('enabled', true);
+            const all = levelingEngine.loadAll();
+            const g = levelingEngine.ensureGuild(all, guildId);
+            const list = new Set(g.settings.noXpRoles || []);
+            if (enabled) list.add(role.id);
+            else list.delete(role.id);
+            g.settings.noXpRoles = [...list];
+            require('../../utils/jsonStorage').writeJson('levels.json', all);
+            const embed = createServerEmbed('success', {
+                title: enabled ? 'No-XP role on' : 'No-XP role off',
+                description: enabled
+                    ? `Members with **${role.name}** earn no XP (spam block or opt-out).`
+                    : `**${role.name}** no longer blocks XP.`,
+            }, interaction.guild);
+            await sendTempReply(interaction, embed);
+        } else if (sub === 'announce') {
+            const enabled = interaction.options.getBoolean('enabled', true);
+            const all = levelingEngine.loadAll();
+            const g = levelingEngine.ensureGuild(all, guildId);
+            g.settings.announceLevelUp = enabled;
+            require('../../utils/jsonStorage').writeJson('levels.json', all);
+            const embed = createServerEmbed('success', {
+                title: 'Level-up announcements',
+                description: enabled ? 'Level-ups will be posted in chat.' : 'Level-up messages are muted.',
+            }, interaction.guild);
+            await sendTempReply(interaction, embed);
+        } else if (sub === 'voice') {
+            const enabled = interaction.options.getBoolean('enabled', true);
+            const per = interaction.options.getInteger('xp_per_minute');
+            const all = levelingEngine.loadAll();
+            const g = levelingEngine.ensureGuild(all, guildId);
+            g.settings.voiceEnabled = enabled;
+            if (per != null) g.settings.voiceXpPerMinute = per;
+            require('../../utils/jsonStorage').writeJson('levels.json', all);
+            const embed = createServerEmbed('success', {
+                title: 'Voice XP',
+                description: enabled
+                    ? `Voice XP is on · **${g.settings.voiceXpPerMinute} XP** per minute in tracked voice channels (configure channels in the panel).`
+                    : 'Voice XP is off.',
+            }, interaction.guild);
+            await sendTempReply(interaction, embed);
+        } else if (sub === 'seasonreset') {
+            const r = levelingEngine.adminResetSeason(guildId);
+            const embed = createServerEmbed('success', {
+                title: 'New season',
+                description: `Season **${r.seasonKey}** started. All-time XP is kept; seasonal scores were cleared for **${r.cleared}** members.`,
+            }, interaction.guild);
+            await sendTempReply(interaction, embed);
         }
     },
 };
