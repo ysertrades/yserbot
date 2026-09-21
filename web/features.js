@@ -27,7 +27,6 @@ const {
 const { todaysSlotUTC, REWARD: LOTTERY_REWARD, drawStatus } = require('../utils/lotteryRunner');
 const { normaliseMention } = require('../utils/mentionTarget');
 const { parseDuration, formatDuration } = require('../utils/duration');
-const levelingEngine = require('../utils/levelingEngine');
 
 // Exactly what utils/scheduler.js implements — anything not listed here is
 // treated as daily by computeNextRun, so a value the runner does not know
@@ -199,36 +198,8 @@ function read(guildId, guild) {
     exact: !!r.exact, cooldown: r.cooldown ?? 0, enabled: r.enabled !== false,
   })).sort((a, b) => a.trigger.localeCompare(b.trigger));
 
-  const lv = readJson('levels.json', {})[guildId] || {};
-  const s = lv.settings || {};
-  const xp = Array.isArray(s.xpPerMessage) ? s.xpPerMessage : [10, 20];
-  out.levels = {
-    fields: LEVEL_FIELDS,
-    values: {
-      xpMin: xp[0], xpMax: xp[1], baseXp: s.baseXp ?? 150, multiplier: s.multiplier ?? 1.5,
-      // Shown as the string it would be typed back in as, the way the economy
-      // screen does its cooldowns.
-      cooldownMs: formatDuration(s.cooldownMs ?? 20000) || '0',
-      minLength: s.minLength ?? 0,
-    },
-    roles: Object.entries(lv.roles || {}).map(([level, roleId]) => ({
-      level: Number(level), roleId, roleName: guild.roles.cache.get(roleId)?.name || null,
-    })).sort((a, b) => a.level - b.level),
-    badges: Object.entries(lv.badges || {}).map(([level, badgeId]) => ({
-      level: Number(level), badgeId, badgeLabel: BADGE_DEFS[badgeId]?.label || badgeId,
-    })).sort((a, b) => a.level - b.level),
-    badgeCatalog: Object.entries(BADGE_DEFS).map(([id, b]) => ({ id, label: b.label, emoji: b.emoji })),
-    tracked: Object.keys(lv.users || {}).length,
-  
-    trading: (() => {
-      try { return levelingEngine.panelSnapshot(guildId, guild); }
-      catch (err) { console.warn('[levels] panelSnapshot', err.message); return null; }
-    })(),
-};
+  out.levels = null;
 
-  // Members the panel can act on. Capped, because a large server would make
-  // the overview payload enormous — and a picker nobody can scroll is no
-  // better than a box you type an id into.
   out.members = guild.members?.cache
     ? [...guild.members.cache.values()]
         .filter(m => !m.user?.bot)

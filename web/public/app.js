@@ -1149,7 +1149,6 @@ function renderOverview() {
   renderLevelRoles();
   renderLevelBadges();
   renderLevelsReset();
-  try { renderEngagement(); } catch (e) { console.warn('[panel] renderEngagement', e); }
   
   
   
@@ -5598,7 +5597,6 @@ function syncFeatureNav() {
   hide(nav('feeds'), feedsOff);
   hide(nav('giveaways'), gawOff);
   hide(nav('tickets'), tixOff);
-  hide(nav('engagement'), lvlOff);
 
   // Calendar panels only
   hide($('#form-econcal')?.closest('.panel'), calOff);
@@ -5609,7 +5607,7 @@ function syncFeatureNav() {
   const sec = root?.dataset?.section;
   if ((sec === 'economy' && econOff) || (sec === 'casino' && casOff)
       || (sec === 'feeds' && feedsOff) || (sec === 'giveaways' && gawOff)
-      || (sec === 'tickets' && tixOff) || (sec === 'engagement' && lvlOff)) {
+      || (sec === 'tickets' && tixOff)) {
     if (typeof showSection === 'function') showSection('overview');
   }
 }
@@ -8104,150 +8102,11 @@ function multiSelect(label, values, opts, onChange) {
 }
 
 /** One setup card + live board — meaningful controls only. */
-function renderEngagement() {
-  const setup = $('#rank-setup');
-  const board = $('#rank-board');
-  if (!setup && !board) return;
+function renderEngagement() { /* leveling removed */ }
 
-  const t = rankTrading();
-  const lv = state.overview?.features?.levels;
 
-  if (setup) {
-    if (!t && !lv) {
-      setup.replaceChildren(el('p', 'muted', 'Open a server to configure rank.'));
-    } else {
-      const draft = {
-        mode: t?.mode || 'trading',
-        dailyXpCap: t?.dailyXpCap ?? 400,
-        earnChannels: [...(t?.sources?.earnChannels || [])],
-        forumChannels: [...(t?.sources?.forumChannels || [])],
-        tradeShareChannels: [...(t?.sources?.tradeShareChannels || [])],
-      };
-      const opts = channelOptsFromTrading(t);
-      const forums = opts.filter(o => o.kind === 'forum');
-      const texts = opts.filter(o => o.kind !== 'forum');
+function renderLevels() { /* leveling removed */ }
 
-      const nodes = [];
-
-      // Mode segmented
-      const modeBox = el('div', 'field');
-      modeBox.append(el('label', null, 'Mode'));
-      const modeRow = el('div', 'rank-mode-row');
-      for (const [v, lab] of [['trading', 'Trading signals'], ['legacy', 'Legacy chat XP']]) {
-        const b = el('button', 'btn small' + (draft.mode === v ? ' primary' : ''), lab);
-        b.type = 'button';
-        b.addEventListener('click', () => {
-          draft.mode = v;
-          modeRow.querySelectorAll('button').forEach(x => x.classList.toggle('primary', x === b));
-        });
-        modeRow.append(b);
-      }
-      modeBox.append(modeRow);
-      modeBox.append(el('p', 'hint', draft.mode === 'trading'
-        ? 'Only charts, journal, and trade shares earn XP.'
-        : 'Any message can earn XP (old behaviour).'));
-      nodes.push(modeBox);
-
-      if (texts.length) nodes.push(multiSelect('Chart / setup channels', draft.earnChannels, texts, ids => { draft.earnChannels = ids; }));
-      else nodes.push(el('p', 'hint', 'No text channels loaded yet.'));
-
-      if (forums.length) nodes.push(multiSelect('Journal forums (owner gets XP)', draft.forumChannels, forums, ids => { draft.forumChannels = ids; }));
-      nodes.push(multiSelect('QuantLab trade-share channels', draft.tradeShareChannels, texts, ids => { draft.tradeShareChannels = ids; }));
-
-      nodes.push(textField('Daily XP cap (per member)', String(draft.dailyXpCap), v => {
-        draft.dailyXpCap = Number(v) || 0;
-      }));
-
-      // Live signal legend
-      const legend = el('div', 'rank-legend');
-      legend.append(el('div', 'rank-legend-title', 'What pays XP'));
-      const signals = t?.signals || {
-        chart: { min: 25, max: 40 },
-        setup: { min: 20, max: 35 },
-        journal: { min: 35, max: 55 },
-        share: { min: 30, max: 50 },
-      };
-      for (const [k, lab] of [['chart', 'Chart image'], ['setup', 'Setup / levels'], ['journal', 'Journal post'], ['share', 'Trade share']]) {
-        const s = signals[k] || {};
-        legend.append(el('div', 'rank-legend-row', `${lab}  ·  ${s.min ?? '—'}–${s.max ?? '—'} XP`));
-      }
-      nodes.push(legend);
-
-      nodes.push(actions(async () => {
-        const out = await post('leveltrading', {
-          mode: draft.mode,
-          dailyXpCap: draft.dailyXpCap,
-          earnChannels: draft.earnChannels,
-          forumChannels: draft.forumChannels,
-          tradeShareChannels: draft.tradeShareChannels,
-        });
-        if (!out) return null;
-        if (state.overview?.features?.levels) {
-          state.overview.features.levels.trading = out.trading || state.overview.features.levels.trading;
-        }
-        renderEngagement();
-        return out;
-      }));
-      setup.replaceChildren(...nodes);
-    }
-  }
-
-  if (board) {
-    const tag = $('#rank-board-tag');
-    const list = t?.leaderboard || lv?.leaderboard || [];
-    if (tag) tag.textContent = list.length ? `${list.length} ranked` : 'live';
-    if (!list.length) {
-      board.replaceChildren(el('p', 'muted', 'No rank XP yet — post a chart or journal entry in a tracked channel.'));
-    } else {
-      const table = el('div', 'rank-board-list');
-      list.slice(0, 15).forEach((u, i) => {
-        const row = el('div', 'rank-board-row');
-        const left = el('div', 'rank-board-left');
-        left.append(el('span', 'rank-board-pos', String(i + 1)));
-        left.append(el('span', 'rank-board-name', u.name || u.id));
-        left.append(el('span', 'rank-board-lvl', `Lv ${u.level ?? 0}`));
-        row.append(left);
-        row.append(el('span', 'rank-board-xp', `${num(u.totalXp || u.xp || 0)} XP`));
-        table.append(row);
-      });
-      board.replaceChildren(table);
-    }
-  }
-}
-
-function renderLevels() {
-  const lv = state.overview?.features?.levels;
-  const form = $('#form-levels');
-  if (!lv) { form.replaceChildren(el('p', 'muted', 'Not available.')); return; }
-
-  // Live copy of what is on screen, so the readout below can be recalculated
-  // as you type rather than only after a save.
-  const shown = Object.fromEntries(lv.fields.map(f => [f.key, lv.values[f.key] ?? f.fallback ?? '']));
-
-  const rate = el('p', 'hint');
-  const syncRate = () => { rate.textContent = describeXpRate(shown); };
-
-  const draft = {};
-  const nodes = [];
-  for (const f of lv.fields) {
-    // A duration keeps its 20s/1m form all the way through — Number() on it
-    // would send NaN, which is how a text-shaped field breaks a numeric form.
-    const isDuration = f.type === 'duration';
-    const label = isDuration ? f.label : `${f.label} (${f.min}–${f.max})`;
-    nodes.push(textField(label, String(shown[f.key]), v => {
-      shown[f.key] = isDuration ? v : Number(v);
-      draft[f.key] = shown[f.key];
-      syncRate();
-    }, isDuration ? { placeholder: '20s, 1m, 5m — or 0' } : {}));
-    if (f.hint) nodes.push(el('p', 'hint', f.hint));
-  }
-
-  syncRate();
-  nodes.push(rate);
-  nodes.push(el('p', 'hint', `${num(lv.tracked)} members are being tracked.`));
-  nodes.push(actions(() => post('levels', draft)));
-  form.replaceChildren(...nodes);
-}
 
 /**
  * What the level settings add up to, in a sentence.
@@ -8543,7 +8402,7 @@ const SECTION_NAMES = {
   overview: 'Overview', composer: 'Composer', studio: 'Studio',
   casino: 'Casino', tickets: 'Tickets',
   giveaways: 'Giveaways', feeds: 'Feeds', economy: 'Economy',
-  automation: 'Automation', engagement: 'Engagement',
+  automation: 'Automation',
   moderation: 'Moderation', settings: 'Settings',
 };
 

@@ -54,12 +54,6 @@ const FEATURE_GROUPS = [
     commands: ['trivia'],
   },
   {
-    key: 'leveling', label: 'Leveling & Ranks',
-    description: 'XP on messages, level-up announcements, /rank, /leaderboard, and level roles.',
-    commands: ['rank', 'leaderboard', 'levelsettings'],
-    passive: true,
-  },
-  {
     key: 'cards', label: 'Collectible Cards',
     description: 'Random card drops in chat and the /cards collection.',
     commands: ['cards', 'cardsettings'],

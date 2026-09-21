@@ -90,7 +90,6 @@
           <button type="button" data-goto="casino" id="nav-casino" hidden><span class="nav-ico-wrap" style="--ico:#FBBF24" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12l4 6-10 12L2 9l4-6z"/></svg></span><span class="nav-label">Casino</span></button>
           <button type="button" data-goto="feeds" id="nav-feeds" hidden><span class="nav-ico-wrap" style="--ico:#60A5FA" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16M5 19h.01"/></svg></span><span class="nav-label">Feeds</span></button>
           <button type="button" data-goto="automation"><span class="nav-ico-wrap" style="--ico:#F59E0B" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><span class="nav-label">Automation</span></button>
-          <button type="button" data-goto="engagement" id="nav-engagement"><span class="nav-ico-wrap" style="--ico:#E879F9" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-3.5L6 21l1.5-7.5L2 9h7l3-7z"/></svg></span><span class="nav-label">Engagement</span></button>
           <button type="button" data-goto="tickets" id="nav-tickets" hidden><span class="nav-ico-wrap" style="--ico:#818CF8" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v2a2 2 0 1 1 0 4v2c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-2a2 2 0 1 1 0-4V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M13 5v14"/></svg></span><span class="nav-label">Tickets</span></button>
           <button type="button" data-goto="moderation"><span class="nav-ico-wrap" style="--ico:#F87171" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><span class="nav-label">Moderation</span></button>
           <button type="button" data-goto="settings"><span class="nav-ico-wrap" style="--ico:#94A3B8" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span><span class="nav-label">Settings</span></button>
@@ -509,28 +508,8 @@
     </div>
 
     <!-- ── Engagement ──────────────────────────────────────────────────── -->
-    <div class="section" data-section="engagement">
-      <div class="panel rank-setup-panel">
-        <h2>Trading rank</h2>
-        <p class="muted">XP only for real trading activity — charts, journal posts, and QuantLab shares. Chat spam earns nothing.</p>
-        <div id="rank-setup" class="form rank-setup"></div>
-      </div>
 
-      <div class="panel">
-        <div class="queue-head">
-          <h2>Leaderboard</h2>
-          <span class="tag" id="rank-board-tag">live</span>
-        </div>
-        <div id="rank-board" class="rank-board"></div>
-      </div>
-
-      <div class="panel fold" data-fold="rank-curve">
-        <h2>Level curve</h2>
-        <p class="muted">How much XP is needed per level. Signal XP feeds this curve in trading mode.</p>
-        <form id="form-levels" class="form"></form>
-        <div id="levels-reset"></div>
-      </div>
-    </div>
+    
 
     <div class="section" data-section="moderation">
       <!-- Queues first: the things waiting on a person, before the settings
@@ -646,7 +625,6 @@
 </div>
 
 <script src="/app.js"></script>
-<script src="/engagement-ui.js"></script>
 <script src="/stability.js"></script>
 </body>
 </html>

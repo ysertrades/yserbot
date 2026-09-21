@@ -789,44 +789,20 @@ Object.assign(OPS, {
     return r;
   },
   async levels(guildId, body, ctx) {
-    const r = features.saveLevels(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, '📈 **Levelling** settings updated', 'features');
-    return r;
+    return { error: 'Leveling has been removed.' };
   },
   async levelrole(guildId, body, ctx) {
-    const r = features.saveLevelRole(guildId, body, ctx.guild);
-    if (r.ok) {
-      announce(ctx.client, guildId, ctx.session, r.removed
-        ? `📈 Level ${r.removed} reward role removed`
-        : `📈 Level ${r.level} now grants <@&${r.roleId}>`, 'features');
-    }
-    return r;
+    return { error: 'Leveling has been removed.' };
   },
   async levelbadge(guildId, body, ctx) {
-    const r = features.saveLevelBadge(guildId, body);
-    if (r.ok) {
-      announce(ctx.client, guildId, ctx.session, r.removed
-        ? `🎖️ Level ${r.removed} badge award removed`
-        : `🎖️ Level ${r.level} now awards the **${r.badgeId}** badge`, 'features');
-    }
-    return r;
+    return { error: 'Leveling has been removed.' };
   },
-  async resetlevels(guildId, _body, ctx) {
-    const r = features.resetAllLevels(guildId);
-    if (r.ok && r.reset > 0) {
-      await announce(ctx.client, guildId, ctx.session,
-        `📈 **Levels reset** — ${r.reset} member${r.reset === 1 ? '' : 's'} back to level 1`, 'features');
-    }
-    return r;
+  async resetlevels(guildId, body, ctx) {
+    return { error: 'Leveling has been removed.' };
   },
   
   async leveltrading(guildId, body, ctx) {
-    const levelingEngine = require('../utils/levelingEngine');
-    const r = levelingEngine.saveTradingSettings(guildId, body);
-    if (r.error) return r;
-    // Don't wait on Discord log — panel must feel instant
-    announce(ctx.client, guildId, ctx.session, 'Updated trading rank rules.').catch(() => {});
-    return r;
+    return { error: 'Leveling has been removed.' };
   },
 
   async schedulenew(guildId, body, ctx) {
