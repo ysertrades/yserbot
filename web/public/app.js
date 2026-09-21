@@ -269,8 +269,6 @@ async function sendDropPrize(shortId, text) {
 }
 
 async function post(op, body, { quiet = false } = {}) {
-  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timer = ctrl ? setTimeout(() => ctrl.abort(), 12000) : null;
   let res;
   try {
     res = await fetch(`/api/guild/${state.guildId}/${op}`, {
@@ -278,14 +276,11 @@ async function post(op, body, { quiet = false } = {}) {
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json', 'x-csrf-token': state.csrf, ...authHeaders() },
       body: JSON.stringify(body),
-      signal: ctrl?.signal,
     });
   } catch (e) {
-    if (timer) clearTimeout(timer);
-    toast(e?.name === 'AbortError' ? 'Save timed out — try again.' : 'Network error — try again.', 'bad');
+    toast('Network error — try again.', 'bad');
     return null;
   }
-  if (timer) clearTimeout(timer);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     // Always surface the real reason. A bare "did not save" hides forbidden,
@@ -1154,7 +1149,7 @@ function renderOverview() {
   renderLevelRoles();
   renderLevelBadges();
   renderLevelsReset();
-  /* rank via renderEngagement */
+  try { renderEngagement(); } catch (e) { console.warn('[panel] renderEngagement', e); }
   
   
   
