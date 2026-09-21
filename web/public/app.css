@@ -3259,8 +3259,9 @@ select.cselect-native {
   padding: 8px;
 }
 
+
 /* ═══════════════════════════════════════════════════════════════════════════
-   Dark glass restore — bg #0b0b0c, atmosphere, glass cards
+   Tab cards → mod-pad glass (depth + transparency, layout unchanged)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 html, body {
@@ -3275,6 +3276,7 @@ main,
   background: transparent !important;
 }
 
+/* Cards: same language as the member mod pad — deeper fill, soft edge, still glass */
 .panel,
 .tile,
 .members-panel,
@@ -3282,53 +3284,35 @@ main,
 .composer,
 .tpl-list,
 .studio .stage-frame,
-.sheet-card,
 .gaw {
-  background: rgba(255, 255, 255, 0.045) !important;
-  border-color: rgba(255, 255, 255, 0.09) !important;
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-}
-
-.bar {
-  background: rgba(11, 11, 12, 0.88) !important;
-  border-color: var(--line, #232327) !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.sidebar {
-  background: rgba(11, 11, 12, 0.85) !important;
-  border-color: var(--line, #232327) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%),
+    rgba(17, 17, 19, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 12px 40px -16px rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
 }
 
 .panel:hover,
 .tile:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border-color: var(--line2, #303036) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.02) 100%),
+    rgba(23, 23, 26, 0.78) !important;
+  border-color: rgba(255, 255, 255, 0.11) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 14px 44px -14px rgba(0, 0, 0, 0.6) !important;
 }
 
-.members-roster {
-  background: rgba(13, 13, 15, 0.72) !important;
-  border: 1px solid var(--line, #232327) !important;
-  border-radius: 11px;
-}
-
-.members-roster .member-row,
-.member-row {
-  background: transparent !important;
-  border-radius: 0 !important;
-  border-left: none !important;
-  border-right: none !important;
-  border-top: none !important;
-  border-bottom: 1px solid var(--line, #232327) !important;
-  backdrop-filter: none !important;
-}
-.member-row:last-child { border-bottom: none !important; }
-.member-row:hover {
-  background: rgba(255, 255, 255, 0.03) !important;
+/* Nested wells inside cards (like Joined / Account age chips on mod pad) */
+.panel .rows,
+.tile,
+.members-search-wrap .members-search {
+  /* search stays inset */
 }
 
 .members-search,
@@ -3336,8 +3320,60 @@ main,
 .field select,
 .field textarea,
 .cselect-trigger {
-  background: var(--inset, #0d0d0f) !important;
-  border-color: var(--line, #232327) !important;
+  background: rgba(13, 13, 15, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 10px;
+}
+
+/* Members list well — slightly deeper than parent card */
+.members-roster {
+  background: rgba(11, 11, 12, 0.55) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+}
+
+.members-roster .member-row,
+.member-row {
+  background: transparent !important;
+  border-radius: 0 !important;
+  border: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+.member-row:last-child { border-bottom: none !important; }
+.member-row:hover {
+  background: rgba(255, 255, 255, 0.035) !important;
+}
+
+/* Chrome */
+.bar {
+  background: rgba(11, 11, 12, 0.88) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.sidebar {
+  background: rgba(11, 11, 12, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Mod pad stays the reference (slightly richer, already good) */
+.sheet-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%),
+    rgba(17, 17, 19, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  border-radius: 16px !important;
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 20px 60px -12px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(34, 51, 245, 0.08) !important;
 }
 
 .btn.primary,
@@ -3350,20 +3386,8 @@ button.primary:hover {
   background: var(--blue2, #4d5cff) !important;
 }
 
-.sheet-card {
-  background: rgba(15, 17, 48, 0.92) !important;
-  border: 1px solid var(--blue-line, #2a318a) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 12px 50px -8px rgba(34, 51, 245, 0.35);
-}
-
 .sidebar-nav.sections button[aria-current="true"] {
   color: var(--blue2, #4d5cff) !important;
   background: rgba(34, 51, 245, 0.12) !important;
   font-weight: 500 !important;
-}
-.sidebar-nav.sections button[aria-current="true"] .nav-label {
-  color: var(--blue2, #4d5cff);
-  font-weight: 500;
 }
