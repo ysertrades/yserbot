@@ -5,39 +5,39 @@
    one hex, and the only colour is the accent: brand Purple. */
 
 :root {
-  /* QuantLab brand book 2026 — Dark Neutral only, soft purple accent */
-  --bg:      #15161D;
-  --surface: #15161D;
-  --raised:  #1A1B24;
-  --sunken:  #12131A;
-  --rule:    rgba(255, 255, 255, 0.08);
-  --line:    rgba(255, 255, 255, 0.08);
-  --line2:   rgba(255, 255, 255, 0.12);
-  --panel:   #15161D;
-  --panel2:  #1A1B24;
-  --inset:   #12131A;
-  --ink:     #EEF1F8;
-  --soft:    #8A90A0;
-  --muted:   #5B6270;
-  --accent:  #9397EE;
-  --accent-2:#A8ABF2;
-  --accent-d:#3A3F8F;
-  --blue:    #9397EE;
-  --blue2:   #A8ABF2;
-  --blue-bg: #1E1F35;
-  --blue-line:#3A3F8F;
+  /* Dark glass — exact tokens */
+  --bg:      #0b0b0c;
+  --surface: #111113;
+  --raised:  #17171a;
+  --sunken:  #0d0d0f;
+  --rule:    #232327;
+  --line:    #232327;
+  --line2:   #303036;
+  --panel:   #111113;
+  --panel2:  #17171a;
+  --inset:   #0d0d0f;
+  --ink:     #F3F4F6;
+  --soft:    #9CA3AF;
+  --muted:   #6B7280;
+  --accent:  #2233f5;
+  --accent-2:#4d5cff;
+  --accent-d:#11143b;
+  --blue:    #2233f5;
+  --blue2:   #4d5cff;
+  --blue-bg: #11143b;
+  --blue-line:#2a318a;
   --gold:    #f5c451;
   --silver:  #c6ccd8;
   --bronze:  #d38b55;
-  --good:    #4FB6E8;
-  --off:     #5B6270;
-  --warn:    #FFB020;
+  --good:    #22c55e;
+  --off:     #6B7280;
+  --warn:    #F59E0B;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --radius:  14px;
-  --radius-sm: 12px;
+  --radius:  11px;
+  --radius-sm: 9px;
   --sidebar-w: 220px;
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.25);
+  --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.35);
   --gap-stack: 1.75rem;
 }
 
@@ -69,7 +69,7 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(900px 420px at 55% -80px, rgba(147, 151, 238, 0.10), transparent 70%),
+    radial-gradient(900px 420px at 55% -80px, rgba(34, 51, 245, 0.16), transparent 70%),
     linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
   background-size: auto, 44px 44px, 44px 44px;
@@ -3259,32 +3259,111 @@ select.cselect-native {
   padding: 8px;
 }
 
-/* ═══ Brand unify: one background everywhere ═══════════════════════════════ */
-html, body, .app-shell, .workspace, .workspace-body, .sidebar, main, #main {
-  background: var(--bg) !important;
+/* ═══════════════════════════════════════════════════════════════════════════
+   Dark glass restore — bg #0b0b0c, atmosphere, glass cards
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html, body {
+  background: var(--bg, #0b0b0c) !important;
 }
-.panel, .tile, .members-panel, .composer, .tpl-list, .studio .stage-frame,
-.workspace-body .panel, .sheet-card {
-  background: var(--bg) !important;
-  border-color: var(--rule) !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+
+.app-shell,
+.workspace,
+.workspace-body,
+main,
+#main {
+  background: transparent !important;
 }
-.panel:hover, .tile:hover {
-  background: var(--raised) !important;
-  border-color: var(--line2) !important;
+
+.panel,
+.tile,
+.members-panel,
+.workspace-body .panel,
+.composer,
+.tpl-list,
+.studio .stage-frame,
+.sheet-card,
+.gaw {
+  background: rgba(255, 255, 255, 0.045) !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
 }
-.members-roster {
-  background: var(--sunken) !important;
-  border-color: var(--rule) !important;
-}
+
 .bar {
-  background: var(--bg) !important;
-  border-color: var(--rule) !important;
+  background: rgba(11, 11, 12, 0.88) !important;
+  border-color: var(--line, #232327) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.sidebar {
+  background: rgba(11, 11, 12, 0.85) !important;
+  border-color: var(--line, #232327) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.panel:hover,
+.tile:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: var(--line2, #303036) !important;
+}
+
+.members-roster {
+  background: rgba(13, 13, 15, 0.72) !important;
+  border: 1px solid var(--line, #232327) !important;
+  border-radius: 11px;
+}
+
+.members-roster .member-row,
+.member-row {
+  background: transparent !important;
+  border-radius: 0 !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: 1px solid var(--line, #232327) !important;
   backdrop-filter: none !important;
+}
+.member-row:last-child { border-bottom: none !important; }
+.member-row:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+.members-search,
+.field input,
+.field select,
+.field textarea,
+.cselect-trigger {
+  background: var(--inset, #0d0d0f) !important;
+  border-color: var(--line, #232327) !important;
+}
+
+.btn.primary,
+button.primary {
+  background: var(--blue, #2233f5) !important;
+  border-color: var(--blue-line, #2a318a) !important;
+}
+.btn.primary:hover,
+button.primary:hover {
+  background: var(--blue2, #4d5cff) !important;
+}
+
+.sheet-card {
+  background: rgba(15, 17, 48, 0.92) !important;
+  border: 1px solid var(--blue-line, #2a318a) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 12px 50px -8px rgba(34, 51, 245, 0.35);
+}
+
+.sidebar-nav.sections button[aria-current="true"] {
+  color: var(--blue2, #4d5cff) !important;
+  background: rgba(34, 51, 245, 0.12) !important;
+  font-weight: 500 !important;
 }
 .sidebar-nav.sections button[aria-current="true"] .nav-label {
-  color: var(--accent);
+  color: var(--blue2, #4d5cff);
   font-weight: 500;
 }
