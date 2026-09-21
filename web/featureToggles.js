@@ -33,14 +33,14 @@ async function save(guildId, body, ctx = {}) {
   const result = setFeatures(guildId, updates);
   if (result.unchanged) return result;
 
+  // Discord permission batch can take many seconds — do not block the panel.
   if (ctx.client) {
-    try {
-      await applyFeatureCommandPermissions(ctx.client, guildId);
-    } catch (err) {
-      console.warn('[featureToggles] command visibility:', err.message);
-    }
+    setImmediate(() => {
+      applyFeatureCommandPermissions(ctx.client, guildId).catch(err => {
+        console.warn('[featureToggles] command visibility:', err.message);
+      });
+    });
   }
-  // Return fresh groups so the panel can update nav/toggles without a refresh.
   return { ...result, featureToggles: read(guildId) };
 }
 
