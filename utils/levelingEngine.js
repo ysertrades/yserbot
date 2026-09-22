@@ -1,111 +1,197 @@
 'use strict';
 
 /**
- * Trading-first leveling engine.
- * Default mode "trading": normal chat earns 0 XP.
- * Mode "legacy": previous random-per-message behavior.
+ * QuantLab Trading Server XP & Rank System v2
+ * Contribution-weighted leveling — detection before weighting, ownership before credit.
+ * Spec: Technical Design Spec v2 (September 2026)
  */
 
 const { readJson, writeJson } = require('./jsonStorage');
 const { ChannelType } = require('discord.js');
+const crypto = require('crypto');
 
 const FILE = 'levels.json';
-const LEDGER_MAX = 250;
+const EVENTS_MAX = 8000;
+const LEDGER_MAX = 400;
 
-const SIGNAL_DEFS = {
-  share: {
-    label: 'Trade share',
-    description: 'QuantLab / journal trade share',
-    baseMin: 45,
-    baseMax: 60,
-    cooldownMs: 20 * 60 * 1000,
-    dailyCountCap: 3,
-    enabled: true,
+/* ── Categories (§02) ───────────────────────────────────────────────────── */
+
+const CATEGORIES = {
+  chat: {
+    key: 'chat', label: 'Chat',
+    xpMin: 1, xpMax: 2, cooldownMs: 60_000,
+    dailyFloorPct: [1, 0.7, 0.45, 0.2],
+  },
+  ontopic: {
+    key: 'ontopic', label: 'On-topic chat',
+    xpMin: 4, xpMax: 6, cooldownMs: 60_000,
+    dailyFloorPct: [1, 0.7, 0.45, 0.2],
   },
   chart: {
-    label: 'Chart',
-    description: 'Image/video in an earn channel',
-    baseMin: 28,
-    baseMax: 40,
-    cooldownMs: 10 * 60 * 1000,
-    dailyCountCap: 5,
-    enabled: true,
+    key: 'chart', label: 'Chart / screenshot',
+    xpMin: 15, xpMax: 25, cooldownMs: 5 * 60_000,
+    dailyFloorPct: [1, 0.7, 0.45, 0.2],
   },
-  setup: {
-    label: 'Setup writeup',
-    description: 'Structured trade idea (pair + bias/levels)',
-    baseMin: 22,
-    baseMax: 35,
-    cooldownMs: 10 * 60 * 1000,
-    dailyCountCap: 5,
-    enabled: true,
+  idea: {
+    key: 'idea', label: 'Trade idea',
+    xpMin: 25, xpMax: 40, cooldownMs: 10 * 60_000,
+    dailyFloorPct: [1, 0.7, 0.45, 0.2],
+  },
+  quantlab_verified: {
+    key: 'quantlab_verified', label: 'QuantLab share (verified)',
+    xpMin: 50, xpMax: 70, cooldownMs: 15 * 60_000,
+    dailyFloorPct: [1, 0.85, 0.6, 0.35],
+  },
+  quantlab_unverified: {
+    key: 'quantlab_unverified', label: 'QuantLab share (unverified)',
+    xpMin: 30, xpMax: 40, cooldownMs: 15 * 60_000,
+    dailyFloorPct: [1, 0.8, 0.55, 0.3],
   },
   journal: {
-    label: 'Journal post',
-    description: 'Post in your own journals forum thread',
-    baseMin: 18,
-    baseMax: 28,
-    cooldownMs: 5 * 60 * 1000,
-    dailyCountCap: 8,
-    enabled: true,
+    key: 'journal', label: 'Journal post (own thread)',
+    xpMin: 20, xpMax: 35, cooldownMs: 0,
+    dailyFloorPct: [1, 0.25, 0.15, 0.1],
   },
-  journal_create: {
-    label: 'Journal thread',
-    description: 'Creating a journal forum thread',
-    baseMin: 35,
-    baseMax: 50,
-    cooldownMs: 12 * 60 * 60 * 1000,
-    dailyCountCap: 2,
-    enabled: true,
-  },
-  voice: {
-    label: 'Voice activity',
-    description: 'Time spent in tracked voice channels',
-    baseMin: 6,
-    baseMax: 12,
-    cooldownMs: 60 * 1000,
-    dailyCountCap: 120,
-    enabled: true,
+  comment: {
+    key: 'comment', label: 'Comment / help',
+    xpMin: 5, xpMax: 8, cooldownMs: 3 * 60_000,
+    dailyFloorPct: [1, 0.7, 0.45, 0.2],
   },
 };
 
-const TRADE_WORDS = /\b(long|short|buy|sell|entry|sl|tp|stop\s*loss|take\s*profit|bias|bullish|bearish|fvg|order\s*block|\bob\b|liquidity|sweep|bos|choch|imt|ict|smc|support|resistance|breakout|retest|scalp|swing|nq|mnq|es|mes|gc|mgc|eur|gbp|usd|gold|nasdaq|spy|qqq)\b/i;
-const PAIR_LIKE = /\b([A-Z]{2,6}[\s\/\-]?[A-Z]{2,6}|[A-Z]{1,5}\d{1,4}|MNQ|MES|NQ|ES|GC|MGC|6E|6B)\b/;
+/* ── Ranks (§06) ────────────────────────────────────────────────────────── */
+
+const RANKS = [
+  { level: 1,  key: 'observer',   label: 'Observer',         unlock: 'Full read access' },
+  { level: 5,  key: 'novice',     label: 'Trader — Novice',  unlock: '#trade-ideas + journals' },
+  { level: 12, key: 'analyst',    label: 'Trader — Analyst', unlock: 'Alert ping + analyst channel' },
+  { level: 22, key: 'strategist', label: 'Trader — Strategist', unlock: 'Vanity + pin in own journal' },
+  { level: 35, key: 'senior',     label: 'Senior Trader',    unlock: 'Mentorship + weekly feature' },
+  { level: 50, key: 'elite',      label: 'Elite Trader',     unlock: 'Hall of Trades + bot beta' },
+];
+
+const BADGE_DEFS = {
+  consistent_journaler: { label: 'Consistent Journaler', need: '14-day journal streak' },
+  chart_analyst:        { label: 'Chart Analyst',        need: 'Full-tier chart posts' },
+  verified_trader:      { label: 'Verified Trader',      need: 'QR-verified QuantLab shares' },
+  mentor:               { label: 'Mentor',               need: 'Help XP in others’ threads' },
+};
+
+/* ── Vocabulary (seed; panel can extend) ────────────────────────────────── */
+
+const TRADE_VOCAB = /\b(long|short|buy|sell|entry|exit|stop|target|sl|tp|r:?r|breakout|retest|bias|bullish|bearish|support|resistance|fvg|ob|order\s*block|liquidity|sweep|bos|choch|scalp|swing|setup|thesis|invalidation)\b/i;
+
+/** Valid symbol: any well-formed ticker token — no fixed allowlist limit. */
+function extractSymbols(text) {
+  if (!text) return [];
+  const found = new Set();
+  // $TICKER (1–12 alnum)
+  for (const m of text.matchAll(/\$([A-Za-z][A-Za-z0-9.\-]{0,11})\b/g)) {
+    found.add(m[1].toUpperCase());
+  }
+  // EXCHANGE:SYMBOL or NASDAQ:AAPL style
+  for (const m of text.matchAll(/\b([A-Z]{2,8}):([A-Za-z][A-Za-z0-9.\-]{0,11})\b/g)) {
+    found.add(`${m[1]}:${m[2]}`.toUpperCase());
+  }
+  // Bare futures / index roots common in trading (still format-valid, not a closed list)
+  for (const m of text.matchAll(/\b([A-Z]{1,6}\d{0,4})\b/g)) {
+    const s = m[1];
+    if (s.length >= 2 && /[A-Z]/.test(s) && !/^(I|A|THE|AND|OR|FOR|TO|ON|IN|AT|IS|IT|MY|BE|AS|IF|NO|YES|GM|GN|LOL|OMG|WTF|IMO|TBH)$/.test(s)) {
+      // only accept if nearby trade vocab or $ already present — handled by caller
+      if (s.length <= 6) found.add(s);
+    }
+  }
+  return [...found];
+}
+
+function isValidSymbolToken(sym) {
+  if (!sym || typeof sym !== 'string') return false;
+  const s = sym.replace(/^\$/, '').trim();
+  if (s.length < 1 || s.length > 20) return false;
+  // Must look like a tradable symbol: letters, optional digits, optional . - :
+  return /^[A-Za-z][A-Za-z0-9.\-]*(?::[A-Za-z][A-Za-z0-9.\-]*)?$/.test(s);
+}
+
+function hasOnTopicSignal(text) {
+  if (!text) return false;
+  if (TRADE_VOCAB.test(text)) return true;
+  const syms = extractSymbols(text).filter(isValidSymbolToken);
+  // $TICKER or EXCHANGE:SYMBOL is enough
+  if (/\$[A-Za-z]/.test(text) || /[A-Z]{2,8}:[A-Za-z]/.test(text)) return true;
+  return syms.length > 0 && TRADE_VOCAB.test(text);
+}
 
 function dayKey(ts = Date.now()) {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
+function monthKey(ts = Date.now()) {
+  return new Date(ts).toISOString().slice(0, 7);
+}
+
+function randXp(cat) {
+  const a = cat.xpMin, b = cat.xpMax;
+  return a + Math.floor(Math.random() * (b - a + 1));
+}
+
+function xpForLevel(level, baseXp = 150, mult = 1.45) {
+  // cumulative XP required to reach `level`
+  let total = 0;
+  for (let L = 1; L < level; L++) total += Math.floor(baseXp * Math.pow(mult, L - 1));
+  return total;
+}
+
+function levelFromXp(xp, baseXp = 150, mult = 1.45) {
+  let level = 1;
+  let need = baseXp;
+  let rem = Math.max(0, xp);
+  while (rem >= need && level < 200) {
+    rem -= need;
+    level += 1;
+    need = Math.floor(baseXp * Math.pow(mult, level - 1));
+  }
+  return { level, into: rem, need };
+}
+
+function rankForLevel(level) {
+  let cur = RANKS[0];
+  for (const r of RANKS) if (level >= r.level) cur = r;
+  return cur;
+}
+
 function defaultGuild() {
   return {
-    users: {},
-    roles: {},
-    badges: {},
-    settings: {
-      mode: 'trading',
-      xpPerMessage: [15, 25],
-      baseXp: 100,
-      multiplier: 1.5,
-      cooldownMs: 20000,
-      minLength: 0,
-      earnChannels: [],
-      denyChannels: [],
-      forumChannels: [],
-      tradeShareChannels: [],
-      signals: {},
-      dailyXpCap: 400,
-      noXpRoles: [],
-      announceLevelUp: true,
-      announceChannelId: null,
-      voiceEnabled: false,
-      voiceChannels: [],
-      voiceXpPerMinute: 8,
-      voiceCooldownMs: 60000,
-      seasonEnabled: false,
-      seasonKey: null,
+    enabled: true,
+    baseXp: 150,
+    multiplier: 1.45,
+    dailyXpCeiling: 2500,
+    tradeMaxAgeDays: 7,
+    noXpRoleIds: [],
+    ignoreStaffAuthors: true,
+    channels: {
+      general: [],       // chat / ontopic
+      trading: [],       // chart / quantlab
+      tradeIdeas: [],    // idea quality gate
+      journalsForum: [], // forum channel ids
     },
-    ledger: [],
-    journalOwners: {},
+    vocabularyExtra: [], // staff-added tokens
+    weights: Object.fromEntries(
+      Object.values(CATEGORIES).map(c => [c.key, { xpMin: c.xpMin, xpMax: c.xpMax, cooldownMs: c.cooldownMs }])
+    ),
+    ranks: Object.fromEntries(RANKS.map(r => [r.level, { roleId: null, label: r.label }])),
+    badges: {
+      chart_analyst: { threshold: 25 },
+      verified_trader: { threshold: 10 },
+      mentor: { threshold: 200 },
+      consistent_journaler: { days: 14 },
+    },
+    users: {},           // userId -> { xp, level, badges, streak, lastJournalDay, categoryDay, cooldowns, seenTradeIds, seenHashes }
+    journalThreads: {},  // threadId -> { ownerId, orphaned, createdAt }
+    quantlabShares: [],  // recent verified/unverified extractions
+    xpEvents: [],        // append-only log (trimmed)
+    configVersions: [],
+    manualAudit: [],
+    farmingFlags: {},
   };
 }
 
@@ -117,650 +203,634 @@ function saveAll(all) {
   writeJson(FILE, all);
 }
 
-function ensureGuild(all, guildId) {
+function guildState(guildId) {
+  const all = loadAll();
   if (!all[guildId]) all[guildId] = defaultGuild();
   const g = all[guildId];
+  // migrate missing keys
   if (!g.users) g.users = {};
-  if (!g.roles) g.roles = {};
-  if (!g.badges) g.badges = {};
-  if (!g.settings) g.settings = defaultGuild().settings;
-  if (!g.ledger) g.ledger = [];
-  if (!g.journalOwners) g.journalOwners = {};
-  if (!g.settings.signals) g.settings.signals = {};
-  if (!Array.isArray(g.settings.earnChannels)) g.settings.earnChannels = [];
-  if (!Array.isArray(g.settings.denyChannels)) g.settings.denyChannels = [];
-  if (!Array.isArray(g.settings.forumChannels)) g.settings.forumChannels = [];
-  if (!Array.isArray(g.settings.tradeShareChannels)) g.settings.tradeShareChannels = [];
-  if (!Array.isArray(g.settings.noXpRoles)) g.settings.noXpRoles = [];
-  if (!Array.isArray(g.settings.voiceChannels)) g.settings.voiceChannels = [];
-  if (g.settings.mode !== 'legacy' && g.settings.mode !== 'trading') g.settings.mode = 'trading';
-  if (g.settings.announceLevelUp === undefined) g.settings.announceLevelUp = true;
-  if (g.settings.voiceEnabled === undefined) g.settings.voiceEnabled = false;
-  if (!Number.isFinite(g.settings.voiceXpPerMinute)) g.settings.voiceXpPerMinute = 8;
-  if (!Number.isFinite(g.settings.voiceCooldownMs)) g.settings.voiceCooldownMs = 60000;
-  return g;
+  if (!g.journalThreads) g.journalThreads = {};
+  if (!g.xpEvents) g.xpEvents = [];
+  if (!g.weights) g.weights = defaultGuild().weights;
+  if (!g.channels) g.channels = defaultGuild().channels;
+  if (!g.ranks) g.ranks = defaultGuild().ranks;
+  if (!g.badges) g.badges = defaultGuild().badges;
+  if (!g.configVersions) g.configVersions = [];
+  if (!g.manualAudit) g.manualAudit = [];
+  if (!g.quantlabShares) g.quantlabShares = [];
+  if (g.enabled === undefined) g.enabled = true;
+  return { all, g };
 }
 
-function ensureUser(g, userId) {
+function userState(g, userId) {
   if (!g.users[userId]) {
     g.users[userId] = {
-      xp: 0, level: 1, messages: 0, lastMessage: 0, totalXp: 0,
-      lastBySignal: {}, dayKey: dayKey(), dayStats: { totalXp: 0, bySignal: {} },
+      xp: 0, level: 1,
+      badges: {},
+      journalStreak: 0,
+      lastJournalDay: null,
+      categoryDay: {},   // dayKey -> { cat: count }
+      cooldowns: {},     // cat -> ts
+      seenTradeIds: {},  // tradeId -> ts
+      seenHashes: {},    // phash -> ts
+      commentXp: 0,
+      chartCount: 0,
+      verifiedCount: 0,
     };
   }
-  const u = g.users[userId];
-  if (!u.lastBySignal) u.lastBySignal = {};
-  if (!u.dayStats) u.dayStats = { totalXp: 0, bySignal: {} };
-  const dk = dayKey();
-  if (u.dayKey !== dk) {
-    u.dayKey = dk;
-    u.dayStats = { totalXp: 0, bySignal: {} };
-  }
-  return u;
+  return g.users[userId];
 }
 
-function signalConfig(settings, type) {
-  const base = SIGNAL_DEFS[type] || SIGNAL_DEFS.chart;
-  const over = (settings.signals && settings.signals[type]) || {};
+function catConfig(g, key) {
+  const base = CATEGORIES[key];
+  const w = (g.weights && g.weights[key]) || {};
   return {
-    label: base.label,
-    description: base.description,
-    baseMin: Number.isFinite(over.baseMin) ? over.baseMin : base.baseMin,
-    baseMax: Number.isFinite(over.baseMax) ? over.baseMax : base.baseMax,
-    cooldownMs: Number.isFinite(over.cooldownMs) ? over.cooldownMs : base.cooldownMs,
-    dailyCountCap: Number.isFinite(over.dailyCountCap) ? over.dailyCountCap : base.dailyCountCap,
-    enabled: over.enabled !== undefined ? !!over.enabled : base.enabled,
+    ...base,
+    xpMin: w.xpMin ?? base.xpMin,
+    xpMax: w.xpMax ?? base.xpMax,
+    cooldownMs: w.cooldownMs ?? base.cooldownMs,
   };
 }
 
-function hasMedia(message) {
+function diminishing(g, u, catKey, now = Date.now()) {
+  const dk = dayKey(now);
+  if (!u.categoryDay[dk]) u.categoryDay[dk] = {};
+  const n = u.categoryDay[dk][catKey] || 0;
+  const floors = (CATEGORIES[catKey] && CATEGORIES[catKey].dailyFloorPct) || [1, 0.7, 0.45, 0.2];
+  const idx = Math.min(n, floors.length - 1);
+  return floors[idx];
+}
+
+function bumpCategoryDay(u, catKey, now = Date.now()) {
+  const dk = dayKey(now);
+  if (!u.categoryDay[dk]) u.categoryDay[dk] = {};
+  u.categoryDay[dk][catKey] = (u.categoryDay[dk][catKey] || 0) + 1;
+}
+
+function dailyXpUsed(u, now = Date.now()) {
+  const dk = dayKey(now);
+  // sum from events would be ideal; approximate from categoryDay * avg not stored —
+  // track dailyXp on user
+  if (!u.dailyXp) u.dailyXp = {};
+  return u.dailyXp[dk] || 0;
+}
+
+function addDailyXp(u, amount, now = Date.now()) {
+  const dk = dayKey(now);
+  if (!u.dailyXp) u.dailyXp = {};
+  u.dailyXp[dk] = (u.dailyXp[dk] || 0) + amount;
+}
+
+/* ── Classification ─────────────────────────────────────────────────────── */
+
+function channelKind(g, channel) {
+  if (!channel) return 'other';
+  const id = channel.id;
+  const parentId = channel.parentId || null;
+  const isThread = channel.isThread?.() || channel.type === ChannelType.PublicThread || channel.type === ChannelType.PrivateThread;
+  const ch = g.channels || {};
+  if ((ch.journalsForum || []).includes(id) || (parentId && (ch.journalsForum || []).includes(parentId))) return 'journal';
+  if ((ch.tradeIdeas || []).includes(id) || (parentId && (ch.tradeIdeas || []).includes(parentId))) return 'ideas';
+  if ((ch.trading || []).includes(id) || (parentId && (ch.trading || []).includes(parentId))) return 'trading';
+  if ((ch.general || []).includes(id) || (parentId && (ch.general || []).includes(parentId))) return 'general';
+  // If no channels configured, treat text channels as general, forums as journal candidates
+  if (!(ch.general || []).length && !(ch.trading || []).length) {
+    if (channel.type === ChannelType.GuildForum || (isThread && channel.parent?.type === ChannelType.GuildForum)) return 'journal';
+    return 'general';
+  }
+  return 'other';
+}
+
+function hasImage(message) {
   const atts = [...(message.attachments?.values?.() || [])];
-  if (atts.some(a => {
-    const t = String(a.contentType || '');
-    return t.startsWith('image/') || t.startsWith('video/') || /\.(png|jpe?g|gif|webp|mp4|mov|webm)$/i.test(a.name || a.url || '');
-  })) return true;
+  if (atts.some(a => (a.contentType || '').startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(a.name || a.url || ''))) return true;
+  if (message.embeds?.some(e => e.image || e.thumbnail)) return true;
   return false;
 }
 
-function looksLikeSetup(text) {
-  const t = String(text || '').trim();
-  if (t.length < 24) return false;
-  const trade = TRADE_WORDS.test(t);
-  const pair = PAIR_LIKE.test(t) || /\$[A-Z]{1,6}\b/.test(t);
-  return trade && (pair || t.length >= 80);
-}
+function quantlabHints(message) {
+  const text = [
+    message.content || '',
+    ...(message.embeds || []).map(e => [e.title, e.description, e.footer?.text, e.author?.name, ...(e.fields || []).map(f => `${f.name} ${f.value}`)].filter(Boolean).join(' ')),
+  ].join(' ').toLowerCase();
 
-function isForumThread(channel) {
-  if (!channel) return false;
-  if (channel.isThread?.()) {
-    const parent = channel.parent;
-    if (!parent) return true;
-    return parent.type === ChannelType.GuildForum || parent.type === 15;
+  const verifiedMarkers = /quant\s*lab|shared via quant|quantlab/i.test(text);
+  let tradeId = null;
+  // URL with trade id
+  const urlM = text.match(/quantlab[^\s]*[?&/](?:trade[_-]?id|id)=([a-zA-Z0-9_-]{6,64})/i)
+    || text.match(/\/trades?\/([a-zA-Z0-9_-]{8,64})/i);
+  if (urlM) tradeId = urlM[1];
+  // bare id patterns near QuantLab wording
+  if (!tradeId) {
+    const bare = text.match(/\b(ql[_-]?[a-z0-9]{6,32}|trade[_-]?[a-z0-9]{8,32})\b/i);
+    if (bare && verifiedMarkers) tradeId = bare[1];
   }
-  return false;
+  return { verifiedMarkers, tradeId, text };
 }
 
-function parentForumId(channel) {
-  if (!channel?.isThread?.()) return null;
-  return channel.parentId || channel.parent?.id || null;
+function ideaQuality(message) {
+  const content = (message.content || '').trim();
+  const len = content.length;
+  const symbols = extractSymbols(content).filter(isValidSymbolToken);
+  const hasSym = symbols.length > 0 || /\$[A-Za-z]/.test(content);
+  const structured = TRADE_VOCAB.test(content) && hasSym;
+  const img = hasImage(message);
+  if (len >= 80 && structured && (img || len >= 140)) return 'full';
+  if (len >= 40 && (structured || img)) return 'partial';
+  return 'fallback';
 }
 
-function threadOwnerId(channel, journalOwners) {
-  if (!channel?.isThread?.()) return null;
-  const stored = journalOwners?.[channel.id];
-  if (stored) return stored;
-  return channel.ownerId || null;
-}
+/**
+ * Classify a message into one category. Detection before weighting.
+ */
+function classify(g, message) {
+  const kind = channelKind(g, message.channel);
+  const content = message.content || '';
+  const img = hasImage(message);
+  const qh = quantlabHints(message);
 
-
-function memberHasNoXpRole(member, settings) {
-  const blocked = settings.noXpRoles || [];
-  if (!blocked.length || !member?.roles?.cache) return false;
-  return blocked.some(id => member.roles.cache.has(id));
-}
-
-function classifyMessage(message, settings) {
-  const channelId = message.channelId;
-  const deny = new Set(settings.denyChannels || []);
-  if (deny.has(channelId)) return null;
-
-  const earn = settings.earnChannels || [];
-  const forums = settings.forumChannels || [];
-  const shares = settings.tradeShareChannels || [];
-  const strict = earn.length > 0 || forums.length > 0 || shares.length > 0;
-
-  if (isForumThread(message.channel)) {
-    const forumId = parentForumId(message.channel);
-    if (forums.length && forumId && !forums.includes(forumId)) return null;
-    if (strict && forums.length === 0) return null;
-    return { type: 'journal', needsOwner: true, channelId };
-  }
-
-  if (shares.includes(channelId) && hasMedia(message)) {
-    return { type: 'share', channelId };
-  }
-
-  const inEarn = earn.length === 0 ? !strict : earn.includes(channelId);
-  if (!inEarn) return null;
-
-  if (hasMedia(message)) return { type: 'chart', channelId };
-  if (looksLikeSetup(message.content)) return { type: 'setup', channelId };
-  return null;
-}
-
-function rollXp(cfg) {
-  const min = Math.min(cfg.baseMin, cfg.baseMax);
-  const max = Math.max(cfg.baseMin, cfg.baseMax);
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-function pushLedger(g, entry) {
-  g.ledger.unshift(entry);
-  if (g.ledger.length > LEDGER_MAX) g.ledger.length = LEDGER_MAX;
-}
-
-function applyLevelUps(user, settings) {
-  const baseXp = settings.baseXp || 100;
-  const multiplier = settings.multiplier || 1.5;
-  const ups = [];
-  let guard = 0;
-  while (guard++ < 20) {
-    const needed = Math.floor(baseXp * Math.pow(user.level, multiplier));
-    if (user.xp < needed) break;
-    user.xp -= needed;
-    user.level += 1;
-    ups.push(user.level);
-  }
-  return ups;
-}
-
-function award(guildId, userId, signalType, meta = {}) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const settings = g.settings;
-  const user = ensureUser(g, userId);
-  const cfg = signalConfig(settings, signalType);
-  const now = Date.now();
-
-  if (!cfg.enabled) return { ok: false, reason: 'disabled', type: signalType };
-  if (user.xpMuteUntil && user.xpMuteUntil > now) return { ok: false, reason: 'muted', type: signalType };
-
-  const last = user.lastBySignal[signalType] || 0;
-  if (cfg.cooldownMs > 0 && now - last < cfg.cooldownMs) {
-    return { ok: false, reason: 'cooldown', type: signalType, retryInMs: cfg.cooldownMs - (now - last) };
-  }
-
-  const day = user.dayStats.bySignal[signalType] || { n: 0, xp: 0 };
-  if (cfg.dailyCountCap > 0 && day.n >= cfg.dailyCountCap) {
-    return { ok: false, reason: 'daily_cap', type: signalType };
-  }
-
-  const dailyXpCap = Number.isFinite(settings.dailyXpCap) ? settings.dailyXpCap : 400;
-  if (dailyXpCap > 0 && user.dayStats.totalXp >= dailyXpCap) {
-    return { ok: false, reason: 'daily_xp_cap', type: signalType };
-  }
-
-  const fp = meta.fingerprint;
-  if (fp) {
-    if (!g.recentFingerprints) g.recentFingerprints = {};
-    const prev = g.recentFingerprints[`${userId}:${fp}`];
-    if (prev && now - prev < 6 * 60 * 60 * 1000) {
-      return { ok: false, reason: 'duplicate', type: signalType };
+  // Journal / comment path
+  if (kind === 'journal' || message.channel?.isThread?.()) {
+    const threadId = message.channel?.id;
+    const meta = g.journalThreads[threadId];
+    const ownerId = meta?.ownerId || message.channel?.ownerId || null;
+    if (ownerId && message.author.id === ownerId) {
+      return { category: 'journal', meta: { threadId, ownerId } };
     }
-    g.recentFingerprints[`${userId}:${fp}`] = now;
-    const keys = Object.keys(g.recentFingerprints);
-    if (keys.length > 2000) {
-      for (const k of keys.slice(0, 500)) delete g.recentFingerprints[k];
+    if (ownerId && message.author.id !== ownerId) {
+      return { category: 'comment', meta: { threadId, ownerId } };
     }
   }
 
-  let xp = rollXp(cfg);
-  if (dailyXpCap > 0) xp = Math.min(xp, Math.max(0, dailyXpCap - user.dayStats.totalXp));
-  if (xp <= 0) return { ok: false, reason: 'daily_xp_cap', type: signalType };
-
-  user.lastBySignal[signalType] = now;
-  user.lastMessage = now;
-  user.messages = (user.messages || 0) + 1;
-  user.xp += xp;
-  user.totalXp = (user.totalXp || 0) + xp;
-  day.n += 1;
-  day.xp += xp;
-  user.dayStats.bySignal[signalType] = day;
-  user.dayStats.totalXp += xp;
-
-  const levelsGained = applyLevelUps(user, settings);
-
-  pushLedger(g, {
-    at: now, userId, type: signalType, xp,
-    channelId: meta.channelId || null, ok: true,
-  });
-
-  saveAll(all);
-  return { ok: true, type: signalType, xp, level: user.level, levelsGained, totalXp: user.totalXp, user };
-}
-
-function awardLegacy(guildId, userId, meta = {}) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const settings = g.settings;
-  const user = ensureUser(g, userId);
-  const now = Date.now();
-
-  const minLength = Number.isFinite(settings.minLength) ? settings.minLength : 0;
-  if (minLength > 0 && (meta.contentLength || 0) < minLength) {
-    return { ok: false, reason: 'short' };
-  }
-  const cooldownMs = Number.isFinite(settings.cooldownMs) ? settings.cooldownMs : 20000;
-  if (now - (user.lastMessage || 0) < cooldownMs) {
-    return { ok: false, reason: 'cooldown' };
+  // QuantLab card
+  if (img && (kind === 'trading' || kind === 'ideas' || kind === 'general' || kind === 'other')) {
+    if (qh.tradeId) {
+      return { category: 'quantlab_verified', meta: { tradeId: qh.tradeId, ...qh } };
+    }
+    if (qh.verifiedMarkers) {
+      return { category: 'quantlab_unverified', meta: { ...qh } };
+    }
+    if (kind === 'trading' || kind === 'ideas') {
+      return { category: 'chart', meta: {} };
+    }
   }
 
-  const band = Array.isArray(settings.xpPerMessage) ? settings.xpPerMessage : [15, 25];
-  const minXp = band[0] || 15;
-  const maxXp = band[1] || 25;
-  const xp = Math.floor(Math.random() * (maxXp - minXp + 1)) + minXp;
-
-  user.lastMessage = now;
-  user.messages = (user.messages || 0) + 1;
-  user.xp += xp;
-  user.totalXp = (user.totalXp || 0) + xp;
-  const levelsGained = applyLevelUps(user, settings);
-
-  pushLedger(g, { at: now, userId, type: 'legacy', xp, channelId: meta.channelId || null, ok: true });
-  saveAll(all);
-  return { ok: true, type: 'legacy', xp, level: user.level, levelsGained, totalXp: user.totalXp, user };
-}
-
-function fingerprintContent(message) {
-  const text = String(message.content || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 200);
-  const att = [...(message.attachments?.values?.() || [])].map(a => a.id || a.url).join(',');
-  const raw = text + '|' + att;
-  if (!raw || raw === '|') return null;
-  let h = 0;
-  for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
-  return String(h);
-}
-
-async function processMessage(message) {
-  if (!message.guild || message.author.bot) return null;
-  const guildId = message.guild.id;
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const settings = g.settings;
-
-  // Article: No XP roles — block spammers or opt-outs entirely
-  if (memberHasNoXpRole(message.member, settings)) {
-    return { ok: false, reason: 'no_xp_role' };
+  // Trade idea channel
+  if (kind === 'ideas') {
+    const tier = ideaQuality(message);
+    if (tier === 'fallback' && !img && content.length < 40) {
+      return { category: hasOnTopicSignal(content) ? 'ontopic' : 'chat', meta: { ideaTier: tier } };
+    }
+    return { category: 'idea', meta: { ideaTier: tier } };
   }
 
-  if (settings.mode === 'legacy') {
-    return awardLegacy(guildId, message.author.id, {
-      contentLength: message.content.trim().length,
-      channelId: message.channelId,
+  // Chart in trading channel
+  if (img && kind === 'trading') {
+    return { category: 'chart', meta: {} };
+  }
+
+  // General chat
+  if (kind === 'general' || kind === 'other' || kind === 'trading') {
+    if (hasOnTopicSignal(content)) return { category: 'ontopic', meta: { symbols: extractSymbols(content).filter(isValidSymbolToken) } };
+    return { category: 'chat', meta: {} };
+  }
+
+  return { category: 'chat', meta: {} };
+}
+
+/* ── Award pipeline ─────────────────────────────────────────────────────── */
+
+function pushEvent(g, ev) {
+  g.xpEvents.push(ev);
+  if (g.xpEvents.length > EVENTS_MAX) g.xpEvents.splice(0, g.xpEvents.length - EVENTS_MAX);
+}
+
+async function tryApplyRoles(member, g, level) {
+  if (!member?.roles) return;
+  const rank = rankForLevel(level);
+  for (const [lvlStr, conf] of Object.entries(g.ranks || {})) {
+    const lvl = Number(lvlStr);
+    const roleId = conf?.roleId;
+    if (!roleId) continue;
+    try {
+      if (level >= lvl) {
+        if (!member.roles.cache.has(roleId)) await member.roles.add(roleId, 'QuantLab rank unlock').catch(() => {});
+      }
+    } catch {}
+  }
+  return rank;
+}
+
+function updateBadges(u, g) {
+  const b = g.badges || {};
+  const earned = { ...(u.badges || {}) };
+  if ((u.journalStreak || 0) >= (b.consistent_journaler?.days || 14)) {
+    earned.consistent_journaler = { at: Date.now() };
+  } else {
+    delete earned.consistent_journaler;
+  }
+  if ((u.chartCount || 0) >= (b.chart_analyst?.threshold || 25)) {
+    earned.chart_analyst = earned.chart_analyst || { at: Date.now() };
+  }
+  if ((u.verifiedCount || 0) >= (b.verified_trader?.threshold || 10)) {
+    earned.verified_trader = earned.verified_trader || { at: Date.now() };
+  }
+  if ((u.commentXp || 0) >= (b.mentor?.threshold || 200)) {
+    earned.mentor = earned.mentor || { at: Date.now() };
+  }
+  u.badges = earned;
+  return earned;
+}
+
+/**
+ * Main entry: process a guild message for XP.
+ */
+async function handleMessage(message) {
+  try {
+    if (!message.guild || message.author?.bot) return null;
+    const guildId = message.guild.id;
+    const { all, g } = guildState(guildId);
+    if (g.enabled === false) return null;
+
+    // No-XP role
+    const member = message.member;
+    if (member && (g.noXpRoleIds || []).some(id => member.roles.cache.has(id))) return null;
+
+    const { category, meta } = classify(g, message);
+    const cat = catConfig(g, category);
+    if (!cat) return null;
+
+    const u = userState(g, message.author.id);
+    const now = Date.now();
+
+    // Cooldown
+    if (cat.cooldownMs > 0) {
+      const last = u.cooldowns[category] || 0;
+      if (now - last < cat.cooldownMs) {
+        return { skipped: 'cooldown', category };
+      }
+    }
+
+    // Dedup QuantLab / charts
+    if (category === 'quantlab_verified' || category === 'quantlab_unverified') {
+      const tid = meta.tradeId;
+      if (tid && u.seenTradeIds[tid]) {
+        pushEvent(g, {
+          id: crypto.randomBytes(8).toString('hex'),
+          userId: message.author.id, category, xp: 0, reason: 'duplicate_trade',
+          tradeId: tid, messageId: message.id, channelId: message.channel.id,
+          createdAt: now,
+        });
+        saveAll(all);
+        return { skipped: 'duplicate_trade', category, tradeId: tid };
+      }
+      if (tid) u.seenTradeIds[tid] = now;
+    }
+
+    // Idea quality scaling
+    let qualityMul = 1;
+    if (category === 'idea') {
+      if (meta.ideaTier === 'partial') qualityMul = 0.7;
+      if (meta.ideaTier === 'fallback') qualityMul = 0.4;
+    }
+
+    // Journal streak (owner only)
+    let streakMul = 1;
+    if (category === 'journal') {
+      const dk = dayKey(now);
+      if (u.lastJournalDay) {
+        const prev = new Date(u.lastJournalDay + 'T12:00:00Z');
+        const cur = new Date(dk + 'T12:00:00Z');
+        const diff = Math.round((cur - prev) / 86400000);
+        if (diff === 1) u.journalStreak = (u.journalStreak || 0) + 1;
+        else if (diff > 1) u.journalStreak = 1;
+        // diff === 0 → same day, keep streak
+      } else {
+        u.journalStreak = 1;
+      }
+      if (u.lastJournalDay !== dk) u.lastJournalDay = dk;
+      const days = Math.min(u.journalStreak || 0, 10);
+      streakMul = 1 + Math.min(0.5, days * 0.05);
+    }
+
+    // Diminishing returns
+    const dim = diminishing(g, u, category, now);
+    let xp = Math.round(randXp(cat) * qualityMul * streakMul * dim);
+
+    // Daily ceiling
+    const used = dailyXpUsed(u, now);
+    const ceiling = g.dailyXpCeiling || 2500;
+    if (used >= ceiling) return { skipped: 'daily_ceiling', category };
+    if (used + xp > ceiling) xp = Math.max(0, ceiling - used);
+    if (xp <= 0) return { skipped: 'zero', category };
+
+    // Award
+    u.cooldowns[category] = now;
+    bumpCategoryDay(u, category, now);
+    addDailyXp(u, xp, now);
+    u.xp = (u.xp || 0) + xp;
+    if (category === 'comment') u.commentXp = (u.commentXp || 0) + xp;
+    if (category === 'chart') u.chartCount = (u.chartCount || 0) + 1;
+    if (category === 'quantlab_verified') u.verifiedCount = (u.verifiedCount || 0) + 1;
+
+    const prog = levelFromXp(u.xp, g.baseXp || 150, g.multiplier || 1.45);
+    const leveled = prog.level > (u.level || 1);
+    u.level = prog.level;
+
+    updateBadges(u, g);
+
+    pushEvent(g, {
+      id: crypto.randomBytes(8).toString('hex'),
+      userId: message.author.id,
+      category,
+      xp,
+      qualityMul,
+      streakMul,
+      dim,
+      level: u.level,
+      messageId: message.id,
+      channelId: message.channel.id,
+      tradeId: meta.tradeId || null,
+      ideaTier: meta.ideaTier || null,
+      createdAt: now,
     });
-  }
 
-  let signal = classifyMessage(message, settings);
-  if (!signal) return null;
-
-  if (signal.needsOwner) {
-    const owner = threadOwnerId(message.channel, g.journalOwners);
-    if (!owner || owner !== message.author.id) {
-      pushLedger(g, {
-        at: Date.now(), userId: message.author.id, type: 'journal', xp: 0,
-        channelId: message.channelId, ok: false, reason: 'not_owner',
+    if (meta.tradeId || category.startsWith('quantlab')) {
+      g.quantlabShares.push({
+        userId: message.author.id,
+        tradeId: meta.tradeId || null,
+        verified: category === 'quantlab_verified',
+        messageId: message.id,
+        createdAt: now,
       });
-      saveAll(all);
-      return { ok: false, reason: 'not_owner', type: 'journal' };
+      if (g.quantlabShares.length > 2000) g.quantlabShares.splice(0, g.quantlabShares.length - 2000);
     }
-    if (message.channel.isThread?.() && !g.journalOwners[message.channel.id]) {
-      g.journalOwners[message.channel.id] = owner;
-      saveAll(all);
+
+    if (leveled && member) {
+      await tryApplyRoles(member, g, u.level);
     }
+
+    saveAll(all);
+    return {
+      ok: true,
+      category,
+      xp,
+      level: u.level,
+      leveled,
+      rank: rankForLevel(u.level),
+      streak: u.journalStreak || 0,
+      badges: u.badges,
+    };
+  } catch (err) {
+    console.error('[XP]', err);
+    return null;
   }
-
-  return award(guildId, message.author.id, signal.type, {
-    channelId: message.channelId,
-    fingerprint: fingerprintContent(message),
-  });
 }
 
-async function processThreadCreate(thread) {
-  if (!thread?.guild || thread.type === undefined) return null;
-  const guildId = thread.guild.id;
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const settings = g.settings;
-  if (settings.mode === 'legacy') return null;
-
-  const parentId = thread.parentId;
-  const forums = settings.forumChannels || [];
-  if (forums.length && parentId && !forums.includes(parentId)) return null;
-  if (!forums.length) return null;
-
-  const ownerId = thread.ownerId;
-  if (!ownerId) return null;
-  g.journalOwners[thread.id] = ownerId;
-  saveAll(all);
-
-  return award(guildId, ownerId, 'journal_create', { channelId: thread.id });
+function handleThreadCreate(thread) {
+  try {
+    if (!thread?.guild) return;
+    const guildId = thread.guild.id;
+    const { all, g } = guildState(guildId);
+    const ownerId = thread.ownerId || thread.guildMembers?.cache?.first?.()?.id;
+    // Only track if parent is a configured journals forum, or no config yet (learn)
+    const parentId = thread.parentId;
+    const forums = g.channels?.journalsForum || [];
+    const track = !forums.length || forums.includes(parentId);
+    if (!track) return;
+    if (!ownerId) return;
+    // Skip bot/staff templates later via ignore list
+    g.journalThreads[thread.id] = {
+      ownerId,
+      parentId,
+      orphaned: false,
+      createdAt: Date.now(),
+    };
+    saveAll(all);
+  } catch (err) {
+    console.error('[XP thread]', err);
+  }
 }
+
+/* ── Panel / API surface ────────────────────────────────────────────────── */
 
 function panelSnapshot(guildId, guild) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const settings = g.settings;
+  const { g } = guildState(guildId);
   const users = Object.entries(g.users || {}).map(([id, u]) => {
-    const member = guild?.members?.cache?.get(id);
-    const name = member?.displayName || member?.user?.username || id;
+    const prog = levelFromXp(u.xp || 0, g.baseXp || 150, g.multiplier || 1.45);
     return {
-      id, name,
-      level: u.level || 1,
+      id,
       xp: u.xp || 0,
-      totalXp: u.totalXp || 0,
-      dayXp: u.dayStats?.totalXp || 0,
-      dayBySignal: u.dayStats?.bySignal || {},
-      messages: u.messages || 0,
+      level: prog.level,
+      rank: rankForLevel(prog.level),
+      badges: u.badges || {},
+      journalStreak: u.journalStreak || 0,
+      chartCount: u.chartCount || 0,
+      verifiedCount: u.verifiedCount || 0,
+      commentXp: u.commentXp || 0,
+      radar: categoryRadar(g, id),
     };
-  }).sort((a, b) => (b.totalXp - a.totalXp) || (b.level - a.level));
+  }).sort((a, b) => b.xp - a.xp);
 
-  const today = dayKey();
-  let todayXp = 0;
-  let todayGrants = 0;
-  const mix = {};
-  for (const e of g.ledger || []) {
-    if (dayKey(e.at) !== today) continue;
-    if (!e.ok) continue;
-    todayXp += e.xp || 0;
-    todayGrants += 1;
-    mix[e.type] = (mix[e.type] || 0) + (e.xp || 0);
-  }
-
-  const signals = Object.keys(SIGNAL_DEFS).map(type => {
-    const cfg = signalConfig(settings, type);
-    return { type, ...cfg };
-  });
+  const now = Date.now();
+  const weekAgo = now - 7 * 86400000;
+  const events = g.xpEvents || [];
+  const weekEvents = events.filter(e => e.createdAt >= weekAgo && e.xp > 0);
+  const composition = {};
+  for (const k of Object.keys(CATEGORIES)) composition[k] = 0;
+  for (const e of weekEvents) composition[e.category] = (composition[e.category] || 0) + e.xp;
 
   const channelOpts = [];
   if (guild?.channels?.cache) {
     for (const ch of guild.channels.cache.values()) {
-      if (ch.isThread?.()) continue;
-      const isText = ch.isTextBased?.() && ch.type !== ChannelType.GuildVoice;
-      const isForum = ch.type === ChannelType.GuildForum || ch.type === 15;
-      if (!isText && !isForum) continue;
-      channelOpts.push({
-        id: ch.id,
-        name: ch.name,
-        kind: isForum ? 'forum' : 'text',
-      });
+      if ([ChannelType.GuildText, ChannelType.GuildForum, ChannelType.GuildAnnouncement].includes(ch.type)) {
+        channelOpts.push({
+          id: ch.id,
+          name: ch.name,
+          kind: ch.type === ChannelType.GuildForum ? 'forum' : 'text',
+        });
+      }
     }
-    channelOpts.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   return {
-    mode: settings.mode || 'trading',
-    signals,
-    sources: {
-      earnChannels: settings.earnChannels || [],
-      denyChannels: settings.denyChannels || [],
-      forumChannels: settings.forumChannels || [],
-      tradeShareChannels: settings.tradeShareChannels || [],
-    },
-    dailyXpCap: settings.dailyXpCap ?? 400,
-    stats: {
-      tracked: users.length,
-      todayXp,
-      todayGrants,
-      mix,
-      levelUpsToday: (g.ledger || []).filter(e => e.ok && dayKey(e.at) === today && e.levelsGained).length,
-    },
-    leaderboard: users.slice(0, 40),
-    ledger: (g.ledger || []).slice(0, 40),
+    enabled: g.enabled !== false,
+    baseXp: g.baseXp || 150,
+    multiplier: g.multiplier || 1.45,
+    dailyXpCeiling: g.dailyXpCeiling || 2500,
+    tradeMaxAgeDays: g.tradeMaxAgeDays || 7,
+    weights: g.weights,
+    channels: g.channels,
     channelOpts,
+    ranks: g.ranks,
+    rankLadder: RANKS,
+    badgeDefs: BADGE_DEFS,
+    badges: g.badges,
+    noXpRoleIds: g.noXpRoleIds || [],
+    vocabularyExtra: g.vocabularyExtra || [],
+    categories: Object.values(CATEGORIES).map(c => ({
+      key: c.key, label: c.label, xpMin: c.xpMin, xpMax: c.xpMax, cooldownMs: c.cooldownMs,
+    })),
+    composition7d: composition,
+    events7d: weekEvents.length,
+    totalEvents: events.length,
+    leaderboard: users.slice(0, 25),
+    leaderboardMonth: usersForWindow(g, monthStart()).slice(0, 25),
+    topCharts: users.slice().sort((a, b) => b.chartCount - a.chartCount).slice(0, 10),
+    topJournal: users.slice().sort((a, b) => b.journalStreak - a.journalStreak).slice(0, 10),
+    topVerified: users.slice().sort((a, b) => b.verifiedCount - a.verifiedCount).slice(0, 10),
+    topHelpers: users.slice().sort((a, b) => b.commentXp - a.commentXp).slice(0, 10),
+    journalThreadCount: Object.keys(g.journalThreads || {}).length,
+    configVersions: (g.configVersions || []).slice(-12),
+    manualAudit: (g.manualAudit || []).slice(-30),
+    recentEvents: events.slice(-40).reverse(),
   };
 }
 
-function saveTradingSettings(guildId, body) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const s = g.settings;
+function monthStart() {
+  const d = new Date();
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+}
 
-  if (body.mode === 'legacy' || body.mode === 'trading') s.mode = body.mode;
-  if (Number.isFinite(Number(body.dailyXpCap))) s.dailyXpCap = Math.max(0, Math.min(5000, Number(body.dailyXpCap)));
-
-  const listFields = ['earnChannels', 'denyChannels', 'forumChannels', 'tradeShareChannels', 'noXpRoles', 'voiceChannels'];
-  for (const key of listFields) {
-    if (Array.isArray(body[key])) {
-      s[key] = body[key].map(String).filter(Boolean).slice(0, 50);
-    }
+function usersForWindow(g, sinceTs) {
+  const xpMap = {};
+  for (const e of g.xpEvents || []) {
+    if (e.createdAt < sinceTs || !e.xp) continue;
+    xpMap[e.userId] = (xpMap[e.userId] || 0) + e.xp;
   }
-  if (body.announceLevelUp !== undefined) s.announceLevelUp = !!body.announceLevelUp;
-  if (body.announceChannelId !== undefined) s.announceChannelId = body.announceChannelId ? String(body.announceChannelId) : null;
-  if (body.voiceEnabled !== undefined) s.voiceEnabled = !!body.voiceEnabled;
-  if (Number.isFinite(Number(body.voiceXpPerMinute))) s.voiceXpPerMinute = Math.max(1, Math.min(50, Number(body.voiceXpPerMinute)));
-  if (body.seasonEnabled !== undefined) s.seasonEnabled = !!body.seasonEnabled;
+  return Object.entries(xpMap).map(([id, xp]) => {
+    const u = g.users[id] || {};
+    const prog = levelFromXp(xp, g.baseXp || 150, g.multiplier || 1.45);
+    return {
+      id, xp, level: prog.level, rank: rankForLevel(prog.level),
+      journalStreak: u.journalStreak || 0,
+      chartCount: u.chartCount || 0,
+      verifiedCount: u.verifiedCount || 0,
+      commentXp: u.commentXp || 0,
+      badges: u.badges || {},
+    };
+  }).sort((a, b) => b.xp - a.xp);
+}
 
-  if (body.signals && typeof body.signals === 'object') {
-    if (!s.signals) s.signals = {};
-    for (const [type, cfg] of Object.entries(body.signals)) {
-      if (!SIGNAL_DEFS[type]) continue;
-      const cur = s.signals[type] || {};
-      s.signals[type] = {
-        ...cur,
-        enabled: cfg.enabled !== undefined ? !!cfg.enabled : cur.enabled,
-        baseMin: Number.isFinite(Number(cfg.baseMin)) ? Number(cfg.baseMin) : cur.baseMin,
-        baseMax: Number.isFinite(Number(cfg.baseMax)) ? Number(cfg.baseMax) : cur.baseMax,
-        cooldownMs: Number.isFinite(Number(cfg.cooldownMs)) ? Number(cfg.cooldownMs) : cur.cooldownMs,
-        dailyCountCap: Number.isFinite(Number(cfg.dailyCountCap)) ? Number(cfg.dailyCountCap) : cur.dailyCountCap,
+function categoryRadar(g, userId) {
+  const keys = Object.keys(CATEGORIES);
+  const out = Object.fromEntries(keys.map(k => [k, 0]));
+  for (const e of g.xpEvents || []) {
+    if (e.userId === userId && e.xp) out[e.category] = (out[e.category] || 0) + e.xp;
+  }
+  return out;
+}
+
+function saveConfig(guildId, patch, staffId) {
+  const { all, g } = guildState(guildId);
+  if (patch.enabled !== undefined) g.enabled = !!patch.enabled;
+  if (patch.baseXp != null) g.baseXp = Math.max(10, Math.min(100000, Number(patch.baseXp) || 150));
+  if (patch.multiplier != null) g.multiplier = Math.max(1.01, Math.min(5, Number(patch.multiplier) || 1.45));
+  if (patch.dailyXpCeiling != null) g.dailyXpCeiling = Math.max(100, Math.min(50000, Number(patch.dailyXpCeiling) || 2500));
+  if (patch.tradeMaxAgeDays != null) g.tradeMaxAgeDays = Math.max(1, Math.min(365, Number(patch.tradeMaxAgeDays) || 7));
+  if (patch.channels && typeof patch.channels === 'object') {
+    g.channels = {
+      general: arr(patch.channels.general),
+      trading: arr(patch.channels.trading),
+      tradeIdeas: arr(patch.channels.tradeIdeas),
+      journalsForum: arr(patch.channels.journalsForum),
+    };
+  }
+  if (patch.weights && typeof patch.weights === 'object') {
+    for (const [k, v] of Object.entries(patch.weights)) {
+      if (!CATEGORIES[k] || !v) continue;
+      g.weights[k] = {
+        xpMin: num(v.xpMin, CATEGORIES[k].xpMin),
+        xpMax: num(v.xpMax, CATEGORIES[k].xpMax),
+        cooldownMs: num(v.cooldownMs, CATEGORIES[k].cooldownMs),
       };
     }
   }
-
-  saveAll(all);
-  return { ok: true, changed: ['Trading rank'], trading: panelSnapshot(guildId, null) };
-}
-
-
-/** Manual XP — staff rewards, restores, punishments (article: Manual XP Control). */
-function adminAdjustXp(guildId, userId, delta, reason = 'manual') {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const user = ensureUser(g, userId);
-  const amount = Math.trunc(Number(delta) || 0);
-  if (!amount) return { error: 'bad_number' };
-
-  if (amount > 0) {
-    user.xp += amount;
-    user.totalXp = (user.totalXp || 0) + amount;
-    if (g.settings.seasonEnabled) {
-      user.seasonXp = (user.seasonXp || 0) + amount;
-    }
-  } else {
-    const take = Math.min(user.totalXp || 0, Math.abs(amount));
-    user.totalXp = Math.max(0, (user.totalXp || 0) - take);
-    // peel from current-level pool
-    let left = take;
-    if (user.xp >= left) {
-      user.xp -= left;
-    } else {
-      left -= user.xp;
-      user.xp = 0;
-      // de-level if needed (soft)
-      while (left > 0 && user.level > 1) {
-        user.level -= 1;
-        const baseXp = g.settings.baseXp || 100;
-        const mult = g.settings.multiplier || 1.5;
-        const pool = Math.floor(baseXp * Math.pow(user.level, mult));
-        if (pool >= left) {
-          user.xp = pool - left;
-          left = 0;
-        } else {
-          left -= pool;
-        }
-      }
-    }
-    if (g.settings.seasonEnabled) {
-      user.seasonXp = Math.max(0, (user.seasonXp || 0) - take);
+  if (Array.isArray(patch.noXpRoleIds)) g.noXpRoleIds = patch.noXpRoleIds.map(String);
+  if (Array.isArray(patch.vocabularyExtra)) g.vocabularyExtra = patch.vocabularyExtra.map(String).slice(0, 200);
+  if (patch.ranks && typeof patch.ranks === 'object') {
+    for (const [lvl, conf] of Object.entries(patch.ranks)) {
+      if (!g.ranks[lvl]) g.ranks[lvl] = {};
+      if (conf.roleId !== undefined) g.ranks[lvl].roleId = conf.roleId || null;
+      if (conf.label) g.ranks[lvl].label = conf.label;
     }
   }
-
-  const levelsGained = amount > 0 ? applyLevelUps(user, g.settings) : [];
-  pushLedger(g, {
+  if (patch.badges && typeof patch.badges === 'object') {
+    g.badges = { ...g.badges, ...patch.badges };
+  }
+  g.configVersions.push({
     at: Date.now(),
-    userId,
-    type: 'manual',
-    xp: amount,
-    ok: true,
-    reason: String(reason || 'manual').slice(0, 80),
+    by: staffId || null,
+    weights: JSON.parse(JSON.stringify(g.weights)),
   });
+  if (g.configVersions.length > 40) g.configVersions.splice(0, g.configVersions.length - 40);
   saveAll(all);
+  return panelSnapshot(guildId);
+}
+
+function arr(v) {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.map(String).filter(Boolean))];
+}
+function num(v, fb) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fb;
+}
+
+function manualXp(guildId, { userId, amount, reason, staffId }) {
+  const { all, g } = guildState(guildId);
+  const u = userState(g, userId);
+  const amt = Math.round(Number(amount) || 0);
+  if (!amt) return { error: 'bad_amount' };
+  u.xp = Math.max(0, (u.xp || 0) + amt);
+  const prog = levelFromXp(u.xp, g.baseXp || 150, g.multiplier || 1.45);
+  u.level = prog.level;
+  pushEvent(g, {
+    id: crypto.randomBytes(8).toString('hex'),
+    userId, category: 'manual', xp: amt, reason: reason || 'staff',
+    staffId, createdAt: Date.now(),
+  });
+  g.manualAudit.push({ userId, amount: amt, reason: reason || '', staffId, at: Date.now() });
+  if (g.manualAudit.length > 200) g.manualAudit.splice(0, g.manualAudit.length - 200);
+  saveAll(all);
+  return { ok: true, xp: u.xp, level: u.level };
+}
+
+function userProfile(guildId, userId) {
+  const { g } = guildState(guildId);
+  const u = g.users[userId];
+  if (!u) return null;
+  const prog = levelFromXp(u.xp || 0, g.baseXp || 150, g.multiplier || 1.45);
   return {
-    ok: true,
-    userId,
-    delta: amount,
-    level: user.level,
-    totalXp: user.totalXp,
-    levelsGained,
-  };
-}
-
-function adminSetLevel(guildId, userId, level) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const user = ensureUser(g, userId);
-  const lv = Math.max(1, Math.min(500, Math.trunc(Number(level) || 1)));
-  user.level = lv;
-  user.xp = 0;
-  // Approximate totalXp so leaderboard order stays sensible
-  const baseXp = g.settings.baseXp || 100;
-  const mult = g.settings.multiplier || 1.5;
-  let total = 0;
-  for (let i = 1; i < lv; i++) total += Math.floor(baseXp * Math.pow(i, mult));
-  user.totalXp = total;
-  pushLedger(g, { at: Date.now(), userId, type: 'manual', xp: 0, ok: true, reason: `set_level_${lv}` });
-  saveAll(all);
-  return { ok: true, userId, level: user.level, totalXp: user.totalXp };
-}
-
-function adminResetUser(guildId, userId) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  if (!g.users[userId]) return { ok: true, userId, cleared: false };
-  delete g.users[userId];
-  pushLedger(g, { at: Date.now(), userId, type: 'manual', xp: 0, ok: true, reason: 'reset_user' });
-  saveAll(all);
-  return { ok: true, userId, cleared: true };
-}
-
-function adminResetSeason(guildId) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const key = new Date().toISOString().slice(0, 7); // YYYY-MM
-  g.settings.seasonEnabled = true;
-  g.settings.seasonKey = key;
-  let n = 0;
-  for (const u of Object.values(g.users)) {
-    if (u.seasonXp) n++;
-    u.seasonXp = 0;
-  }
-  pushLedger(g, { at: Date.now(), userId: 'system', type: 'manual', xp: 0, ok: true, reason: `season_reset_${key}` });
-  saveAll(all);
-  return { ok: true, seasonKey: key, cleared: n };
-}
-
-/** Voice activity XP — time-based, channel-gated (article: voice chat activity). */
-function awardVoiceTick(guildId, userId, channelId) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const settings = g.settings;
-  if (!settings.voiceEnabled) return { ok: false, reason: 'voice_off' };
-  const allowed = settings.voiceChannels || [];
-  if (allowed.length && !allowed.includes(channelId)) return { ok: false, reason: 'channel' };
-
-  // Reuse award path with a synthetic "voice" signal stored in settings.signals
-  if (!SIGNAL_DEFS.voice) {
-    // dynamic def
-  }
-  const user = ensureUser(g, userId);
-  const now = Date.now();
-  const cd = Number.isFinite(settings.voiceCooldownMs) ? settings.voiceCooldownMs : 60000;
-  const last = user.lastBySignal.voice || 0;
-  if (now - last < cd) return { ok: false, reason: 'cooldown' };
-
-  const per = Number.isFinite(settings.voiceXpPerMinute) ? settings.voiceXpPerMinute : 8;
-  const xp = Math.max(1, Math.min(50, per));
-  user.lastBySignal.voice = now;
-  user.lastMessage = now;
-  user.xp += xp;
-  user.totalXp = (user.totalXp || 0) + xp;
-  if (settings.seasonEnabled) user.seasonXp = (user.seasonXp || 0) + xp;
-  const day = user.dayStats.bySignal.voice || { n: 0, xp: 0 };
-  day.n += 1;
-  day.xp += xp;
-  user.dayStats.bySignal.voice = day;
-  user.dayStats.totalXp += xp;
-  const levelsGained = applyLevelUps(user, settings);
-  pushLedger(g, { at: now, userId, type: 'voice', xp, channelId, ok: true });
-  saveAll(all);
-  return { ok: true, type: 'voice', xp, level: user.level, levelsGained, totalXp: user.totalXp, user };
-}
-
-function getUserRank(guildId, userId) {
-  const all = loadAll();
-  const g = ensureGuild(all, guildId);
-  const users = Object.entries(g.users || {}).map(([id, u]) => ({
-    id,
-    level: u.level || 1,
-    totalXp: u.totalXp || 0,
+    id: userId,
     xp: u.xp || 0,
-    messages: u.messages || 0,
-    seasonXp: u.seasonXp || 0,
-    dayBySignal: u.dayStats?.bySignal || {},
-  })).sort((a, b) => (b.totalXp - a.totalXp) || (b.level - a.level));
-  const idx = users.findIndex(u => u.id === userId);
-  const me = g.users[userId] || { xp: 0, level: 1, totalXp: 0, messages: 0 };
-  const settings = g.settings;
-  const needed = Math.floor((settings.baseXp || 100) * Math.pow(me.level || 1, settings.multiplier || 1.5));
-  return {
-    rank: idx >= 0 ? idx + 1 : null,
-    tracked: users.length,
-    user: {
-      level: me.level || 1,
-      xp: me.xp || 0,
-      neededXp: needed,
-      totalXp: me.totalXp || 0,
-      messages: me.messages || 0,
-      seasonXp: me.seasonXp || 0,
-      dayBySignal: me.dayStats?.bySignal || {},
-    },
-    mode: settings.mode || 'trading',
-    top: users.slice(0, 15),
-    settings: {
-      announceLevelUp: settings.announceLevelUp !== false,
-      noXpRoles: settings.noXpRoles || [],
-      voiceEnabled: !!settings.voiceEnabled,
-      seasonEnabled: !!settings.seasonEnabled,
-      seasonKey: settings.seasonKey || null,
-    },
+    level: prog.level,
+    into: prog.into,
+    need: prog.need,
+    rank: rankForLevel(prog.level),
+    badges: u.badges || {},
+    journalStreak: u.journalStreak || 0,
+    radar: categoryRadar(g, userId),
+    chartCount: u.chartCount || 0,
+    verifiedCount: u.verifiedCount || 0,
+    commentXp: u.commentXp || 0,
   };
 }
-
 
 module.exports = {
-  SIGNAL_DEFS,
-  processMessage,
-  processThreadCreate,
+  CATEGORIES,
+  RANKS,
+  BADGE_DEFS,
+  handleMessage,
+  handleThreadCreate,
   panelSnapshot,
-  saveTradingSettings,
-  award,
-  awardVoiceTick,
-  adminAdjustXp,
-  adminSetLevel,
-  adminResetUser,
-  adminResetSeason,
-  getUserRank,
-  memberHasNoXpRole,
-  loadAll,
-  ensureGuild,
-  signalConfig,
+  saveConfig,
+  manualXp,
+  userProfile,
+  levelFromXp,
+  rankForLevel,
+  extractSymbols,
+  isValidSymbolToken,
+  hasOnTopicSignal,
+  guildState,
 };

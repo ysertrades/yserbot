@@ -5643,6 +5643,7 @@ function syncFeatureNav() {
   hide(nav('feeds'), feedsOff);
   hide(nav('giveaways'), gawOff);
   hide(nav('tickets'), tixOff);
+  hide(nav('leveling'), lvlOff);
 
   // Calendar panels only
   hide($('#form-econcal')?.closest('.panel'), calOff);
@@ -5653,7 +5654,8 @@ function syncFeatureNav() {
   const sec = root?.dataset?.section;
   if ((sec === 'economy' && econOff) || (sec === 'casino' && casOff)
       || (sec === 'feeds' && feedsOff) || (sec === 'giveaways' && gawOff)
-      || (sec === 'tickets' && tixOff)) {
+      || (sec === 'tickets' && tixOff)
+      || (sec === 'leveling' && lvlOff)) {
     if (typeof showSection === 'function') showSection('overview');
   }
 }
@@ -8151,7 +8153,7 @@ function multiSelect(label, values, opts, onChange) {
 function renderEngagement() { /* leveling removed */ }
 
 
-function renderLevels() { /* leveling removed */ }
+function renderLevels() { try { if (typeof window.renderLeveling === "function") window.renderLeveling(); } catch {} }
 
 
 /**

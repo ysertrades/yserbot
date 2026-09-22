@@ -198,7 +198,13 @@ function read(guildId, guild) {
     exact: !!r.exact, cooldown: r.cooldown ?? 0, enabled: r.enabled !== false,
   })).sort((a, b) => a.trigger.localeCompare(b.trigger));
 
-  out.levels = null;
+  try {
+    const leveling = require('../utils/levelingEngine');
+    out.levels = leveling.panelSnapshot(guildId, guild);
+  } catch (err) {
+    console.warn('[features] levels', err.message);
+    out.levels = null;
+  }
 
   out.members = guild.members?.cache
     ? [...guild.members.cache.values()]

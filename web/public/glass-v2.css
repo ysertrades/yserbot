@@ -95,3 +95,22 @@
     opacity: 0.35 !important;
   }
 }
+
+
+/* Leveling tab */
+.lvl-root { display: flex; flex-direction: column; gap: 1.1rem; }
+.lvl-status-row { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.75rem; }
+.lvl-compose { display: flex; flex-direction: column; gap: 0.45rem; }
+.lvl-compose-row { display: grid; grid-template-columns: 7.5rem 1fr 3.2rem; gap: 0.55rem; align-items: center; }
+.lvl-compose-label { font-size: 0.78rem; color: var(--soft, #9CA3AF); }
+.lvl-compose-track { height: 6px; border-radius: 99px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.lvl-compose-fill { height: 100%; border-radius: 99px; background: rgba(77, 92, 255, 0.55); }
+.lvl-compose-val { font-family: var(--mono); font-size: 0.72rem; text-align: right; color: var(--muted); }
+.lvl-nums { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
+.lvl-weights { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.5rem 0 1rem; }
+.lvl-weight-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.lvl-weight-key { min-width: 9.5rem; font-size: 0.82rem; color: var(--soft); }
+.lvl-weight-row input { width: 4.5rem; }
+.lvl-ranks { display: flex; flex-direction: column; gap: 0.55rem; }
+.lvl-rank-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.55rem; }
+.lvl-board .name { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }

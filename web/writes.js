@@ -607,6 +607,22 @@ Object.assign(OPS, {
       `✉️ DM sent to <@${r.userId}>`, 'moderation');
     return r;
   },
+  async leveling(guildId, body, ctx) {
+    const leveling = require('../utils/levelingEngine');
+    if (body && body.op === 'manual') {
+      const r = leveling.manualXp(guildId, {
+        userId: body.userId,
+        amount: body.amount,
+        reason: body.reason,
+        staffId: ctx.session?.uid,
+      });
+      if (r.error) return r;
+      return { ok: true, ...r };
+    }
+    const snap = leveling.saveConfig(guildId, body || {}, ctx.session?.uid);
+    return { ok: true, levels: snap };
+  },
+
 
   /* -- link approval requests -------------------------------------------- */
   async linkrequest(guildId, body, ctx) {
