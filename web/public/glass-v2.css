@@ -1,4 +1,4 @@
-/* Dark glass v2 — quiet cards + refined hover (no bright wash) */
+/* Dark cards — no backdrop blur, no purple stroke, quiet hover only */
 .panel,
 .tile,
 .members-panel,
@@ -10,17 +10,17 @@
 .composer-body,
 #composer-body,
 #appearance-body {
-  background: rgba(17, 17, 19, 0.78) !important;
+  background: rgba(17, 17, 19, 0.92) !important;
   border-color: rgba(255, 255, 255, 0.055) !important;
-  backdrop-filter: blur(18px) saturate(115%) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(115%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 10px 36px rgba(0, 0, 0, 0.28) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 8px 28px rgba(0, 0, 0, 0.28) !important;
   transition:
-    background 0.22s ease,
-    border-color 0.22s ease,
-    box-shadow 0.22s ease !important;
+    background 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease !important;
 }
 
 .composer {
@@ -31,7 +31,7 @@
   -webkit-backdrop-filter: none !important;
 }
 
-/* Hover: keep fill almost still — depth + soft brand edge instead of brightening */
+/* Hover: same family, no purple, no bright wash */
 .panel:hover,
 .tile:hover,
 .gaw:hover,
@@ -41,29 +41,57 @@
 .composer-body:hover,
 #composer-body:hover,
 #appearance-body:hover {
-  background: rgba(17, 17, 19, 0.86) !important;
-  border-color: rgba(34, 51, 245, 0.28) !important;
+  background: rgba(20, 20, 23, 0.96) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 0 0 1px rgba(34, 51, 245, 0.12),
-    0 14px 40px rgba(0, 0, 0, 0.38),
-    0 0 28px -6px rgba(34, 51, 245, 0.18) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 32px rgba(0, 0, 0, 0.34) !important;
 }
 
 .members-roster {
-  background: rgba(13, 13, 15, 0.72) !important;
+  background: rgba(13, 13, 15, 0.85) !important;
   border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .member-row {
   transition: background 0.18s ease !important;
 }
 .member-row:hover {
-  background: rgba(34, 51, 245, 0.06) !important;
+  background: rgba(255, 255, 255, 0.025) !important;
 }
 
-/* Kill leftover bright white hovers from app.css */
-.panel:hover,
-.tile:hover {
-  background: rgba(17, 17, 19, 0.86) !important;
+/* Soften super-bright green status text (LIVE / ON / RUNNING) */
+:root {
+  --good: #4ade80;
+}
+.tile.live .n,
+.pill.on,
+.live-dot,
+.drop-card .live-dot,
+.board .bal,
+.gaw .kind.coins,
+.gaw .kind.sev-clear,
+.bstyle.success,
+.signal.good,
+.item summary .pr {
+  color: #6ee7a0 !important;
+  filter: none !important;
+  text-shadow: none !important;
+}
+.pill.on {
+  border-color: rgba(110, 231, 160, 0.35) !important;
+  background: rgba(110, 231, 160, 0.06) !important;
+}
+
+/* Mobile launch: kill top purple flash from atmosphere layer */
+@media (max-width: 52rem) {
+  body::before {
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.002) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.002) 1px, transparent 1px) !important;
+    background-size: 44px 44px, 44px 44px !important;
+    opacity: 0.35 !important;
+  }
 }
