@@ -1,4 +1,4 @@
-/* Dark glass v2 — quieter cards that sit with inset fields (not a bright film) */
+/* Dark glass v2 — quiet cards + refined hover (no bright wash) */
 .panel,
 .tile,
 .members-panel,
@@ -17,6 +17,10 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
     0 10px 36px rgba(0, 0, 0, 0.28) !important;
+  transition:
+    background 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease !important;
 }
 
 .composer {
@@ -27,11 +31,23 @@
   -webkit-backdrop-filter: none !important;
 }
 
+/* Hover: keep fill almost still — depth + soft brand edge instead of brightening */
 .panel:hover,
 .tile:hover,
-.gaw:hover {
-  background: rgba(23, 23, 26, 0.88) !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
+.gaw:hover,
+.sheet-card:hover,
+.members-panel:hover,
+.tpl-list:hover,
+.composer-body:hover,
+#composer-body:hover,
+#appearance-body:hover {
+  background: rgba(17, 17, 19, 0.86) !important;
+  border-color: rgba(34, 51, 245, 0.28) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(34, 51, 245, 0.12),
+    0 14px 40px rgba(0, 0, 0, 0.38),
+    0 0 28px -6px rgba(34, 51, 245, 0.18) !important;
 }
 
 .members-roster {
@@ -39,6 +55,15 @@
   border: 1px solid rgba(255, 255, 255, 0.05) !important;
 }
 
+.member-row {
+  transition: background 0.18s ease !important;
+}
 .member-row:hover {
-  background: rgba(255, 255, 255, 0.01) !important;
+  background: rgba(34, 51, 245, 0.06) !important;
+}
+
+/* Kill leftover bright white hovers from app.css */
+.panel:hover,
+.tile:hover {
+  background: rgba(17, 17, 19, 0.86) !important;
 }
