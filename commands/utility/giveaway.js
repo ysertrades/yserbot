@@ -702,31 +702,51 @@ function pickWinners(pool, count) {
  * Build a ticket list: 1 per entrant, +bonus if they hold the bonus role.
  * Returns an array of userIds with duplicates for extra tickets.
  */
-async function buildWeightedPool(entrantIds, guild, bonusRoleId) {
+
+function normalizeBonusRoles(bonusRoleId, bonusRoles) {
+  const out = [];
+  const seen = new Set();
+  if (Array.isArray(bonusRoles)) {
+    for (const r of bonusRoles) {
+      const id = r && r.id != null ? String(r.id) : null;
+      if (!id || seen.has(id)) continue;
+      let extra = Number(r.extra);
+      if (!Number.isInteger(extra) || extra < 1) extra = 1;
+      if (extra > 10) extra = 10;
+      seen.add(id);
+      out.push({ id, extra });
+    }
+  }
+  if (!out.length && bonusRoleId) {
+    out.push({ id: String(bonusRoleId), extra: typeof BONUS_ROLE_EXTRA !== 'undefined' ? BONUS_ROLE_EXTRA : 1 });
+  }
+  return out;
+}
+function ticketsForMember(member, bonusList) {
+  let tickets = typeof BASE_TICKETS !== 'undefined' ? BASE_TICKETS : 1;
+  if (member?.roles?.cache && bonusList.length) {
+    for (const b of bonusList) {
+      if (member.roles.cache.has(b.id)) tickets += b.extra;
+    }
+  }
+  const max = typeof MAX_TICKETS_PER_USER !== 'undefined' ? MAX_TICKETS_PER_USER : 3;
+  return Math.min(max, Math.max(1, tickets));
+}
+async function buildWeightedPool(entrantIds, guild, bonusRoleId, bonusRoles) {
   const ids = Array.isArray(entrantIds) ? [...new Set(entrantIds.map(String))] : [];
   if (!ids.length) return [];
-
+  const bonusList = normalizeBonusRoles(bonusRoleId, bonusRoles);
   const pool = [];
-  const bonus = bonusRoleId ? String(bonusRoleId) : null;
-
-  // Prefetch members when we need role checks
   let members = null;
-  if (bonus && guild?.members) {
+  if (bonusList.length && guild?.members) {
     try {
-      if (guild.members.fetch) {
-        await guild.members.fetch({ user: ids }).catch(() => null);
-      }
+      if (guild.members.fetch) await guild.members.fetch({ user: ids }).catch(() => null);
       members = guild.members.cache;
     } catch { members = guild.members.cache; }
   }
-
   for (const id of ids) {
-    let tickets = BASE_TICKETS;
-    if (bonus && members) {
-      const m = members.get(id);
-      if (m?.roles?.cache?.has(bonus)) tickets += BONUS_ROLE_EXTRA;
-    }
-    tickets = Math.min(MAX_TICKETS_PER_USER, Math.max(BASE_TICKETS, tickets));
+    const m = members?.get(id) || null;
+    const tickets = ticketsForMember(m, bonusList);
     for (let i = 0; i < tickets; i++) pool.push(id);
   }
   return pool;
@@ -1031,7 +1051,7 @@ async function revealGiveaway(message, interaction) {
   };
 }
 
-async function sendPrizeDm(guild, shortId, text, onlyWinnerId = null) {
+async function sendPrizeDm(guild, shortId, text, onlyWinnerId = null, imageOpts = null) {
   const allEnded = readJson('giveaways_ended.json', {});
   const data = allEnded[guild.id]?.[String(shortId).toLowerCase()];
   if (!data) return { error: 'unknown_giveaway' };
@@ -1046,12 +1066,20 @@ async function sendPrizeDm(guild, shortId, text, onlyWinnerId = null) {
   }
   if (!winners.length) return { error: 'no_winners' };
 
+  let files = [];
+  try {
+    const { buildPrizeFiles } = require('../../utils/gawPrizeAttach');
+    files = await buildPrizeFiles(imageOpts);
+  } catch (err) {
+    console.warn('[GIVEAWAY] prize image:', err.message || err);
+  }
   let sent = 0;
   for (const id of winners) {
     try {
       const user = await guild.client.users.fetch(id);
-      // Plain text only — no embed, no separator lines
-      await user.send({ content: body.slice(0, 1800) });
+      const payload = { content: body.slice(0, 1800) };
+      if (files.length) payload.files = files;
+      await user.send(payload);
       sent += 1;
     } catch { /* DMs closed */ }
   }
@@ -1072,7 +1100,7 @@ async function performReroll(guild, shortId) {
   if (!data) return { error: `No ended giveaway found with ID \`${shortId}\`.` };
   if (!data.entrants || data.entrants.length === 0) return { error: 'This giveaway had no participants, cannot reroll.' };
 
-  const pool       = await buildWeightedPool(data.entrants, guild, data.bonusRoleId);
+  const pool       = await buildWeightedPool(data.entrants, guild, data.bonusRoleId, data.bonusRoles || null);
   const newWinners = pickWinners(pool, data.winnersCount);
 
   data.currentWinners = newWinners;
@@ -1595,6 +1623,9 @@ module.exports.performReroll = performReroll;
 module.exports.endGiveaway = endGiveaway;
 module.exports.revealGiveaway = revealGiveaway;
 module.exports.sendPrizeDm = sendPrizeDm;
+module.exports.buildWeightedPool = buildWeightedPool;
+module.exports.ticketsForMember = ticketsForMember;
+module.exports.normalizeBonusRoles = normalizeBonusRoles;
 module.exports.buildClosedCard = buildClosedCard;
 module.exports.buildEndedCard = buildEndedCard;
 module.exports.ACTIVE_FILE = ACTIVE_FILE;

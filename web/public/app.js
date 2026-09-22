@@ -2996,7 +2996,13 @@ async function openGiveawayParticipants(messageId, meta = {}) {
         row.append(av);
 
         const info = el('div', 'roster-info');
-        info.append(el('span', 'roster-name', p.tag || p.id));
+        const nameRow = el('div', 'roster-name-row');
+        nameRow.append(el('span', 'roster-name', p.tag || p.id));
+        const entries = Math.max(1, Number(p.entries) || 1);
+        const ent = el('span', 'roster-entries' + (entries > 1 ? ' is-bonus' : ''), entries === 1 ? '1 entry' : (entries + ' entries'));
+        if (entries > 1) ent.title = 'Base 1 + ' + (entries - 1) + ' bonus from role';
+        nameRow.append(ent);
+        info.append(nameRow);
         const bits = [
           p.accountAgeDays != null ? `Age ${p.accountAgeDays}d` : null,
           p.serverJoinDays != null ? `Server ${p.serverJoinDays}d` : null,
@@ -3543,7 +3549,9 @@ function openEndedGiveaway(x) {
   // Prize DM — template system (code / follow-up / custom)
   if (x.kind !== 'coins') {
     const prizeName = x.title || 'your prize';
-    let mode = 'code'; // code | followup | custom
+    let mode = 'code'; // code | giftcard | followup | custom
+    let prizeImageData = null;
+    let prizeImageName = '';
     let codeVal = '';
     let customVal = '';
 
@@ -3556,12 +3564,16 @@ function openEndedGiveaway(x) {
 
     const paintModes = () => {
       modeRow.replaceChildren();
-      for (const [id, label] of [['code', 'Checkout code'], ['followup', 'Mod follow-up'], ['custom', 'Custom message']]) {
+      for (const [id, label] of [['code', 'Checkout code'], ['giftcard', 'Gift card'], ['followup', 'Mod follow-up'], ['custom', 'Custom message']]) {
         const b = el('button', 'chip-toggle' + (mode === id ? ' on' : ''), label);
         b.type = 'button';
         b.addEventListener('click', () => {
           mode = id;
-          codeBox.style.display = mode === 'code' ? '' : 'none';
+          codeBox.style.display = (mode === 'code' || mode === 'giftcard') ? '' : 'none';
+          const _cl = codeBox.querySelector('label');
+          const _ci = codeBox.querySelector('input');
+          if (_cl) _cl.textContent = mode === 'giftcard' ? 'Gift card code' : 'Checkout / redeem code';
+          if (_ci) _ci.placeholder = mode === 'giftcard' ? 'e.g. XXXX-XXXX-XXXX-XXXX' : 'e.g. SAVE50-WEEKEND';
           customBox.style.display = mode === 'custom' || mode === 'followup' ? '' : 'none';
           if (mode === 'followup') {
             const ta = customBox.querySelector('textarea, input');
@@ -3589,6 +3601,30 @@ function openEndedGiveaway(x) {
     codeBox.append(el('p', 'hint', 'Only the code is wrapped in backticks in the DM. Not the giveaway ID.'));
     body.push(codeBox);
 
+    const imgRow = el('div', 'prize-image-row field');
+    imgRow.append(el('label', null, 'Optional image (full quality)');
+    const imgInput = el('input');
+    imgInput.type = 'file';
+    imgInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
+    const imgName = el('span', 'prize-image-name', 'No image');
+    imgInput.addEventListener('change', () => {
+      const file = imgInput.files && imgInput.files[0];
+      prizeImageData = null;
+      prizeImageName = '';
+      if (!file) { imgName.textContent = 'No image'; return; }
+      if (file.size > 7.5 * 1024 * 1024) { imgName.textContent = 'Too large (max ~7.5MB)'; return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        prizeImageData = String(reader.result || '');
+        prizeImageName = file.name || 'prize.png';
+        imgName.textContent = prizeImageName + ' · full quality';
+      };
+      reader.readAsDataURL(file);
+    });
+    imgRow.append(imgInput);
+    imgRow.append(imgName);
+    body.push(imgRow);
+
     customBox.append(el('label', null, 'Message'));
     const customInput = el('textarea');
     customInput.rows = 3;
@@ -3599,6 +3635,15 @@ function openEndedGiveaway(x) {
 
     const buildMessage = () => {
       const dropRef = x.shortId ? `QL-${x.shortId}` : '—';
+      if (mode === 'giftcard') {
+        return (
+          `🎁 Your quantlab gift card is ready!\n\n`
+          + `**Drop:** \`${dropRef}\`\n`
+          + `**Prize:** ${prizeName}\n`
+          + `**Gift card code:**\n\`${codeVal}\`\n\n`
+          + `Redeem it on the store. Keep this message private.`
+        );
+      }
       if (mode === 'code') {
         if (!codeVal) return null;
         return (
@@ -3694,13 +3739,14 @@ function openEndedGiveaway(x) {
           }
           const text = buildMessage();
           if (!text) {
-            toast(multi ? ('Missing prize text for ' + (w.name || w.id || 'a winner')) : (mode === 'code' ? 'Enter the checkout code first.' : 'Write a prize message first.'), 'bad');
+            toast(multi ? ('Missing prize text for ' + (w.name || w.id || 'a winner')) : ((mode === 'code' || mode === 'giftcard') ? 'Enter the code first.' : 'Write a prize message first.'), 'bad');
             sendPrize.disabled = false;
             sendPrize.textContent = sendLabel;
             return;
           }
           const payload = { shortId: x.shortId, text };
           if (w.id) payload.winnerId = String(w.id);
+          if (prizeImageData) payload.imageData = prizeImageData;
           const out = await post('giveawaysendprize', payload);
           total += 1;
           if (out && out.ok !== false) sent += (out.sent != null ? out.sent : 1);

@@ -70,8 +70,8 @@ body::before {
   pointer-events: none;
   background:
     radial-gradient(900px 420px at 55% -80px, rgba(34, 51, 245, 0.16), transparent 70%),
-    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+    linear-gradient(rgba(255, 255, 255, 0.0028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.0028) 1px, transparent 1px);
   background-size: auto, 44px 44px, 44px 44px;
   -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
   mask-image: linear-gradient(180deg, #000 0%, #000 55%, transparent 100%);
@@ -3477,3 +3477,9 @@ button.primary:hover {
   }
   .sidebar-nav.sections::-webkit-scrollbar { display: none; }
 }
+
+.roster-name-row{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+.roster-entries{font-size:.68rem;font-weight:600;letter-spacing:.02em;padding:.12rem .45rem;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.55);white-space:nowrap}
+.roster-entries.is-bonus{background:rgba(34,51,245,.18);border-color:rgba(77,92,255,.35);color:#a8b0ff}
+.prize-image-row{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;margin-top:.55rem}
+.prize-image-name{font-size:.78rem;color:rgba(255,255,255,.5)}
