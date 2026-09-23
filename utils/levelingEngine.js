@@ -2,7 +2,7 @@
 
 /**
  * Quantlab HQ leveling — MEE6-style message XP + editable rank ladder.
- * Curve: xp_to_next(n) = 5n² + 50n + 100
+ * Curve: xp_to_next(n) = curveBase × curveMult^n
  * Schema mee6-v2 wipes legacy contribution-engine user rows on first load.
  */
 
@@ -34,6 +34,8 @@ function defaultGuild() {
     xpMin: 15,
     xpMax: 25,
     cooldownSec: 60,
+    curveBase: 100,
+    curveMult: 1.5,
     minMessageLength: 2,
     ignoreEmojiOnly: true,
     noXpChannelIds: [],
@@ -62,12 +64,16 @@ function migrateGuild(g) {
     if (!Array.isArray(g.noXpRoleIds)) g.noXpRoleIds = [];
     if (!g.roleBoosts) g.roleBoosts = {};
     if (!g.channelBoosts) g.channelBoosts = {};
+    if (g.curveBase == null) g.curveBase = 100;
+    if (g.curveMult == null) g.curveMult = 1.5;
     return g;
   }
   const fresh = defaultGuild();
   if (g.xpMin != null) fresh.xpMin = g.xpMin;
   if (g.xpMax != null) fresh.xpMax = g.xpMax;
   if (g.cooldownSec != null) fresh.cooldownSec = g.cooldownSec;
+  if (g.curveBase != null) fresh.curveBase = g.curveBase;
+  if (g.curveMult != null) fresh.curveMult = g.curveMult;
   if (typeof g.enabled === 'boolean') fresh.enabled = g.enabled;
   if (Array.isArray(g.noXpChannelIds)) fresh.noXpChannelIds = g.noXpChannelIds;
   if (Array.isArray(g.noXpRoleIds)) fresh.noXpRoleIds = g.noXpRoleIds;
@@ -87,23 +93,33 @@ function guildState(guildId) {
   return { all, g };
 }
 
-function xpToNext(n) {
-  const x = Math.max(0, Math.floor(Number(n) || 0));
-  return 5 * x * x + 50 * x + 100;
+function curveParams(g) {
+  const base = Math.max(10, Math.min(50_000, Number(g?.curveBase) || 100));
+  let mult = Number(g?.curveMult);
+  if (!Number.isFinite(mult) || mult < 1) mult = 1;
+  mult = Math.min(3, Math.round(mult * 1000) / 1000);
+  return { base, mult };
 }
 
-function totalXpForLevel(L) {
+function xpToNext(n, g) {
+  const x = Math.max(0, Math.floor(Number(n) || 0));
+  const { base, mult } = curveParams(g);
+  if (mult === 1) return Math.round(base);
+  return Math.max(1, Math.round(base * Math.pow(mult, x)));
+}
+
+function totalXpForLevel(L, g) {
   const target = Math.max(0, Math.floor(Number(L) || 0));
   let sum = 0;
-  for (let n = 0; n < target; n++) sum += xpToNext(n);
+  for (let n = 0; n < target; n++) sum += xpToNext(n, g);
   return sum;
 }
 
-function levelFromXp(totalXp) {
+function levelFromXp(totalXp, g) {
   let xp = Math.max(0, Math.floor(Number(totalXp) || 0));
   let level = 0;
   for (;;) {
-    const need = xpToNext(level);
+    const need = xpToNext(level, g);
     if (xp < need) break;
     xp -= need;
     level += 1;
@@ -184,10 +200,10 @@ async function handleMessage(message) {
     if (cdMs > 0 && u.lastXpAt && now - u.lastXpAt < cdMs) return null;
     const mult = multiplierFor(message, g);
     const gained = rollXp(g, mult);
-    const prevLevel = levelFromXp(u.xp);
+    const prevLevel = levelFromXp(u.xp, g);
     u.xp = (Number(u.xp) || 0) + gained;
     u.lastXpAt = now;
-    const newLevel = levelFromXp(u.xp);
+    const newLevel = levelFromXp(u.xp, g);
     u.level = newLevel;
     g.users[userId] = u;
     g.events.unshift({ at: now, userId, xp: gained, level: newLevel, mult: mult !== 1 ? mult : undefined, channelId: message.channel?.id });
@@ -210,9 +226,9 @@ function manualXp(guildId, { userId, amount, reason, staffId }) {
   if (!Number.isFinite(n) || n === 0) return { error: 'bad_amount' };
   const { all, g } = guildState(guildId);
   const u = g.users[userId] || { xp: 0, level: 0, lastXpAt: 0 };
-  const prev = levelFromXp(u.xp);
+  const prev = levelFromXp(u.xp, g);
   u.xp = Math.max(0, (Number(u.xp) || 0) + Math.floor(n));
-  u.level = levelFromXp(u.xp);
+  u.level = levelFromXp(u.xp, g);
   g.users[userId] = u;
   g.events.unshift({ at: Date.now(), userId, xp: Math.floor(n), level: u.level, reason: String(reason || 'manual').slice(0, 80), staffId: staffId || null });
   if (g.events.length > EVENTS_MAX) g.events.length = EVENTS_MAX;
@@ -238,6 +254,14 @@ function saveConfig(guildId, patch = {}, staffId) {
   if (patch.xpMin != null) g.xpMin = Math.max(1, Math.min(100, Number(patch.xpMin) || 15));
   if (patch.xpMax != null) g.xpMax = Math.max(g.xpMin, Math.min(200, Number(patch.xpMax) || 25));
   if (patch.cooldownSec != null) g.cooldownSec = Math.max(0, Math.min(3600, Number(patch.cooldownSec) || 60));
+  if (patch.curveBase != null) {
+    const b = Number(patch.curveBase);
+    g.curveBase = Number.isFinite(b) ? Math.max(10, Math.min(50_000, Math.round(b))) : 100;
+  }
+  if (patch.curveMult != null) {
+    const m = Number(patch.curveMult);
+    g.curveMult = Number.isFinite(m) && m >= 1 ? Math.min(3, Math.round(m * 1000) / 1000) : 1;
+  }
   if (patch.minMessageLength != null) g.minMessageLength = Math.max(0, Math.min(50, Number(patch.minMessageLength) || 0));
   if (typeof patch.ignoreEmojiOnly === 'boolean') g.ignoreEmojiOnly = patch.ignoreEmojiOnly;
   if (Array.isArray(patch.noXpChannelIds)) g.noXpChannelIds = patch.noXpChannelIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 80);
@@ -284,7 +308,7 @@ function displayName(guild, userId) {
 
 function leaderboardRows(g, guild, limit = 15) {
   return Object.entries(g.users || {}).map(([id, u]) => ({
-    id, name: displayName(guild, id) || id, xp: Number(u.xp) || 0, level: levelFromXp(u.xp),
+    id, name: displayName(guild, id) || id, xp: Number(u.xp) || 0, level: levelFromXp(u.xp, g),
   })).filter(r => r.xp > 0).sort((a, b) => b.xp - a.xp || b.level - a.level).slice(0, limit);
 }
 
@@ -317,24 +341,30 @@ function panelSnapshot(guildId, guild) {
     xpMin: g.xpMin ?? 15, xpMax: g.xpMax ?? 25, cooldownSec: g.cooldownSec ?? 60,
     minMessageLength: g.minMessageLength ?? 2, ignoreEmojiOnly: g.ignoreEmojiOnly !== false,
     weekendBoost: g.weekendBoost ?? 1, noXpChannelIds: g.noXpChannelIds || [], noXpRoleIds: g.noXpRoleIds || [],
-    roleRewards: (Array.isArray(g.roleRewards) ? g.roleRewards : []).map(r => ({ ...r, totalXp: totalXpForLevel(r.level), roleName: roleName(r.roleId) || r.label })),
+    curveBase: g.curveBase ?? 100,
+    curveMult: g.curveMult ?? 1.5,
+    roleRewards: (Array.isArray(g.roleRewards) ? g.roleRewards : []).map(r => ({ ...r, totalXp: totalXpForLevel(r.level, g), roleName: roleName(r.roleId) || r.label })),
     channelUnlocks: (Array.isArray(g.channelUnlocks) ? g.channelUnlocks : []).map(u => ({
       ...u,
       resolvedChannelName: u.channelId ? (chName(u.channelId) || u.channelName) : u.channelName,
       resolvedRoleNames: (u.roleIds || []).map(id => roleName(id) || id),
     })),
-    curveTable: [0, 5, 15, 30, 50].map(L => ({ level: L, totalXp: totalXpForLevel(L) })),
-    formula: 'xp_to_next(n) = 5n² + 50n + 100',
+    curveTable: [1, 5, 15, 30, 50].map(L => ({
+      level: L,
+      totalXp: totalXpForLevel(L, g),
+      stepXp: xpToNext(L - 1, g),
+    })),
+    formula: `xp_to_next(n) = ${g.curveBase ?? 100} × ${g.curveMult ?? 1.5}ⁿ`,
     leaderboard: tracked ? leaderboardRows(g, guild, 15) : [],
     recentEvents: tracked ? (Array.isArray(g.events) ? g.events : []).slice(0, 15).map(e => ({ ...e, name: displayName(guild, e.userId) || e.userId })) : [],
     channelOpts, roleOpts, configVersion: g.configVersion || 0,
   };
 }
 
-function progressFromXp(totalXp) {
-  const level = levelFromXp(totalXp);
-  const floor = totalXpForLevel(level);
-  const need = xpToNext(level);
+function progressFromXp(totalXp, g) {
+  const level = levelFromXp(totalXp, g);
+  const floor = totalXpForLevel(level, g);
+  const need = xpToNext(level, g);
   const into = Math.max(0, Math.floor(totalXp) - floor);
   return { level, into, need, totalXp: Math.max(0, Math.floor(totalXp)) };
 }
@@ -342,7 +372,7 @@ function progressFromXp(totalXp) {
 function getUserRank(guildId, userId) {
   const { g } = guildState(guildId);
   const u = (g.users || {})[userId] || { xp: 0, level: 0 };
-  const prog = progressFromXp(u.xp);
+  const prog = progressFromXp(u.xp, g);
   const rows = Object.entries(g.users || {})
     .map(([id, row]) => ({ id, xp: Number(row.xp) || 0 }))
     .filter(r => r.xp > 0)
@@ -366,7 +396,7 @@ function getLeaderboard(guildId, limit = 15) {
   const { g } = guildState(guildId);
   return Object.entries(g.users || {})
     .map(([id, u]) => {
-      const prog = progressFromXp(u.xp);
+      const prog = progressFromXp(u.xp, g);
       return { id, level: prog.level, totalXp: prog.totalXp };
     })
     .filter(r => r.totalXp > 0)
@@ -384,9 +414,9 @@ function resetUser(guildId, userId) {
 }
 
 function setUserLevel(guildId, userId, level) {
-  const target = Math.max(0, Math.min(500, Math.floor(Number(level) || 0)));
-  const xp = totalXpForLevel(target);
   const { all, g } = guildState(guildId);
+  const target = Math.max(0, Math.min(500, Math.floor(Number(level) || 0));
+  const xp = totalXpForLevel(target, g);
   g.users[userId] = { xp, level: target, lastXpAt: 0 };
   all[guildId] = g;
   saveAll(all);
