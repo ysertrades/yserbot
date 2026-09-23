@@ -211,6 +211,13 @@
         preview.append(r);
       }
     }
+    const ranks = el('div', 'panel');
+    ranks.append(el('h2', null, 'Role rewards'));
+    ranks.append(el('p', 'hint', 'Level → role. Cumulative — lower roles stay. Total XP uses the curve above.'));
+    const rewardRows = el('div', 'lvl-edit-list');
+    const rewardDraft = (L.roleRewards || []).map(r => ({
+      level: r.level, roleId: r.roleId, label: r.label || r.roleName || '',
+    }));
     function paintRewards() {
       rewardRows.replaceChildren();
       const b = Number(iBase.value) || 100;
@@ -246,15 +253,6 @@
     iMult.addEventListener('input', () => { paintPreview(); paintRewards(); });
     curve.append(preview);
     root.append(curve);
-
-    const ranks = el('div', 'panel');
-    ranks.append(el('h2', null, 'Role rewards'));
-    ranks.append(el('p', 'hint', 'Level → role. Cumulative — lower roles stay. Total XP uses the curve above.'));
-
-    const rewardRows = el('div', 'lvl-edit-list');
-    const rewardDraft = (L.roleRewards || []).map(r => ({
-      level: r.level, roleId: r.roleId, label: r.label || r.roleName || '',
-    }));
 
     paintRewards();
     ranks.append(rewardRows);
@@ -397,7 +395,7 @@
       for (const e of L.recentEvents.slice(0, 12)) {
         const row = el('div', 'row');
         row.append(el('span', 'k', e.name || e.userId || '?'));
-        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' · L' + (e.level ?? '—'));
+        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' · L' + (e.level ?? '—')));
         list.append(row);
       }
       ev.append(list);
