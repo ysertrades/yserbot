@@ -17,10 +17,36 @@
     const t = levels();
     return (t && t.channelOpts) || [];
   }
-  function post(body) {
-    if (typeof api === 'function') return api('leveling', body);
-    if (typeof postGuild === 'function') return postGuild('leveling', body);
-    return Promise.reject(new Error('no api'));
+
+  /**
+   * Write path: the panel shell exposes global `post(op, body, opts)`.
+   * Never call a missing api()/postGuild() — that always fails with "Save failed".
+   */
+  async function writeLeveling(body) {
+    const runner =
+      (typeof window !== 'undefined' && typeof window.post === 'function' && window.post) ||
+      (typeof post === 'function' && post.length >= 2 ? post : null);
+    if (!runner) {
+      const guildId = (typeof state !== 'undefined' && state?.guildId) || null;
+      const csrf = (typeof state !== 'undefined' && state?.csrf) || '';
+      if (!guildId) throw new Error('no_guild');
+      const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf };
+      try {
+        if (typeof authHeaders === 'function') Object.assign(headers, authHeaders());
+      } catch {}
+      const res = await fetch(`/api/guild/${guildId}/leveling`, {
+        method: 'POST', credentials: 'same-origin', headers,
+        body: JSON.stringify(body || {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data.error || `http_${res.status}`);
+        err.data = data;
+        throw err;
+      }
+      return data;
+    }
+    return runner('leveling', body, { quiet: true });
   }
 
   function multiSelect(label, values, opts, kindFilter) {
@@ -116,10 +142,9 @@
       return;
     }
 
-    // Header status
     const head = el('div', 'panel');
     head.append(el('h2', null, 'Contribution engine'));
-    head.append(el('p', 'muted', 'XP is awarded after classification — chat is near-zero; verified QuantLab shares, charts, structured ideas, and owned journal posts carry the curve.'));
+    head.append(el('p', 'muted', 'Detection first, then weight. Chat is a floor. Verified QuantLab shares, charts, structured ideas, and owned journal posts move the rank curve.'));
     const toggles = el('div', 'lvl-status-row');
     toggles.append(el('span', L.enabled ? 'pill on' : 'pill off', L.enabled ? 'ENGINE ON' : 'ENGINE OFF'));
     toggles.append(el('span', 'tag', (L.totalEvents || 0) + ' events'));
@@ -128,14 +153,12 @@
     head.append(toggles);
     root.append(head);
 
-    // Composition
     const comp = el('div', 'panel');
     comp.append(el('h2', null, '7-day XP composition'));
     comp.append(el('p', 'hint', 'Stacked view of what the community is actually earning — quality vs chatter.'));
     comp.append(compositionBars(L.composition7d));
     root.append(comp);
 
-    // Leaderboards grid
     const grid = el('div', 'grid');
     grid.append(lbTable('Overall (all-time)', L.leaderboard, 'xp'));
     grid.append(lbTable('This month', L.leaderboardMonth, 'xp'));
@@ -145,7 +168,6 @@
     grid.append(lbTable('Helpers', L.topHelpers, 'help'));
     root.append(grid);
 
-    // Config
     const cfg = el('div', 'panel');
     cfg.append(el('h2', null, 'Live config'));
     cfg.append(el('p', 'muted', 'Weights and channels write a config version so retunes show on the timeline.'));
@@ -187,7 +209,7 @@
     cfg.append(wBox);
 
     const actions = el('div', 'actions');
-    const save = el('button', 'btn primary', 'Save leveling');
+    const save = el('button', 'btn primary', 'Save changes');
     save.type = 'button';
     save.addEventListener('click', async () => {
       save.disabled = true;
@@ -215,14 +237,23 @@
           },
           weights,
         };
-        const res = await post(body);
-        if (res?.overview) state.overview = res.overview;
-        else if (res?.levels && state.overview?.features) state.overview.features.levels = res.levels;
+        const res = await writeLeveling(body);
+        if (!res) throw new Error('empty_response');
+        if (res.error) throw Object.assign(new Error(res.error), { data: res });
+        if (res.overview) state.overview = res.overview;
+        if (res.levels) {
+          if (!state.overview) state.overview = {};
+          if (!state.overview.features) state.overview.features = {};
+          state.overview.features.levels = res.levels;
+        }
         render();
-        if (typeof toast === 'function') toast('Leveling saved', 'good');
+        if (typeof toast === 'function') toast('Changes saved — weights & channels live.', 'good');
+        save.textContent = 'Saved';
+        setTimeout(() => { save.textContent = 'Save changes'; }, 1600);
       } catch (e) {
-        console.error(e);
-        if (typeof toast === 'function') toast('Save failed', 'bad');
+        console.error('[leveling save]', e, e?.data);
+        const detail = e?.data?.detail || e?.data?.error || e?.message || 'unknown';
+        if (typeof toast === 'function') toast('Could not save — ' + detail, 'bad');
       } finally {
         save.disabled = false;
       }
@@ -231,7 +262,6 @@
     cfg.append(actions);
     root.append(cfg);
 
-    // Rank ladder
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Rank ladder'));
     const rl = el('div', 'lvl-ranks');
@@ -245,7 +275,6 @@
     ranks.append(rl);
     root.append(ranks);
 
-    // Recent events
     const ev = el('div', 'panel');
     ev.append(el('h2', null, 'Recent XP events'));
     const evList = el('div', 'rows');
@@ -267,14 +296,12 @@
       render();
     };
     document.addEventListener('panel-overview', tryRender);
-    // Poll lightly until overview exists, then render on section show
     const obs = new MutationObserver(() => {
       const sec = document.querySelector('.section[data-section="leveling"][data-active]');
       if (sec) tryRender();
     });
     if (document.body) obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-active', 'data-state', 'data-section'] });
     window.renderLeveling = render;
-    // Hook showSection if present
     const prev = window.showSection;
     if (typeof prev === 'function') {
       window.showSection = function (name) {
