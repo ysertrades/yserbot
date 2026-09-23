@@ -415,7 +415,7 @@ function resetUser(guildId, userId) {
 
 function setUserLevel(guildId, userId, level) {
   const { all, g } = guildState(guildId);
-  const target = Math.max(0, Math.min(500, Math.floor(Number(level) || 0));
+  const target = Math.max(0, Math.min(500, Math.floor(Number(level) || 0)));
   const xp = totalXpForLevel(target, g);
   g.users[userId] = { xp, level: target, lastXpAt: 0 };
   all[guildId] = g;
