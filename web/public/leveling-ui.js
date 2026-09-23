@@ -1,7 +1,7 @@
 'use strict';
 /**
- * Quantlab HQ Leveling — MEE6-style panel.
- * Empty until tracking starts; display names; panel field language.
+ * Quantlab HQ Leveling — MEE6 panel.
+ * Editable rank ladder · channel unlocks · modern fields · empty until tracked.
  */
 (function () {
   function el(tag, cls, text) {
@@ -11,7 +11,7 @@
     return n;
   }
 
-  function L() {
+  function data() {
     try { return state?.overview?.features?.levels || null; } catch { return null; }
   }
 
@@ -27,28 +27,38 @@
       const res = await fetch(`/api/guild/${guildId}/leveling`, {
         method: 'POST', credentials: 'same-origin', headers, body: JSON.stringify(body || {}),
       });
-      const data = await res.json().catch(() => ({}));
+      const out = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = new Error(data.error || `http_${res.status}`);
-        err.data = data;
+        const err = new Error(out.error || `http_${res.status}`);
+        err.data = out;
         throw err;
       }
-      return data;
+      return out;
     }
     return runner('leveling', body, { quiet: true });
   }
 
+  function applyResult(res) {
+    if (res?.overview) state.overview = res.overview;
+    if (res?.levels) {
+      if (!state.overview) state.overview = {};
+      if (!state.overview.features) state.overview.features = {};
+      state.overview.features.levels = res.levels;
+    }
+  }
+
   function field(label, control, hint) {
-    const f = el('div', 'field');
+    const f = el('div', 'field lvl-field');
     f.append(el('span', null, label));
     f.append(control);
     if (hint) f.append(el('p', 'hint', hint));
     return f;
   }
 
-  function numInput(value, opts = {}) {
+  function num(value, opts = {}) {
     const i = document.createElement('input');
     i.type = 'number';
+    i.className = 'lvl-input';
     if (opts.min != null) i.min = String(opts.min);
     if (opts.max != null) i.max = String(opts.max);
     if (opts.step != null) i.step = String(opts.step);
@@ -56,25 +66,42 @@
     return i;
   }
 
-  function multiSelect(label, selectedIds, options) {
-    const sel = document.createElement('select');
-    sel.multiple = true;
-    const list = options || [];
-    sel.size = Math.min(6, Math.max(3, list.length || 3));
-    const chosen = new Set(selectedIds || []);
-    for (const o of list) {
-      const opt = document.createElement('option');
-      opt.value = o.id || o.value;
-      opt.textContent = o.name || o.label || opt.value;
-      if (chosen.has(opt.value)) opt.selected = true;
-      sel.append(opt);
+  function selectOne(options, value, blank) {
+    const s = document.createElement('select');
+    s.className = 'lvl-input';
+    if (blank != null) {
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = blank;
+      s.append(o);
     }
-    const box = field(label, sel);
-    box._sel = sel;
-    return box;
+    for (const opt of options || []) {
+      const o = document.createElement('option');
+      o.value = opt.id || opt.value;
+      o.textContent = opt.name || opt.label || o.value;
+      if (String(o.value) === String(value || '')) o.selected = true;
+      s.append(o);
+    }
+    return s;
   }
 
-  function toggleRow(label, checked, hint) {
+  function multi(options, selectedIds) {
+    const s = document.createElement('select');
+    s.className = 'lvl-input';
+    s.multiple = true;
+    s.size = Math.min(5, Math.max(3, (options || []).length || 3));
+    const chosen = new Set(selectedIds || []);
+    for (const opt of options || []) {
+      const o = document.createElement('option');
+      o.value = opt.id || opt.value;
+      o.textContent = opt.name || opt.label || o.value;
+      if (chosen.has(o.value)) o.selected = true;
+      s.append(o);
+    }
+    return s;
+  }
+
+  function toggle(label, checked, hint) {
     const row = el('div', 'toggle');
     row.append(el('span', 'toggle-text', label));
     const input = document.createElement('input');
@@ -92,52 +119,53 @@
     return Number(n || 0).toLocaleString('en-US');
   }
 
-  function statChip(value, label) {
-    const c = el('div', 'lvl-chip');
-    c.append(el('strong', null, value));
-    c.append(el('span', null, label));
-    return c;
+  function selectedValues(sel) {
+    return [...(sel?.selectedOptions || [])].map(o => o.value).filter(Boolean);
   }
 
   function render() {
     const root = document.getElementById('leveling-root');
     if (!root) return;
-    const data = L();
+    const L = data();
     root.replaceChildren();
-
-    if (!data) {
+    if (!L) {
       root.append(el('p', 'muted', 'Leveling data unavailable. Enable Leveling & Ranks in Settings.'));
       return;
     }
 
-    const hero = el('div', 'panel lvl-hero');
-    const heroTop = el('div', 'lvl-hero-top');
-    heroTop.append(el('h2', null, 'Quantlab ranks'));
-    heroTop.append(el('span', data.enabled ? 'pill on' : 'pill off', data.enabled ? 'Live' : 'Paused'));
-    hero.append(heroTop);
-    hero.append(el('p', 'muted', 'Message XP · 15–25 per chat · 60s cooldown · cumulative role unlocks. Premium stays on Whop — never from XP.'));
+    const hero = el('div', 'panel');
+    const top = el('div', 'lvl-hero-top');
+    top.append(el('h2', null, 'Quantlab ranks'));
+    top.append(el('span', L.enabled ? 'pill on' : 'pill off', L.enabled ? 'Live' : 'Paused'));
+    hero.append(top);
+    hero.append(el('p', 'muted', '15–25 XP per message · 60s cooldown · roles stack. Premium is Whop only.'));
 
-    if (!data.tracked) {
+    if (!L.tracked) {
       const empty = el('div', 'lvl-empty');
-      empty.append(el('p', null, 'Tracking has not started yet.'));
-      empty.append(el('p', 'hint', 'As members chat in allowed channels, XP and the leaderboard appear here. No placeholder ranks.'));
+      empty.append(el('p', null, 'No XP tracked yet'));
+      empty.append(el('p', 'hint', 'Leaderboard stays empty until members earn XP after this reset. Legacy scores from the old engine were cleared.'));
       hero.append(empty);
     } else {
       const stats = el('div', 'lvl-stat-row');
-      stats.append(statChip(fmt(data.userCount), 'Members ranked'));
-      stats.append(statChip(fmt(data.totalEvents), 'XP grants'));
-      stats.append(statChip((data.xpMin || 15) + '–' + (data.xpMax || 25), 'XP / message'));
-      stats.append(statChip((data.cooldownSec || 60) + 's', 'Cooldown'));
+      const chip = (v, lab) => {
+        const c = el('div', 'lvl-chip');
+        c.append(el('strong', null, v));
+        c.append(el('span', null, lab));
+        return c;
+      };
+      stats.append(chip(fmt(L.userCount), 'Ranked'));
+      stats.append(chip(fmt(L.totalEvents), 'Grants'));
+      stats.append(chip((L.xpMin || 15) + '–' + (L.xpMax || 25), 'XP / msg'));
+      stats.append(chip((L.cooldownSec || 60) + 's', 'Cooldown'));
       hero.append(stats);
     }
     root.append(hero);
 
-    if (data.tracked && (data.leaderboard || []).length) {
+    if (L.tracked && (L.leaderboard || []).length) {
       const board = el('div', 'panel');
       board.append(el('h2', null, 'Leaderboard'));
-      board.append(el('p', 'hint', 'Total XP · level from the Quantlab curve.'));
       const list = el('ol', 'board lvl-board');
-      (data.leaderboard || []).forEach((u, i) => {
+      (L.leaderboard || []).forEach((u, i) => {
         const li = el('li');
         li.append(el('span', 'rank', String(i + 1)));
         const name = el('span', 'name', u.name || u.id);
@@ -152,43 +180,105 @@
 
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Role rewards'));
-    ranks.append(el('p', 'hint', 'Assigned at level, cumulative — lower ranks stay. Channel gates already live on Discord.'));
-    const ladder = el('div', 'lvl-ladder');
-    for (const r of (data.roleRewards || [])) {
-      const card = el('div', 'lvl-rank-card');
-      const left = el('div', 'lvl-rank-left');
-      left.append(el('span', 'tag', 'Lv ' + r.level));
-      left.append(el('strong', null, r.roleName || r.label));
-      card.append(left);
-      const right = el('div', 'lvl-rank-right');
-      right.append(el('span', 'lvl-xp-need', fmt(r.totalXp) + ' XP'));
-      card.append(right);
-      ladder.append(card);
-    }
-    ranks.append(ladder);
+    ranks.append(el('p', 'hint', 'Level → role. Cumulative — lower roles stay. Total XP follows the curve at that level.'));
 
-    if ((data.channelUnlocks || []).length) {
-      ranks.append(el('h2', null, 'Channel unlocks'));
-      ranks.append(el('p', 'hint', 'Permission gates on the server — XP only awards the roles that open them.'));
-      const unlocks = el('div', 'rows');
-      for (const u of data.channelUnlocks) {
-        const row = el('div', 'row');
-        row.append(el('span', 'k', u.name));
-        row.append(el('span', 'v dim', (u.roles || []).join(' · ') + (u.note ? ' · ' + u.note : '')));
-        unlocks.append(row);
-      }
-      ranks.append(unlocks);
+    const rewardRows = el('div', 'lvl-edit-list');
+    const rewardDraft = (L.roleRewards || []).map(r => ({
+      level: r.level, roleId: r.roleId, label: r.label || r.roleName || '',
+    }));
+
+    function paintRewards() {
+      rewardRows.replaceChildren();
+      rewardDraft.forEach((r, idx) => {
+        const card = el('div', 'lvl-edit-card');
+        const grid = el('div', 'lvl-edit-grid');
+        const iLevel = num(r.level, { min: 0, max: 500 });
+        iLevel.addEventListener('change', () => { rewardDraft[idx].level = Number(iLevel.value) || 0; });
+        const iRole = selectOne(L.roleOpts || [], r.roleId, 'Pick role…');
+        iRole.addEventListener('change', () => {
+          rewardDraft[idx].roleId = iRole.value;
+          const opt = (L.roleOpts || []).find(o => o.id === iRole.value);
+          if (opt) rewardDraft[idx].label = opt.name;
+        });
+        const xpHint = el('span', 'lvl-xp-need', fmt((() => {
+          let sum = 0, lv = Math.max(0, Number(r.level) || 0);
+          for (let n = 0; n < lv; n++) sum += 5 * n * n + 50 * n + 100;
+          return sum;
+        })()) + ' XP');
+        iLevel.addEventListener('input', () => {
+          const lv = Math.max(0, Number(iLevel.value) || 0);
+          let sum = 0;
+          for (let n = 0; n < lv; n++) sum += 5 * n * n + 50 * n + 100;
+          xpHint.textContent = fmt(sum) + ' XP';
+        });
+        grid.append(field('Level', iLevel));
+        grid.append(field('Role', iRole));
+        const meta = el('div', 'lvl-edit-meta');
+        meta.append(xpHint);
+        const rm = el('button', 'btn small', 'Remove');
+        rm.type = 'button';
+        rm.addEventListener('click', () => { rewardDraft.splice(idx, 1); paintRewards(); });
+        meta.append(rm);
+        card.append(grid);
+        card.append(meta);
+        rewardRows.append(card);
+      });
     }
+    paintRewards();
+    ranks.append(rewardRows);
+    const addReward = el('button', 'btn small', 'Add rank');
+    addReward.type = 'button';
+    addReward.addEventListener('click', () => { rewardDraft.push({ level: 0, roleId: '', label: '' }); paintRewards(); });
+    ranks.append(addReward);
     root.append(ranks);
+
+    const unlocks = el('div', 'panel');
+    unlocks.append(el('h2', null, 'Channel unlocks'));
+    unlocks.append(el('p', 'hint', 'Role → channel map for staff. Discord overwrites stay on the server.'));
+    const unlockRows = el('div', 'lvl-edit-list');
+    const unlockDraft = (L.channelUnlocks || []).map(u => ({
+      channelId: u.channelId || '', channelName: u.channelName || u.resolvedChannelName || '',
+      roleIds: [...(u.roleIds || [])], note: u.note || '',
+    }));
+    function paintUnlocks() {
+      unlockRows.replaceChildren();
+      unlockDraft.forEach((u, idx) => {
+        const card = el('div', 'lvl-edit-card');
+        const grid = el('div', 'lvl-edit-grid');
+        const iCh = selectOne(L.channelOpts || [], u.channelId, 'Pick channel…');
+        iCh.addEventListener('change', () => {
+          unlockDraft[idx].channelId = iCh.value;
+          const opt = (L.channelOpts || []).find(o => o.id === iCh.value);
+          if (opt) unlockDraft[idx].channelName = opt.name;
+        });
+        const iRoles = multi(L.roleOpts || [], u.roleIds);
+        iRoles.addEventListener('change', () => { unlockDraft[idx].roleIds = selectedValues(iRoles); });
+        grid.append(field('Channel', iCh));
+        grid.append(field('Roles that pass', iRoles, 'Multi-select'));
+        card.append(grid);
+        const rm = el('button', 'btn small', 'Remove');
+        rm.type = 'button';
+        rm.addEventListener('click', () => { unlockDraft.splice(idx, 1); paintUnlocks(); });
+        card.append(rm);
+        unlockRows.append(card);
+      });
+    }
+    paintUnlocks();
+    unlocks.append(unlockRows);
+    const addUnlock = el('button', 'btn small', 'Add unlock');
+    addUnlock.type = 'button';
+    addUnlock.addEventListener('click', () => { unlockDraft.push({ channelId: '', channelName: '', roleIds: [], note: '' }); paintUnlocks(); });
+    unlocks.append(addUnlock);
+    root.append(unlocks);
 
     const curve = el('div', 'panel');
     curve.append(el('h2', null, 'Level curve'));
-    curve.append(el('p', 'hint', data.formula || 'xp_to_next(n) = 5n² + 50n + 100'));
+    curve.append(el('p', 'hint', L.formula || 'xp_to_next(n) = 5n² + 50n + 100'));
     const table = el('div', 'lvl-curve-table');
-    for (const row of (data.curveTable || [])) {
+    for (const row of (L.curveTable || [])) {
       const r = el('div', 'row');
       r.append(el('span', 'k', 'Level ' + row.level));
-      r.append(el('span', 'v', fmt(row.totalXp) + ' XP total'));
+      r.append(el('span', 'v', fmt(row.totalXp) + ' XP'));
       table.append(r);
     }
     curve.append(table);
@@ -196,36 +286,31 @@
 
     const cfg = el('div', 'panel');
     cfg.append(el('h2', null, 'XP settings'));
-    cfg.append(el('p', 'hint', 'MEE6-style rates. First qualifying message in each cooldown window earns XP.'));
-
-    const en = toggleRow('Engine enabled', data.enabled);
+    cfg.append(el('p', 'hint', 'First qualifying message in each cooldown window earns XP.'));
+    const en = toggle('Engine enabled', L.enabled);
     cfg.append(en);
-
     const rateGrid = el('div', 'lvl-nums');
-    const iMin = numInput(data.xpMin, { min: 1, max: 100 });
-    const iMax = numInput(data.xpMax, { min: 1, max: 200 });
-    const iCd = numInput(data.cooldownSec, { min: 0, max: 3600 });
-    const iLen = numInput(data.minMessageLength, { min: 0, max: 50 });
+    const iMin = num(L.xpMin, { min: 1, max: 100 });
+    const iMax = num(L.xpMax, { min: 1, max: 200 });
+    const iCd = num(L.cooldownSec, { min: 0, max: 3600 });
+    const iLen = num(L.minMessageLength, { min: 0, max: 50 });
     iMin.addEventListener('change', () => { if (Number(iMin.value) > Number(iMax.value)) iMax.value = iMin.value; });
     iMax.addEventListener('change', () => { if (Number(iMax.value) < Number(iMin.value)) iMin.value = iMax.value; });
     rateGrid.append(field('Min XP', iMin));
     rateGrid.append(field('Max XP', iMax));
     rateGrid.append(field('Cooldown (sec)', iCd));
-    rateGrid.append(field('Min message length', iLen, '0 = any length'));
+    rateGrid.append(field('Min length', iLen, '0 = any'));
     cfg.append(rateGrid);
-
-    const emoji = toggleRow('Ignore emoji-only messages', data.ignoreEmojiOnly !== false, 'Pure emoji / sticker spam earns nothing.');
+    const emoji = toggle('Ignore emoji-only', L.ignoreEmojiOnly !== false, 'Emoji-only messages earn nothing.');
     cfg.append(emoji);
-
-    const iWeekend = numInput(data.weekendBoost ?? 1, { min: 1, max: 5, step: 0.1 });
-    cfg.append(field('Weekend boost', iWeekend, '1 = off · 2 = double XP Sat/Sun (UTC)'));
-
+    const iWeekend = num(L.weekendBoost ?? 1, { min: 1, max: 5, step: 0.1 });
+    cfg.append(field('Weekend boost', iWeekend, '1 = off · 2 = 2× Sat/Sun UTC'));
     cfg.append(el('h2', null, 'Exclusions'));
-    cfg.append(el('p', 'hint', 'No-XP channels and roles never earn. Use for bot-commands, logs, mute.'));
-    const chNo = multiSelect('No-XP channels', data.noXpChannelIds, data.channelOpts || []);
-    const roleNo = multiSelect('No-XP roles', data.noXpRoleIds, data.roleOpts || []);
+    const chNo = multi(L.channelOpts || [], L.noXpChannelIds);
+    const roleNo = multi(L.roleOpts || [], L.noXpRoleIds);
     const excl = el('div', 'lvl-channel-grid');
-    excl.append(chNo, roleNo);
+    excl.append(field('No-XP channels', chNo));
+    excl.append(field('No-XP roles', roleNo));
     cfg.append(excl);
 
     const actions = el('div', 'actions');
@@ -234,51 +319,64 @@
     save.addEventListener('click', async () => {
       save.disabled = true;
       try {
-        const selected = (box) => [...(box._sel?.selectedOptions || [])].map(o => o.value);
         const body = {
           enabled: !!en._input?.checked,
-          xpMin: Number(iMin.value),
-          xpMax: Number(iMax.value),
-          cooldownSec: Number(iCd.value),
-          minMessageLength: Number(iLen.value),
+          xpMin: Number(iMin.value), xpMax: Number(iMax.value),
+          cooldownSec: Number(iCd.value), minMessageLength: Number(iLen.value),
           ignoreEmojiOnly: !!emoji._input?.checked,
           weekendBoost: Number(iWeekend.value) || 1,
-          noXpChannelIds: selected(chNo),
-          noXpRoleIds: selected(roleNo),
+          noXpChannelIds: selectedValues(chNo), noXpRoleIds: selectedValues(roleNo),
+          roleRewards: rewardDraft.filter(r => r.roleId),
+          channelUnlocks: unlockDraft.filter(u => u.channelId || u.channelName),
         };
         const res = await writeLeveling(body);
-        if (!res) throw new Error('empty_response');
-        if (res.error) throw Object.assign(new Error(res.error), { data: res });
-        if (res.overview) state.overview = res.overview;
-        if (res.levels) {
-          if (!state.overview) state.overview = {};
-          if (!state.overview.features) state.overview.features = {};
-          state.overview.features.levels = res.levels;
-        }
+        if (!res || res.error) throw Object.assign(new Error(res?.error || 'empty'), { data: res });
+        applyResult(res);
         render();
-        if (typeof toast === 'function') toast('Changes saved — XP rates live.', 'good');
+        if (typeof toast === 'function') toast('Changes saved.', 'good');
         save.textContent = 'Saved';
-        setTimeout(() => { save.textContent = 'Save changes'; }, 1600);
+        setTimeout(() => { save.textContent = 'Save changes'; }, 1400);
       } catch (e) {
-        console.error('[leveling save]', e, e?.data);
-        const detail = e?.data?.detail || e?.data?.error || e?.message || 'unknown';
-        if (typeof toast === 'function') toast('Could not save — ' + detail, 'bad');
-      } finally {
-        save.disabled = false;
-      }
+        console.error('[leveling save]', e);
+        if (typeof toast === 'function') toast('Could not save — ' + (e?.data?.detail || e.message), 'bad');
+      } finally { save.disabled = false; }
     });
     actions.append(save);
+
+    const reset = el('button', 'btn', 'Reset all XP');
+    reset.type = 'button';
+    reset.addEventListener('click', async () => {
+      if (typeof askConfirm === 'function') {
+        const ok = await askConfirm({
+          title: 'Reset all XP?',
+          message: 'Every member XP and the leaderboard are cleared. Roles already assigned are not removed.',
+          confirmLabel: 'Reset XP', danger: true,
+        });
+        if (!ok) return;
+      } else if (!confirm('Reset all XP?')) return;
+      reset.disabled = true;
+      try {
+        const res = await writeLeveling({ op: 'reset' });
+        if (!res || res.error) throw Object.assign(new Error(res?.error || 'fail'), { data: res });
+        applyResult(res);
+        render();
+        if (typeof toast === 'function') toast('Leaderboard cleared — tracking starts fresh.', 'good');
+      } catch (e) {
+        if (typeof toast === 'function') toast('Reset failed — ' + (e?.data?.detail || e.message), 'bad');
+      } finally { reset.disabled = false; }
+    });
+    actions.append(reset);
     cfg.append(actions);
     root.append(cfg);
 
-    if (data.tracked && (data.recentEvents || []).length) {
+    if (L.tracked && (L.recentEvents || []).length) {
       const ev = el('div', 'panel');
       ev.append(el('h2', null, 'Recent XP'));
       const list = el('div', 'rows');
-      for (const e of data.recentEvents.slice(0, 15)) {
+      for (const e of L.recentEvents.slice(0, 12)) {
         const row = el('div', 'row');
-        row.append(el('span', 'k', (e.name || e.userId || '?') + (e.mult ? ' · ×' + e.mult : '')));
-        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' XP · L' + (e.level ?? '—')));
+        row.append(el('span', 'k', e.name || e.userId || '?'));
+        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' · L' + (e.level ?? '—')));
         list.append(row);
       }
       ev.append(list);
@@ -288,16 +386,14 @@
 
   function boot() {
     const tryRender = () => {
-      if (!document.getElementById('leveling-root')) return;
-      if (!window.state?.overview) return;
+      if (!document.getElementById('leveling-root') || !window.state?.overview) return;
       render();
     };
     document.addEventListener('panel-overview', tryRender);
     const obs = new MutationObserver(() => {
-      const sec = document.querySelector('.section[data-section="leveling"][data-active]');
-      if (sec) tryRender();
+      if (document.querySelector('.section[data-section="leveling"][data-active]')) tryRender();
     });
-    if (document.body) obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-active', 'data-state', 'data-section'] });
+    if (document.body) obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-active'] });
     window.renderLeveling = render;
     const prev = window.showSection;
     if (typeof prev === 'function') {
@@ -307,7 +403,7 @@
         return r;
       };
     }
-    setTimeout(tryRender, 800);
+    setTimeout(tryRender, 600);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
