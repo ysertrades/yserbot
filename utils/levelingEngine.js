@@ -331,8 +331,71 @@ function panelSnapshot(guildId, guild) {
   };
 }
 
+function progressFromXp(totalXp) {
+  const level = levelFromXp(totalXp);
+  const floor = totalXpForLevel(level);
+  const need = xpToNext(level);
+  const into = Math.max(0, Math.floor(totalXp) - floor);
+  return { level, into, need, totalXp: Math.max(0, Math.floor(totalXp)) };
+}
+
+function getUserRank(guildId, userId) {
+  const { g } = guildState(guildId);
+  const u = (g.users || {})[userId] || { xp: 0, level: 0 };
+  const prog = progressFromXp(u.xp);
+  const rows = Object.entries(g.users || {})
+    .map(([id, row]) => ({ id, xp: Number(row.xp) || 0 }))
+    .filter(r => r.xp > 0)
+    .sort((a, b) => b.xp - a.xp);
+  const idx = rows.findIndex(r => r.id === userId);
+  return {
+    mode: 'mee6',
+    tracked: rows.length,
+    rank: idx >= 0 ? idx + 1 : null,
+    user: {
+      level: prog.level,
+      xp: prog.into,
+      neededXp: prog.need,
+      totalXp: prog.totalXp,
+      messages: 0,
+    },
+  };
+}
+
+function getLeaderboard(guildId, limit = 15) {
+  const { g } = guildState(guildId);
+  return Object.entries(g.users || {})
+    .map(([id, u]) => {
+      const prog = progressFromXp(u.xp);
+      return { id, level: prog.level, totalXp: prog.totalXp };
+    })
+    .filter(r => r.totalXp > 0)
+    .sort((a, b) => b.totalXp - a.totalXp || b.level - a.level)
+    .slice(0, limit);
+}
+
+function resetUser(guildId, userId) {
+  const { all, g } = guildState(guildId);
+  if (!g.users[userId]) return { ok: true, missing: true };
+  delete g.users[userId];
+  all[guildId] = g;
+  saveAll(all);
+  return { ok: true };
+}
+
+function setUserLevel(guildId, userId, level) {
+  const target = Math.max(0, Math.min(500, Math.floor(Number(level) || 0)));
+  const xp = totalXpForLevel(target);
+  const { all, g } = guildState(guildId);
+  g.users[userId] = { xp, level: target, lastXpAt: 0 };
+  all[guildId] = g;
+  saveAll(all);
+  return { ok: true, userId, level: target, xp };
+}
+
 module.exports = {
   handleMessage, processMessage: handleMessage, handleThreadCreate,
   panelSnapshot, saveConfig, manualXp, resetAllXp,
+  getUserRank, getLeaderboard, resetUser, setUserLevel,
   xpToNext, totalXpForLevel, levelFromXp, SCHEMA,
 };
