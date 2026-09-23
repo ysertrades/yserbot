@@ -138,7 +138,7 @@
     top.append(el('h2', null, 'Quantlab ranks'));
     top.append(el('span', L.enabled ? 'pill on' : 'pill off', L.enabled ? 'Live' : 'Paused'));
     hero.append(top);
-    hero.append(el('p', 'muted', '15–25 XP per message · 60s cooldown · roles stack. Premium is Whop only.'));
+    hero.append(el('p', 'muted', 'Chat XP · configurable curve · roles stack. Premium is Whop only.'));
 
     if (!L.tracked) {
       const empty = el('div', 'lvl-empty');
@@ -178,39 +178,56 @@
       root.append(board);
     }
 
-    const ranks = el('div', 'panel');
-    ranks.append(el('h2', null, 'Role rewards'));
-    ranks.append(el('p', 'hint', 'Level → role. Cumulative — lower roles stay. Total XP follows the curve at that level.'));
+    const curve = el('div', 'panel');
+    curve.append(el('h2', null, 'Level curve'));
+    curve.append(el('p', 'hint', 'Base XP is what level 0→1 costs. Multiplier scales each next step (×1 = flat, ×1.5 = 50% more each level).'));
+    const curveGrid = el('div', 'lvl-nums');
+    const iBase = num(L.curveBase ?? 100, { min: 10, max: 50000, step: 10 });
+    const iMult = num(L.curveMult ?? 1.5, { min: 1, max: 3, step: 0.01 });
+    curveGrid.append(field('Base XP', iBase, 'XP to finish level 0'));
+    curveGrid.append(field('Level multiplier', iMult, 'Next level cost × this'));
+    curve.append(curveGrid);
 
-    const rewardRows = el('div', 'lvl-edit-list');
-    const rewardDraft = (L.roleRewards || []).map(r => ({
-      level: r.level, roleId: r.roleId, label: r.label || r.roleName || '',
-    }));
-
+    const preview = el('div', 'lvl-curve-table');
+    function stepXp(n, base, mult) {
+      const b = Math.max(10, Number(base) || 100);
+      const m = Math.max(1, Number(mult) || 1);
+      if (m === 1) return Math.round(b);
+      return Math.max(1, Math.round(b * Math.pow(m, n)));
+    }
+    function totalFor(Lv, base, mult) {
+      let s = 0;
+      for (let n = 0; n < Lv; n++) s += stepXp(n, base, mult);
+      return s;
+    }
+    function paintPreview() {
+      preview.replaceChildren();
+      const b = Number(iBase.value) || 100;
+      const m = Number(iMult.value) || 1;
+      for (const lv of [1, 5, 15, 30, 50]) {
+        const r = el('div', 'row');
+        r.append(el('span', 'k', 'Level ' + lv));
+        r.append(el('span', 'v', fmt(totalFor(lv, b, m)) + ' XP total · ' + fmt(stepXp(lv - 1, b, m)) + ' / step'));
+        preview.append(r);
+      }
+    }
     function paintRewards() {
       rewardRows.replaceChildren();
+      const b = Number(iBase.value) || 100;
+      const m = Number(iMult.value) || 1;
       rewardDraft.forEach((r, idx) => {
         const card = el('div', 'lvl-edit-card');
         const grid = el('div', 'lvl-edit-grid');
         const iLevel = num(r.level, { min: 0, max: 500 });
-        iLevel.addEventListener('change', () => { rewardDraft[idx].level = Number(iLevel.value) || 0; });
+        iLevel.addEventListener('change', () => { rewardDraft[idx].level = Number(iLevel.value) || 0; paintRewards(); });
         const iRole = selectOne(L.roleOpts || [], r.roleId, 'Pick role…');
         iRole.addEventListener('change', () => {
           rewardDraft[idx].roleId = iRole.value;
           const opt = (L.roleOpts || []).find(o => o.id === iRole.value);
           if (opt) rewardDraft[idx].label = opt.name;
         });
-        const xpHint = el('span', 'lvl-xp-need', fmt((() => {
-          let sum = 0, lv = Math.max(0, Number(r.level) || 0);
-          for (let n = 0; n < lv; n++) sum += 5 * n * n + 50 * n + 100;
-          return sum;
-        })()) + ' XP');
-        iLevel.addEventListener('input', () => {
-          const lv = Math.max(0, Number(iLevel.value) || 0);
-          let sum = 0;
-          for (let n = 0; n < lv; n++) sum += 5 * n * n + 50 * n + 100;
-          xpHint.textContent = fmt(sum) + ' XP';
-        });
+        const lv = Math.max(0, Number(r.level) || 0);
+        const xpHint = el('span', 'lvl-xp-need', fmt(totalFor(lv, b, m)) + ' XP to reach');
         grid.append(field('Level', iLevel));
         grid.append(field('Role', iRole));
         const meta = el('div', 'lvl-edit-meta');
@@ -224,6 +241,21 @@
         rewardRows.append(card);
       });
     }
+    paintPreview();
+    iBase.addEventListener('input', () => { paintPreview(); paintRewards(); });
+    iMult.addEventListener('input', () => { paintPreview(); paintRewards(); });
+    curve.append(preview);
+    root.append(curve);
+
+    const ranks = el('div', 'panel');
+    ranks.append(el('h2', null, 'Role rewards'));
+    ranks.append(el('p', 'hint', 'Level → role. Cumulative — lower roles stay. Total XP uses the curve above.'));
+
+    const rewardRows = el('div', 'lvl-edit-list');
+    const rewardDraft = (L.roleRewards || []).map(r => ({
+      level: r.level, roleId: r.roleId, label: r.label || r.roleName || '',
+    }));
+
     paintRewards();
     ranks.append(rewardRows);
     const addReward = el('button', 'btn small', 'Add rank');
@@ -234,11 +266,13 @@
 
     const unlocks = el('div', 'panel');
     unlocks.append(el('h2', null, 'Channel unlocks'));
-    unlocks.append(el('p', 'hint', 'Role → channel map for staff. Discord overwrites stay on the server.'));
+    unlocks.append(el('p', 'hint', 'Which roles open which channels (gates live on Discord — this is your map).'));
     const unlockRows = el('div', 'lvl-edit-list');
     const unlockDraft = (L.channelUnlocks || []).map(u => ({
-      channelId: u.channelId || '', channelName: u.channelName || u.resolvedChannelName || '',
-      roleIds: [...(u.roleIds || [])], note: u.note || '',
+      channelId: u.channelId || '',
+      channelName: u.channelName || u.resolvedChannelName || '',
+      roleIds: [...(u.roleIds || [])],
+      note: u.note || '',
     }));
     function paintUnlocks() {
       unlockRows.replaceChildren();
@@ -254,11 +288,11 @@
         const iRoles = multi(L.roleOpts || [], u.roleIds);
         iRoles.addEventListener('change', () => { unlockDraft[idx].roleIds = selectedValues(iRoles); });
         grid.append(field('Channel', iCh));
-        grid.append(field('Roles that pass', iRoles, 'Multi-select'));
-        card.append(grid);
+        grid.append(field('Roles that unlock', iRoles));
         const rm = el('button', 'btn small', 'Remove');
         rm.type = 'button';
         rm.addEventListener('click', () => { unlockDraft.splice(idx, 1); paintUnlocks(); });
+        card.append(grid);
         card.append(rm);
         unlockRows.append(card);
       });
@@ -271,19 +305,6 @@
     unlocks.append(addUnlock);
     root.append(unlocks);
 
-    const curve = el('div', 'panel');
-    curve.append(el('h2', null, 'Level curve'));
-    curve.append(el('p', 'hint', L.formula || 'xp_to_next(n) = 5n² + 50n + 100'));
-    const table = el('div', 'lvl-curve-table');
-    for (const row of (L.curveTable || [])) {
-      const r = el('div', 'row');
-      r.append(el('span', 'k', 'Level ' + row.level));
-      r.append(el('span', 'v', fmt(row.totalXp) + ' XP'));
-      table.append(r);
-    }
-    curve.append(table);
-    root.append(curve);
-
     const cfg = el('div', 'panel');
     cfg.append(el('h2', null, 'XP settings'));
     cfg.append(el('p', 'hint', 'First qualifying message in each cooldown window earns XP.'));
@@ -293,18 +314,15 @@
     const iMin = num(L.xpMin, { min: 1, max: 100 });
     const iMax = num(L.xpMax, { min: 1, max: 200 });
     const iCd = num(L.cooldownSec, { min: 0, max: 3600 });
-    const iLen = num(L.minMessageLength, { min: 0, max: 50 });
     iMin.addEventListener('change', () => { if (Number(iMin.value) > Number(iMax.value)) iMax.value = iMin.value; });
     iMax.addEventListener('change', () => { if (Number(iMax.value) < Number(iMin.value)) iMin.value = iMax.value; });
-    rateGrid.append(field('Min XP', iMin));
-    rateGrid.append(field('Max XP', iMax));
+    rateGrid.append(field('Min XP / msg', iMin));
+    rateGrid.append(field('Max XP / msg', iMax));
     rateGrid.append(field('Cooldown (sec)', iCd));
-    rateGrid.append(field('Min length', iLen, '0 = any'));
-    cfg.append(rateGrid);
-    const emoji = toggle('Ignore emoji-only', L.ignoreEmojiOnly !== false, 'Emoji-only messages earn nothing.');
-    cfg.append(emoji);
     const iWeekend = num(L.weekendBoost ?? 1, { min: 1, max: 5, step: 0.1 });
-    cfg.append(field('Weekend boost', iWeekend, '1 = off · 2 = 2× Sat/Sun UTC'));
+    rateGrid.append(field('Weekend boost', iWeekend, '1 = off'));
+    cfg.append(rateGrid);
+
     cfg.append(el('h2', null, 'Exclusions'));
     const chNo = multi(L.channelOpts || [], L.noXpChannelIds);
     const roleNo = multi(L.roleOpts || [], L.noXpRoleIds);
@@ -321,11 +339,14 @@
       try {
         const body = {
           enabled: !!en._input?.checked,
-          xpMin: Number(iMin.value), xpMax: Number(iMax.value),
-          cooldownSec: Number(iCd.value), minMessageLength: Number(iLen.value),
-          ignoreEmojiOnly: !!emoji._input?.checked,
+          xpMin: Number(iMin.value),
+          xpMax: Number(iMax.value),
+          cooldownSec: Number(iCd.value),
+          curveBase: Number(iBase.value) || 100,
+          curveMult: Number(iMult.value) || 1,
           weekendBoost: Number(iWeekend.value) || 1,
-          noXpChannelIds: selectedValues(chNo), noXpRoleIds: selectedValues(roleNo),
+          noXpChannelIds: selectedValues(chNo),
+          noXpRoleIds: selectedValues(roleNo),
           roleRewards: rewardDraft.filter(r => r.roleId),
           channelUnlocks: unlockDraft.filter(u => u.channelId || u.channelName),
         };
@@ -376,7 +397,7 @@
       for (const e of L.recentEvents.slice(0, 12)) {
         const row = el('div', 'row');
         row.append(el('span', 'k', e.name || e.userId || '?'));
-        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' · L' + (e.level ?? '—')));
+        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' · L' + (e.level ?? '—'));
         list.append(row);
       }
       ev.append(list);
