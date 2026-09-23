@@ -7,8 +7,11 @@ const commands = [];
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
+const SKIP_COMMAND_FOLDERS = new Set(['_disabled']);
 for (const folder of commandFolders) {
+    if (SKIP_COMMAND_FOLDERS.has(folder)) continue;
     const commandsPath = path.join(foldersPath, folder);
+    if (!fs.statSync(commandsPath).isDirectory()) continue;
     const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
     for (const file of commandFiles) {
         const filePath = path.join(commandsPath, file);
@@ -25,7 +28,6 @@ const rest = new REST().setToken(process.env.TOKEN);
     try {
         console.log(`Started refreshing ${commands.length} global application (/) commands.`);
 
-        // GLOBAL commands - works in ALL servers
         const data = await rest.put(
             Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands },

@@ -22,13 +22,6 @@ client.commands = new Collection();
 client.cooldowns = new Collection();
 configureErrorReporter(client);
 
-// ── Connection resilience ────────────────────────────────
-// discord.js retries dropped gateway connections on its own, but without
-// these listeners a drop/resume is invisible and, if something inside a
-// handler throws unexpectedly, an unhandled error/rejection would otherwise
-// kill the whole process (looking "offline" until the workflow is restarted
-// by hand). Logging here plus process-level safety nets below keep the bot
-// alive and give us a trail to diagnose the next time it happens.
 client.on('error', (err) => reportAndLog(err, { area: 'Discord client' }));
 client.on('shardError', (err, shardId) => reportAndLog(err, { area: 'Discord shard', shardId }));
 client.on('warn', (info) => console.warn('[CLIENT WARN]', info));
@@ -39,18 +32,17 @@ client.on('shardResume', (shardId, replayed) => console.log(`[SHARD ${shardId} R
 process.on('unhandledRejection', (err) => reportAndLog(err, { area: 'Unhandled promise rejection' }));
 process.on('uncaughtException', (err) => {
   reportAndLog(err, { area: 'Uncaught exception' });
-  // Stay alive only long enough to flush logs, then exit so the host restarts
-  // a clean process instead of running in an unknown half-broken state.
   setTimeout(() => process.exit(1), 1000).unref?.();
 });
 
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
-const SKIP_COMMAND_FOLDERS = new Set(); // economy restored
+const SKIP_COMMAND_FOLDERS = new Set(['_disabled']); // shelved mid-rewrite — not loaded
 for (const folder of commandFolders) {
     if (SKIP_COMMAND_FOLDERS.has(folder)) continue;
     const commandsPath = path.join(foldersPath, folder);
+    if (!fs.statSync(commandsPath).isDirectory()) continue;
     const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
     for (const file of commandFiles) {
         const filePath = path.join(commandsPath, file);
@@ -76,18 +68,10 @@ for (const file of eventFiles) {
     }
 }
 
-// Connect to MongoDB (warm the cache) before logging into Discord so every
-// command handler has storage available from the very first interaction.
 (async () => {
   await connectMongo(process.env.MONGODB_URI);
-  // Draw the embed-template images once now, while nothing is waiting on the
-  // bot. Each render blocks the thread for 60-210 ms, so paying for all seven
-  // here keeps that stall out of every later interaction.
   await warmRenderCache();
 
-  // The panel reads the bot's live guild list, so it starts once the gateway
-  // is up. Wrapped because nothing about the web server is worth taking the
-  // bot offline for — if it can't start, the bot still runs Discord normally.
   client.once(Events.ClientReady, () => {
     try {
       startPanel(client);
