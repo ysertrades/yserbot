@@ -1,7 +1,7 @@
 'use strict';
 /**
- * QuantLab Leveling tab — contribution XP analytics & config (spec §07).
- * Loads after app.js; safe if section missing.
+ * QuantLab Leveling tab — contribution XP analytics & config.
+ * Matches control-panel field / panel / actions patterns.
  */
 (function () {
   function el(tag, cls, text) {
@@ -10,18 +10,16 @@
     if (text != null) n.textContent = text;
     return n;
   }
+
   function levels() {
     try { return state?.overview?.features?.levels || null; } catch { return null; }
   }
+
   function channelOpts() {
     const t = levels();
     return (t && t.channelOpts) || [];
   }
 
-  /**
-   * Write path: the panel shell exposes global `post(op, body, opts)`.
-   * Never call a missing api()/postGuild() — that always fails with "Save failed".
-   */
   async function writeLeveling(body) {
     const runner =
       (typeof window !== 'undefined' && typeof window.post === 'function' && window.post) ||
@@ -31,9 +29,7 @@
       const csrf = (typeof state !== 'undefined' && state?.csrf) || '';
       if (!guildId) throw new Error('no_guild');
       const headers = { 'content-type': 'application/json', 'x-csrf-token': csrf };
-      try {
-        if (typeof authHeaders === 'function') Object.assign(headers, authHeaders());
-      } catch {}
+      try { if (typeof authHeaders === 'function') Object.assign(headers, authHeaders()); } catch {}
       const res = await fetch(`/api/guild/${guildId}/leveling`, {
         method: 'POST', credentials: 'same-origin', headers,
         body: JSON.stringify(body || {}),
@@ -49,13 +45,30 @@
     return runner('leveling', body, { quiet: true });
   }
 
+  function field(label, control) {
+    const f = el('div', 'field');
+    f.append(el('span', null, label));
+    f.append(control);
+    return f;
+  }
+
+  function numInput(value, { min = 0, max = 99999, step = 1 } = {}) {
+    const i = document.createElement('input');
+    i.type = 'number';
+    i.min = String(min);
+    i.max = String(max);
+    i.step = String(step);
+    i.value = value == null || Number.isNaN(Number(value)) ? min : Number(value);
+    return i;
+  }
+
   function multiSelect(label, values, opts, kindFilter) {
-    const box = el('div', 'field');
-    box.append(el('label', null, label));
     const sel = document.createElement('select');
     sel.multiple = true;
-    const list = kindFilter ? opts.filter(o => o.kind === kindFilter || kindFilter === 'any') : opts;
-    sel.size = Math.min(7, Math.max(3, list.length || 3));
+    const list = kindFilter
+      ? opts.filter(o => o.kind === kindFilter || kindFilter === 'any')
+      : opts;
+    sel.size = Math.min(6, Math.max(3, list.length || 3));
     const chosen = new Set(values || []);
     for (const o of list) {
       const opt = document.createElement('option');
@@ -64,25 +77,43 @@
       if (chosen.has(opt.value)) opt.selected = true;
       sel.append(opt);
     }
-    box.append(sel);
+    const box = field(label, sel);
     box._sel = sel;
     return box;
   }
 
-  function weightRow(key, label, w) {
-    const row = el('div', 'lvl-weight-row');
-    row.append(el('span', 'lvl-weight-key', label));
-    const min = document.createElement('input');
-    min.type = 'number'; min.min = 0; min.max = 500; min.value = w?.xpMin ?? 0;
-    min.dataset.k = key; min.dataset.f = 'xpMin';
-    const max = document.createElement('input');
-    max.type = 'number'; max.min = 0; max.max = 500; max.value = w?.xpMax ?? 0;
-    max.dataset.k = key; max.dataset.f = 'xpMax';
-    const cd = document.createElement('input');
-    cd.type = 'number'; cd.min = 0; cd.max = 86400; cd.value = Math.round((w?.cooldownMs || 0) / 1000);
-    cd.dataset.k = key; cd.dataset.f = 'cooldownSec';
-    row.append(el('span', 'hint', 'min'), min, el('span', 'hint', 'max'), max, el('span', 'hint', 'cd s'), cd);
-    return row;
+  function weightCard(key, label, w, hint) {
+    const card = el('div', 'lvl-weight-card');
+    const head = el('div', 'field-head');
+    head.append(el('span', null, label));
+    if (hint) head.append(el('span', 'count', hint));
+    card.append(head);
+
+    const min = Number(w?.xpMin ?? 0);
+    const max = Number(w?.xpMax ?? 0);
+    const cdSec = Math.round((w?.cooldownMs || 0) / 1000);
+
+    const grid = el('div', 'lvl-weight-grid');
+    const iMin = numInput(Math.min(min, max || min), { min: 0, max: 500 });
+    const iMax = numInput(Math.max(min, max), { min: 0, max: 500 });
+    const iCd = numInput(cdSec, { min: 0, max: 86400 });
+
+    iMin.dataset.k = key; iMin.dataset.f = 'xpMin';
+    iMax.dataset.k = key; iMax.dataset.f = 'xpMax';
+    iCd.dataset.k = key; iCd.dataset.f = 'cooldownSec';
+
+    iMin.addEventListener('change', () => {
+      if (Number(iMin.value) > Number(iMax.value)) iMax.value = iMin.value;
+    });
+    iMax.addEventListener('change', () => {
+      if (Number(iMax.value) < Number(iMin.value)) iMin.value = iMax.value;
+    });
+
+    grid.append(field('Min XP', iMin));
+    grid.append(field('Max XP', iMax));
+    grid.append(field('Cooldown (sec)', iCd));
+    card.append(grid);
+    return card;
   }
 
   function compositionBars(comp) {
@@ -119,11 +150,11 @@
       li.append(el('span', 'rank', String(i + 1)));
       li.append(el('span', 'name', u.id));
       const meta = el('span', 'bal');
-      meta.textContent = xpKey === 'streak' ? (u.journalStreak + 'd')
-        : xpKey === 'charts' ? (u.chartCount + ' charts')
-        : xpKey === 'verified' ? (u.verifiedCount + ' verified')
-        : xpKey === 'help' ? (u.commentXp + ' help XP')
-        : (u.xp + ' XP · L' + u.level);
+      meta.textContent = xpKey === 'streak' ? ((u.journalStreak || 0) + 'd')
+        : xpKey === 'charts' ? ((u.chartCount || 0) + ' charts')
+        : xpKey === 'verified' ? ((u.verifiedCount || 0) + ' verified')
+        : xpKey === 'help' ? ((u.commentXp || 0) + ' help XP')
+        : ((u.xp || 0) + ' XP · L' + (u.level || 1));
       li.append(meta);
       list.append(li);
     });
@@ -131,6 +162,17 @@
     panel.append(list);
     return panel;
   }
+
+  const WEIGHT_HINTS = {
+    chat: 'Near-zero floor — anti-spam',
+    ontopic: 'Trade vocab or ticker signal',
+    chart: 'Image in trading channel',
+    idea: 'Structured setup write-up',
+    quantlab_verified: 'Trade id / QuantLab card',
+    quantlab_unverified: 'QuantLab markers, no id',
+    journal: 'Owner posts in own thread',
+    comment: 'Help in someone else’s journal',
+  };
 
   function render() {
     const root = document.getElementById('leveling-root');
@@ -146,7 +188,7 @@
     head.append(el('h2', null, 'Contribution engine'));
     head.append(el('p', 'muted', 'Detection first, then weight. Chat is a floor. Verified QuantLab shares, charts, structured ideas, and owned journal posts move the rank curve.'));
     const toggles = el('div', 'lvl-status-row');
-    toggles.append(el('span', L.enabled ? 'pill on' : 'pill off', L.enabled ? 'ENGINE ON' : 'ENGINE OFF'));
+    toggles.append(el('span', L.enabled ? 'pill on' : 'pill off', L.enabled ? 'Engine on' : 'Engine off'));
     toggles.append(el('span', 'tag', (L.totalEvents || 0) + ' events'));
     toggles.append(el('span', 'tag', (L.events7d || 0) + ' this week'));
     toggles.append(el('span', 'tag', (L.journalThreadCount || 0) + ' journal threads'));
@@ -155,7 +197,7 @@
 
     const comp = el('div', 'panel');
     comp.append(el('h2', null, '7-day XP composition'));
-    comp.append(el('p', 'hint', 'Stacked view of what the community is actually earning — quality vs chatter.'));
+    comp.append(el('p', 'hint', 'What the community is actually earning — quality vs chatter.'));
     comp.append(compositionBars(L.composition7d));
     root.append(comp);
 
@@ -170,41 +212,45 @@
 
     const cfg = el('div', 'panel');
     cfg.append(el('h2', null, 'Live config'));
-    cfg.append(el('p', 'muted', 'Weights and channels write a config version so retunes show on the timeline.'));
+    cfg.append(el('p', 'hint', 'Curve, ceiling, and channel routing. Saves write a config version for the audit trail.'));
 
     const en = el('label', 'field');
     const enChk = document.createElement('input');
-    enChk.type = 'checkbox'; enChk.checked = !!L.enabled;
+    enChk.type = 'checkbox';
+    enChk.checked = !!L.enabled;
     en.append(enChk, document.createTextNode(' Engine enabled'));
     cfg.append(en);
 
     const nums = el('div', 'lvl-nums');
-    function numField(label, val, key) {
-      const f = el('label', 'field');
-      f.append(el('span', null, label));
-      const i = document.createElement('input');
-      i.type = 'number'; i.value = val; i.dataset.cfg = key;
-      f.append(i);
-      return f;
+    function curveField(label, val, key, opts) {
+      const i = numInput(val, opts);
+      i.dataset.cfg = key;
+      return field(label, i);
     }
-    nums.append(numField('Base XP (level 1)', L.baseXp, 'baseXp'));
-    nums.append(numField('Growth multiplier', L.multiplier, 'multiplier'));
-    nums.append(numField('Daily XP ceiling', L.dailyXpCeiling, 'dailyXpCeiling'));
-    nums.append(numField('Trade max age (days)', L.tradeMaxAgeDays, 'tradeMaxAgeDays'));
+    nums.append(curveField('Base XP (level 1)', L.baseXp, 'baseXp', { min: 10, max: 100000 }));
+    nums.append(curveField('Growth multiplier', L.multiplier, 'multiplier', { min: 1.01, max: 5, step: 0.01 }));
+    nums.append(curveField('Daily XP ceiling', L.dailyXpCeiling, 'dailyXpCeiling', { min: 100, max: 50000 }));
+    nums.append(curveField('Trade max age (days)', L.tradeMaxAgeDays, 'tradeMaxAgeDays', { min: 1, max: 365 }));
     cfg.append(nums);
 
+    cfg.append(el('h2', null, 'Channels'));
+    cfg.append(el('p', 'hint', 'Where each contribution type is allowed to earn. Empty = learn from activity (general / forum heuristics).'));
     const opts = channelOpts();
-    const chGeneral = multiSelect('General chat channels', L.channels?.general, opts, 'any');
-    const chTrading = multiSelect('Trading / chart channels', L.channels?.trading, opts, 'any');
-    const chIdeas = multiSelect('Trade-ideas channels', L.channels?.tradeIdeas, opts, 'any');
+    const chGeneral = multiSelect('General chat', L.channels?.general, opts, 'any');
+    const chTrading = multiSelect('Trading / charts', L.channels?.trading, opts, 'any');
+    const chIdeas = multiSelect('Trade ideas', L.channels?.tradeIdeas, opts, 'any');
     const chJournal = multiSelect('Journals forum', L.channels?.journalsForum, opts, 'forum');
-    cfg.append(chGeneral, chTrading, chIdeas, chJournal);
+    const chGrid = el('div', 'lvl-channel-grid');
+    chGrid.append(chGeneral, chTrading, chIdeas, chJournal);
+    cfg.append(chGrid);
 
     cfg.append(el('h2', null, 'Category weights'));
-    cfg.append(el('p', 'hint', 'min / max XP · cooldown seconds. Symbols: any valid ticker form ($ES, NASDAQ:AAPL, NQ) — no closed allowlist.'));
+    cfg.append(el('p', 'hint', 'Min and max XP per grant. Cooldown is seconds between grants of that type for the same member. Symbols: any valid ticker ($ES, NASDAQ:AAPL, NQ) — no closed allowlist.'));
+
     const wBox = el('div', 'lvl-weights');
     for (const c of (L.categories || [])) {
-      wBox.append(weightRow(c.key, c.label, (L.weights || {})[c.key] || c));
+      const w = (L.weights || {})[c.key] || c;
+      wBox.append(weightCard(c.key, c.label, w, WEIGHT_HINTS[c.key] || ''));
     }
     cfg.append(wBox);
 
@@ -222,6 +268,11 @@
           if (f === 'cooldownSec') weights[k].cooldownMs = Math.round(Number(inp.value) || 0) * 1000;
           else weights[k][f] = Number(inp.value);
         });
+        for (const [k, w] of Object.entries(weights)) {
+          let a = Number(w.xpMin) || 0, b = Number(w.xpMax) || 0;
+          if (a > b) { const t = a; a = b; b = t; }
+          w.xpMin = a; w.xpMax = b;
+        }
         const selected = (box) => [...box._sel.selectedOptions].map(o => o.value);
         const body = {
           enabled: enChk.checked,
@@ -264,12 +315,12 @@
 
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Rank ladder'));
-    const rl = el('div', 'lvl-ranks');
+    ranks.append(el('p', 'hint', 'Unlock thresholds. Role mapping is optional in a later pass.'));
+    const rl = el('div', 'rows');
     for (const r of (L.rankLadder || [])) {
-      const row = el('div', 'lvl-rank-row');
-      row.append(el('span', 'tag', 'Lv ' + r.level));
-      row.append(el('strong', null, r.label));
-      row.append(el('span', 'hint', r.unlock || ''));
+      const row = el('div', 'row');
+      row.append(el('span', 'k', 'Lv ' + r.level + ' · ' + r.label));
+      row.append(el('span', 'v dim', r.unlock || ''));
       rl.append(row);
     }
     ranks.append(rl);
@@ -280,7 +331,7 @@
     const evList = el('div', 'rows');
     for (const e of (L.recentEvents || []).slice(0, 20)) {
       const row = el('div', 'row');
-      row.append(el('span', 'k', (e.category || '?') + ' · ' + (e.userId || '').slice(0, 6)));
+      row.append(el('span', 'k', (e.category || '?') + ' · ' + String(e.userId || '').slice(0, 8)));
       row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' XP'));
       evList.append(row);
     }
