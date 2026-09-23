@@ -178,6 +178,7 @@
       root.append(board);
     }
 
+    /* ── Curve: base XP + growth multiplier ─────────────────────────────── */
     const curve = el('div', 'panel');
     curve.append(el('h2', null, 'Level curve'));
     curve.append(el('p', 'hint', 'Base XP is what level 0→1 costs. Multiplier scales each next step (×1 = flat, ×1.5 = 50% more each level).'));
@@ -211,6 +212,7 @@
         preview.append(r);
       }
     }
+
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Role rewards'));
     ranks.append(el('p', 'hint', 'Level → role. Cumulative — lower roles stay. Total XP uses the curve above.'));
@@ -263,7 +265,7 @@
     root.append(ranks);
 
     const unlocks = el('div', 'panel');
-    unlocks.append(el('h2', null, 'Channel unlocks');
+    unlocks.append(el('h2', null, 'Channel unlocks'));
     unlocks.append(el('p', 'hint', 'Which roles open which channels (gates live on Discord — this is your map).'));
     const unlockRows = el('div', 'lvl-edit-list');
     const unlockDraft = (L.channelUnlocks || []).map(u => ({
