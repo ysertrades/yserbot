@@ -1,1 +1,2 @@
-PLACEHOLDER4
+'use strict';
+// PLACEHOLDER
