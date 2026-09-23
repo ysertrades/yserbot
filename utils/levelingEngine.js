@@ -317,8 +317,8 @@ function panelSnapshot(guildId, guild) {
     xpMin: g.xpMin ?? 15, xpMax: g.xpMax ?? 25, cooldownSec: g.cooldownSec ?? 60,
     minMessageLength: g.minMessageLength ?? 2, ignoreEmojiOnly: g.ignoreEmojiOnly !== false,
     weekendBoost: g.weekendBoost ?? 1, noXpChannelIds: g.noXpChannelIds || [], noXpRoleIds: g.noXpRoleIds || [],
-    roleRewards: (g.roleRewards || []).map(r => ({ ...r, totalXp: totalXpForLevel(r.level), roleName: roleName(r.roleId) || r.label })),
-    channelUnlocks: (g.channelUnlocks || []).map(u => ({
+    roleRewards: (Array.isArray(g.roleRewards) ? g.roleRewards : []).map(r => ({ ...r, totalXp: totalXpForLevel(r.level), roleName: roleName(r.roleId) || r.label })),
+    channelUnlocks: (Array.isArray(g.channelUnlocks) ? g.channelUnlocks : []).map(u => ({
       ...u,
       resolvedChannelName: u.channelId ? (chName(u.channelId) || u.channelName) : u.channelName,
       resolvedRoleNames: (u.roleIds || []).map(id => roleName(id) || id),
@@ -326,7 +326,7 @@ function panelSnapshot(guildId, guild) {
     curveTable: [0, 5, 15, 30, 50].map(L => ({ level: L, totalXp: totalXpForLevel(L) })),
     formula: 'xp_to_next(n) = 5n² + 50n + 100',
     leaderboard: tracked ? leaderboardRows(g, guild, 15) : [],
-    recentEvents: tracked ? (g.events || []).slice(0, 15).map(e => ({ ...e, name: displayName(guild, e.userId) || e.userId })) : [],
+    recentEvents: tracked ? (Array.isArray(g.events) ? g.events : []).slice(0, 15).map(e => ({ ...e, name: displayName(guild, e.userId) || e.userId })) : [],
     channelOpts, roleOpts, configVersion: g.configVersion || 0,
   };
 }
