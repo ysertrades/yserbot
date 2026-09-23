@@ -10,7 +10,7 @@ const { equip } = require('../utils/badgeManager');
 const { BADGE_DEFS } = require('../utils/badges');
 
 if (!global.cardDrops)         global.cardDrops         = new Map();
-if (!global.cardMessageCounts) global.cardMessageCounts = new Map(); // key: "guildId:channelId"
+if (!global.cardMessageCounts) global.cardMessageCounts = new Map();
 
 const cooldowns = new Map();
 
@@ -21,8 +21,16 @@ module.exports = {
     const guildId = message.guild?.id;
     if (!guildId) return;
 
+    // Ticket inactivity reset
+    const isTicket = message.channel.topic?.startsWith('ticket-owner:') || message.channel.name?.startsWith('ticket-');
+    if (isTicket) {
+      const ticketCmd = client?.commands?.get('ticket');
+      if (ticketCmd?.resetInactivityTimer) {
+        ticketCmd.resetInactivityTimer(message.channel.id);
+      }
+    }
 
-    // ── g.reroll <id> prefix command ─────────────────────────────────────
+    // g.reroll <id>
     const content = message.content.trim();
     if (content.toLowerCase().startsWith('g.reroll')) {
       const parts  = content.split(/\s+/);
@@ -32,20 +40,60 @@ module.exports = {
       return;
     }
 
-    // ── Auto-mod (bad-word / link filter) ─────────────────────────────────
-    // Runs before XP/cards/autoreply — a filtered message shouldn't earn XP,
-    // drop a card, or trigger an autoreply.
+    // Auto-mod before XP/cards/autoreply
     const handled = isFeatureEnabled(guildId, 'automod')
       && await client?.commands?.get('automod')?.handleMessage(message, client).catch(() => false);
     if (handled) return;
+
+    if (isFeatureEnabled(guildId, 'leveling')) {
+      try {
+        const leveling = require('../utils/levelingEngine');
+        if (typeof leveling.handleMessage === 'function') {
+          await leveling.handleMessage(message);
+        } else if (typeof leveling.processMessage === 'function') {
+          await leveling.processMessage(message);
+        }
+      } catch (err) {
+        console.error('[XP message]', err);
+      }
+    }
 
     if (isFeatureEnabled(guildId, 'autoreply')) await handleAutoReply(message);
     if (isFeatureEnabled(guildId, 'cards')) await handleCardDrop(message);
   },
 };
 
+async function handleCardDrop(message) {
+  const guildId = message.guild.id;
+  const cfg = getCardConfig(guildId);
+  if (!cfg || !cfg.enabled) return;
+  const channelId = message.channel.id;
+  if (Array.isArray(cfg.channels) && cfg.channels.length && !cfg.channels.includes(channelId)) return;
+  if (Array.isArray(cfg.denyChannels) && cfg.denyChannels.includes(channelId)) return;
+
+  const key = `${guildId}:${channelId}`;
+  const count = (global.cardMessageCounts.get(key) || 0) + 1;
+  global.cardMessageCounts.set(key, count);
+  const every = Math.max(1, Number(cfg.everyN) || 50);
+  if (count % every !== 0) return;
+
+  const card = pickRandomCard(guildId);
+  if (!card) return;
+  const dropId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  global.cardDrops.set(dropId, { guildId, card, claimedBy: null, at: Date.now() });
+
+  const embed = buildDropEmbed(message.guild, card);
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`cardclaim:${dropId}`).setLabel('Claim').setStyle(ButtonStyle.Success)
+  );
+  try {
+    await message.channel.send({ embeds: [embed], components: [row] });
+  } catch (err) {
+    console.error('[CARD DROP]', err);
+  }
+}
+
 async function handleAutoReply(message) {
-  // ── Admin-only: only admins trigger auto-replies ──────────────────────
   const isAdmin = message.member?.permissions?.has(PermissionFlagsBits.Administrator);
   if (!isAdmin) return;
 
@@ -67,7 +115,6 @@ async function handleAutoReply(message) {
 
     cooldowns.set(key, Date.now());
 
-    // Use buildEmbedPayload so buttons attached to the template are included
     const { buildEmbedPayload } = require('../commands/utility/embed');
     const payload = buildEmbedPayload(message.guild, data.embedName);
     if (!payload) continue;
