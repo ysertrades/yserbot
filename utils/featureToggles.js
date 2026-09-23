@@ -129,6 +129,12 @@ const FEATURE_GROUPS = [
     commands: [],
     passive: true,
   },
+  {
+    key: 'leveling', label: 'Leveling & Ranks',
+    description: 'Contribution XP — trade shares, charts, ideas, journals. No generic message grinding.',
+    commands: ['rank', 'leaderboard', 'levelsettings'],
+    passive: true,
+  },
 ];
 
 const COMMAND_TO_GROUP = new Map();
