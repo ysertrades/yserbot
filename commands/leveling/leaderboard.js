@@ -1,31 +1,26 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
+/**
+ * /leaderboard — pure Discord embed (no PNG).
+ * Top 3 as side-by-side podium fields; 4–10 with unicode XP bars.
+ * Designed to stay fully readable in chat without opening attachments.
+ */
+
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
-const { generateLeaderboardImage } = require('../../utils/leaderboardVisual');
-const { fetchAvatarPng } = require('../../utils/avatarUtil');
 
 const BRAND_PURPLE = 0x9397EE;
 
-function displayName(guild, userId) {
-  try {
-    const m = guild?.members?.cache?.get(userId);
-    if (m) return m.displayName || m.user?.globalName || m.user?.username || userId;
-    const u = guild?.client?.users?.cache?.get(userId);
-    if (u) return u.globalName || u.username || userId;
-  } catch {}
-  return userId;
+/** Block-character bar relative to the leader's XP (10 cells). */
+function xpBar(xp, maxXp, cells = 10) {
+  const pct = maxXp > 0 ? Math.max(0, Math.min(1, xp / maxXp)) : 0;
+  const filled = Math.round(pct * cells);
+  return '▓'.repeat(filled) + '░'.repeat(cells - filled);
 }
 
-async function resolveMember(guild, userId) {
-  try {
-    let m = guild.members.cache.get(userId);
-    if (!m) m = await guild.members.fetch(userId).catch(() => null);
-    return m;
-  } catch {
-    return null;
-  }
+function fmt(n) {
+  return Number(n || 0).toLocaleString('en-US');
 }
 
 module.exports = {
@@ -38,68 +33,110 @@ module.exports = {
       return interaction.reply({ content: 'Leveling is turned off on this server.', ephemeral: true });
     }
 
-    await interaction.deferReply();
-
     const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 10);
 
     if (!ranked.length) {
-      return interaction.editReply({
+      return interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(BRAND_PURPLE)
-          .setTitle('XP leaderboard')
-          .setDescription('No ranks yet — chat in allowed channels to earn 15–25 XP per message.')],
+          .setTitle('QuantLab · Ranks')
+          .setDescription(
+            '```\n' +
+            '  no ranks yet\n' +
+            '  chat to earn 15–25 XP / msg\n' +
+            '```',
+          )],
       });
     }
 
-    const entries = await Promise.all(ranked.map(async (u, i) => {
-      const member = await resolveMember(interaction.guild, u.id);
-      const name = member
-        ? (member.displayName || member.user?.globalName || member.user?.username || u.id)
-        : displayName(interaction.guild, u.id);
-      let avatarPng = null;
-      try {
-        const url = member
-          ? member.displayAvatarURL({ extension: 'png', size: 128, forceStatic: true })
-          : interaction.client.users.cache.get(u.id)?.displayAvatarURL({ extension: 'png', size: 128, forceStatic: true });
-        if (url) avatarPng = await fetchAvatarPng(url);
-      } catch {}
-      return {
-        rank: i + 1,
-        name,
-        level: u.level,
-        totalXp: u.totalXp,
-        id: u.id,
-        avatarPng,
-      };
-    }));
+    const maxXp = ranked[0].totalXp || 1;
+    const top = ranked.slice(0, 3);
+    const rest = ranked.slice(3, 10);
 
-    let attachment = null;
-    const imageName = 'leaderboard.png';
-    try {
-      const buf = generateLeaderboardImage({
-        entries,
-        title: 'QuantLab Ranks',
-        subtitle: 'Top 10 by XP',
-      });
-      attachment = new AttachmentBuilder(buf, { name: imageName });
-    } catch (err) {
-      console.warn('[leaderboard] image', err.message || err);
-    }
-
-    const topLine = entries.slice(0, 3)
-      .map(e => `**#${e.rank}** <@${e.id}>`)
-      .join(' · ');
+    // ── Description: thin header + rule ──────────────────────────────
+    const header = [
+      '**All-time XP ladder**',
+      '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄',
+    ].join('\n');
 
     const embed = new EmbedBuilder()
       .setColor(BRAND_PURPLE)
-      .setTitle('XP leaderboard')
-      .setDescription(`All-time · Quantlab\n${topLine}`)
-      .setFooter({ text: 'Top 10 · 15–25 XP / msg · 60s cooldown' });
+      .setTitle('QuantLab · Ranks')
+      .setDescription(header);
 
-    if (attachment) embed.setImage(`attachment://${imageName}`);
+    // ── Top 3 podium as inline fields (Discord renders 3-across) ─────
+    // Order: #2 · #1 · #3 so the crown sits in the center column.
+    const podiumMeta = [
+      { idx: 1, badge: '◇  SILVER',  mark: '➁' },
+      { idx: 0, badge: '◆  GOLD',    mark: '➀' },
+      { idx: 2, badge: '◇  BRONZE',  mark: '➂' },
+    ];
 
-    const payload = { embeds: [embed] };
-    if (attachment) payload.files = [attachment];
-    return interaction.editReply(payload);
+    for (const p of podiumMeta) {
+      const u = top[p.idx];
+      if (!u) {
+        embed.addFields({ name: '\u200b', value: '\u200b', inline: true });
+        continue;
+      }
+      const bar = xpBar(u.totalXp, maxXp, 8);
+      embed.addFields({
+        name: `${p.mark}  ${p.badge}`,
+        value: [
+          `<@${u.id}>`,
+          `**${fmt(u.totalXp)}** XP`,
+          `Lv **${u.level}**`,
+          `\`${bar}\``,
+        ].join('\n'),
+        inline: true,
+      });
+    }
+
+    // Full-width divider field
+    embed.addFields({
+      name: '\u200b',
+      value: '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄',
+      inline: false,
+    });
+
+    // ── Ranks 4–10 ───────────────────────────────────────────────────
+    if (rest.length) {
+      const lines = rest.map((u) => {
+        const bar = xpBar(u.totalXp, maxXp, 10);
+        const rank = String(u.rank != null ? u.rank : ranked.indexOf(u) + 1).padStart(2, '0');
+        // rank is 1-based from map index below
+        return null;
+      });
+
+      // rebuild with correct rank numbers
+      const body = rest.map((u, i) => {
+        const rank = String(i + 4).padStart(2, '0');
+        const bar = xpBar(u.totalXp, maxXp, 10);
+        return `\`${rank}\`  <@${u.id}>\n  Lv **${u.level}** · **${fmt(u.totalXp)}** XP  ·  \`${bar}\``;
+      }).join('\n\n');
+
+      embed.addFields({
+        name: 'ranks  4 – 10',
+        value: body.slice(0, 1020),
+        inline: false,
+      });
+    }
+
+    // Thumbnail = #1 avatar (always visible in embed sidebar)
+    try {
+      const leader = ranked[0];
+      let member = interaction.guild.members.cache.get(leader.id);
+      if (!member) member = await interaction.guild.members.fetch(leader.id).catch(() => null);
+      const avatarUrl = member
+        ? member.displayAvatarURL({ extension: 'png', size: 128 })
+        : null;
+      if (avatarUrl) embed.setThumbnail(avatarUrl);
+    } catch {}
+
+    embed.setFooter({
+      text: `Top ${ranked.length}  ·  15–25 XP / msg  ·  60s cooldown  ·  QuantLab`,
+    });
+    embed.setTimestamp();
+
+    return interaction.reply({ embeds: [embed] });
   },
 };
