@@ -24,10 +24,10 @@ const DEFAULT_ROLE_REWARDS = [
 ];
 
 const DEFAULT_CHANNEL_UNLOCKS = [
-  { channelName: '\ud83d\udce1\u30fb\u0073\u0069\u0067\u006e\u0061\u006c\u0073', roleLabels: ['Edge', 'Quant'], channelId: null, roleIds: [] },
-  { channelName: '\ud83c\udfaf\u30fb\u0061\u0063\u0063\u006f\u0075\u006e\u0074\u0061\u0062\u0069\u006c\u0069\u0074\u0079', roleLabels: ['Locked In', 'Edge', 'Quant'], channelId: null, roleIds: [] },
-  { channelName: '\ud83e\udde0\u30fb\u0071\u0075\u0061\u006e\u0074\u002d\u0064\u0065\u0073\u006b', roleLabels: ['Quant'], channelId: null, roleIds: [] },
-  { channelName: '\ud83c\udf81\u30fb\u0067\u0069\u0076\u0065\u0061\u0077\u0061\u0079\u0073', roleLabels: ['public'], channelId: null, roleIds: [], note: 'Public; gate per-giveaway' },
+  { channelName: 'signals', roleLabels: ['Edge', 'Quant'], channelId: null, roleIds: [] },
+  { channelName: 'accountability', roleLabels: ['Locked In', 'Edge', 'Quant'], channelId: null, roleIds: [] },
+  { channelName: 'quant-desk', roleLabels: ['Quant'], channelId: null, roleIds: [] },
+  { channelName: 'giveaways', roleLabels: ['public'], channelId: null, roleIds: [], note: 'Public; gate per-giveaway' },
 ];
 
 function defaultGuild() {
@@ -198,7 +198,7 @@ async function syncRoles(member, level, rewards) {
 
 async function announceLevelUp(message, newLevel) {
   if (!message?.channel || !message.author) return;
-  const content = `<@${message.author.id}> — you just hit level ${newLevel}. keep going.\u{1F389}`;
+  const content = `<@${message.author.id}> — you just hit level ${newLevel}. keep going.🎉`;
   try {
     await message.channel.send({ content, allowedMentions: { users: [message.author.id] } });
   } catch (err) {
@@ -230,8 +230,9 @@ async function handleMessage(message) {
     if (g.events.length > EVENTS_MAX) g.events.length = EVENTS_MAX;
     all[guildId] = g;
     saveAll(all);
+    // Always ensure rank roles match current level (covers L0 + missed grants)
+    if (message.member) await syncRoles(message.member, newLevel, g.roleRewards);
     if (newLevel > prevLevel) {
-      if (message.member) await syncRoles(message.member, newLevel, g.roleRewards);
       await announceLevelUp(message, newLevel);
     }
     return { userId, gained, xp: u.xp, level: newLevel, leveledUp: newLevel > prevLevel };
@@ -370,8 +371,8 @@ function panelSnapshot(guildId, guild) {
     curveBase: g.curveBase ?? 100,
     curveMult: g.curveMult ?? 1.5,
     curveFormula: (g.curveMode === 'exponential')
-      ? `xp_to_next(n) = ${g.curveBase ?? 100} \u00d7 ${g.curveMult ?? 1.5}\u207f`
-      : 'xp_to_next(n) = 5\u00b7n\u00b2 + 50\u00b7n + 100',
+      ? `xp_to_next(n) = ${g.curveBase ?? 100} × ${g.curveMult ?? 1.5}ⁿ`
+      : 'xp_to_next(n) = 5·n² + 50·n + 100',
     roleRewards: (Array.isArray(g.roleRewards) ? g.roleRewards : []).map(r => ({ ...r, totalXp: totalXpForLevel(r.level, g), roleName: roleName(r.roleId) || r.label })),
     channelUnlocks: (Array.isArray(g.channelUnlocks) ? g.channelUnlocks : []).map(u => ({
       ...u,
@@ -380,8 +381,8 @@ function panelSnapshot(guildId, guild) {
     })),
     curveTable: [1, 5, 15, 30, 50].map(L => ({ level: L, totalXp: totalXpForLevel(L, g), stepXp: xpToNext(L - 1, g) })),
     formula: (g.curveMode === 'exponential')
-      ? `xp_to_next(n) = ${g.curveBase ?? 100} \u00d7 ${g.curveMult ?? 1.5}\u207f`
-      : 'xp_to_next(n) = 5\u00b7n\u00b2 + 50\u00b7n + 100',
+      ? `xp_to_next(n) = ${g.curveBase ?? 100} × ${g.curveMult ?? 1.5}ⁿ`
+      : 'xp_to_next(n) = 5·n² + 50·n + 100',
     leaderboard: tracked ? leaderboardRows(g, guild, 15) : [],
     recentEvents: tracked ? (Array.isArray(g.events) ? g.events : []).slice(0, 15).map(e => ({ ...e, name: displayName(guild, e.userId) || e.userId })) : [],
     channelOpts, roleOpts, configVersion: g.configVersion || 0,
