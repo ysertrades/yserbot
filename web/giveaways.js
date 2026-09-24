@@ -225,6 +225,7 @@ async function create(guildId, body, { guild, session, client }) {
     : (Number.isInteger(Number(body.minutes)) ? Number(body.minutes) * 60000 : null);
   if (!durationMs || durationMs < 10_000 || durationMs > MAX_DURATION_MS) return { error: 'bad_duration' };
 
+  if (!guild || !guild.channels || !guild.channels.cache) return { error: 'guild_unavailable', detail: 'Server not in bot cache — restart bot.' };
   const channel = guild.channels.cache.get(String(body.channelId || ''));
   if (!channel?.isTextBased?.()) return { error: 'bad_channel' };
 
