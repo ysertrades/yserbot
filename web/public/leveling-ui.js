@@ -474,7 +474,16 @@
       root.append(ev);
     }
   }
+  function ensurePodiumStyles() {
+    if (document.getElementById('lvl-podium-css-link')) return;
+    var link = document.createElement('link');
+    link.id = 'lvl-podium-css-link';
+    link.rel = 'stylesheet';
+    link.href = '/leveling-podium.css';
+    document.head.appendChild(link);
+  }
   function boot() {
+    ensurePodiumStyles();
     function tryRender() {
       if (!document.getElementById('leveling-root') || !window.state || !window.state.overview) return;
       render();
