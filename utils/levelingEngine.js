@@ -3,7 +3,7 @@
 /**
  * Quantlab HQ leveling — MEE6-style message XP + rank ladder.
  * One active rank role at a time (previous ranks are removed).
- * Journal forum XP is separate from chat XP (image + owner only).
+ * Journal forum: text → normal chat XP; image → journal XP rates.
  * Default curve: xp_to_next(n) = 5*n² + 50*n + 100
  */
 
@@ -274,10 +274,15 @@ async function announceLevelUp(message, newLevel) {
   }
 }
 
+/**
+ * Journal forum path.
+ * Text-only + image-required ON → normal chat XP (xpMin–xpMax, chat cooldown).
+ * Has image (or image-required OFF) → journal XP (journalXpMin–Max, journal cooldown).
+ */
 async function handleJournalMessage(message, all, g, guildId) {
-  if (g.journalImageOnly !== false && !messageHasImage(message)) return null;
-  const userId = message.author.id;
   if (message.author?.bot) return null;
+  const userId = message.author.id;
+
   if (g.journalOwnerOnly !== false) {
     const thread = message.channel;
     let ownerId = thread?.ownerId || null;
@@ -289,24 +294,45 @@ async function handleJournalMessage(message, all, g, guildId) {
     } catch {}
     if (ownerId && String(ownerId) !== String(userId)) return null;
   }
+
+  const hasImage = messageHasImage(message);
+  const useJournalRate = hasImage || g.journalImageOnly === false;
+
   const u = g.users[userId] || { xp: 0, level: 0, lastXpAt: 0, lastJournalXpAt: 0 };
   const now = Date.now();
-  const cdMs = Math.max(0, (Number(g.journalCooldownSec) || 21600) * 1000);
-  if (cdMs > 0 && u.lastJournalXpAt && now - u.lastJournalXpAt < cdMs) return null;
-  const gained = rollJournalXp(g);
+
+  let gained;
+  let source;
+  if (useJournalRate) {
+    const cdMs = Math.max(0, (Number(g.journalCooldownSec) || 21600) * 1000);
+    if (cdMs > 0 && u.lastJournalXpAt && now - u.lastJournalXpAt < cdMs) return null;
+    gained = rollJournalXp(g);
+    u.lastJournalXpAt = now;
+    source = 'journal';
+  } else {
+    const cdMs = Math.max(0, (Number(g.cooldownSec) || 60) * 1000);
+    if (cdMs > 0 && u.lastXpAt && now - u.lastXpAt < cdMs) return null;
+    const content = String(message.content || '').trim();
+    const minLen = Number(g.minMessageLength) || 0;
+    if (minLen > 0 && content.length < minLen) return null;
+    if (g.ignoreEmojiOnly !== false && isEmojiOnly(content)) return null;
+    gained = rollXp(g, 1);
+    u.lastXpAt = now;
+    source = 'chat';
+  }
+
   const prevLevel = levelFromXp(u.xp, g);
   u.xp = (Number(u.xp) || 0) + gained;
-  u.lastJournalXpAt = now;
   const newLevel = levelFromXp(u.xp, g);
   u.level = newLevel;
   g.users[userId] = u;
-  g.events.unshift({ at: now, userId, xp: gained, level: newLevel, source: 'journal', channelId: message.channel?.id });
+  g.events.unshift({ at: now, userId, xp: gained, level: newLevel, source, channelId: message.channel?.id });
   if (g.events.length > EVENTS_MAX) g.events.length = EVENTS_MAX;
   all[guildId] = g;
   saveAll(all);
   if (message.member) await syncRoles(message.member, newLevel, g.roleRewards);
   if (newLevel > prevLevel) await announceLevelUp(message, newLevel);
-  return { userId, gained, xp: u.xp, level: newLevel, leveledUp: newLevel > prevLevel, source: 'journal' };
+  return { userId, gained, xp: u.xp, level: newLevel, leveledUp: newLevel > prevLevel, source };
 }
 
 async function handleMessage(message) {
