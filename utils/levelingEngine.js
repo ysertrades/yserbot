@@ -1,12 +1,9 @@
 'use strict';
 
 /**
- * Quantlab HQ leveling — MEE6-style message XP + editable rank ladder.
- *
- * Default curve: xp_to_next(n) = 5*n² + 50*n + 100 (quadratic)
- * Optional: exponential via curveMode + curveBase + curveMult
- *
- * Schema mee6-v2 wipes legacy contribution-engine user rows on first load.
+ * Quantlab HQ leveling — MEE6-style message XP + rank ladder.
+ * One active rank role at a time (previous ranks are removed).
+ * Default curve: xp_to_next(n) = 5*n² + 50*n + 100
  */
 
 const { readJson, writeJson } = require('./jsonStorage');
@@ -184,13 +181,38 @@ function rollXp(g, mult) {
   return Math.max(1, Math.round(base * (mult || 1)));
 }
 
+/**
+ * Assign the highest rank role for this level and remove other ladder roles.
+ */
 async function syncRoles(member, level, rewards) {
   if (!member?.roles) return;
-  const list = (rewards || []).filter(r => r.roleId && Number(r.level) <= level);
-  for (const r of list) {
+  const ladder = (rewards || [])
+    .filter(r => r && String(r.roleId || '').match(/^\d{5,25}$/))
+    .map(r => ({ level: Math.max(0, Number(r.level) || 0), roleId: String(r.roleId), label: r.label || 'rank' }))
+    .sort((a, b) => a.level - b.level);
+
+  if (!ladder.length) return;
+
+  const lvl = Math.max(0, Math.floor(Number(level) || 0));
+  let current = null;
+  for (const r of ladder) {
+    if (r.level <= lvl) current = r;
+  }
+  if (!current) current = ladder[0];
+
+  const keepId = current.roleId;
+
+  try {
+    if (!member.roles.cache.has(keepId)) {
+      await member.roles.add(keepId, `Level ${current.level} · ${current.label}`).catch(() => {});
+    }
+  } catch {}
+
+  for (const r of ladder) {
+    if (r.roleId === keepId) continue;
     try {
-      if (!member.roles.cache.has(r.roleId)) {
-        await member.roles.add(r.roleId, `Level ${r.level} · ${r.label || 'rank'}`).catch(() => {});
+      if (member.roles.cache.has(r.roleId)) {
+        await member.roles.remove(r.roleId, `Replaced by ${current.label} (L${current.level})`).catch(() => {});
       }
     } catch {}
   }
@@ -230,7 +252,6 @@ async function handleMessage(message) {
     if (g.events.length > EVENTS_MAX) g.events.length = EVENTS_MAX;
     all[guildId] = g;
     saveAll(all);
-    // Always ensure rank roles match current level (covers L0 + missed grants)
     if (message.member) await syncRoles(message.member, newLevel, g.roleRewards);
     if (newLevel > prevLevel) {
       await announceLevelUp(message, newLevel);
