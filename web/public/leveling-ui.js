@@ -158,7 +158,7 @@
     top.append(el('h2', null, 'Quantlab ranks'));
     top.append(el('span', L.enabled ? 'pill on' : 'pill off', L.enabled ? 'Live' : 'Paused'));
     hero.append(top);
-    hero.append(el('p', 'muted', 'Chat XP · roles stack cumulatively. Premium is Whop only.'));
+    hero.append(el('p', 'muted', 'Chat XP · one rank role at a time (previous rank is removed). Premium is Whop only.'));
     if (!L.tracked) {
       const empty = el('div', 'lvl-empty');
       empty.append(el('p', null, 'No XP tracked yet'));
@@ -180,7 +180,6 @@
     }
     root.append(hero);
 
-    /* Leaderboard + Base XP side by side */
     const split = el('div', 'grid lvl-split');
 
     const board = el('div', 'panel');
@@ -236,7 +235,7 @@
 
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Role rewards'));
-    ranks.append(el('p', 'hint', 'Level → role. Cumulative — lower roles stay.'));
+    ranks.append(el('p', 'hint', 'Level → role. Only the highest rank is kept; previous rank roles are removed.'));
     const rewardRows = el('div', 'lvl-edit-list');
     const rewardDraft = (L.roleRewards || []).map(function (r) {
       return { level: r.level, roleId: r.roleId, label: r.label || r.roleName || '' };
