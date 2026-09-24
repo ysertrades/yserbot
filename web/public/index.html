@@ -1,1 +1,147 @@
-TO_BE_FILLED
+<!doctype html>
+<html lang="en" data-state="loading" data-section="overview">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>QuantLab — Control Panel</title>
+<link rel="icon" href="/Quantbot.jpg" type="image/jpeg" sizes="any">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/Quantbot.jpg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="QuantLab">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#15161D">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/glass-v2.css">
+<link rel="stylesheet" href="/stability.css">
+<link rel="stylesheet" href="/leveling-podium.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <img class="mark" src="/Quantbot.jpg" width="26" height="26" alt="" decoding="async">
+    <span class="wordmark">quantlab</span>
+    <span class="here" aria-hidden="true"></span>
+  </div>
+  <div class="bar-right"></div>
+</header>
+<main id="main">
+  <section class="view" data-view="loading">
+    <div class="panel center"><p class="muted">Loading…</p></div>
+  </section>
+  <section class="view" data-view="login">
+    <div class="panel center">
+      <h1>Control panel</h1>
+      <p class="muted">Sign in with the Discord account that manages your server.</p>
+      <a class="btn primary" href="/auth/login">Sign in with Discord</a>
+      <p class="note" id="login-error" hidden></p>
+    </div>
+    <p class="fineprint">
+      <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
+      <span aria-hidden="true">·</span>
+      <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>
+    </p>
+  </section>
+  <section class="view" data-view="setup">
+    <div class="panel">
+      <h1>Almost there</h1>
+      <p class="muted">Add these to the Env tab on your host, then restart the bot.</p>
+      <ul class="keys" id="setup-missing"></ul>
+    </div>
+  </section>
+  <section class="view" data-view="panel">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary">
+        <div class="sidebar-brand">
+          <img class="mark" src="/Quantbot.jpg" width="28" height="28" alt="" decoding="async">
+          <span class="sidebar-title">Quant bot</span>
+        </div>
+        <nav class="sections sidebar-nav" id="sections" aria-label="Sections"></nav>
+      </aside>
+      <div class="workspace">
+        <div class="workspace-body">
+          <div class="content-toolbar">
+            <h1 class="workspace-section-label" id="here">Overview</h1>
+            <div class="bar-right" id="bar-right"></div>
+          </div>
+          <div class="server" id="server">
+            <div class="server-id">
+              <div class="crest" id="crest"></div>
+              <div>
+                <h1 id="server-name">—</h1>
+                <p class="server-meta" id="server-meta"></p>
+              </div>
+            </div>
+            <nav class="guilds" id="guilds" aria-label="Servers"></nav>
+          </div>
+          <div class="section" data-section="overview">
+            <div class="tiles" id="tiles"></div>
+            <div class="grid">
+              <article class="panel"><h2>Systems</h2><div id="card-systems" class="rows"></div></article>
+              <article class="panel" id="panel-leaderboard"><h2>Top balances <span class="tag">global</span></h2><ol class="board" id="board"></ol></article>
+              <article class="panel"><h2>Bot health</h2><div id="card-health" class="rows"></div></article>
+              <article class="panel"><h2>Content</h2><div id="card-counts" class="rows"></div></article>
+              <article class="panel members-panel"><h2>Members <span class="tag" id="members-count">0</span></h2><div class="members-search-wrap"><input type="search" id="members-search" class="members-search" placeholder="Search…" autocomplete="off" spellcheck="false"></div><div class="members-roster" id="members-roster"></div></article>
+            </div>
+          </div>
+          <div class="section" data-section="studio">
+            <div class="studio">
+              <div class="stage">
+                <div class="stage-frame"><img id="preview" alt="Banner preview"><div class="stage-busy" id="stage-busy" hidden></div></div>
+                <div class="stage-foot"><span class="hint" id="preview-status">Live preview</span><a class="btn small" id="preview-download" download>Download PNG</a></div>
+              </div>
+              <div class="panel editor">
+                <h2>Banner copy</h2>
+                <label class="field"><span>Template</span><select id="tpl-select"></select></label>
+                <div id="tpl-fields"></div>
+                <div class="editor-foot">
+                  <button type="button" class="btn primary small" id="tpl-save">Save to embeds</button>
+                  <button type="button" class="btn small" id="tpl-revert">Revert</button>
+                  <button type="button" class="btn small danger" id="tpl-reset">Reset to default</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="section" data-section="composer">
+            <div class="composer">
+              <aside class="tpl-list"><div class="tpl-list-head"><h2>Messages</h2><button type="button" class="btn small" id="tpl-new">New</button></div><div id="tpl-index"></div></aside>
+              <div id="composer-body" class="composer-body"></div>
+            </div>
+          </div>
+          <div class="section" data-section="appearance">
+            <div class="composer">
+              <aside class="tpl-list"><div class="tpl-list-head"><h2>Bot messages</h2><span class="tag" id="appearance-count"></span></div><div id="appearance-index"></div></aside>
+              <div id="appearance-body" class="composer-body"></div>
+            </div>
+          </div>
+          <div class="section" data-section="leveling"><div id="leveling-root" class="lvl-root"></div></div>
+          <div class="section" data-section="giveaways"><div id="giveaways-root"></div></div>
+          <div class="section" data-section="economy"><div id="economy-root"></div></div>
+          <div class="section" data-section="casino"><div id="casino-root"></div></div>
+          <div class="section" data-section="feeds"><div id="feeds-root"></div></div>
+          <div class="section" data-section="automation"><div id="automation-root"></div></div>
+          <div class="section" data-section="tickets"><div id="tickets-root"></div></div>
+          <div class="section" data-section="moderation"><div id="moderation-root"></div></div>
+          <div class="section" data-section="settings"><div id="settings-root"></div></div>
+          <div class="section" data-section="owner"><div id="owner-root"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-backdrop" id="sheet-backdrop"></div>
+  <div class="sheet-card">
+    <h2 id="sheet-title"></h2>
+    <p class="muted" id="sheet-body"></p>
+    <div class="actions" id="sheet-actions"></div>
+  </div>
+</div>
+<script src="/app.js"></script>
+<script src="/leveling-ui.js"></script>
+<script src="/stability.js"></script>
+</body>
+</html>
