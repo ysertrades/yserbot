@@ -4,8 +4,8 @@ const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discor
 const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
 const { generateLeaderboardImage } = require('../../utils/leaderboardVisual');
+const { fetchAvatarPng } = require('../../utils/avatarUtil');
 
-// QuantLab Phantom palette — purple (#9397EE)
 const BRAND_PURPLE = 0x9397EE;
 
 function displayName(guild, userId) {
@@ -16,6 +16,16 @@ function displayName(guild, userId) {
     if (u) return u.globalName || u.username || userId;
   } catch {}
   return userId;
+}
+
+async function resolveMember(guild, userId) {
+  try {
+    let m = guild.members.cache.get(userId);
+    if (!m) m = await guild.members.fetch(userId).catch(() => null);
+    return m;
+  } catch {
+    return null;
+  }
 }
 
 module.exports = {
@@ -41,12 +51,26 @@ module.exports = {
       });
     }
 
-    const entries = ranked.map((u, i) => ({
-      rank: i + 1,
-      name: displayName(interaction.guild, u.id),
-      level: u.level,
-      totalXp: u.totalXp,
-      id: u.id,
+    const entries = await Promise.all(ranked.map(async (u, i) => {
+      const member = await resolveMember(interaction.guild, u.id);
+      const name = member
+        ? (member.displayName || member.user?.globalName || member.user?.username || u.id)
+        : displayName(interaction.guild, u.id);
+      let avatarPng = null;
+      try {
+        const url = member
+          ? member.displayAvatarURL({ extension: 'png', size: 128, forceStatic: true })
+          : interaction.client.users.cache.get(u.id)?.displayAvatarURL({ extension: 'png', size: 128, forceStatic: true });
+        if (url) avatarPng = await fetchAvatarPng(url);
+      } catch {}
+      return {
+        rank: i + 1,
+        name,
+        level: u.level,
+        totalXp: u.totalXp,
+        id: u.id,
+        avatarPng,
+      };
     }));
 
     let attachment = null;
