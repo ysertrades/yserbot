@@ -47,6 +47,17 @@ async function syncSlashCommands(client) {
 
         const data = await rest.put(Routes.applicationCommands(clientId), { body });
         console.log(`[DEPLOY] Synced ${data.length} global application (/) commands.`);
+
+        // Remove guild-scoped copies so /rank, /leaderboard, etc. do not appear twice
+        // (Discord shows both global and per-guild commands in the same picker).
+        for (const guild of client.guilds.cache.values()) {
+            try {
+                await rest.put(Routes.applicationGuildCommands(clientId, guild.id), { body: [] });
+            } catch (gErr) {
+                console.warn(`[DEPLOY] Could not clear guild commands for ${guild.id}:`, gErr.message || gErr);
+            }
+        }
+        console.log(`[DEPLOY] Cleared guild-scoped slash commands for ${client.guilds.cache.size} guild(s).`);
     } catch (err) {
         console.error('[DEPLOY] Failed to sync slash commands on startup:', err.message || err);
     }
@@ -58,7 +69,7 @@ module.exports = {
     async execute(client) {
         console.log(`Ready! Logged in as ${client.user.tag}`);
 
-        // Leveling: re-apply rank roles after restart (cumulative, never strips)
+        // Leveling: re-apply rank roles after restart
         try {
             const leveling = require('../utils/levelingEngine');
             if (typeof leveling.syncAllRolesOnStartup === 'function') {
@@ -73,7 +84,6 @@ module.exports = {
         }
 
         try {
-            // Small delay so the gateway has registered shard 0 after reconnect storms.
             await new Promise(res => setTimeout(res, 2000));
             await botProfile.applyStoredPresence(client);
             const p = botProfile.flags().presence;
@@ -95,7 +105,6 @@ module.exports = {
 
         await syncSlashCommands(client);
         startScheduleRunner(client);
-        // News feed runner removed (Financial Juice retired)
         startEconCalRunner(client);
         startLotteryRunner(client);
         startWhopRunner(client);
