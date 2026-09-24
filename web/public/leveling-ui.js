@@ -355,7 +355,7 @@
     cfg.append(excl);
 
     cfg.append(el('h2', null, 'Journal XP'));
-    cfg.append(el('p', 'hint', 'Forum journals are separate from chat XP. Only image posts in your own journal thread earn XP. Text-only = 0.'));
+    cfg.append(el('p', 'hint', 'In the journal forum: text posts earn normal chat XP; posts with an image earn journal XP (min–max below). Own cooldown for each.'));
     const forumOpts = (L.channelOpts || []).slice();
     const iJournal = selectOne(forumOpts, L.journalForumChannelId || '', 'No journal forum…');
     const iJMin = num(L.journalXpMin != null ? L.journalXpMin : 30, { min: 1, max: 500 });
@@ -367,9 +367,9 @@
     jGrid.append(field('Journal forum', iJournal, 'Pick the forum channel where members post journals'));
     jGrid.append(field('Min journal XP', iJMin));
     jGrid.append(field('Max journal XP', iJMax));
-    jGrid.append(field('Journal cooldown (sec)', iJCd, 'Default 21600 = 6 hours'));
+    jGrid.append(field('Journal cooldown (sec)', iJCd, 'Cooldown only for image / journal-rate grants'));
     cfg.append(jGrid);
-    const jImg = toggle('Require image for journal XP', L.journalImageOnly !== false);
+    const jImg = toggle('Image posts use journal XP (text uses normal XP)', L.journalImageOnly !== false);
     const jOwn = toggle('Only journal owner earns', L.journalOwnerOnly !== false);
     cfg.append(jImg);
     cfg.append(jOwn);
