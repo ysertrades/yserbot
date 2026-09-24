@@ -1,5 +1,1 @@
-'use strict';
-
-/**
- * web/writes.js — PLACEHOLDER_WILL_REPLACE
- */
+PLACEHOLDER_WILL_BE_REPLACED
