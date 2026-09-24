@@ -3,8 +3,8 @@
 /**
  * Quantlab HQ leveling — MEE6-style message XP + editable rank ladder.
  *
- * Curve: xp_to_next(n) = 5*n² + 50*n + 100
- * Total XP to reach level L = sum of xp_to_next(0..L-1)
+ * Default curve: xp_to_next(n) = 5*n² + 50*n + 100 (quadratic)
+ * Optional: exponential via curveMode + curveBase + curveMult
  *
  * Schema mee6-v2 wipes legacy contribution-engine user rows on first load.
  */
@@ -24,10 +24,10 @@ const DEFAULT_ROLE_REWARDS = [
 ];
 
 const DEFAULT_CHANNEL_UNLOCKS = [
-  { channelName: '📡・signals', roleLabels: ['Edge', 'Quant'], channelId: null, roleIds: [] },
-  { channelName: '🎯・accountability', roleLabels: ['Locked In', 'Edge', 'Quant'], channelId: null, roleIds: [] },
-  { channelName: '🧠・quant-desk', roleLabels: ['Quant'], channelId: null, roleIds: [] },
-  { channelName: '🎁・giveaways', roleLabels: ['public'], channelId: null, roleIds: [], note: 'Public; gate per-giveaway' },
+  { channelName: '\ud83d\udce1\u30fb\u0073\u0069\u0067\u006e\u0061\u006c\u0073', roleLabels: ['Edge', 'Quant'], channelId: null, roleIds: [] },
+  { channelName: '\ud83c\udfaf\u30fb\u0061\u0063\u0063\u006f\u0075\u006e\u0074\u0061\u0062\u0069\u006c\u0069\u0074\u0079', roleLabels: ['Locked In', 'Edge', 'Quant'], channelId: null, roleIds: [] },
+  { channelName: '\ud83e\udde0\u30fb\u0071\u0075\u0061\u006e\u0074\u002d\u0064\u0065\u0073\u006b', roleLabels: ['Quant'], channelId: null, roleIds: [] },
+  { channelName: '\ud83c\udf81\u30fb\u0067\u0069\u0076\u0065\u0061\u0077\u0061\u0079\u0073', roleLabels: ['public'], channelId: null, roleIds: [], note: 'Public; gate per-giveaway' },
 ];
 
 function defaultGuild() {
@@ -37,6 +37,9 @@ function defaultGuild() {
     xpMin: 15,
     xpMax: 25,
     cooldownSec: 60,
+    curveMode: 'quadratic',
+    curveBase: 100,
+    curveMult: 1.5,
     minMessageLength: 2,
     ignoreEmojiOnly: true,
     noXpChannelIds: [],
@@ -59,18 +62,17 @@ function migrateGuild(g) {
   if (g.schema === SCHEMA) {
     if (!g.users) g.users = {};
     if (!g.events) g.events = [];
-    if (!Array.isArray(g.roleRewards) || !g.roleRewards.length) {
-      g.roleRewards = DEFAULT_ROLE_REWARDS.map(r => ({ ...r }));
-    }
+    if (!Array.isArray(g.roleRewards) || !g.roleRewards.length) g.roleRewards = DEFAULT_ROLE_REWARDS.map(r => ({ ...r }));
     if (!Array.isArray(g.channelUnlocks) || !g.channelUnlocks.length) {
-      g.channelUnlocks = DEFAULT_CHANNEL_UNLOCKS.map(u => ({
-        ...u, roleIds: [...(u.roleIds || [])], roleLabels: [...(u.roleLabels || [])],
-      }));
+      g.channelUnlocks = DEFAULT_CHANNEL_UNLOCKS.map(u => ({ ...u, roleIds: [...(u.roleIds || [])], roleLabels: [...(u.roleLabels || [])] }));
     }
     if (!Array.isArray(g.noXpChannelIds)) g.noXpChannelIds = [];
     if (!Array.isArray(g.noXpRoleIds)) g.noXpRoleIds = [];
     if (!g.roleBoosts) g.roleBoosts = {};
     if (!g.channelBoosts) g.channelBoosts = {};
+    if (g.curveMode == null) g.curveMode = 'quadratic';
+    if (g.curveBase == null) g.curveBase = 100;
+    if (g.curveMult == null) g.curveMult = 1.5;
     if (g.xpMin == null) g.xpMin = 15;
     if (g.xpMax == null) g.xpMax = 25;
     if (g.cooldownSec == null) g.cooldownSec = 60;
@@ -102,9 +104,17 @@ function guildState(guildId) {
   return { all, g };
 }
 
-/** XP required to go from level n → n+1. */
-function xpToNext(n, _g) {
+function xpToNext(n, g) {
   const x = Math.max(0, Math.floor(Number(n) || 0));
+  const mode = (g && g.curveMode) || 'quadratic';
+  if (mode === 'exponential') {
+    const base = Math.max(10, Math.min(50000, Number(g.curveBase) || 100));
+    let mult = Number(g.curveMult);
+    if (!Number.isFinite(mult) || mult < 1) mult = 1;
+    mult = Math.min(3, Math.round(mult * 1000) / 1000);
+    if (mult === 1) return Math.round(base);
+    return Math.max(1, Math.round(base * Math.pow(mult, x)));
+  }
   return 5 * x * x + 50 * x + 100;
 }
 
@@ -131,11 +141,7 @@ function levelFromXp(totalXp, g) {
 function isEmojiOnly(text) {
   const t = String(text || '').trim();
   if (!t) return true;
-  const stripped = t
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/\p{Emoji_Component}/gu, '')
-    .replace(/[\u200d\ufe0f\u20e3]/g, '')
-    .replace(/\s+/g, '');
+  const stripped = t.replace(/\p{Extended_Pictographic}/gu, '').replace(/\p{Emoji_Component}/gu, '').replace(/[\u200d\ufe0f\u20e3]/g, '').replace(/\s+/g, '');
   return stripped.length === 0;
 }
 
@@ -190,15 +196,11 @@ async function syncRoles(member, level, rewards) {
   }
 }
 
-/** Plain-text level-up in the channel where the XP was earned. */
 async function announceLevelUp(message, newLevel) {
   if (!message?.channel || !message.author) return;
-  const content = `<@${message.author.id}> — you just hit level ${newLevel}. keep going.🎉`;
+  const content = `<@${message.author.id}> — you just hit level ${newLevel}. keep going.\u{1F389}`;
   try {
-    await message.channel.send({
-      content,
-      allowedMentions: { users: [message.author.id] },
-    });
+    await message.channel.send({ content, allowedMentions: { users: [message.author.id] } });
   } catch (err) {
     console.warn('[leveling] level-up message failed:', err.message || err);
   }
@@ -224,11 +226,7 @@ async function handleMessage(message) {
     const newLevel = levelFromXp(u.xp, g);
     u.level = newLevel;
     g.users[userId] = u;
-    g.events.unshift({
-      at: now, userId, xp: gained, level: newLevel,
-      mult: mult !== 1 ? mult : undefined,
-      channelId: message.channel?.id,
-    });
+    g.events.unshift({ at: now, userId, xp: gained, level: newLevel, mult: mult !== 1 ? mult : undefined, channelId: message.channel?.id });
     if (g.events.length > EVENTS_MAX) g.events.length = EVENTS_MAX;
     all[guildId] = g;
     saveAll(all);
@@ -255,19 +253,13 @@ function manualXp(guildId, { userId, amount, reason, staffId }) {
   u.xp = Math.max(0, (Number(u.xp) || 0) + Math.floor(n));
   u.level = levelFromXp(u.xp, g);
   g.users[userId] = u;
-  g.events.unshift({
-    at: Date.now(), userId, xp: Math.floor(n), level: u.level,
-    reason: String(reason || 'manual').slice(0, 80), staffId: staffId || null,
-  });
+  g.events.unshift({ at: Date.now(), userId, xp: Math.floor(n), level: u.level, reason: String(reason || 'manual').slice(0, 80), staffId: staffId || null });
   if (g.events.length > EVENTS_MAX) g.events.length = EVENTS_MAX;
   all[guildId] = g;
   saveAll(all);
   return { ok: true, userId, xp: u.xp, level: u.level, leveledUp: u.level > prev, amount: Math.floor(n) };
 }
 
-/**
- * Reset all XP and restore factory defaults (roles, rates, unlocks, curve).
- */
 function resetAllXp(guildId, staffId, guild) {
   const { all } = guildState(guildId);
   const g = defaultGuild();
@@ -284,28 +276,31 @@ function saveConfig(guildId, patch = {}, staffId, guild) {
   if (patch.xpMin != null) g.xpMin = Math.max(1, Math.min(100, Number(patch.xpMin) || 15));
   if (patch.xpMax != null) g.xpMax = Math.max(g.xpMin, Math.min(200, Number(patch.xpMax) || 25));
   if (patch.cooldownSec != null) g.cooldownSec = Math.max(0, Math.min(3600, Number(patch.cooldownSec) || 60));
+  if (patch.curveMode === 'quadratic' || patch.curveMode === 'exponential') g.curveMode = patch.curveMode;
+  if (patch.curveBase != null) {
+    const b = Number(patch.curveBase);
+    g.curveBase = Number.isFinite(b) ? Math.max(10, Math.min(50000, Math.round(b))) : 100;
+    if (patch.curveMode == null) g.curveMode = 'exponential';
+  }
+  if (patch.curveMult != null) {
+    const m = Number(patch.curveMult);
+    g.curveMult = Number.isFinite(m) && m >= 1 ? Math.min(3, Math.round(m * 1000) / 1000) : 1.5;
+    if (patch.curveMode == null) g.curveMode = 'exponential';
+  }
   if (patch.minMessageLength != null) g.minMessageLength = Math.max(0, Math.min(50, Number(patch.minMessageLength) || 0));
   if (typeof patch.ignoreEmojiOnly === 'boolean') g.ignoreEmojiOnly = patch.ignoreEmojiOnly;
-  if (Array.isArray(patch.noXpChannelIds)) {
-    g.noXpChannelIds = patch.noXpChannelIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 80);
-  }
-  if (Array.isArray(patch.noXpRoleIds)) {
-    g.noXpRoleIds = patch.noXpRoleIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 40);
-  }
+  if (Array.isArray(patch.noXpChannelIds)) g.noXpChannelIds = patch.noXpChannelIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 80);
+  if (Array.isArray(patch.noXpRoleIds)) g.noXpRoleIds = patch.noXpRoleIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 40);
   if (patch.weekendBoost != null) {
     const w = Number(patch.weekendBoost);
     g.weekendBoost = Number.isFinite(w) && w >= 1 ? Math.min(5, w) : 1;
   }
   if (Array.isArray(patch.roleRewards)) {
-    g.roleRewards = patch.roleRewards
-      .filter(r => r && String(r.roleId || '').match(/^\d{5,25}$/))
-      .map(r => ({
-        level: Math.max(0, Math.min(500, Number(r.level) || 0)),
-        label: String(r.label || 'Rank').slice(0, 40),
-        roleId: String(r.roleId),
-      }))
-      .sort((a, b) => a.level - b.level)
-      .slice(0, 25);
+    g.roleRewards = patch.roleRewards.filter(r => r && String(r.roleId || '').match(/^\d{5,25}$/)).map(r => ({
+      level: Math.max(0, Math.min(500, Number(r.level) || 0)),
+      label: String(r.label || 'Rank').slice(0, 40),
+      roleId: String(r.roleId),
+    })).sort((a, b) => a.level - b.level).slice(0, 25);
   }
   if (Array.isArray(patch.channelUnlocks)) {
     g.channelUnlocks = patch.channelUnlocks.slice(0, 30).map(u => ({
@@ -337,16 +332,9 @@ function displayName(guild, userId) {
 }
 
 function leaderboardRows(g, guild, limit = 15) {
-  return Object.entries(g.users || {})
-    .map(([id, u]) => ({
-      id,
-      name: displayName(guild, id) || id,
-      xp: Number(u.xp) || 0,
-      level: levelFromXp(u.xp, g),
-    }))
-    .filter(r => r.xp > 0)
-    .sort((a, b) => b.xp - a.xp || b.level - a.level)
-    .slice(0, limit);
+  return Object.entries(g.users || {}).map(([id, u]) => ({
+    id, name: displayName(guild, id) || id, xp: Number(u.xp) || 0, level: levelFromXp(u.xp, g),
+  })).filter(r => r.xp > 0).sort((a, b) => b.xp - a.xp || b.level - a.level).slice(0, limit);
 }
 
 function panelSnapshot(guildId, guild) {
@@ -358,9 +346,7 @@ function panelSnapshot(guildId, guild) {
   try {
     if (guild?.channels?.cache) {
       for (const ch of guild.channels.cache.values()) {
-        if (ch.isTextBased?.() && !ch.isThread?.()) {
-          channelOpts.push({ id: ch.id, name: ch.name, kind: ch.type === 15 ? 'forum' : 'text' });
-        }
+        if (ch.isTextBased?.() && !ch.isThread?.()) channelOpts.push({ id: ch.id, name: ch.name, kind: ch.type === 15 ? 'forum' : 'text' });
       }
       channelOpts.sort((a, b) => a.name.localeCompare(b.name));
     }
@@ -375,49 +361,30 @@ function panelSnapshot(guildId, guild) {
   const roleName = (id) => roleOpts.find(o => o.id === id)?.name || null;
   const chName = (id) => channelOpts.find(o => o.id === id)?.name || null;
   return {
-    mode: 'mee6',
-    schema: g.schema,
-    enabled: g.enabled !== false,
-    tracked,
-    userCount,
+    mode: 'mee6', schema: g.schema, enabled: g.enabled !== false, tracked, userCount,
     totalEvents: (g.events || []).length,
-    xpMin: g.xpMin ?? 15,
-    xpMax: g.xpMax ?? 25,
-    cooldownSec: g.cooldownSec ?? 60,
-    minMessageLength: g.minMessageLength ?? 2,
-    ignoreEmojiOnly: g.ignoreEmojiOnly !== false,
-    weekendBoost: g.weekendBoost ?? 1,
-    noXpChannelIds: g.noXpChannelIds || [],
-    noXpRoleIds: g.noXpRoleIds || [],
-    curveBase: null,
-    curveMult: null,
-    curveFormula: 'xp_to_next(n) = 5·n² + 50·n + 100',
-    roleRewards: (Array.isArray(g.roleRewards) ? g.roleRewards : []).map(r => ({
-      ...r,
-      totalXp: totalXpForLevel(r.level, g),
-      roleName: roleName(r.roleId) || r.label,
-    })),
+    xpMin: g.xpMin ?? 15, xpMax: g.xpMax ?? 25, cooldownSec: g.cooldownSec ?? 60,
+    minMessageLength: g.minMessageLength ?? 2, ignoreEmojiOnly: g.ignoreEmojiOnly !== false,
+    weekendBoost: g.weekendBoost ?? 1, noXpChannelIds: g.noXpChannelIds || [], noXpRoleIds: g.noXpRoleIds || [],
+    curveMode: g.curveMode || 'quadratic',
+    curveBase: g.curveBase ?? 100,
+    curveMult: g.curveMult ?? 1.5,
+    curveFormula: (g.curveMode === 'exponential')
+      ? `xp_to_next(n) = ${g.curveBase ?? 100} \u00d7 ${g.curveMult ?? 1.5}\u207f`
+      : 'xp_to_next(n) = 5\u00b7n\u00b2 + 50\u00b7n + 100',
+    roleRewards: (Array.isArray(g.roleRewards) ? g.roleRewards : []).map(r => ({ ...r, totalXp: totalXpForLevel(r.level, g), roleName: roleName(r.roleId) || r.label })),
     channelUnlocks: (Array.isArray(g.channelUnlocks) ? g.channelUnlocks : []).map(u => ({
       ...u,
       resolvedChannelName: u.channelId ? (chName(u.channelId) || u.channelName) : u.channelName,
       resolvedRoleNames: (u.roleIds || []).map(id => roleName(id) || id),
     })),
-    curveTable: [1, 5, 15, 30, 50].map(L => ({
-      level: L,
-      totalXp: totalXpForLevel(L, g),
-      stepXp: xpToNext(L - 1, g),
-    })),
-    formula: 'xp_to_next(n) = 5·n² + 50·n + 100',
+    curveTable: [1, 5, 15, 30, 50].map(L => ({ level: L, totalXp: totalXpForLevel(L, g), stepXp: xpToNext(L - 1, g) })),
+    formula: (g.curveMode === 'exponential')
+      ? `xp_to_next(n) = ${g.curveBase ?? 100} \u00d7 ${g.curveMult ?? 1.5}\u207f`
+      : 'xp_to_next(n) = 5\u00b7n\u00b2 + 50\u00b7n + 100',
     leaderboard: tracked ? leaderboardRows(g, guild, 15) : [],
-    recentEvents: tracked
-      ? (Array.isArray(g.events) ? g.events : []).slice(0, 15).map(e => ({
-          ...e,
-          name: displayName(guild, e.userId) || e.userId,
-        }))
-      : [],
-    channelOpts,
-    roleOpts,
-    configVersion: g.configVersion || 0,
+    recentEvents: tracked ? (Array.isArray(g.events) ? g.events : []).slice(0, 15).map(e => ({ ...e, name: displayName(guild, e.userId) || e.userId })) : [],
+    channelOpts, roleOpts, configVersion: g.configVersion || 0,
   };
 }
 
@@ -433,35 +400,14 @@ function getUserRank(guildId, userId) {
   const { g } = guildState(guildId);
   const u = (g.users || {})[userId] || { xp: 0, level: 0 };
   const prog = progressFromXp(u.xp, g);
-  const rows = Object.entries(g.users || {})
-    .map(([id, row]) => ({ id, xp: Number(row.xp) || 0 }))
-    .filter(r => r.xp > 0)
-    .sort((a, b) => b.xp - a.xp);
+  const rows = Object.entries(g.users || {}).map(([id, row]) => ({ id, xp: Number(row.xp) || 0 })).filter(r => r.xp > 0).sort((a, b) => b.xp - a.xp);
   const idx = rows.findIndex(r => r.id === userId);
-  return {
-    mode: 'mee6',
-    tracked: rows.length,
-    rank: idx >= 0 ? idx + 1 : null,
-    user: {
-      level: prog.level,
-      xp: prog.into,
-      neededXp: prog.need,
-      totalXp: prog.totalXp,
-      messages: 0,
-    },
-  };
+  return { mode: 'mee6', tracked: rows.length, rank: idx >= 0 ? idx + 1 : null, user: { level: prog.level, xp: prog.into, neededXp: prog.need, totalXp: prog.totalXp, messages: 0 } };
 }
 
 function getLeaderboard(guildId, limit = 15) {
   const { g } = guildState(guildId);
-  return Object.entries(g.users || {})
-    .map(([id, u]) => {
-      const prog = progressFromXp(u.xp, g);
-      return { id, level: prog.level, totalXp: prog.totalXp };
-    })
-    .filter(r => r.totalXp > 0)
-    .sort((a, b) => b.totalXp - a.totalXp || b.level - a.level)
-    .slice(0, limit);
+  return Object.entries(g.users || {}).map(([id, u]) => { const prog = progressFromXp(u.xp, g); return { id, level: prog.level, totalXp: prog.totalXp }; }).filter(r => r.totalXp > 0).sort((a, b) => b.totalXp - a.totalXp || b.level - a.level).slice(0, limit);
 }
 
 function resetUser(guildId, userId) {
@@ -483,10 +429,6 @@ function setUserLevel(guildId, userId, level) {
   return { ok: true, userId, level: target, xp };
 }
 
-/**
- * On bot restart: assign every tracked member the roles their level earns.
- * Non-blocking; errors per-member are swallowed so one failure does not stop the rest.
- */
 async function syncAllRolesOnStartup(client) {
   if (!client?.guilds?.cache) return;
   const all = loadAll();
@@ -504,9 +446,7 @@ async function syncAllRolesOnStartup(client) {
           const level = levelFromXp(u.xp, g);
           if (level < 0) continue;
           let member = guild.members.cache.get(userId);
-          if (!member) {
-            member = await guild.members.fetch(userId).catch(() => null);
-          }
+          if (!member) member = await guild.members.fetch(userId).catch(() => null);
           if (!member) continue;
           await syncRoles(member, level, g.roleRewards);
         } catch {}
@@ -518,23 +458,10 @@ async function syncAllRolesOnStartup(client) {
 }
 
 module.exports = {
-  handleMessage,
-  processMessage: handleMessage,
-  handleThreadCreate,
-  panelSnapshot,
-  saveConfig,
-  manualXp,
-  resetAllXp,
-  getUserRank,
-  getLeaderboard,
-  resetUser,
-  setUserLevel,
-  syncAllRolesOnStartup,
-  syncRoles,
-  xpToNext,
-  totalXpForLevel,
-  levelFromXp,
-  SCHEMA,
-  DEFAULT_ROLE_REWARDS,
-  DEFAULT_CHANNEL_UNLOCKS,
+  handleMessage, processMessage: handleMessage, handleThreadCreate,
+  panelSnapshot, saveConfig, manualXp, resetAllXp,
+  getUserRank, getLeaderboard, resetUser, setUserLevel,
+  syncAllRolesOnStartup, syncRoles,
+  xpToNext, totalXpForLevel, levelFromXp, SCHEMA,
+  DEFAULT_ROLE_REWARDS, DEFAULT_CHANNEL_UNLOCKS,
 };
