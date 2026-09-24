@@ -53,7 +53,6 @@ module.exports = {
     const top = ranked.slice(0, 3);
     const rest = ranked.slice(3, 10);
 
-    // ── Description: thin header + rule ──────────────────────────────
     const header = [
       '**All-time XP ladder**',
       '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄',
@@ -64,12 +63,11 @@ module.exports = {
       .setTitle('QuantLab · Ranks')
       .setDescription(header);
 
-    // ── Top 3 podium as inline fields (Discord renders 3-across) ─────
-    // Order: #2 · #1 · #3 so the crown sits in the center column.
+    // Top 3 podium: #2 · #1 · #3 (inline → three columns)
     const podiumMeta = [
-      { idx: 1, badge: '◇  SILVER',  mark: '➁' },
-      { idx: 0, badge: '◆  GOLD',    mark: '➀' },
-      { idx: 2, badge: '◇  BRONZE',  mark: '➂' },
+      { idx: 1, badge: '◇  SILVER', mark: '➁' },
+      { idx: 0, badge: '◆  GOLD',   mark: '➀' },
+      { idx: 2, badge: '◇  BRONZE', mark: '➂' },
     ];
 
     for (const p of podiumMeta) {
@@ -91,23 +89,13 @@ module.exports = {
       });
     }
 
-    // Full-width divider field
     embed.addFields({
       name: '\u200b',
       value: '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄',
       inline: false,
     });
 
-    // ── Ranks 4–10 ───────────────────────────────────────────────────
     if (rest.length) {
-      const lines = rest.map((u) => {
-        const bar = xpBar(u.totalXp, maxXp, 10);
-        const rank = String(u.rank != null ? u.rank : ranked.indexOf(u) + 1).padStart(2, '0');
-        // rank is 1-based from map index below
-        return null;
-      });
-
-      // rebuild with correct rank numbers
       const body = rest.map((u, i) => {
         const rank = String(i + 4).padStart(2, '0');
         const bar = xpBar(u.totalXp, maxXp, 10);
@@ -121,7 +109,6 @@ module.exports = {
       });
     }
 
-    // Thumbnail = #1 avatar (always visible in embed sidebar)
     try {
       const leader = ranked[0];
       let member = interaction.guild.members.cache.get(leader.id);
