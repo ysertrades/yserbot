@@ -180,9 +180,12 @@
     }
     root.append(hero);
 
+    /* Leaderboard + Base XP side by side */
+    const split = el('div', 'grid lvl-split');
+
+    const board = el('div', 'panel');
+    board.append(el('h2', null, 'Leaderboard'));
     if (L.tracked && (L.leaderboard || []).length) {
-      const board = el('div', 'panel');
-      board.append(el('h2', null, 'Leaderboard'));
       const list = el('ol', 'board lvl-board');
       (L.leaderboard || []).forEach(function (u, i) {
         const li = el('li');
@@ -194,15 +197,13 @@
         list.append(li);
       });
       board.append(list);
-      root.append(board);
+    } else {
+      board.append(el('p', 'hint', 'No ranked members yet.'));
     }
+    split.append(board);
 
     const curve = el('div', 'panel');
-    curve.append(el('h2', null, 'Level curve'));
-    curve.append(el('p', 'hint', 'Default is quadratic (5·n² + 50·n + 100). Edit Base XP / multiplier and Save curve to use exponential (base × multⁿ).'));
-    const modeRow = el('div', 'lvl-stat-row');
-    modeRow.append(el('span', mode === 'exponential' ? 'pill on' : 'pill off', mode === 'exponential' ? 'Mode: exponential' : 'Mode: quadratic (default)'));
-    curve.append(modeRow);
+    curve.append(el('h2', null, 'Base XP'));
     const curveGrid = el('div', 'lvl-nums');
     const iBase = num(L.curveBase != null ? L.curveBase : 100, { min: 10, max: 50000, step: 10 });
     const iMult = num(L.curveMult != null ? L.curveMult : 1.5, { min: 1, max: 3, step: 0.01 });
@@ -210,7 +211,6 @@
     curveGrid.append(field('Level multiplier', iMult, 'Each next step × this (1 = flat)'));
     curve.append(curveGrid);
     const preview = el('div', 'lvl-curve-table');
-    const formulaLine = el('p', 'hint', L.formula || '');
     function paintPreview() {
       const b = Number(iBase.value) || 100;
       const m = Number(iMult.value) || 1;
@@ -221,32 +221,18 @@
         r.append(el('span', 'v', fmt(totalFor(lv, 'exponential', b, m)) + ' XP total · ' + fmt(stepXp(lv - 1, 'exponential', b, m)) + ' / step'));
         preview.append(r);
       });
-      formulaLine.textContent = 'Preview (exponential): xp_to_next(n) = ' + b + ' × ' + m + 'ⁿ';
     }
     paintPreview();
     iBase.addEventListener('input', paintPreview);
     iMult.addEventListener('input', paintPreview);
     curve.append(preview);
-    curve.append(formulaLine);
     const curveActions = el('div', 'actions');
     curveActions.append(makeSaveBtn('Save curve', function () {
       return { curveMode: 'exponential', curveBase: Number(iBase.value) || 100, curveMult: Number(iMult.value) || 1.5 };
     }));
-    const useDefault = el('button', 'btn small', 'Use quadratic default');
-    useDefault.type = 'button';
-    useDefault.addEventListener('click', async function () {
-      useDefault.disabled = true;
-      try {
-        const res = await writeLeveling({ curveMode: 'quadratic' });
-        try { applyResult(res); render(); } catch (pe) {}
-        if (typeof toast === 'function') toast('Quadratic default active.', 'good');
-      } catch (e) {
-        if (typeof toast === 'function') toast('Could not switch — ' + (e.message || 'failed'), 'bad');
-      } finally { useDefault.disabled = false; }
-    });
-    curveActions.append(useDefault);
     curve.append(curveActions);
-    root.append(curve);
+    split.append(curve);
+    root.append(split);
 
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Role rewards'));
