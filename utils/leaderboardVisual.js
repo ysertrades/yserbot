@@ -2,14 +2,16 @@
 
 /**
  * leaderboardVisual.js — Top-10 XP board in QuantLab dark Phantom style.
- * Top 3 as podium cards; ranks 4–10 as a clean list. Large PNG for Discord embed.
+ * Top 3 podium with real Discord avatars (community-style cards).
+ * Ranks 4–10 as a clean list with avatars + XP bars.
  */
 
 const {
   PNG, setPxBlend,
-  drawText, drawTextCentered, textWidth, fillRoundedRectBlend, ringStroke, dotBlend, GLYPH_H,
+  drawText, drawTextCentered, textWidth, fillRoundedRectBlend, ringStroke, GLYPH_H,
 } = require('./pixelArt');
 const { RGBA: LIGHT, RGBA_DARK: DARK, darkCard, fillCanvas } = require('./brandTheme');
+const { drawAvatarCircle } = require('./avatarUtil');
 
 const TEXT = DARK.ink;
 const MUTED = DARK.grey1;
@@ -28,25 +30,43 @@ function initials(name) {
 
 function fitName(name, maxW, maxScale, minScale = 1) {
   let scale = maxScale;
-  const raw = String(name || 'Unknown').toUpperCase();
-  while (scale > minScale && textWidth(raw, scale) > maxW) scale -= 1;
+  const raw = String(name || 'Unknown');
+  while (scale > minScale && textWidth(raw.toUpperCase(), scale) > maxW) scale -= 1;
   let out = raw;
-  while (textWidth(out, scale) > maxW && out.length > 3) {
+  while (textWidth(out.toUpperCase(), scale) > maxW && out.length > 3) {
     out = out.slice(0, out.length - 1);
   }
   if (out !== raw && out.length > 2) out = out.slice(0, -1) + '.';
   return { text: out, scale };
 }
 
-function podiumAccent(rank) {
+function ringColor(rank) {
   if (rank === 1) return LIGHT.purple;
   if (rank === 2) return LIGHT.cyan;
-  return LIGHT.sky;
+  if (rank === 3) return LIGHT.sky;
+  return LIGHT.purple;
+}
+
+/** Simple crown glyph above #1 avatar */
+function drawCrown(png, cx, cy, color) {
+  for (let x = -18; x <= 18; x++) {
+    for (let y = 8; y <= 14; y++) setPxBlend(png, cx + x, cy + y, color, 0.95);
+  }
+  const peaks = [[-14, 8], [0, 8], [14, 8]];
+  for (const [px, py] of peaks) {
+    for (let t = 0; t <= 12; t++) {
+      const w = Math.max(1, 6 - Math.floor(t / 2));
+      for (let dx = -w; dx <= w; dx++) {
+        setPxBlend(png, cx + px + dx, cy + py - t, color, 0.95);
+      }
+    }
+    setPxBlend(png, cx + px, cy + py - 14, color, 1);
+  }
 }
 
 /**
  * @param {{
- *   entries: { rank: number, name: string, level: number, totalXp: number }[],
+ *   entries: { rank: number, name: string, level: number, totalXp: number, avatarPng?: object|null }[],
  *   title?: string,
  *   subtitle?: string,
  * }} data
@@ -58,114 +78,132 @@ function generateLeaderboardImage(data) {
   const subtitle = data.subtitle || 'TOP 10 BY XP';
 
   const W = 1200;
-  const topPad = 28;
-  const headerH = 72;
-  const podiumH = 280;
-  const listRowH = 52;
-  const listPad = 24;
+  const headerH = 70;
+  const podiumH = 340;
+  const listRowH = 56;
   const listCount = Math.max(0, entries.length - 3);
-  const H = topPad + headerH + podiumH + 20 + (listCount > 0 ? 36 + listCount * listRowH + listPad : listPad) + 28;
+  const H = 24 + headerH + podiumH + (listCount > 0 ? 40 + listCount * listRowH + 20 : 20) + 24;
 
   const png = new PNG({ width: W, height: H, colorType: 6 });
   fillCanvas(png, DARK.bg);
+  darkCard(png, 14, 14, W - 28, H - 28, { radius: 28 });
 
-  darkCard(png, 16, 16, W - 32, H - 32, { radius: 28 });
-
-  drawText(png, title, 48, 40, 3, TEXT);
-  drawText(png, subtitle, 48, 40 + 3 * GLYPH_H + 12, 2, MUTED);
-
-  for (let x = 48; x < W - 48; x++) setPxBlend(png, x, 36 + headerH, LIGHT.purple, 0.45);
+  drawText(png, title, 44, 36, 3, TEXT);
+  drawText(png, subtitle, 44, 36 + 3 * GLYPH_H + 10, 2, MUTED);
+  for (let x = 44; x < W - 44; x++) setPxBlend(png, x, 28 + headerH, LIGHT.purple, 0.4);
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3, 10);
 
-  const podiumY = 36 + headerH + 24;
-  const cardW = 320;
-  const gap = 28;
+  const podiumY = 28 + headerH + 18;
+  const cardW = 340;
+  const gap = 24;
   const totalW = cardW * 3 + gap * 2;
   const startX = Math.round((W - totalW) / 2);
 
   const slots = [
-    { rank: 2, x: startX, y: podiumY + 36, h: 220 },
-    { rank: 1, x: startX + cardW + gap, y: podiumY, h: 256 },
-    { rank: 3, x: startX + (cardW + gap) * 2, y: podiumY + 36, h: 220 },
+    { rank: 2, x: startX, y: podiumY + 28, h: 290 },
+    { rank: 1, x: startX + cardW + gap, y: podiumY, h: 318 },
+    { rank: 3, x: startX + (cardW + gap) * 2, y: podiumY + 28, h: 290 },
   ];
 
   for (const slot of slots) {
-    const entry = top3.find(e => e.rank === slot.rank) || top3[slot.rank - 1];
+    const entry = top3.find(e => e.rank === slot.rank);
     if (!entry) continue;
-    const accent = podiumAccent(slot.rank);
-    const raised = slot.rank === 1;
+    const accent = ringColor(slot.rank);
+    const isFirst = slot.rank === 1;
 
-    fillRoundedRectBlend(png, slot.x, slot.y, cardW, slot.h, 22, raised ? DARK.raised : DARK.card, 1);
-    if (raised) {
+    fillRoundedRectBlend(png, slot.x, slot.y, cardW, slot.h, 22, isFirst ? DARK.raised : DARK.card, 1);
+
+    if (isFirst) {
       for (let i = 0; i < 3; i++) {
-        for (let x = slot.x + 10; x < slot.x + cardW - 10; x++) {
-          setPxBlend(png, x, slot.y + i, accent, 0.35 - i * 0.1);
+        const a = 0.45 - i * 0.12;
+        for (let x = slot.x + 8; x < slot.x + cardW - 8; x++) {
+          setPxBlend(png, x, slot.y + i, LIGHT.purple, a);
+          setPxBlend(png, x, slot.y + slot.h - 1 - i, LIGHT.purple, a * 0.5);
+        }
+        for (let y = slot.y + 8; y < slot.y + slot.h - 8; y++) {
+          setPxBlend(png, slot.x + i, y, LIGHT.purple, a * 0.6);
+          setPxBlend(png, slot.x + cardW - 1 - i, y, LIGHT.purple, a * 0.6);
         }
       }
     }
 
-    const badgeCx = slot.x + cardW / 2;
-    const badgeCy = slot.y + 42;
-    ringStroke(png, badgeCx, badgeCy, 28, accent, 3);
-    dotBlend(png, badgeCx, badgeCy, 24, accent, 0.18);
-    drawTextCentered(png, String(slot.rank), badgeCx, badgeCy - 10, 3, accent);
+    // Rank number top-left only — never on the avatar
+    drawText(png, String(slot.rank), slot.x + 18, slot.y + 16, 2, isFirst ? LIGHT.purple : MUTED);
 
-    const avY = badgeCy + 58;
-    ringStroke(png, badgeCx, avY, 34, accent, 2);
-    dotBlend(png, badgeCx, avY, 30, accent, 0.12);
-    drawTextCentered(png, initials(entry.name), badgeCx, avY - 8, 2, TEXT);
+    const avR = isFirst ? 58 : 50;
+    const avCx = slot.x + cardW / 2;
+    const avCy = slot.y + (isFirst ? 100 : 88);
 
-    const nameY = avY + 48;
-    const fitted = fitName(entry.name, cardW - 40, 2, 1);
-    drawTextCentered(png, fitted.text, badgeCx, nameY, fitted.scale, TEXT);
+    if (isFirst) drawCrown(png, avCx, avCy - avR - 22, LIGHT.purple);
+
+    ringStroke(png, avCx, avCy, avR + 4, accent, isFirst ? 4 : 3);
+    drawAvatarCircle(
+      png, avCx, avCy, avR,
+      entry.avatarPng || null,
+      initials(entry.name).slice(0, 1),
+      accent,
+    );
+
+    const nameY = avCy + avR + 22;
+    const fitted = fitName(entry.name, cardW - 48, 2, 1);
+    drawTextCentered(png, fitted.text, avCx, nameY, fitted.scale, TEXT);
+
+    const xpStr = fmt(entry.totalXp);
+    let xs = isFirst ? 5 : 4;
+    while (xs > 2 && textWidth(xpStr, xs) > cardW - 40) xs -= 1;
+    const xpY = nameY + fitted.scale * GLYPH_H + 18;
+    drawTextCentered(png, xpStr, avCx, xpY, xs, TEXT);
+    drawTextCentered(png, 'XP', avCx, xpY + xs * GLYPH_H + 10, 2, MUTED);
 
     const lvl = `LV ${entry.level}`;
-    const lvlW = textWidth(lvl, 2) + 24;
-    const lvlX = badgeCx - lvlW / 2;
-    const lvlY = nameY + 2 * GLYPH_H + 14;
-    fillRoundedRectBlend(png, lvlX, lvlY, lvlW, 28, 14, accent, 0.25);
-    drawTextCentered(png, lvl, badgeCx, lvlY + 7, 2, accent);
-
-    drawTextCentered(png, `${fmt(entry.totalXp)} XP`, badgeCx, lvlY + 40, 2, MUTED);
+    const lvlW = textWidth(lvl, 1) + 20;
+    const lvlY = xpY + xs * GLYPH_H + 10 + 2 * GLYPH_H + 12;
+    fillRoundedRectBlend(png, avCx - lvlW / 2, lvlY, lvlW, 22, 11, accent, 0.22);
+    drawTextCentered(png, lvl, avCx, lvlY + 6, 1, accent);
   }
 
   if (rest.length) {
-    const listTop = podiumY + podiumH + 8;
-    drawText(png, 'RANKS 4-10', 48, listTop, 2, DIM);
+    const listTop = podiumY + podiumH + 4;
+    drawText(png, 'RANKS 4-10', 44, listTop, 2, DIM);
 
     const maxXp = Math.max(...entries.map(e => e.totalXp || 0), 1);
-    const rowX = 40;
-    const rowW = W - 80;
+    const rowX = 36;
+    const rowW = W - 72;
 
     rest.forEach((entry, i) => {
       const y = listTop + 28 + i * listRowH;
-      fillRoundedRectBlend(png, rowX, y, rowW, listRowH - 8, 14, DARK.raised, 1);
+      fillRoundedRectBlend(png, rowX, y, rowW, listRowH - 10, 14, DARK.raised, 1);
 
-      const rk = String(entry.rank).padStart(2, ' ');
-      drawText(png, rk, rowX + 18, y + 16, 2, MUTED);
+      drawText(png, String(entry.rank).padStart(2, ' '), rowX + 16, y + 16, 2, MUTED);
 
-      const chipX = rowX + 70;
-      const chipCy = y + (listRowH - 8) / 2;
-      ringStroke(png, chipX, chipCy, 16, LIGHT.purple, 2);
-      drawTextCentered(png, initials(entry.name), chipX, chipCy - 6, 1, TEXT);
+      const avCx = rowX + 78;
+      const avCy = y + (listRowH - 10) / 2;
+      const avR = 18;
+      ringStroke(png, avCx, avCy, avR + 2, LIGHT.purple, 2);
+      drawAvatarCircle(
+        png, avCx, avCy, avR,
+        entry.avatarPng || null,
+        initials(entry.name).slice(0, 1),
+        LIGHT.purple,
+      );
 
-      const fitted = fitName(entry.name, 280, 2, 1);
-      drawText(png, fitted.text, chipX + 28, y + 16, fitted.scale, TEXT);
+      const fitted = fitName(entry.name, 260, 2, 1);
+      drawText(png, fitted.text, avCx + avR + 14, y + 16, fitted.scale, TEXT);
 
       drawText(png, `LV ${entry.level}`, rowX + 420, y + 16, 2, MUTED);
 
       const barX = rowX + 540;
       const barW = 280;
-      const barH = 14;
+      const barH = 12;
       const barY = y + 18;
-      fillRoundedRectBlend(png, barX, barY, barW, barH, 7, DARK.border, 1);
+      fillRoundedRectBlend(png, barX, barY, barW, barH, 6, DARK.border, 1);
       const pct = Math.max(0.04, Math.min(1, (entry.totalXp || 0) / maxXp));
-      fillRoundedRectBlend(png, barX, barY, Math.round(barW * pct), barH, 7, LIGHT.purple, 0.85);
+      fillRoundedRectBlend(png, barX, barY, Math.round(barW * pct), barH, 6, LIGHT.purple, 0.9);
 
       const xpStr = fmt(entry.totalXp);
-      drawText(png, xpStr, rowX + rowW - 20 - textWidth(xpStr, 2), y + 16, 2, TEXT);
+      drawText(png, xpStr, rowX + rowW - 18 - textWidth(xpStr, 2), y + 16, 2, TEXT);
     });
   }
 
