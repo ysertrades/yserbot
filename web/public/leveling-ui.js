@@ -351,7 +351,7 @@
           channelUnlocks: unlockDraft.filter(u => u.channelId || u.channelName),
         };
         const res = await writeLeveling(body);
-        if (!res || res.error) throw Object.assign(new Error(res?.error || 'empty'), { data: res });
+        if (!res || res.error) throw Object.assign(new Error(res?.error || res?.detail || 'save_failed'), { data: res || {} });
         try {
           applyResult(res);
           render();
@@ -363,7 +363,7 @@
         setTimeout(() => { save.textContent = 'Save changes'; }, 1400);
       } catch (e) {
         console.error('[leveling save]', e);
-        if (typeof toast === 'function') toast('Could not save — ' + (e?.data?.detail || e.message), 'bad');
+        if (typeof toast === 'function') toast('Could not save — ' + (e?.data?.detail || e?.data?.error || e.message), 'bad');
       } finally { save.disabled = false; }
     });
     actions.append(save);

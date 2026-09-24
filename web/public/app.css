@@ -3483,3 +3483,12 @@ button.primary:hover {
 .roster-entries.is-bonus{background:rgba(34,51,245,.18);border-color:rgba(77,92,255,.35);color:#a8b0ff}
 .prize-image-row{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;margin-top:.55rem}
 .prize-image-name{font-size:.78rem;color:rgba(255,255,255,.5)}
+
+
+/* Sidebar: no permanent stroke on mouse click; keep ring for keyboard only */
+.sidebar-nav button:focus { outline: none; box-shadow: none; }
+.sidebar-nav button:focus:not(:focus-visible) { outline: none; box-shadow: none; }
+.sidebar-nav button:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.7);
+  outline-offset: 2px;
+}

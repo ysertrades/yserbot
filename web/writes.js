@@ -621,6 +621,7 @@ Object.assign(OPS, {
   async leveling(guildId, body, ctx) {
     try {
       const leveling = require('../utils/levelingEngine');
+      const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId) || null;
       if (body && body.op === 'manual') {
         const r = leveling.manualXp(guildId, {
           userId: body.userId,
@@ -629,7 +630,9 @@ Object.assign(OPS, {
           staffId: ctx.session?.uid,
         });
         if (r?.error) return r;
-        return { ok: true, ...r, changed: ['Manual XP'] };
+        const snap = typeof leveling.panelSnapshot === 'function'
+          ? leveling.panelSnapshot(guildId, guild) : null;
+        return { ok: true, ...r, levels: snap, changed: ['Manual XP'] };
       }
       if (body && body.op === 'reset') {
         if (typeof leveling.resetAllXp !== 'function') {
