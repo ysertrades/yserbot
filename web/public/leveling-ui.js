@@ -186,7 +186,11 @@
     board.append(el('h2', null, 'Leaderboard'));
     if (L.tracked && (L.leaderboard || []).length) {
       const rows = (L.leaderboard || []).slice(0, 10);
-      const maxXp = Math.max.apply(null, rows.map(function (u) { return Number(u.xp) || 0; }).concat([1]));
+      function progressPct(u) {
+        const need = Math.max(1, Number(u.need) || 1);
+        const into = Math.max(0, Number(u.into) || 0);
+        return Math.max(0, Math.min(100, Math.round((into / need) * 100)));
+      }
       const top3 = rows.slice(0, 3);
       const rest = rows.slice(3, 10);
 
@@ -200,7 +204,16 @@
         const card = el('div', 'lvl-podium-card ' + tierCls[idx] + (rank === 1 ? ' first' : ''));
         card.append(el('span', 'lvl-podium-rank', String(rank)));
         const av = el('div', 'lvl-podium-av');
-        av.textContent = String(u.name || '?').slice(0, 2).toUpperCase();
+        if (u.avatarUrl) {
+          const img = document.createElement('img');
+          img.src = u.avatarUrl;
+          img.alt = '';
+          img.decoding = 'async';
+          img.referrerPolicy = 'no-referrer';
+          av.appendChild(img);
+        } else {
+          av.textContent = String(u.name || '?').slice(0, 2).toUpperCase();
+        }
         card.append(av);
         const nm = el('div', 'lvl-podium-name', u.name || u.id);
         if (u.name && u.name !== u.id) nm.title = u.id;
@@ -210,7 +223,8 @@
         card.append(el('div', 'lvl-podium-lv', 'Lv ' + u.level));
         const bar = el('div', 'lvl-podium-bar');
         const fill = el('div', 'lvl-podium-bar-fill');
-        fill.style.width = Math.max(4, Math.round(((Number(u.xp) || 0) / maxXp) * 100)) + '%';
+        fill.style.width = Math.max(4, progressPct(u)) + '%';
+        fill.title = progressPct(u) + '% to next level';
         bar.append(fill);
         card.append(bar);
         podium.append(card);
@@ -231,7 +245,8 @@
           const right = el('div', 'lvl-board-right');
           const bar = el('div', 'lvl-board-bar');
           const fill = el('div', 'lvl-board-bar-fill');
-          fill.style.width = Math.max(4, Math.round(((Number(u.xp) || 0) / maxXp) * 100)) + '%';
+          fill.style.width = Math.max(4, progressPct(u)) + '%';
+        fill.title = progressPct(u) + '% to next level';
           bar.append(fill);
           right.append(bar);
           right.append(el('span', 'lvl-board-xp', fmt(u.xp)));

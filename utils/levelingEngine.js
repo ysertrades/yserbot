@@ -470,10 +470,30 @@ function displayName(guild, userId) {
   return null;
 }
 
+function avatarUrl(guild, userId) {
+  if (!guild || !userId) return null;
+  try {
+    const m = guild.members?.cache?.get(userId);
+    if (m?.displayAvatarURL) return m.displayAvatarURL({ extension: 'png', size: 64 });
+    const u = guild.client?.users?.cache?.get(userId);
+    if (u?.displayAvatarURL) return u.displayAvatarURL({ extension: 'png', size: 64 });
+  } catch {}
+  return null;
+}
+
 function leaderboardRows(g, guild, limit = 15) {
-  return Object.entries(g.users || {}).map(([id, u]) => ({
-    id, name: displayName(guild, id) || id, xp: Number(u.xp) || 0, level: levelFromXp(u.xp, g),
-  })).filter(r => r.xp > 0).sort((a, b) => b.xp - a.xp || b.level - a.level).slice(0, limit);
+  return Object.entries(g.users || {}).map(([id, u]) => {
+    const prog = progressFromXp(u.xp, g);
+    return {
+      id,
+      name: displayName(guild, id) || id,
+      xp: prog.totalXp,
+      level: prog.level,
+      into: prog.into,
+      need: prog.need,
+      avatarUrl: avatarUrl(guild, id),
+    };
+  }).filter(r => r.xp > 0).sort((a, b) => b.xp - a.xp || b.level - a.level).slice(0, limit);
 }
 
 function panelSnapshot(guildId, guild) {
@@ -556,7 +576,16 @@ function getUserRank(guildId, userId) {
 
 function getLeaderboard(guildId, limit = 15) {
   const { g } = guildState(guildId);
-  return Object.entries(g.users || {}).map(([id, u]) => { const prog = progressFromXp(u.xp, g); return { id, level: prog.level, totalXp: prog.totalXp }; }).filter(r => r.totalXp > 0).sort((a, b) => b.totalXp - a.totalXp || b.level - a.level).slice(0, limit);
+  return Object.entries(g.users || {}).map(([id, u]) => {
+    const prog = progressFromXp(u.xp, g);
+    return {
+      id,
+      level: prog.level,
+      totalXp: prog.totalXp,
+      into: prog.into,
+      need: prog.need,
+    };
+  }).filter(r => r.totalXp > 0).sort((a, b) => b.totalXp - a.totalXp || b.level - a.level).slice(0, limit);
 }
 
 function resetUser(guildId, userId) {
@@ -611,6 +640,6 @@ module.exports = {
   panelSnapshot, saveConfig, manualXp, resetAllXp,
   getUserRank, getLeaderboard, resetUser, setUserLevel,
   syncAllRolesOnStartup, syncRoles,
-  xpToNext, totalXpForLevel, levelFromXp, SCHEMA,
+  xpToNext, totalXpForLevel, levelFromXp, progressFromXp, SCHEMA,
   DEFAULT_ROLE_REWARDS, DEFAULT_CHANNEL_UNLOCKS,
 };
