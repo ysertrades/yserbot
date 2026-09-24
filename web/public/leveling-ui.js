@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Quantlab HQ Leveling — MEE6 panel.
- * Editable rank ladder · channel unlocks · modern fields · empty until tracked.
+ * Per-section save · curve · role ladder · channel unlocks.
  */
 (function () {
   function el(tag, cls, text) {
@@ -15,27 +15,32 @@
     try { return state?.overview?.features?.levels || null; } catch { return null; }
   }
 
+  /** Always use fetch so API error bodies are never dropped (window.post returns null on !ok). */
   async function writeLeveling(body) {
-    const runner =
-      (typeof window !== 'undefined' && typeof window.post === 'function' && window.post) ||
-      (typeof post === 'function' && post.length >= 2 ? post : null);
-    if (!runner) {
-      const guildId = state?.guildId;
-      if (!guildId) throw new Error('no_guild');
-      const headers = { 'content-type': 'application/json', 'x-csrf-token': state?.csrf || '' };
-      try { if (typeof authHeaders === 'function') Object.assign(headers, authHeaders()); } catch {}
-      const res = await fetch(`/api/guild/${guildId}/leveling`, {
+    const guildId = state?.guildId;
+    if (!guildId) throw Object.assign(new Error('no_guild'), { data: { error: 'no_guild' } });
+    const headers = { 'content-type': 'application/json', 'x-csrf-token': state?.csrf || '' };
+    try { if (typeof authHeaders === 'function') Object.assign(headers, authHeaders()); } catch {}
+    let res;
+    try {
+      res = await fetch(`/api/guild/${guildId}/leveling`, {
         method: 'POST', credentials: 'same-origin', headers, body: JSON.stringify(body || {}),
       });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const err = new Error(out.error || `http_${res.status}`);
-        err.data = out;
-        throw err;
-      }
-      return out;
+    } catch (net) {
+      throw Object.assign(new Error('network'), { data: { error: 'network', detail: String(net.message || net) } });
     }
-    return runner('leveling', body, { quiet: true });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = out.detail || out.error || ('http_' + res.status);
+      throw Object.assign(new Error(msg), { data: out });
+    }
+    if (out.overview) state.overview = out.overview;
+    if (out.levels) {
+      if (!state.overview) state.overview = {};
+      if (!state.overview.features) state.overview.features = {};
+      state.overview.features.levels = out.levels;
+    }
+    return out;
   }
 
   function applyResult(res) {
@@ -123,13 +128,37 @@
     return [...(sel?.selectedOptions || [])].map(o => o.value).filter(Boolean);
   }
 
+  function makeSaveBtn(label, buildBody) {
+    const btn = el('button', 'btn primary small', label || 'Save');
+    btn.type = 'button';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const prev = btn.textContent;
+      try {
+        const body = buildBody();
+        const res = await writeLeveling(body);
+        try { applyResult(res); render(); } catch (pe) { console.warn('[leveling] paint', pe); }
+        if (typeof toast === 'function') toast('Saved.', 'good');
+        btn.textContent = 'Saved';
+        setTimeout(() => { btn.textContent = prev; }, 1200);
+      } catch (e) {
+        console.error('[leveling save]', e);
+        const why = e?.data?.detail || e?.data?.error || e.message || 'failed';
+        if (typeof toast === 'function') toast('Could not save — ' + why, 'bad');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    return btn;
+  }
+
   function render() {
     const root = document.getElementById('leveling-root');
     if (!root) return;
     const L = data();
     root.replaceChildren();
     if (!L) {
-      root.append(el('p', 'muted', 'Leveling data unavailable. Enable Leveling & Ranks in Settings.'));
+      root.append(el('p', 'muted', 'Leveling data unavailable. Enable Leveling & Ranks in Settings.');
       return;
     }
 
@@ -143,7 +172,7 @@
     if (!L.tracked) {
       const empty = el('div', 'lvl-empty');
       empty.append(el('p', null, 'No XP tracked yet'));
-      empty.append(el('p', 'hint', 'Leaderboard stays empty until members earn XP after this reset. Legacy scores from the old engine were cleared.'));
+      empty.append(el('p', 'hint', 'Leaderboard stays empty until members earn XP after this reset.'));
       hero.append(empty);
     } else {
       const stats = el('div', 'lvl-stat-row');
@@ -178,7 +207,6 @@
       root.append(board);
     }
 
-    /* ── Curve: base XP + growth multiplier ─────────────────────────────── */
     const curve = el('div', 'panel');
     curve.append(el('h2', null, 'Level curve'));
     curve.append(el('p', 'hint', 'Base XP is what level 0→1 costs. Multiplier scales each next step (×1 = flat, ×1.5 = 50% more each level).'));
@@ -212,6 +240,18 @@
         preview.append(r);
       }
     }
+    paintPreview();
+    iBase.addEventListener('input', () => { paintPreview(); paintRewards(); });
+    iMult.addEventListener('input', () => { paintPreview(); paintRewards(); });
+    curve.append(preview);
+
+    const curveActions = el('div', 'actions');
+    curveActions.append(makeSaveBtn('Save curve', () => ({
+      curveBase: Number(iBase.value) || 100,
+      curveMult: Number(iMult.value) || 1,
+    })));
+    curve.append(curveActions);
+    root.append(curve);
 
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Role rewards'));
@@ -250,18 +290,17 @@
         rewardRows.append(card);
       });
     }
-    paintPreview();
-    iBase.addEventListener('input', () => { paintPreview(); paintRewards(); });
-    iMult.addEventListener('input', () => { paintPreview(); paintRewards(); });
-    curve.append(preview);
-    root.append(curve);
-
     paintRewards();
     ranks.append(rewardRows);
     const addReward = el('button', 'btn small', 'Add rank');
     addReward.type = 'button';
     addReward.addEventListener('click', () => { rewardDraft.push({ level: 0, roleId: '', label: '' }); paintRewards(); });
     ranks.append(addReward);
+    const rankActions = el('div', 'actions');
+    rankActions.append(makeSaveBtn('Save roles', () => ({
+      roleRewards: rewardDraft.filter(r => r.roleId),
+    })));
+    ranks.append(rankActions);
     root.append(ranks);
 
     const unlocks = el('div', 'panel');
@@ -303,6 +342,11 @@
     addUnlock.type = 'button';
     addUnlock.addEventListener('click', () => { unlockDraft.push({ channelId: '', channelName: '', roleIds: [], note: '' }); paintUnlocks(); });
     unlocks.append(addUnlock);
+    const unlockActions = el('div', 'actions');
+    unlockActions.append(makeSaveBtn('Save unlocks', () => ({
+      channelUnlocks: unlockDraft.filter(u => u.channelId || u.channelName),
+    })));
+    unlocks.append(unlockActions);
     root.append(unlocks);
 
     const cfg = el('div', 'panel');
@@ -332,41 +376,15 @@
     cfg.append(excl);
 
     const actions = el('div', 'actions');
-    const save = el('button', 'btn primary', 'Save changes');
-    save.type = 'button';
-    save.addEventListener('click', async () => {
-      save.disabled = true;
-      try {
-        const body = {
-          enabled: !!en._input?.checked,
-          xpMin: Number(iMin.value),
-          xpMax: Number(iMax.value),
-          cooldownSec: Number(iCd.value),
-          curveBase: Number(iBase.value) || 100,
-          curveMult: Number(iMult.value) || 1,
-          weekendBoost: Number(iWeekend.value) || 1,
-          noXpChannelIds: selectedValues(chNo),
-          noXpRoleIds: selectedValues(roleNo),
-          roleRewards: rewardDraft.filter(r => r.roleId),
-          channelUnlocks: unlockDraft.filter(u => u.channelId || u.channelName),
-        };
-        const res = await writeLeveling(body);
-        if (!res || res.error) throw Object.assign(new Error(res?.error || res?.detail || 'save_failed'), { data: res || {} });
-        try {
-          applyResult(res);
-          render();
-        } catch (paintErr) {
-          console.warn('[leveling] paint after save', paintErr);
-        }
-        if (typeof toast === 'function') toast('Changes saved.', 'good');
-        save.textContent = 'Saved';
-        setTimeout(() => { save.textContent = 'Save changes'; }, 1400);
-      } catch (e) {
-        console.error('[leveling save]', e);
-        if (typeof toast === 'function') toast('Could not save — ' + (e?.data?.detail || e?.data?.error || e.message), 'bad');
-      } finally { save.disabled = false; }
-    });
-    actions.append(save);
+    actions.append(makeSaveBtn('Save XP settings', () => ({
+      enabled: !!en._input?.checked,
+      xpMin: Number(iMin.value),
+      xpMax: Number(iMax.value),
+      cooldownSec: Number(iCd.value),
+      weekendBoost: Number(iWeekend.value) || 1,
+      noXpChannelIds: selectedValues(chNo),
+      noXpRoleIds: selectedValues(roleNo),
+    })));
 
     const reset = el('button', 'btn', 'Reset all XP');
     reset.type = 'button';
@@ -382,13 +400,7 @@
       reset.disabled = true;
       try {
         const res = await writeLeveling({ op: 'reset' });
-        if (!res || res.error) throw Object.assign(new Error(res?.error || 'fail'), { data: res });
-        try {
-          applyResult(res);
-          render();
-        } catch (paintErr) {
-          console.warn('[leveling] paint after reset', paintErr);
-        }
+        try { applyResult(res); render(); } catch (pe) { console.warn('[leveling] paint', pe); }
         if (typeof toast === 'function') toast('Leaderboard cleared — tracking starts fresh.', 'good');
       } catch (e) {
         if (typeof toast === 'function') toast('Reset failed — ' + (e?.data?.detail || e.message), 'bad');
