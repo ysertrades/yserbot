@@ -4,6 +4,9 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
 
+// QuantLab Phantom palette — purple (#9397EE), not neon green
+const BRAND_PURPLE = 0x9397EE;
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('leaderboard')
@@ -19,7 +22,7 @@ module.exports = {
     if (!ranked.length) {
       return interaction.reply({
         embeds: [new EmbedBuilder()
-          .setColor(0x34D399)
+          .setColor(BRAND_PURPLE)
           .setTitle('XP leaderboard')
           .setDescription('No ranks yet — chat in allowed channels to earn 15–25 XP per message.')],
       });
@@ -31,7 +34,7 @@ module.exports = {
     });
 
     const embed = new EmbedBuilder()
-      .setColor(0x34D399)
+      .setColor(BRAND_PURPLE)
       .setTitle('XP leaderboard')
       .setDescription(`All-time · Quantlab curve\n\n${lines.join('\n')}`)
       .setFooter({ text: '15–25 XP per message · 60s cooldown' });
