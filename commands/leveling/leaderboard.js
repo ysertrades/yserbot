@@ -2,7 +2,8 @@
 
 /**
  * /leaderboard — pure Discord embed (no PNG).
- * Server icon thumbnail · giveaway-style • separators · proportional XP bars.
+ * Server icon · giveaway-style • separators · progress bars = XP into next level
+ * (synced to panel curve settings via levelingEngine.progressFromXp).
  */
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
@@ -12,11 +13,19 @@ const { isFeatureEnabled } = require('../../utils/featureToggles');
 const BRAND_PURPLE = 0x9397EE;
 const RULE = '•  •  •  •  •  •  •  •  •  •  •  •';
 
-/** Proportional bar vs leader XP — share of the ladder, not a spinner. */
-function xpBar(xp, maxXp, cells = 12) {
-  const pct = maxXp > 0 ? Math.max(0, Math.min(1, Number(xp) / maxXp)) : 0;
+/** Progress toward next level (into / need), not share of #1. */
+function levelBar(into, need, cells = 12) {
+  const n = Math.max(1, Number(need) || 1);
+  const i = Math.max(0, Number(into) || 0);
+  const pct = Math.max(0, Math.min(1, i / n));
   const filled = Math.round(pct * cells);
   return '▰'.repeat(filled) + '▱'.repeat(Math.max(0, cells - filled));
+}
+
+function levelPct(into, need) {
+  const n = Math.max(1, Number(need) || 1);
+  const i = Math.max(0, Number(into) || 0);
+  return Math.round(Math.max(0, Math.min(1, i / n)) * 100);
 }
 
 function fmt(n) {
@@ -28,6 +37,20 @@ function serverIcon(guild) {
     return guild?.iconURL({ extension: 'png', size: 128 }) || null;
   } catch {
     return null;
+  }
+}
+
+/** Prefetch members so <@id> stays resolvable as profile mentions. */
+async function prefetchMembers(guild, ids) {
+  if (!guild?.members?.fetch || !ids?.length) return;
+  try {
+    await guild.members.fetch({ user: ids.slice(0, 25) });
+  } catch {
+    try {
+      await Promise.all(
+        ids.slice(0, 15).map((id) => guild.members.fetch(id).catch(() => null))
+      );
+    } catch {}
   }
 }
 
@@ -55,7 +78,8 @@ module.exports = {
       return interaction.reply({ embeds: [empty] });
     }
 
-    const maxXp = ranked[0].totalXp || 1;
+    await prefetchMembers(interaction.guild, ranked.map((r) => r.id));
+
     const top = ranked.slice(0, 3);
     const rest = ranked.slice(3, 10);
 
@@ -77,14 +101,16 @@ module.exports = {
         embed.addFields({ name: '\u200b', value: '\u200b', inline: true });
         continue;
       }
-      const share = maxXp > 0 ? Math.round((u.totalXp / maxXp) * 100) : 0;
+      const into = u.into ?? 0;
+      const need = u.need ?? 1;
+      const pct = levelPct(into, need);
       embed.addFields({
         name: p.label,
         value: [
           `<@${u.id}>`,
           `**${fmt(u.totalXp)}** XP`,
           `Level **${u.level}**`,
-          `\`${xpBar(u.totalXp, maxXp, 10)}\` · ${share}%`,
+          `\`${levelBar(into, need, 10)}\` · ${pct}%`,
         ].join('\n'),
         inline: true,
       });
@@ -95,10 +121,12 @@ module.exports = {
     if (rest.length) {
       const body = rest.map((u, i) => {
         const rank = String(i + 4).padStart(2, '0');
-        const share = maxXp > 0 ? Math.round((u.totalXp / maxXp) * 100) : 0;
+        const into = u.into ?? 0;
+        const need = u.need ?? 1;
+        const pct = levelPct(into, need);
         return (
           `\`${rank}\`  <@${u.id}>\n` +
-          `  Lv **${u.level}** · **${fmt(u.totalXp)}** XP · \`${xpBar(u.totalXp, maxXp, 12)}\` ${share}%`
+          `  Lv **${u.level}** · **${fmt(u.totalXp)}** XP · \`${levelBar(into, need, 12)}\` ${pct}%`
         );
       }).join('\n\n');
 
@@ -112,10 +140,13 @@ module.exports = {
     if (icon) embed.setThumbnail(icon);
 
     embed.setFooter({
-      text: `Top ${ranked.length}  •  15–25 XP / msg  •  60s cooldown  •  QuantLab`,
+      text: `Top ${ranked.length}  •  progress = XP into next level  •  QuantLab`,
     });
     embed.setTimestamp();
 
-    return interaction.reply({ embeds: [embed] });
+    return interaction.reply({
+      embeds: [embed],
+      allowedMentions: { parse: [], users: [] },
+    });
   },
 };
