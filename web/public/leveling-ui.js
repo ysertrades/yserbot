@@ -158,7 +158,7 @@
     const L = data();
     root.replaceChildren();
     if (!L) {
-      root.append(el('p', 'muted', 'Leveling data unavailable. Enable Leveling & Ranks in Settings.');
+      root.append(el('p', 'muted', 'Leveling data unavailable. Enable Leveling & Ranks in Settings.'));
       return;
     }
 
