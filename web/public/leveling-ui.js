@@ -182,20 +182,64 @@
 
     const split = el('div', 'grid lvl-split');
 
-    const board = el('div', 'panel');
+    const board = el('div', 'panel lvl-lb-panel');
     board.append(el('h2', null, 'Leaderboard'));
     if (L.tracked && (L.leaderboard || []).length) {
-      const list = el('ol', 'board lvl-board');
-      (L.leaderboard || []).forEach(function (u, i) {
-        const li = el('li');
-        li.append(el('span', 'rank', String(i + 1)));
-        const name = el('span', 'name', u.name || u.id);
-        if (u.name && u.name !== u.id) name.title = u.id;
-        li.append(name);
-        li.append(el('span', 'bal', fmt(u.xp) + ' XP · L' + u.level));
-        list.append(li);
+      const rows = (L.leaderboard || []).slice(0, 10);
+      const maxXp = Math.max.apply(null, rows.map(function (u) { return Number(u.xp) || 0; }).concat([1]));
+      const top3 = rows.slice(0, 3);
+      const rest = rows.slice(3, 10);
+
+      const podium = el('div', 'lvl-podium');
+      const order = [1, 0, 2];
+      const tierCls = ['gold', 'silver', 'bronze'];
+      order.forEach(function (idx) {
+        const u = top3[idx];
+        if (!u) return;
+        const rank = idx + 1;
+        const card = el('div', 'lvl-podium-card ' + tierCls[idx] + (rank === 1 ? ' first' : ''));
+        card.append(el('span', 'lvl-podium-rank', String(rank)));
+        const av = el('div', 'lvl-podium-av');
+        av.textContent = String(u.name || '?').slice(0, 2).toUpperCase();
+        card.append(av);
+        const nm = el('div', 'lvl-podium-name', u.name || u.id);
+        if (u.name && u.name !== u.id) nm.title = u.id;
+        card.append(nm);
+        card.append(el('div', 'lvl-podium-xp', fmt(u.xp)));
+        card.append(el('div', 'lvl-podium-xp-label', 'XP'));
+        card.append(el('div', 'lvl-podium-lv', 'Lv ' + u.level));
+        const bar = el('div', 'lvl-podium-bar');
+        const fill = el('div', 'lvl-podium-bar-fill');
+        fill.style.width = Math.max(4, Math.round(((Number(u.xp) || 0) / maxXp) * 100)) + '%';
+        bar.append(fill);
+        card.append(bar);
+        podium.append(card);
       });
-      board.append(list);
+      board.append(podium);
+
+      if (rest.length) {
+        const list = el('div', 'lvl-board-rest');
+        rest.forEach(function (u, i) {
+          const row = el('div', 'lvl-board-row');
+          row.append(el('span', 'lvl-board-pos', String(i + 4)));
+          const mid = el('div', 'lvl-board-mid');
+          const nm = el('div', 'lvl-board-name', u.name || u.id);
+          if (u.name && u.name !== u.id) nm.title = u.id;
+          mid.append(nm);
+          mid.append(el('div', 'lvl-board-sub', 'Lv ' + u.level));
+          row.append(mid);
+          const right = el('div', 'lvl-board-right');
+          const bar = el('div', 'lvl-board-bar');
+          const fill = el('div', 'lvl-board-bar-fill');
+          fill.style.width = Math.max(4, Math.round(((Number(u.xp) || 0) / maxXp) * 100)) + '%';
+          bar.append(fill);
+          right.append(bar);
+          right.append(el('span', 'lvl-board-xp', fmt(u.xp)));
+          row.append(right);
+          list.append(row);
+        });
+        board.append(list);
+      }
     } else {
       board.append(el('p', 'hint', 'No ranked members yet.'));
     }
