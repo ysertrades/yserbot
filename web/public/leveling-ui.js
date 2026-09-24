@@ -1,5 +1,5 @@
 'use strict';
-/** Quantlab HQ Leveling — overview, curve (Base XP + mult), roles, unlocks, XP settings */
+/** Quantlab HQ Leveling — overview, curve, roles, unlocks, XP + journal */
 (function () {
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -353,6 +353,27 @@
     excl.append(field('No-XP channels', chNo));
     excl.append(field('No-XP roles', roleNo));
     cfg.append(excl);
+
+    cfg.append(el('h2', null, 'Journal XP'));
+    cfg.append(el('p', 'hint', 'Forum journals are separate from chat XP. Only image posts in your own journal thread earn XP. Text-only = 0.'));
+    const forumOpts = (L.channelOpts || []).slice();
+    const iJournal = selectOne(forumOpts, L.journalForumChannelId || '', 'No journal forum…');
+    const iJMin = num(L.journalXpMin != null ? L.journalXpMin : 30, { min: 1, max: 500 });
+    const iJMax = num(L.journalXpMax != null ? L.journalXpMax : 50, { min: 1, max: 1000 });
+    const iJCd = num(L.journalCooldownSec != null ? L.journalCooldownSec : 21600, { min: 0, max: 604800 });
+    iJMin.addEventListener('change', function () { if (Number(iJMin.value) > Number(iJMax.value)) iJMax.value = iJMin.value; });
+    iJMax.addEventListener('change', function () { if (Number(iJMax.value) < Number(iJMin.value)) iJMin.value = iJMax.value; });
+    const jGrid = el('div', 'lvl-nums');
+    jGrid.append(field('Journal forum', iJournal, 'Pick the forum channel where members post journals'));
+    jGrid.append(field('Min journal XP', iJMin));
+    jGrid.append(field('Max journal XP', iJMax));
+    jGrid.append(field('Journal cooldown (sec)', iJCd, 'Default 21600 = 6 hours'));
+    cfg.append(jGrid);
+    const jImg = toggle('Require image for journal XP', L.journalImageOnly !== false);
+    const jOwn = toggle('Only journal owner earns', L.journalOwnerOnly !== false);
+    cfg.append(jImg);
+    cfg.append(jOwn);
+
     const actions = el('div', 'actions');
     actions.append(makeSaveBtn('Save XP settings', function () {
       return {
@@ -363,6 +384,12 @@
         weekendBoost: Number(iWeekend.value) || 1,
         noXpChannelIds: selectedValues(chNo),
         noXpRoleIds: selectedValues(roleNo),
+        journalForumChannelId: iJournal.value || null,
+        journalXpMin: Number(iJMin.value) || 30,
+        journalXpMax: Number(iJMax.value) || 50,
+        journalCooldownSec: Number(iJCd.value) || 0,
+        journalImageOnly: !!(jImg._input && jImg._input.checked),
+        journalOwnerOnly: !!(jOwn._input && jOwn._input.checked),
       };
     }));
     const reset = el('button', 'btn', 'Reset to defaults');
@@ -396,7 +423,7 @@
       L.recentEvents.slice(0, 12).forEach(function (e) {
         const row = el('div', 'row');
         row.append(el('span', 'k', e.name || e.userId || '?'));
-        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + ' · L' + (e.level != null ? e.level : '—')));
+        row.append(el('span', 'v', (e.xp > 0 ? '+' : '') + e.xp + (e.source === 'journal' ? ' · journal' : '') + ' · L' + (e.level != null ? e.level : '—')));
         list.append(row);
       });
       ev.append(list);
