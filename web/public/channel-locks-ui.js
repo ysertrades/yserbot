@@ -36,13 +36,20 @@
     const ov = st && st.overview;
     const m = (ov && ov.mod) || {};
     const locked = Array.isArray(m.lockedChannels) ? m.lockedChannels : [];
-    const modes = Array.isArray(m.lockModes) && m.lockModes.length
-      ? m.lockModes
-      : [
-          { id: 'chat', label: 'Chat only', blurb: 'Block messages & threads' },
-          { id: 'media', label: 'Chat + media', blurb: 'Also block files, embeds, reactions' },
-          { id: 'full', label: 'Full lockdown', blurb: 'Messages, media, reactions, external emoji' },
-        ];
+    const fallbackModes = [
+      { id: 'media', label: 'Chat + media' },
+      { id: 'full', label: 'Full lockdown' },
+    ];
+    let modes = Array.isArray(m.lockModes) && m.lockModes.length ? m.lockModes : fallbackModes;
+    modes = modes
+      .filter(function (md) { return md && (md.id === 'media' || md.id === 'full'); })
+      .map(function (md) {
+        return {
+          id: md.id,
+          label: md.id === 'full' ? 'Full lockdown' : 'Chat + media',
+        };
+      });
+    if (!modes.length) modes = fallbackModes;
 
     root.replaceChildren();
 
@@ -51,7 +58,7 @@
     head.append(el('span', 'tag', locked.length ? String(locked.length) + ' locked' : 'Clear'));
     root.append(head);
     root.append(el('p', 'muted',
-      'Lock a channel from here, or type 🔒 / 🔓 alone in Discord (admins & Manage Channels). List stays in sync.'));
+      '🔒 in Discord locks chat + media (reactions stay if the channel already allows them). 🔓 unlocks. Panel stays live.'));
 
     if (!ov) {
       root.append(el('p', 'hint', 'Loading server data…'));
@@ -85,7 +92,8 @@
     for (const md of modes) {
       const o = document.createElement('option');
       o.value = md.id;
-      o.textContent = md.label + (md.blurb ? ' — ' + md.blurb : '');
+      o.textContent = md.label;
+      if (md.id === 'media') o.selected = true;
       modeSel.append(o);
     }
 
@@ -103,7 +111,7 @@
       lockBtn.disabled = unlockBtn.disabled = true;
       try {
         const body = { op: op, channelId: channelId };
-        if (op === 'lock') body.mode = modeSel.value || 'chat';
+        if (op === 'lock') body.mode = modeSel.value || 'media';
         let out = null;
         if (typeof post === 'function') {
           out = await post('channellock', body);
