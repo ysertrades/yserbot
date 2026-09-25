@@ -71,7 +71,7 @@ function listLocked(guildId, guild) {
       channelId,
       channelName: ch?.name || rec.channelName || channelId,
       mode: resolveMode(rec.mode),
-      modeLabel: MODES[resolveMode(rec.mode)].label,
+      modeLabel: (MODES[resolveMode(rec.mode)] || MODES.media).label,
       reason: rec.reason || null,
       lockedBy: rec.lockedBy || null,
       lockedByTag: rec.lockedByTag || null,
@@ -106,7 +106,7 @@ async function lockChannel(channel, {
   }
 
   const modeKey = resolveMode(mode);
-  const perms = MODES[modeKey].perms;
+  const perms = (MODES[modeKey] || MODES.media).perms;
   const everyoneId = channel.guild.roles.everyone.id;
   const modAdminRoleIds = _modAdminRoleIds(guildId);
 
@@ -149,29 +149,36 @@ async function lockChannel(channel, {
 
 async function unlockChannel(channel, { guildId, unlockedByTag = null }) {
   const locks = readJson(LOCK_FILE, {});
-  const record = locks[guildId]?.[channel.id];
-  if (!record) return { ok: false, error: 'not_locked' };
+  if (!locks[guildId] || !locks[guildId][channel.id]) {
+    return { ok: false, error: 'not_locked' };
+  }
+  const record = locks[guildId][channel.id];
+  const snap = record.snapshot && typeof record.snapshot === 'object' ? record.snapshot : {};
+  const everyoneSnap = snap.everyone && typeof snap.everyone === 'object' ? snap.everyone : null;
+  const roleSnaps = snap.roles && typeof snap.roles === 'object' ? snap.roles : {};
 
   try {
-    if (record.snapshot?.everyone) {
+    if (everyoneSnap && channel.guild?.roles?.everyone) {
       await channel.permissionOverwrites.edit(
         channel.guild.roles.everyone.id,
-        record.snapshot.everyone,
+        everyoneSnap,
         { reason: `Channel unlocked by ${unlockedByTag || 'staff'}` },
       );
     }
-    for (const [roleId, perms] of Object.entries(record.snapshot?.roles || {})) {
+    for (const [roleId, overwrite] of Object.entries(roleSnaps)) {
+      if (!overwrite || typeof overwrite !== 'object') continue;
       if (!channel.guild.roles.cache.has(roleId)) continue;
-      await channel.permissionOverwrites.edit(roleId, perms, {
-        reason: `Channel unlocked by ${unlockedByTag || 'staff'}` },
-      );
+      await channel.permissionOverwrites.edit(roleId, overwrite, {
+        reason: `Channel unlocked by ${unlockedByTag || 'staff'}`,
+      });
     }
   } catch (err) {
     console.error('[channelLock.unlock]', err);
-    return { ok: false, error: 'perm_failed', detail: err.message };
+    return { ok: false, error: 'perm_failed', detail: String(err && err.message || err) };
   }
 
   delete locks[guildId][channel.id];
+  if (!Object.keys(locks[guildId]).length) delete locks[guildId];
   writeJson(LOCK_FILE, locks);
   return { ok: true };
 }
