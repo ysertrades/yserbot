@@ -58,21 +58,26 @@ function me(session, client) {
   return {
     user: { id: session.uid, name: session.name, avatar: session.avatar },
     expiresAt: session.exp,
-    owner,
-    allowGuildNickname: owner || !!auth.getStaff(session.uid)?.allowGuildNickname,
     guilds,
+    isOwner: owner,
   };
 }
 
+const memberFetchedAt = new Map();
+const MEMBER_TTL_MS = 5 * 60 * 1000;
+
 async function ensureMembers(guild) {
-  if (!guild?.members) return;
+  if (typeof guild?.members?.fetch !== 'function') return;
+  if (Date.now() - (memberFetchedAt.get(guild.id) || 0) < MEMBER_TTL_MS) return;
+  memberFetchedAt.set(guild.id, Date.now());
   try {
-    if (guild.members.cache.size < Math.min(guild.memberCount || 0, 5)) {
-      await guild.members.fetch({ limit: 500 }).catch(() => {});
-    }
-  } catch {}
+    await guild.members.fetch({ time: 20_000 });
+  } catch (err) {
+    console.warn('[Panel] could not fetch the member list:', err.message);
+  }
 }
 
+/** Everything the overview screen shows for one guild. */
 async function guildOverview(guildId, client, session = null, opts = {}) {
   const guild = client.guilds.cache.get(guildId);
   if (!guild) {
@@ -100,14 +105,6 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       icon: guild.iconURL({ size: 128, extension: 'png', forceStatic: true }) || null,
       members: guild.memberCount,
     },
-    channels: guild.channels.cache
-      .filter(c => c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement)
-      .map(c => ({ id: c.id, name: c.name }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    roles: guild.roles.cache
-      .filter(r => !r.managed && r.id !== guild.id)
-      .map(r => ({ id: r.id, name: r.name, color: r.hexColor }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
     newsfeed: {
       enabled: !!newsfeed.enabled,
       channelId: newsfeed.channelId || null,
