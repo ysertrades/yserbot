@@ -2,7 +2,7 @@
 
 /**
  * /rank — member-pad style embed (no pixel PNG).
- * Hero: avatar + name · two stat cards · progress · badges only if economy on.
+ * Hero line: **name** · rank · level · two stat cards · badges if economy on.
  */
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
@@ -14,20 +14,6 @@ const { BRAND_PURPLE } = require('../../utils/dropFormat');
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('en-US');
-}
-
-function levelBar(into, need, cells = 12) {
-  const n = Math.max(1, Number(need) || 1);
-  const i = Math.max(0, Number(into) || 0);
-  const pct = Math.max(0, Math.min(1, i / n));
-  const filled = Math.round(pct * cells);
-  return '▰'.repeat(filled) + '▱'.repeat(Math.max(0, cells - filled));
-}
-
-function levelPct(into, need) {
-  const n = Math.max(1, Number(need) || 1);
-  const i = Math.max(0, Number(into) || 0);
-  return Math.round(Math.max(0, Math.min(1, i / n)) * 100);
 }
 
 function badgeLabels(userId, guildId) {
@@ -74,22 +60,12 @@ module.exports = {
     const u = snap.user;
     const into = u.xp ?? 0;
     const need = u.neededXp ?? 1;
-    const pct = levelPct(into, need);
-    const bar = levelBar(into, need, 12);
 
     const avatar =
       user.displayAvatarURL({ extension: 'png', size: 128 }) || undefined;
 
-    const embed = new EmbedBuilder()
-      .setColor(BRAND_PURPLE)
-      .setAuthor({
-        name: displayName,
-        iconURL: avatar,
-      })
-      .setThumbnail(avatar || null);
-
-    const hero = [];
-    hero.push('`@' + user.username + '`');
+    // Single hero line first — bold name (was author), no @handle, no top author row
+    const hero = ['**' + displayName + '**'];
     if (snap.rank) {
       hero.push('**#' + snap.rank + '** of ' + snap.tracked + ' ranked');
     } else {
@@ -97,7 +73,10 @@ module.exports = {
     }
     hero.push('**Level ' + u.level + '**');
 
-    embed.setDescription(hero.join('  ·  '));
+    const embed = new EmbedBuilder()
+      .setColor(BRAND_PURPLE)
+      .setThumbnail(avatar || null)
+      .setDescription(hero.join('  ·  '));
 
     embed.addFields(
       {
@@ -112,12 +91,6 @@ module.exports = {
       },
     );
 
-    embed.addFields({
-      name: 'Progress',
-      value: '`' + bar + '`  **' + pct + '%**',
-      inline: false,
-    });
-
     if (isFeatureEnabled(interaction.guild.id, 'economy')) {
       const labels = badgeLabels(user.id, interaction.guild.id);
       if (labels.length) {
@@ -128,11 +101,6 @@ module.exports = {
         });
       }
     }
-
-    embed.setFooter({
-      text: 'QuantLab  ·  rank',
-    });
-    embed.setTimestamp();
 
     return interaction.reply({ embeds: [embed] });
   },
