@@ -7345,11 +7345,17 @@ function relativeTime(ts) {
 function renderPanelLog() {
   const pl = state.overview?.panelLog;
   const form = $('#form-panellog');
+  if (!form) return;
   if (!pl) { form.replaceChildren(); return; }
 
-  const draft = { ...pl.values };
+  const categories = Array.isArray(pl.categories) ? pl.categories
+    : Object.entries(state.overview?.panelLogCategories || {}).map(([key, c]) => ({
+        key, label: (c && c.label) || key,
+      }));
+  const draft = { ...(pl.values || pl) };
+  if (!categories.length) { form.replaceChildren(); return; }
   form.replaceChildren(
-    ...pl.categories.map(c => toggle(c.label, draft[c.key] !== false, v => { draft[c.key] = v; })),
+    ...categories.map(c => toggle(c.label, draft[c.key] !== false, v => { draft[c.key] = v; })),
     actions(() => post('panellog', draft)),
   );
 }

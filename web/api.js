@@ -167,7 +167,10 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     appearance: appearance.read(guildId),
     whop: whopPanel.read(guildId, guild),
     botProfile: session ? botProfile.read(guildId, client, session) : null,
-    panelLog: panelLogSettings(guildId),
+    panelLog: {
+      categories: Object.entries(LOG_CATEGORIES).map(([key, c]) => ({ key, label: c.label })),
+      values: panelLogSettings(guildId),
+    },
     panelLogCategories: LOG_CATEGORIES,
     bannerCopy: allBannerCopy(guildId),
     composer: await composer.list(guildId, guild),
