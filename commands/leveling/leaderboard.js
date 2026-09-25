@@ -1,36 +1,14 @@
 'use strict';
 
 /**
- * /leaderboard — Components V2 card (same separators as giveaways).
- * Separators: utils/dropCardV2 pattern — type 14, divider: true.
- * Progress = XP into next level; mentions resolved when in guild.
+ * /leaderboard — pure Discord embed (no PNG).
+ * Giveaway solidRule (─) separators · progress = XP into next level · stable mentions.
  */
 
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
-
-/** Same flag + separator primitive as utils/dropCardV2.js (giveaways). */
-const IS_COMPONENTS_V2 = 1 << 15;
-const ACCENT = 0x9397EE;
-
-function text(content) {
-  return { type: 10, content: String(content).slice(0, 4000) };
-}
-function separator(divider = true) {
-  return { type: 14, divider: !!divider, spacing: 1 };
-}
-function sectionWithThumb(content, iconUrl) {
-  if (!iconUrl) return text(content);
-  return {
-    type: 9,
-    components: [text(content)],
-    accessory: { type: 11, media: { url: iconUrl } },
-  };
-}
-function container(children, accent = ACCENT) {
-  return { type: 17, accent_color: accent, components: children.filter(Boolean) };
-}
+const { solidRule, BRAND_PURPLE } = require('../../utils/dropFormat');
 
 function levelBar(into, need, cells = 12) {
   const n = Math.max(1, Number(need) || 1);
@@ -58,6 +36,11 @@ function serverIcon(guild) {
   }
 }
 
+/**
+ * Resolve each id to a clickable mention when the member is in the guild.
+ * If they left / are uncached, show **display name** so the field never
+ * falls back to a raw snowflake that wraps as <@12…\n…34> in narrow columns.
+ */
 async function resolveMentions(guild, ids) {
   const out = new Map();
   if (!guild || !ids?.length) return out;
@@ -71,7 +54,9 @@ async function resolveMentions(guild, ids) {
         inGuild: true,
       });
     }
-  } catch { /* per-id below */ }
+  } catch {
+    /* fall through to per-id */
+  }
 
   for (const id of ids) {
     if (out.has(id)) continue;
@@ -83,7 +68,9 @@ async function resolveMentions(guild, ids) {
         inGuild: true,
       });
       continue;
-    } catch { /* not in guild */ }
+    } catch {
+      /* not in guild */
+    }
     try {
       const u = await guild.client.users.fetch(id);
       const name = u.globalName || u.username || null;
@@ -105,30 +92,6 @@ function who(resolved, id) {
   return '<@' + id + '>';
 }
 
-function podiumBlock(u, label, resolved) {
-  if (!u) return null;
-  const into = u.into ?? 0;
-  const need = u.need ?? 1;
-  const pct = levelPct(into, need);
-  return (
-    '**' + label + '** — ' + who(resolved, u.id) + '\n' +
-    '**' + fmt(u.totalXp) + '** XP · Level **' + u.level + '**\n' +
-    '`' + levelBar(into, need, 10) + '` · ' + pct + '%'
-  );
-}
-
-function rankLine(u, rank, resolved) {
-  const into = u.into ?? 0;
-  const need = u.need ?? 1;
-  const pct = levelPct(into, need);
-  const r = String(rank).padStart(2, '0');
-  return (
-    '`' + r + '`  ' + who(resolved, u.id) + '\n' +
-    'Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP · `' +
-    levelBar(into, need, 12) + '` ' + pct + '%'
-  );
-}
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('leaderboard')
@@ -143,15 +106,14 @@ module.exports = {
     const icon = serverIcon(interaction.guild);
 
     if (!ranked.length) {
-      const kids = [
-        sectionWithThumb('# QuantLab · Ranks\n\nNo ranks yet — chat in allowed channels to earn **15–25 XP** per message.', icon),
-        separator(true),
-        text('-# 15–25 XP / msg  ·  60s cooldown  ·  QuantLab'),
-      ];
-      return interaction.reply({
-        flags: IS_COMPONENTS_V2,
-        components: [container(kids)],
-      });
+      const empty = new EmbedBuilder()
+        .setColor(BRAND_PURPLE)
+        .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+        .setTitle('XP ladder')
+        .setDescription('No ranks yet — chat in allowed channels to earn **15–25 XP** per message.')
+        .setFooter({ text: '15–25 XP / msg  ·  60s cooldown  ·  QuantLab' });
+      if (icon) empty.setThumbnail(icon);
+      return interaction.reply({ embeds: [empty] });
     }
 
     const resolved = await resolveMentions(
@@ -162,34 +124,81 @@ module.exports = {
     const top = ranked.slice(0, 3);
     const rest = ranked.slice(3, 10);
 
-    const podiumParts = [
-      podiumBlock(top[1], '➁ Silver', resolved),
-      podiumBlock(top[0], '➀ Gold', resolved),
-      podiumBlock(top[2], '➂ Bronze', resolved),
-    ].filter(Boolean);
+    const rule = solidRule(
+      'All-time XP ladder',
+      'Silver Gold Bronze',
+      ...ranked.map((u) => fmt(u.totalXp) + ' XP Level ' + u.level),
+      'Ranks 4 – 10',
+      'Top 10 · progress = XP into next level · QuantLab',
+    );
 
-    const kids = [];
+    const embed = new EmbedBuilder()
+      .setColor(BRAND_PURPLE)
+      .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+      .setTitle('All-time XP ladder')
+      .setDescription(rule);
 
-    kids.push(sectionWithThumb('# QuantLab · Ranks\nAll-time XP ladder', icon));
-    kids.push(separator(true));
-    kids.push(text(podiumParts.join('\n\n')));
-    kids.push(separator(true));
+    const podiumMeta = [
+      { idx: 1, label: '➁  Silver' },
+      { idx: 0, label: '➀  Gold' },
+      { idx: 2, label: '➂  Bronze' },
+    ];
 
-    if (rest.length) {
-      const body = rest.map((u, i) => rankLine(u, i + 4, resolved)).join('\n\n');
-      kids.push(text('**Ranks 4 – 10**\n\n' + body.slice(0, 3800)));
+    for (const p of podiumMeta) {
+      const u = top[p.idx];
+      if (!u) {
+        embed.addFields({ name: '\u200b', value: '\u200b', inline: true });
+        continue;
+      }
+      const into = u.into ?? 0;
+      const need = u.need ?? 1;
+      const pct = levelPct(into, need);
+      embed.addFields({
+        name: p.label,
+        value: [
+          who(resolved, u.id),
+          '**' + fmt(u.totalXp) + '** XP',
+          'Level **' + u.level + '**',
+          '`' + levelBar(into, need, 10) + '` · ' + pct + '%',
+        ].join('\n'),
+        inline: true,
+      });
     }
 
-    kids.push(separator(true));
-    kids.push(text(
-      '-# Top ' + ranked.length + '  ·  progress = XP into next level  ·  QuantLab',
-    ));
+    embed.addFields({ name: '\u200b', value: rule, inline: false });
+
+    if (rest.length) {
+      const body = rest.map((u, i) => {
+        const rank = String(i + 4).padStart(2, '0');
+        const into = u.into ?? 0;
+        const need = u.need ?? 1;
+        const pct = levelPct(into, need);
+        return (
+          '`' + rank + '`  ' + who(resolved, u.id) + '\n' +
+          '  Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP · `' + levelBar(into, need, 12) + '` ' + pct + '%'
+        );
+      }).join('\n\n');
+
+      embed.addFields({
+        name: 'Ranks  4 – 10',
+        value: body.slice(0, 1020),
+        inline: false,
+      });
+    }
+
+    embed.addFields({ name: '\u200b', value: rule, inline: false });
+
+    if (icon) embed.setThumbnail(icon);
+
+    embed.setFooter({
+      text: 'Top ' + ranked.length + '  ·  progress = XP into next level  ·  QuantLab',
+    });
+    embed.setTimestamp();
 
     const mentionIds = ranked.filter((r) => resolved.get(r.id)?.inGuild).map((r) => r.id);
 
     return interaction.reply({
-      flags: IS_COMPONENTS_V2,
-      components: [container(kids)],
+      embeds: [embed],
       allowedMentions: { parse: [], users: mentionIds },
     });
   },
