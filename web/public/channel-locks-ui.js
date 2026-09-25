@@ -21,10 +21,12 @@
 
   function channelOptions() {
     const st = getState();
-    const L = st && st.overview && st.overview.features && st.overview.features.levels;
-    if (L && Array.isArray(L.channelOpts) && L.channelOpts.length) return L.channelOpts;
     const ov = st && st.overview;
-    if (ov && Array.isArray(ov.channels) && ov.channels.length) return ov.channels;
+    // Prefer mod.channels (always filled by moderation.read)
+    const fromMod = ov && ov.mod && Array.isArray(ov.mod.channels) ? ov.mod.channels : null;
+    if (fromMod && fromMod.length) return fromMod;
+    const L = ov && ov.features && ov.features.levels;
+    if (L && Array.isArray(L.channelOpts) && L.channelOpts.length) return L.channelOpts;
     return [];
   }
 
@@ -83,7 +85,7 @@
       const o = document.createElement('option');
       o.value = '';
       o.disabled = true;
-      o.textContent = 'No channels listed yet — open Leveling once, or wait for refresh';
+      o.textContent = 'No channels listed — switch guild or refresh';
       chSel.append(o);
     }
 
@@ -103,9 +105,12 @@
     unlockBtn.type = 'button';
 
     async function run(op) {
-      const channelId = chSel.value;
+      let channelId = chSel.value;
+      if (!channelId && op === 'unlock' && locked.length === 1) {
+        channelId = locked[0].channelId;
+      }
       if (!channelId) {
-        if (typeof toast === 'function') toast('Pick a channel first.', 'bad');
+        if (typeof toast === 'function') toast(op === 'unlock' ? 'Pick a locked channel (or use Unlock on a row).' : 'Pick a channel first.', 'bad');
         return;
       }
       lockBtn.disabled = unlockBtn.disabled = true;
@@ -115,6 +120,7 @@
         let out = null;
         if (typeof post === 'function') {
           out = await post('channellock', body);
+          if (!out) return; // post already toasted
         } else {
           const s = getState();
           const headers = { 'content-type': 'application/json', 'x-csrf-token': (s && s.csrf) || '' };
