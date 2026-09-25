@@ -274,11 +274,6 @@ async function announceLevelUp(message, newLevel) {
   }
 }
 
-/**
- * Journal forum path.
- * Text-only + image-required ON → normal chat XP (xpMin–xpMax, chat cooldown).
- * Has image (or image-required OFF) → journal XP (journalXpMin–Max, journal cooldown).
- */
 async function handleJournalMessage(message, all, g, guildId) {
   if (message.author?.bot) return null;
   const userId = message.author.id;
@@ -391,10 +386,19 @@ function manualXp(guildId, { userId, amount, reason, staffId }) {
 }
 
 function resetAllXp(guildId, staffId, guild) {
-  const { all } = guildState(guildId);
+  // Settings-only reset: keep every member's XP / level progress.
+  const { all, g: prev } = guildState(guildId);
+  const keptUsers = prev && prev.users ? { ...prev.users } : {};
+  const keptEvents = prev && Array.isArray(prev.events) ? prev.events.slice() : [];
   const g = defaultGuild();
+  g.users = keptUsers;
+  g.events = keptEvents;
   g.resetAt = Date.now();
   g.resetBy = staffId || null;
+  for (const u of Object.values(g.users)) {
+    if (!u || u.xp == null) continue;
+    u.level = levelFromXp(u.xp, g);
+  }
   all[guildId] = g;
   saveAll(all);
   return panelSnapshot(guildId, guild || null);
@@ -454,6 +458,12 @@ function saveConfig(guildId, patch = {}, staffId, guild) {
   g.configVersion = (Number(g.configVersion) || 0) + 1;
   g.configUpdatedAt = Date.now();
   g.configBy = staffId || null;
+  if (patch.curveMode != null || patch.curveBase != null || patch.curveMult != null) {
+    for (const u of Object.values(g.users || {})) {
+      if (!u || u.xp == null) continue;
+      u.level = levelFromXp(u.xp, g);
+    }
+  }
   all[guildId] = g;
   saveAll(all);
   return panelSnapshot(guildId, guild || null);
@@ -471,11 +481,10 @@ function displayName(guild, userId) {
 }
 
 function avatarUrl(guild, userId) {
-  if (!guild || !userId) return null;
   try {
-    const m = guild.members?.cache?.get(userId);
+    const m = guild?.members?.cache?.get(userId);
     if (m?.displayAvatarURL) return m.displayAvatarURL({ extension: 'png', size: 64 });
-    const u = guild.client?.users?.cache?.get(userId);
+    const u = guild?.client?.users?.cache?.get(userId);
     if (u?.displayAvatarURL) return u.displayAvatarURL({ extension: 'png', size: 64 });
   } catch {}
   return null;
