@@ -11,22 +11,19 @@ const { readJson, writeJson } = require('./jsonStorage');
 const LOCK_FILE = 'locked_channels.json';
 
 const MODES = {
-  chat: {
-    label: 'Chat only',
-    blurb: 'Blocks sending messages and threads',
-    perms: ['SendMessages', 'SendMessagesInThreads', 'CreatePublicThreads', 'CreatePrivateThreads'],
-  },
+  // Default lock: silence chat + uploads. Reactions stay as the channel already allows.
   media: {
     label: 'Chat + media',
-    blurb: 'Blocks messages, files, embeds, and reactions',
+    blurb: 'No messages or files',
     perms: [
       'SendMessages', 'SendMessagesInThreads', 'CreatePublicThreads', 'CreatePrivateThreads',
-      'AttachFiles', 'EmbedLinks', 'AddReactions',
+      'AttachFiles', 'EmbedLinks',
     ],
   },
+  // Hard lock: nothing through — including reactions and external emoji/stickers.
   full: {
     label: 'Full lockdown',
-    blurb: 'Blocks messages, media, reactions, and external emoji/stickers',
+    blurb: 'No messages, files, or reactions',
     perms: [
       'SendMessages', 'SendMessagesInThreads', 'CreatePublicThreads', 'CreatePrivateThreads',
       'AttachFiles', 'EmbedLinks', 'AddReactions',
@@ -39,9 +36,11 @@ function modeKeys() {
   return Object.keys(MODES);
 }
 
+/** Normalize mode; legacy "chat" maps to media (new default). */
 function resolveMode(mode) {
-  const m = String(mode || 'chat').toLowerCase();
-  return MODES[m] ? m : 'chat';
+  let m = String(mode || 'media').toLowerCase();
+  if (m === 'chat') m = 'media';
+  return MODES[m] ? m : 'media';
 }
 
 function _modAdminRoleIds(guildId) {
@@ -71,8 +70,8 @@ function listLocked(guildId, guild) {
     out.push({
       channelId,
       channelName: ch?.name || rec.channelName || channelId,
-      mode: rec.mode || 'chat',
-      modeLabel: (MODES[rec.mode] || MODES.chat).label,
+      mode: resolveMode(rec.mode),
+      modeLabel: MODES[resolveMode(rec.mode)].label,
       reason: rec.reason || null,
       lockedBy: rec.lockedBy || null,
       lockedByTag: rec.lockedByTag || null,
@@ -93,7 +92,7 @@ function isLocked(guildId, channelId) {
  */
 async function lockChannel(channel, {
   guildId,
-  mode = 'chat',
+  mode = 'media',
   reason = null,
   lockedBy = null,
   lockedByTag = null,
@@ -164,8 +163,8 @@ async function unlockChannel(channel, { guildId, unlockedByTag = null }) {
     for (const [roleId, perms] of Object.entries(record.snapshot?.roles || {})) {
       if (!channel.guild.roles.cache.has(roleId)) continue;
       await channel.permissionOverwrites.edit(roleId, perms, {
-        reason: `Channel unlocked by ${unlockedByTag || 'staff'}`,
-      });
+        reason: `Channel unlocked by ${unlockedByTag || 'staff'}` },
+      );
     }
   } catch (err) {
     console.error('[channelLock.unlock]', err);
