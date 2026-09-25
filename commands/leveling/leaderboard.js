@@ -2,16 +2,13 @@
 
 /**
  * /leaderboard — pure Discord embed (no PNG).
- * Server icon · giveaway-style • separators · progress bars = XP into next level
- * (synced to panel curve settings via levelingEngine.progressFromXp).
+ * Server icon · giveaway solidRule (─) separators · progress = XP into next level.
  */
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
-
-const BRAND_PURPLE = 0x9397EE;
-const RULE = '•  •  •  •  •  •  •  •  •  •  •  •';
+const { solidRule, BRAND_PURPLE } = require('../../utils/dropFormat');
 
 /** Progress toward next level (into / need), not share of #1. */
 function levelBar(into, need, cells = 12) {
@@ -70,10 +67,10 @@ module.exports = {
     if (!ranked.length) {
       const empty = new EmbedBuilder()
         .setColor(BRAND_PURPLE)
-        .setAuthor({ name: 'QuantLab  •  Ranks', iconURL: icon || undefined })
+        .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
         .setTitle('XP ladder')
         .setDescription('No ranks yet — chat in allowed channels to earn **15–25 XP** per message.')
-        .setFooter({ text: '15–25 XP / msg  •  60s cooldown  •  QuantLab' });
+        .setFooter({ text: '15–25 XP / msg  ·  60s cooldown  ·  QuantLab' });
       if (icon) empty.setThumbnail(icon);
       return interaction.reply({ embeds: [empty] });
     }
@@ -83,11 +80,20 @@ module.exports = {
     const top = ranked.slice(0, 3);
     const rest = ranked.slice(3, 10);
 
+    // Same solid ─ rule as giveaway embeds (utils/dropFormat.solidRule)
+    const rule = solidRule(
+      'All-time XP ladder',
+      ...top.map((u) => (u ? `${fmt(u.totalXp)} XP Level ${u.level}` : '')),
+      ...rest.map((u) => `Lv ${u.level} · ${fmt(u.totalXp)} XP`),
+      'Ranks 4 – 10',
+      'Top 10 · progress = XP into next level · QuantLab',
+    );
+
     const embed = new EmbedBuilder()
       .setColor(BRAND_PURPLE)
-      .setAuthor({ name: 'QuantLab  •  Ranks', iconURL: icon || undefined })
+      .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
       .setTitle('All-time XP ladder')
-      .setDescription(RULE);
+      .setDescription(rule);
 
     const podiumMeta = [
       { idx: 1, label: '➁  Silver' },
@@ -110,13 +116,14 @@ module.exports = {
           `<@${u.id}>`,
           `**${fmt(u.totalXp)}** XP`,
           `Level **${u.level}**`,
-          `\`${levelBar(into, need, 10)}\` · ${pct}%`,
+          '`' + levelBar(into, need, 10) + '` · ' + pct + '%',
         ].join('\n'),
         inline: true,
       });
     }
 
-    embed.addFields({ name: '\u200b', value: RULE, inline: false });
+    // Rule between podium and ranks 4–10
+    embed.addFields({ name: '\u200b', value: rule, inline: false });
 
     if (rest.length) {
       const body = rest.map((u, i) => {
@@ -125,8 +132,8 @@ module.exports = {
         const need = u.need ?? 1;
         const pct = levelPct(into, need);
         return (
-          `\`${rank}\`  <@${u.id}>\n` +
-          `  Lv **${u.level}** · **${fmt(u.totalXp)}** XP · \`${levelBar(into, need, 12)}\` ${pct}%`
+          '`' + rank + '`  <@' + u.id + '>\n' +
+          '  Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP · `' + levelBar(into, need, 12) + '` ' + pct + '%'
         );
       }).join('\n\n');
 
@@ -137,10 +144,13 @@ module.exports = {
       });
     }
 
+    // Rule directly above the footer (same solid ─ as giveaways)
+    embed.addFields({ name: '\u200b', value: rule, inline: false });
+
     if (icon) embed.setThumbnail(icon);
 
     embed.setFooter({
-      text: `Top ${ranked.length}  •  progress = XP into next level  •  QuantLab`,
+      text: 'Top ' + ranked.length + '  ·  progress = XP into next level  ·  QuantLab',
     });
     embed.setTimestamp();
 
