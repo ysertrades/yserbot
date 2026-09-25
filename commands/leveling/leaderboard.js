@@ -2,7 +2,7 @@
 
 /**
  * /leaderboard — pure Discord embed (no PNG).
- * Server icon · giveaway solidRule (─) separators · progress = XP into next level.
+ * Giveaway solidRule (─) separators · progress = XP into next level · stable mentions.
  */
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
@@ -10,7 +10,6 @@ const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
 const { solidRule, BRAND_PURPLE } = require('../../utils/dropFormat');
 
-/** Progress toward next level (into / need), not share of #1. */
 function levelBar(into, need, cells = 12) {
   const n = Math.max(1, Number(need) || 1);
   const i = Math.max(0, Number(into) || 0);
@@ -37,18 +36,60 @@ function serverIcon(guild) {
   }
 }
 
-/** Prefetch members so <@id> stays resolvable as profile mentions. */
-async function prefetchMembers(guild, ids) {
-  if (!guild?.members?.fetch || !ids?.length) return;
+/**
+ * Resolve each id to a clickable mention when the member is in the guild.
+ * If they left / are uncached, show **display name** so the field never
+ * falls back to a raw snowflake that wraps as <@12…\n…34> in narrow columns.
+ */
+async function resolveMentions(guild, ids) {
+  const out = new Map();
+  if (!guild || !ids?.length) return out;
+
   try {
-    await guild.members.fetch({ user: ids.slice(0, 25) });
+    const fetched = await guild.members.fetch({ user: ids.slice(0, 25) });
+    for (const [id, m] of fetched) {
+      out.set(id, {
+        label: '<@' + id + '>',
+        name: m.displayName || m.user?.globalName || m.user?.username || null,
+        inGuild: true,
+      });
+    }
   } catch {
-    try {
-      await Promise.all(
-        ids.slice(0, 15).map((id) => guild.members.fetch(id).catch(() => null))
-      );
-    } catch {}
+    /* fall through to per-id */
   }
+
+  for (const id of ids) {
+    if (out.has(id)) continue;
+    try {
+      const m = await guild.members.fetch(id);
+      out.set(id, {
+        label: '<@' + id + '>',
+        name: m.displayName || m.user?.globalName || m.user?.username || null,
+        inGuild: true,
+      });
+      continue;
+    } catch {
+      /* not in guild */
+    }
+    try {
+      const u = await guild.client.users.fetch(id);
+      const name = u.globalName || u.username || null;
+      out.set(id, {
+        label: name ? '**' + name + '**' : '`' + id + '`',
+        name,
+        inGuild: false,
+      });
+    } catch {
+      out.set(id, { label: '`' + id + '`', name: null, inGuild: false });
+    }
+  }
+  return out;
+}
+
+function who(resolved, id) {
+  const r = resolved.get(id);
+  if (r?.label) return r.label;
+  return '<@' + id + '>';
 }
 
 module.exports = {
@@ -75,16 +116,19 @@ module.exports = {
       return interaction.reply({ embeds: [empty] });
     }
 
-    await prefetchMembers(interaction.guild, ranked.map((r) => r.id));
+    const resolved = await resolveMentions(
+      interaction.guild,
+      ranked.map((r) => r.id),
+    );
 
     const top = ranked.slice(0, 3);
     const rest = ranked.slice(3, 10);
 
-    // Same solid ─ rule as giveaway embeds (utils/dropFormat.solidRule)
+    // Same solid ─ rule as giveaway.ended — never dotted bullets
     const rule = solidRule(
       'All-time XP ladder',
-      ...top.map((u) => (u ? `${fmt(u.totalXp)} XP Level ${u.level}` : '')),
-      ...rest.map((u) => `Lv ${u.level} · ${fmt(u.totalXp)} XP`),
+      'Silver Gold Bronze',
+      ...ranked.map((u) => fmt(u.totalXp) + ' XP Level ' + u.level),
       'Ranks 4 – 10',
       'Top 10 · progress = XP into next level · QuantLab',
     );
@@ -113,16 +157,15 @@ module.exports = {
       embed.addFields({
         name: p.label,
         value: [
-          `<@${u.id}>`,
-          `**${fmt(u.totalXp)}** XP`,
-          `Level **${u.level}**`,
+          who(resolved, u.id),
+          '**' + fmt(u.totalXp) + '** XP',
+          'Level **' + u.level + '**',
           '`' + levelBar(into, need, 10) + '` · ' + pct + '%',
         ].join('\n'),
         inline: true,
       });
     }
 
-    // Rule between podium and ranks 4–10
     embed.addFields({ name: '\u200b', value: rule, inline: false });
 
     if (rest.length) {
@@ -132,7 +175,7 @@ module.exports = {
         const need = u.need ?? 1;
         const pct = levelPct(into, need);
         return (
-          '`' + rank + '`  <@' + u.id + '>\n' +
+          '`' + rank + '`  ' + who(resolved, u.id) + '\n' +
           '  Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP · `' + levelBar(into, need, 12) + '` ' + pct + '%'
         );
       }).join('\n\n');
@@ -144,7 +187,6 @@ module.exports = {
       });
     }
 
-    // Rule directly above the footer (same solid ─ as giveaways)
     embed.addFields({ name: '\u200b', value: rule, inline: false });
 
     if (icon) embed.setThumbnail(icon);
@@ -154,9 +196,11 @@ module.exports = {
     });
     embed.setTimestamp();
 
+    const mentionIds = ranked.filter((r) => resolved.get(r.id)?.inGuild).map((r) => r.id);
+
     return interaction.reply({
       embeds: [embed],
-      allowedMentions: { parse: [], users: [] },
+      allowedMentions: { parse: [], users: mentionIds },
     });
   },
 };
