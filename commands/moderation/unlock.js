@@ -2,10 +2,8 @@
 
 const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const { sendTempReply } = require('../../utils/embedBuilder');
-const { readJson, writeJson } = require('../../utils/jsonStorage');
 const messageStyle = require('../../utils/messageStyle');
-
-const LOCK_FILE = 'locked_channels.json';
+const channelLock = require('../../utils/channelLock');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -18,37 +16,19 @@ module.exports = {
     const channel = interaction.options.getChannel('channel') || interaction.channel;
     const guildId = interaction.guild.id;
 
-    const locks = readJson(LOCK_FILE, {});
-    const record = locks[guildId]?.[channel.id];
-    if (!record) {
-      return sendTempReply(interaction, {
-        content: `${channel} is not locked right now.`,
-      });
-    }
-
     await interaction.deferReply();
 
-    try {
-      await channel.permissionOverwrites.edit(
-        interaction.guild.roles.everyone.id,
-        record.snapshot.everyone,
-        { reason: `Channel unlocked by ${interaction.user.tag}` },
-      );
-      for (const [roleId, perms] of Object.entries(record.snapshot.roles || {})) {
-        if (!channel.guild.roles.cache.has(roleId)) continue;
-        await channel.permissionOverwrites.edit(roleId, perms, {
-          reason: `Channel unlocked by ${interaction.user.tag}`,
-        });
-      }
-    } catch (err) {
-      console.error('[UNLOCK]', err);
-      return interaction.editReply({
-        content: 'Could not unlock this channel — check that I can manage channel permissions.',
-      });
-    }
+    const result = await channelLock.unlockChannel(channel, {
+      guildId,
+      unlockedByTag: interaction.user.tag,
+    });
 
-    delete locks[guildId][channel.id];
-    writeJson(LOCK_FILE, locks);
+    if (!result.ok) {
+      const msg =
+        result.error === 'not_locked' ? `${channel} is not locked right now.` :
+        'Could not unlock this channel — check that I can manage channel permissions.';
+      return interaction.editReply({ content: msg });
+    }
 
     const unlockPayload = messageStyle.buildPayload(guildId, 'mod.unlock', {
       tokens: {
