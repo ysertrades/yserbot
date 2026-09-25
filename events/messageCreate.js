@@ -29,12 +29,16 @@ module.exports = {
       }
     }
 
-    // Admin emoji lock/unlock in the current channel
+    // Admin emoji lock/unlock — 🔒 / 🔓 alone in the channel
     {
       const raw = message.content.trim();
       if (raw === '\uD83D\uDD12' || raw === '\uD83D\uDD13' || raw === '🔒' || raw === '🔓') {
         const channelLock = require('../utils/channelLock');
-        if (channelLock.isStaffMember(message.member)) {
+        let member = message.member;
+        if (!member && message.guild) {
+          member = await message.guild.members.fetch(message.author.id).catch(() => null);
+        }
+        if (channelLock.isStaffMember(member)) {
           try {
             if (raw === '🔒' || raw === '\uD83D\uDD12') {
               const r = await channelLock.lockChannel(message.channel, {
@@ -47,8 +51,12 @@ module.exports = {
               if (r.ok) {
                 await message.react('🔒').catch(() => {});
                 await message.channel.send({
-                  content: '🔒 **Locked** — chat & media muted. Reactions stay as this channel already allows. Type 🔓 to open.',
+                  content: '🔒 **Locked** — chat & media muted. Reactions stay as this channel allows. Type 🔓 to open.',
                 }).catch(() => {});
+              } else if (r.error === 'already_locked') {
+                await message.react('🔒').catch(() => {});
+              } else {
+                await message.reply({ content: `Could not lock: ${r.detail || r.error}` }).catch(() => {});
               }
             } else {
               const r = await channelLock.unlockChannel(message.channel, {
@@ -58,6 +66,10 @@ module.exports = {
               if (r.ok) {
                 await message.react('🔓').catch(() => {});
                 await message.channel.send({ content: '🔓 **Unlocked** — chat is open again.' }).catch(() => {});
+              } else if (r.error === 'not_locked') {
+                await message.reply({ content: 'This channel is not locked.' }).catch(() => {});
+              } else {
+                await message.reply({ content: `Could not unlock: ${r.detail || r.error}` }).catch(() => {});
               }
             }
           } catch (err) {
