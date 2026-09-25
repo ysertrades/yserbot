@@ -25,6 +25,22 @@
     return [];
   }
 
+
+  /** Match other panel pickers: #name, normalize odd separators for alignment */
+  function channelLabel(c) {
+    var raw = String((c && c.name) || (c && c.id) || '?');
+    // Discord channel names often use ・ or · between emoji and text
+    raw = raw.replace(/[\u30fb\u00b7\u2022\u2219]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (raw.charAt(0) === '#') return raw;
+    return '#' + raw;
+  }
+
+  function wireCselect(root) {
+    try {
+      if (typeof enhanceSelects === 'function') enhanceSelects(root);
+    } catch (e) {}
+  }
+
   function injectStyles() {
     if (document.getElementById('channel-locks-css')) return;
     const s = document.createElement('style');
@@ -36,6 +52,10 @@
       '#channel-locks-root .lock-row .field{display:flex;flex-direction:column;gap:.35rem;min-width:0}',
       '#channel-locks-root .lock-row .field>span{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;opacity:.7}',
       '#channel-locks-root select.lock-sel{width:100%;max-width:100%;box-sizing:border-box}',
+      '#channel-locks-root .cselect{width:100%;max-width:100%}',
+      '#channel-locks-root .cselect-trigger{width:100%;box-sizing:border-box}',
+      '#channel-locks-root .cselect-value{font-variant-emoji:emoji;letter-spacing:0.01em}',
+      '.cselect-menu .cselect-option{display:flex;align-items:center;gap:0.35rem;text-align:left;font-variant-emoji:emoji;line-height:1.35}',
       '#channel-locks-root .lock-actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}',
       '#channel-locks-root .lock-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.35rem}',
       '#channel-locks-root .lock-card{display:flex;align-items:center;gap:.65rem;padding:.65rem .8rem;',
@@ -88,7 +108,7 @@
     f1.append(el('span', null, 'Channel'));
     const chSel = document.createElement('select');
     chSel.className = 'lvl-input lock-sel';
-    chSel.setAttribute('data-cselect', '1');
+    /* use panel cselect — do not set data-cselect */
     const blank = document.createElement('option');
     blank.value = '';
     blank.textContent = 'Select channel…';
@@ -100,7 +120,7 @@
       if (!c || !c.id) continue;
       const o = document.createElement('option');
       o.value = String(c.id);
-      o.textContent = '#' + (c.name || c.id);
+      o.textContent = channelLabel(c);
       chSel.append(o);
     }
     if (_prevCh && Array.from(chSel.options).some(function (o) { return o.value === _prevCh; })) {
@@ -119,7 +139,7 @@
     f2.append(el('span', null, 'Lock mode'));
     const modeSel = document.createElement('select');
     modeSel.className = 'lvl-input lock-sel';
-    modeSel.setAttribute('data-cselect', '1');
+    /* use panel cselect — do not set data-cselect */
     for (let i = 0; i < modes.length; i++) {
       const md = modes[i];
       const o = document.createElement('option');
@@ -141,6 +161,7 @@
     acts.append(lockBtn, unlockBtn);
     form.append(acts);
     root.append(form);
+    wireCselect(form);
 
     async function run(op, forcedId) {
       let channelId = forcedId || chSel.value;
@@ -221,7 +242,7 @@
         const L = locked[i];
         const card = el('div', 'lock-card');
         const meta = el('div', 'lock-meta');
-        meta.append(el('div', 'lock-name', '#' + (L.channelName || L.channelId || '?')));
+        meta.append(el('div', 'lock-name', channelLabel({ name: L.channelName, id: L.channelId })));
         const bits = [];
         bits.push(L.modeLabel || L.mode || 'lock');
         if (L.lockedByTag) bits.push(L.lockedByTag);
