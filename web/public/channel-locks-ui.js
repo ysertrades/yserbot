@@ -1,11 +1,7 @@
 'use strict';
 /**
- * Channel locks desk — mounts at #channel-locks-root in Moderation.
- * Uses overview.mod.lockedChannels + post('channellock', …).
- * Does not touch app.js boot path.
- *
- * IMPORTANT: app.js declares `const state` (global lexical, NOT window.state).
- * Always read `state` directly — never window.state.
+ * Channel locks — #channel-locks-root in Moderation.
+ * Reads state.overview.mod (lexical `state` from app.js, not window.state).
  */
 (function () {
   function el(tag, cls, text) {
@@ -22,7 +18,6 @@
   function channelOptions() {
     const st = getState();
     const ov = st && st.overview;
-    // Prefer mod.channels (always filled by moderation.read)
     const fromMod = ov && ov.mod && Array.isArray(ov.mod.channels) ? ov.mod.channels : null;
     if (fromMod && fromMod.length) return fromMod;
     const L = ov && ov.features && ov.features.levels;
@@ -30,28 +25,47 @@
     return [];
   }
 
+  function injectStyles() {
+    if (document.getElementById('channel-locks-css')) return;
+    const s = document.createElement('style');
+    s.id = 'channel-locks-css';
+    s.textContent = [
+      '#channel-locks-root .lock-form{display:flex;flex-direction:column;gap:.75rem}',
+      '#channel-locks-root .lock-row{display:grid;grid-template-columns:1fr 1fr;gap:.65rem}',
+      '@media(max-width:640px){#channel-locks-root .lock-row{grid-template-columns:1fr}}',
+      '#channel-locks-root .lock-row .field{display:flex;flex-direction:column;gap:.35rem;min-width:0}',
+      '#channel-locks-root .lock-row .field>span{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;opacity:.7}',
+      '#channel-locks-root select.lock-sel{width:100%;max-width:100%;box-sizing:border-box}',
+      '#channel-locks-root .lock-actions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center}',
+      '#channel-locks-root .lock-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.35rem}',
+      '#channel-locks-root .lock-card{display:flex;align-items:center;gap:.65rem;padding:.65rem .8rem;',
+      '  border:1px solid var(--rule,rgba(255,255,255,.08));border-radius:10px;',
+      '  background:var(--sunken,rgba(0,0,0,.25));min-width:0}',
+      '#channel-locks-root .lock-card .lock-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:.15rem}',
+      '#channel-locks-root .lock-card .lock-name{font-weight:600;font-size:.92rem;overflow:hidden;',
+      '  text-overflow:ellipsis;white-space:nowrap}',
+      '#channel-locks-root .lock-card .lock-sub{font-size:.75rem;opacity:.65;overflow:hidden;',
+      '  text-overflow:ellipsis;white-space:nowrap}',
+      '#channel-locks-root .lock-card .btn{flex-shrink:0}',
+      '#channel-locks-root .lock-badge{font-size:.65rem;font-weight:700;letter-spacing:.04em;',
+      '  padding:.15rem .45rem;border-radius:999px;background:rgba(251,191,36,.15);color:#fbbf24;flex-shrink:0}',
+    ].join('');
+    document.head.appendChild(s);
+  }
+
   function render() {
     const root = document.getElementById('channel-locks-root');
     if (!root) return;
+    injectStyles();
 
     const st = getState();
     const ov = st && st.overview;
     const m = (ov && ov.mod) || {};
     const locked = Array.isArray(m.lockedChannels) ? m.lockedChannels : [];
-    const fallbackModes = [
+    const modes = [
       { id: 'media', label: 'Chat + media' },
       { id: 'full', label: 'Full lockdown' },
     ];
-    let modes = Array.isArray(m.lockModes) && m.lockModes.length ? m.lockModes : fallbackModes;
-    modes = modes
-      .filter(function (md) { return md && (md.id === 'media' || md.id === 'full'); })
-      .map(function (md) {
-        return {
-          id: md.id,
-          label: md.id === 'full' ? 'Full lockdown' : 'Chat + media',
-        };
-      });
-    if (!modes.length) modes = fallbackModes;
 
     root.replaceChildren();
 
@@ -60,24 +74,31 @@
     head.append(el('span', 'tag', locked.length ? String(locked.length) + ' locked' : 'Clear'));
     root.append(head);
     root.append(el('p', 'muted',
-      '🔒 in Discord locks chat + media (reactions stay if the channel already allows them). 🔓 unlocks. Panel stays live.'));
+      '🔒 in Discord locks chat + media (reactions stay if allowed). 🔓 unlocks. List stays live.'));
 
     if (!ov) {
       root.append(el('p', 'hint', 'Loading server data…'));
       return;
     }
 
-    const form = el('div', 'form lock-form');
+    const form = el('div', 'lock-form');
+    const row = el('div', 'lock-row');
+
+    const f1 = el('div', 'field');
+    f1.append(el('span', null, 'Channel'));
     const chSel = document.createElement('select');
-    chSel.className = 'lvl-input';
+    chSel.className = 'lvl-input lock-sel';
+    chSel.setAttribute('data-cselect', '1');
     const blank = document.createElement('option');
     blank.value = '';
     blank.textContent = 'Select channel…';
     chSel.append(blank);
     const opts = channelOptions();
-    for (const c of opts) {
+    for (let i = 0; i < opts.length; i++) {
+      const c = opts[i];
+      if (!c || !c.id) continue;
       const o = document.createElement('option');
-      o.value = c.id;
+      o.value = String(c.id);
       o.textContent = '#' + (c.name || c.id);
       chSel.append(o);
     }
@@ -85,42 +106,57 @@
       const o = document.createElement('option');
       o.value = '';
       o.disabled = true;
-      o.textContent = 'No channels listed — switch guild or refresh';
+      o.textContent = 'No channels available';
       chSel.append(o);
     }
+    f1.append(chSel);
 
+    const f2 = el('div', 'field');
+    f2.append(el('span', null, 'Lock mode'));
     const modeSel = document.createElement('select');
-    modeSel.className = 'lvl-input';
-    for (const md of modes) {
+    modeSel.className = 'lvl-input lock-sel';
+    modeSel.setAttribute('data-cselect', '1');
+    for (let i = 0; i < modes.length; i++) {
+      const md = modes[i];
       const o = document.createElement('option');
       o.value = md.id;
       o.textContent = md.label;
       if (md.id === 'media') o.selected = true;
       modeSel.append(o);
     }
+    f2.append(modeSel);
 
+    row.append(f1, f2);
+    form.append(row);
+
+    const acts = el('div', 'lock-actions');
     const lockBtn = el('button', 'btn primary small', 'Lock channel');
     lockBtn.type = 'button';
     const unlockBtn = el('button', 'btn small', 'Unlock');
     unlockBtn.type = 'button';
+    acts.append(lockBtn, unlockBtn);
+    form.append(acts);
+    root.append(form);
 
-    async function run(op) {
-      let channelId = chSel.value;
+    async function run(op, forcedId) {
+      let channelId = forcedId || chSel.value;
       if (!channelId && op === 'unlock' && locked.length === 1) {
         channelId = locked[0].channelId;
       }
       if (!channelId) {
-        if (typeof toast === 'function') toast(op === 'unlock' ? 'Pick a locked channel (or use Unlock on a row).' : 'Pick a channel first.', 'bad');
+        if (typeof toast === 'function') {
+          toast(op === 'unlock' ? 'Pick a locked channel, or use Unlock on a row.' : 'Pick a channel first.', 'bad');
+        }
         return;
       }
       lockBtn.disabled = unlockBtn.disabled = true;
       try {
-        const body = { op: op, channelId: channelId };
+        const body = { op: op, channelId: String(channelId) };
         if (op === 'lock') body.mode = modeSel.value || 'media';
+
         let out = null;
         if (typeof post === 'function') {
-          out = await post('channellock', body);
-          if (!out) return; // post already toasted
+          out = await post('channellock', body, { quiet: true });
         } else {
           const s = getState();
           const headers = { 'content-type': 'application/json', 'x-csrf-token': (s && s.csrf) || '' };
@@ -129,69 +165,67 @@
             method: 'POST', credentials: 'same-origin', headers: headers, body: JSON.stringify(body),
           });
           out = await res.json().catch(function () { return {}; });
-          if (!res.ok) throw new Error(out.detail || out.error || 'failed');
+          if (!res.ok) throw new Error((out && (out.detail || out.error)) || 'Request failed');
         }
-        if (out && Array.isArray(out.lockedChannels)) {
-          const s2 = getState();
-          if (s2 && s2.overview) {
-            if (!s2.overview.mod) s2.overview.mod = {};
+
+        if (!out) return;
+
+        if (out.error) {
+          if (typeof toast === 'function') toast(String(out.detail || out.error), 'bad');
+          return;
+        }
+
+        const s2 = getState();
+        if (s2 && s2.overview) {
+          if (!s2.overview.mod) s2.overview.mod = {};
+          if (Array.isArray(out.lockedChannels)) {
             s2.overview.mod.lockedChannels = out.lockedChannels;
+          } else if (out.overview && out.overview.mod && Array.isArray(out.overview.mod.lockedChannels)) {
+            s2.overview.mod.lockedChannels = out.overview.mod.lockedChannels;
+            if (Array.isArray(out.overview.mod.channels)) {
+              s2.overview.mod.channels = out.overview.mod.channels;
+            }
           }
-        } else if (typeof refreshOverview === 'function') {
-          await refreshOverview();
         }
         render();
-        if (typeof toast === 'function') toast(op === 'lock' ? 'Channel locked.' : 'Channel unlocked.', 'good');
+        if (typeof toast === 'function') {
+          toast(op === 'lock' ? 'Channel locked.' : 'Channel unlocked.', 'good');
+        }
       } catch (e) {
         if (typeof toast === 'function') toast((e && e.message) || 'Lock failed', 'bad');
       } finally {
         lockBtn.disabled = unlockBtn.disabled = false;
       }
     }
+
     lockBtn.addEventListener('click', function () { run('lock'); });
     unlockBtn.addEventListener('click', function () { run('unlock'); });
 
-    const row1 = el('div', 'lvl-nums');
-    const f1 = el('div', 'field');
-    f1.append(el('span', null, 'Channel'));
-    f1.append(chSel);
-    const f2 = el('div', 'field');
-    f2.append(el('span', null, 'Lock mode'));
-    f2.append(modeSel);
-    row1.append(f1, f2);
-    form.append(row1);
-    const acts = el('div', 'actions');
-    acts.append(lockBtn, unlockBtn);
-    form.append(acts);
-    root.append(form);
-
-    const list = el('div', 'rows');
+    const list = el('div', 'lock-list');
     if (!locked.length) {
       list.append(el('p', 'hint', 'No channels locked right now.'));
     } else {
       for (let i = 0; i < locked.length; i++) {
         const L = locked[i];
-        const row = el('div', 'gaw');
-        const top = el('div', 'gaw-top');
-        top.append(el('span', 'nm', '#' + (L.channelName || L.channelId || '?')));
-        top.append(el('span', 'kind sev-warn', String(L.modeLabel || L.mode || 'lock').toUpperCase()));
-        row.append(top);
+        const card = el('div', 'lock-card');
+        const meta = el('div', 'lock-meta');
+        meta.append(el('div', 'lock-name', '#' + (L.channelName || L.channelId || '?')));
         const bits = [];
-        if (L.lockedByTag) bits.push('by ' + L.lockedByTag);
+        bits.push(L.modeLabel || L.mode || 'lock');
+        if (L.lockedByTag) bits.push(L.lockedByTag);
         if (L.timestamp) {
           try { bits.push(new Date(L.timestamp).toLocaleString()); } catch (e) {}
         }
-        if (bits.length) row.append(el('p', 'hint', bits.join(' · ')));
+        meta.append(el('div', 'lock-sub', bits.join(' · ')));
+        card.append(meta);
+        card.append(el('span', 'lock-badge', String(L.modeLabel || L.mode || 'LOCK').toUpperCase()));
         const ub = el('button', 'btn small', 'Unlock');
         ub.type = 'button';
         (function (id) {
-          ub.addEventListener('click', async function () {
-            chSel.value = id;
-            await run('unlock');
-          });
+          ub.addEventListener('click', function () { run('unlock', id); });
         })(L.channelId);
-        row.append(ub);
-        list.append(row);
+        card.append(ub);
+        list.append(card);
       }
     }
     root.append(list);
@@ -204,47 +238,29 @@
     if (!st || !st.guildId) return;
     try {
       let data;
-      if (typeof get === 'function') {
-        data = await get('/api/guild/' + st.guildId);
-      } else {
+      if (typeof get === 'function') data = await get('/api/guild/' + st.guildId);
+      else {
         const res = await fetch('/api/guild/' + st.guildId, { credentials: 'same-origin' });
         data = await res.json();
       }
       if (!data) return;
       st.overview = data;
       render();
-    } catch (e) { /* keep last good list */ }
+    } catch (e) {}
   }
   function startLive() {
     stopLive();
-    liveTimer = setInterval(pullLocksLive, 8000);
+    liveTimer = setInterval(pullLocksLive, 10000);
   }
   function stopLive() {
     if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
   }
-
   function onModerationVisible() {
     render();
     startLive();
   }
 
   function boot() {
-    try {
-      const st = getState();
-      if (st) {
-        let _ov = st.overview;
-        Object.defineProperty(st, 'overview', {
-          configurable: true,
-          enumerable: true,
-          get: function () { return _ov; },
-          set: function (v) {
-            _ov = v;
-            try { render(); } catch (e) {}
-          },
-        });
-      }
-    } catch (e) {}
-
     document.addEventListener('panel-overview', render);
 
     const obs = new MutationObserver(function () {
@@ -257,20 +273,12 @@
     if (document.body) {
       obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-active'] });
     }
-    try {
-      const rootEl = document.documentElement;
-      const secObs = new MutationObserver(function () {
-        if (rootEl.dataset.section === 'moderation') onModerationVisible();
-        else stopLive();
-      });
-      secObs.observe(rootEl, { attributes: true, attributeFilter: ['data-section'] });
-    } catch (e) {}
 
     const prev = window.showSection;
     if (typeof prev === 'function') {
       window.showSection = function (name) {
         const r = prev.apply(this, arguments);
-        if (name === 'moderation') setTimeout(onModerationVisible, 30);
+        if (name === 'moderation') setTimeout(onModerationVisible, 40);
         else stopLive();
         return r;
       };
