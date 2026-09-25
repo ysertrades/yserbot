@@ -74,8 +74,8 @@ function read(guildId, guild) {
       badWords: !!automod.badWords, linkFilter: !!automod.linkFilter,
       mentionSpam: !!automod.mentionSpamProtection, customWords: automod.customWords || [],
     },
-    lockedChannels: channelLock.listLocked(guildId, guild),
-    lockModes: Object.entries(channelLock.MODES).map(([id, m]) => ({ id, label: m.label, blurb: m.blurb })),
+    lockedChannels: (function () { try { return channelLock.listLocked(guildId, guild); } catch (e) { console.warn('[mod] lockedChannels', e.message); return []; } })(),
+    lockModes: (function () { try { return Object.entries(channelLock.MODES || {}).map(([id, m]) => ({ id, label: m.label, blurb: m.blurb })); } catch (e) { return []; } })(),
     logChannelId: config.logsChannel || null,
     autoRole: config.autoRole || null,
     roles: guild?.roles?.cache
@@ -241,4 +241,51 @@ async function memberDm(guildId, body, { client, session, guild }) {
   return { ok: true, userId, tag: user.tag };
 }
 
-module.exports = { read, act, clearWarnings, saveWarnSettings, saveAutoRole, modAction, memberRole, memberDm };
+async function channelLockOp(guildId, body, { client, session, guild }) {
+  const op = String(body.op || '').toLowerCase();
+  const channelId = String(body.channelId || '').trim();
+  if (!/^\d{5,20}$/.test(channelId)) return { error: 'bad_channel' };
+  let channel = guild?.channels?.cache?.get(channelId) || null;
+  if (!channel && guild?.channels?.fetch) {
+    channel = await guild.channels.fetch(channelId).catch(() => null);
+  }
+  if (!channel) return { error: 'unknown_channel' };
+
+  if (op === 'lock') {
+    const r = await channelLock.lockChannel(channel, {
+      guildId,
+      mode: body.mode || 'chat',
+      reason: String(body.reason || '').trim().slice(0, 200) || null,
+      lockedBy: session?.uid || null,
+      lockedByTag: session?.name || null,
+    });
+    if (!r.ok) return { error: r.error || 'lock_failed', detail: r.detail };
+    return {
+      ok: true,
+      op: 'lock',
+      channelId,
+      channelName: channel.name,
+      mode: r.mode,
+      lockedChannels: channelLock.listLocked(guildId, guild),
+    };
+  }
+
+  if (op === 'unlock') {
+    const r = await channelLock.unlockChannel(channel, {
+      guildId,
+      unlockedByTag: session?.name || null,
+    });
+    if (!r.ok) return { error: r.error || 'unlock_failed', detail: r.detail };
+    return {
+      ok: true,
+      op: 'unlock',
+      channelId,
+      channelName: channel.name,
+      lockedChannels: channelLock.listLocked(guildId, guild),
+    };
+  }
+
+  return { error: 'bad_op' };
+}
+
+module.exports = { read, act, clearWarnings, saveWarnSettings, saveAutoRole, modAction, memberRole, memberDm, channelLockOp };
