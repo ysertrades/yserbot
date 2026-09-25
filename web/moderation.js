@@ -75,13 +75,28 @@ function read(guildId, guild) {
       mentionSpam: !!automod.mentionSpamProtection, customWords: automod.customWords || [],
     },
     lockedChannels: (function () { try { return channelLock.listLocked(guildId, guild); } catch (e) { console.warn('[mod] lockedChannels', e.message); return []; } })(),
-    lockModes: (function () { try { return Object.entries(channelLock.MODES || {}).map(([id, m]) => ({ id, label: m.label, blurb: m.blurb })); } catch (e) { return []; } })(),
+    lockModes: (function () { try { return Object.entries(channelLock.MODES || {}).filter(([, m]) => m && m.label).map(([id, m]) => ({ id, label: m.label, blurb: m.blurb || '' })); } catch (e) { return []; } })(),
     logChannelId: config.logsChannel || null,
     autoRole: config.autoRole || null,
     roles: guild?.roles?.cache
       ? guild.roles.cache.filter(r => !r.managed && r.id !== guild.id)
           .map(r => ({ id: r.id, name: r.name })).sort((a, b) => a.name.localeCompare(b.name))
       : [],
+    channels: (function () {
+      try {
+        if (!guild?.channels?.cache) return [];
+        return [...guild.channels.cache.values()]
+          .filter(c => {
+            if (c.isThread?.()) return false;
+            try { return !!(c.isTextBased?.() || c.type === 15); } catch { return false; }
+          })
+          .map(c => ({ id: c.id, name: c.name || c.id }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+      } catch (e) {
+        console.warn('[mod] channels list', e.message);
+        return [];
+      }
+    })(),
   };
 }
 
@@ -254,7 +269,7 @@ async function channelLockOp(guildId, body, { client, session, guild }) {
   if (op === 'lock') {
     const r = await channelLock.lockChannel(channel, {
       guildId,
-      mode: body.mode || 'chat',
+      mode: body.mode || 'media',
       reason: String(body.reason || '').trim().slice(0, 200) || null,
       lockedBy: session?.uid || null,
       lockedByTag: session?.name || null,
