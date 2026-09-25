@@ -571,6 +571,11 @@ async function route(req, res, client) {
       const guild = client.guilds.cache.get(guildId);
       const result = await writes.apply(op, guildId, body, { client, session, guild });
       if (result.error) return json(res, 400, result);
+      // Channel lock already returns lockedChannels — do not rebuild the full
+      // overview (composer.list + members + every tab). That was the multi-second lag.
+      if (op === 'channellock') {
+        return json(res, 200, result);
+      }
       // Hand back the refreshed overview so the page never has to guess what
       // the write actually produced. Profile ops skip the member fetch so a
       // large guild cannot stall the save button for tens of seconds.
@@ -578,7 +583,7 @@ async function route(req, res, client) {
       // A successful write must still answer 200 even if the overview rebuild
       // fails — otherwise the panel says "did not save" after Discord already
       // applied the change (status, nickname, avatar, etc.).
-      const light = op === 'bot-profile-global' || op === 'bot-profile-nick' || op === 'bot-profile-presence' || op === 'channellock';
+      const light = op === 'bot-profile-global' || op === 'bot-profile-nick' || op === 'bot-profile-presence';
       let overview = null;
       try {
         overview = await api.guildOverview(guildId, client, session, { skipMembers: light });

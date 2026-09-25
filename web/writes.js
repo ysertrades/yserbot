@@ -622,12 +622,13 @@ Object.assign(OPS, {
     const r = await moderationPanel.channelLockOp(guildId, body, ctx);
     if (r.error) return r;
     const who = ctx.session?.name || 'panel';
+    // Fire-and-forget mod-log — never block the lock/unlock response
     if (r.op === 'lock') {
-      await announce(ctx.client, guildId, ctx.session,
-        `🔒 **#${r.channelName}** locked (${r.mode}) by ${who}`, 'moderation');
+      announce(ctx.client, guildId, ctx.session,
+        `🔒 **#${r.channelName}** locked (${r.mode}) by ${who}`, 'moderation').catch(() => {});
     } else if (r.op === 'unlock') {
-      await announce(ctx.client, guildId, ctx.session,
-        `🔓 **#${r.channelName}** unlocked by ${who}`, 'moderation');
+      announce(ctx.client, guildId, ctx.session,
+        `🔓 **#${r.channelName}** unlocked by ${who}`, 'moderation').catch(() => {});
     }
     return r;
   },
