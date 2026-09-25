@@ -197,8 +197,8 @@ async function unlockChannel(channel, { guildId, unlockedByTag = null }) {
       if (!overwrite || typeof overwrite !== 'object') continue;
       if (!channel.guild.roles.cache.has(roleId)) continue;
       jobs.push(channel.permissionOverwrites.edit(roleId, overwrite, {
-        reason: `Unlock by ${unlockedByTag || 'staff'}`},
-      ));
+        reason: `Unlock by ${unlockedByTag || 'staff'}`,
+      }));
     }
     if (jobs.length) await Promise.all(jobs);
   } catch (err) {
