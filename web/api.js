@@ -58,26 +58,21 @@ function me(session, client) {
   return {
     user: { id: session.uid, name: session.name, avatar: session.avatar },
     expiresAt: session.exp,
+    owner,
+    allowGuildNickname: owner || !!auth.getStaff(session.uid)?.allowGuildNickname,
     guilds,
-    isOwner: owner,
   };
 }
 
-const memberFetchedAt = new Map();
-const MEMBER_TTL_MS = 5 * 60 * 1000;
-
 async function ensureMembers(guild) {
-  if (typeof guild?.members?.fetch !== 'function') return;
-  if (Date.now() - (memberFetchedAt.get(guild.id) || 0) < MEMBER_TTL_MS) return;
-  memberFetchedAt.set(guild.id, Date.now());
+  if (!guild?.members) return;
   try {
-    await guild.members.fetch({ time: 20_000 });
-  } catch (err) {
-    console.warn('[Panel] could not fetch the member list:', err.message);
-  }
+    if (guild.members.cache.size < Math.min(guild.memberCount || 0, 5)) {
+      await guild.members.fetch({ limit: 500 }).catch(() => {});
+    }
+  } catch {}
 }
 
-/** Everything the overview screen shows for one guild. */
 async function guildOverview(guildId, client, session = null, opts = {}) {
   const guild = client.guilds.cache.get(guildId);
   if (!guild) {
@@ -91,15 +86,12 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
   const econcal  = getEconCalSettings(guildId);
   const automod  = getAutoModSettings(guildId);
   const modlog   = getModLogSettings(guildId);
-
-  const channelName = id => (id && guild.channels.cache.get(id)?.name) || null;
-
   const shop     = readJson('shop.json', {})[guildId]?.items || {};
   const embeds   = readJson('embeds.json', {})[guildId] || {};
-  const casesRaw = readJson('cases.json', {})[guildId] || [];
-  const casesList = Array.isArray(casesRaw) ? casesRaw : Object.values(casesRaw || {});
-  const known    = listSources();
-  const giveawayState = giveaways.list(guildId, guild);
+  const casesList = readJson('moderation.json', {})[guildId]?.cases || [];
+
+  let giveawayState = { active: [], ended: [] };
+  try { giveawayState = giveaways.read(guildId, guild); } catch (e) { console.warn('[api] giveaways', e.message); }
 
   return {
     guild: {
@@ -107,48 +99,41 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       name: guild.name,
       icon: guild.iconURL({ size: 128, extension: 'png', forceStatic: true }) || null,
       members: guild.memberCount,
-      channels: guild.channels.cache.filter(c => !c.isThread?.() && c.type !== ChannelType.GuildCategory).size,
-      categories: guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).size,
     },
+    channels: guild.channels.cache
+      .filter(c => c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement)
+      .map(c => ({ id: c.id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    roles: guild.roles.cache
+      .filter(r => !r.managed && r.id !== guild.id)
+      .map(r => ({ id: r.id, name: r.name, color: r.hexColor }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
     newsfeed: {
       enabled: !!newsfeed.enabled,
-      channelId: newsfeed.channelId ?? null,
-      channel: channelName(newsfeed.channelId),
-      topics: newsfeed.filterTopics || [],
-      topicOptions: TOPICS.map(t => ({
-        value: t.key,
-        label: `${t.emoji} ${t.label}`,
-        hint: t.description,
-      })),
-      sources: (newsfeed.sources || []).map(key => ({
-        key,
-        label: (known.find(s => s.key === key) || {}).label || key,
-      })),
-      sourceOptions: known.map(s => ({ value: s.key, label: s.label })),
+      channelId: newsfeed.channelId || null,
+      sources: newsfeed.sources || [],
+      filterTopics: newsfeed.filterTopics || [],
+      availableSources: listSources(),
+      availableTopics: TOPICS,
     },
     econcal: {
       enabled: !!econcal.enabled,
-      channelId: econcal.channelId ?? null,
-      channel: channelName(econcal.channelId),
-      impact: econcal.filterImpact || [],
-      currencies: econcal.filterCurrency || [],
-      impactOptions: [...IMPACT_LEVELS],
-      currencyOptions: [...CURRENCIES],
-      weeklyChannelId: econcal.weeklyChannelId ?? null,
-      weeklyChannel: channelName(econcal.weeklyChannelId),
-      postHour: econcal.postHour ?? 8,
-      postMinute: econcal.postMinute ?? 0,
+      channelId: econcal.channelId || null,
+      roleId: econcal.roleId || null,
+      impactFilter: econcal.impactFilter || [],
+      currencyFilter: econcal.currencyFilter || [],
+      weeklyPost: econcal.weeklyPost || {},
+      impacts: IMPACT_LEVELS,
+      currencies: CURRENCIES,
     },
     automod: {
       badWords: !!automod.badWords,
       linkFilter: !!automod.linkFilter,
-      mentionSpam: !!automod.mentionSpamProtection,
-      customWords: (automod.customWords || []).length,
+      mentionSpamProtection: !!automod.mentionSpamProtection,
+      customWords: automod.customWords || [],
     },
     modlog: {
-      channelId: modlog.channelId ?? getModLogChannel(guildId) ?? null,
-      channel: channelName(modlog.channelId || getModLogChannel(guildId)),
-      // Category switches — panel toggles read these; without them every toggle looks off.
+      channelId: getModLogChannel(guild)?.id || null,
       members: !!modlog.members,
       messages: !!modlog.messages,
       roles: !!modlog.roles,
@@ -164,7 +149,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     economy: economyPanel.read(guildId),
     cards: cardsPanel.read(guildId, guild),
     links: links.read(guildId, guild),
-    mod: moderation.read(guildId, guild),
+    mod: (function () { try { return moderation.read(guildId, guild); } catch (e) { console.warn('[api] mod read', e.message); return { reports: { open: [], handled: [] }, cases: [], caseTotal: 0, warned: [], filters: {}, lockedChannels: [], lockModes: [], roles: [] }; } })(),
     appearance: appearance.read(guildId),
     whop: whopPanel.read(guildId, guild),
     botProfile: session ? botProfile.read(guildId, client, session) : null,
