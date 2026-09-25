@@ -149,10 +149,7 @@ async function lockChannel(channel, {
   writeJson(LOCK_FILE, locks);
 
   if (announce) {
-    const line = modeKey === 'full'
-      ? '🔒 **Locked** — full lockdown. Type 🔓 to open.'
-      : '🔒 **Locked** — chat & media muted. Reactions stay as this channel allows. Type 🔓 to open.';
-    await channel.send({ content: line }).catch(() => {});
+    await channel.send({ content: '🔒 **Locked**' }).catch(() => {});
   }
   return { ok: true, mode: modeKey };
 }
