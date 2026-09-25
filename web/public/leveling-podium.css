@@ -122,7 +122,24 @@
   font-family: var(--mono); font-size: 0.75rem;
   font-variant-numeric: tabular-nums; color: var(--soft);
 }
+/* Phone: same 3-up podium order as desktop (Silver · Gold · Bronze), not stacked */
 @media (max-width: 30rem) {
-  .lvl-podium { grid-template-columns: 1fr; }
-  .lvl-podium-card.first { order: -1; }
+  .lvl-podium {
+    grid-template-columns: 1fr 1.12fr 1fr;
+    gap: 0.35rem;
+  }
+  .lvl-podium-card {
+    padding: 0.65rem 0.3rem 0.55rem;
+  }
+  .lvl-podium-card.first {
+    padding-top: 0.8rem;
+    padding-bottom: 0.7rem;
+  }
+  .lvl-podium-av { width: 36px; height: 36px; }
+  .lvl-podium-card.first .lvl-podium-av { width: 42px; height: 42px; }
+  .lvl-podium-name { font-size: 0.68rem; }
+  .lvl-podium-xp { font-size: 0.95rem; }
+  .lvl-podium-card.first .lvl-podium-xp { font-size: 1.1rem; }
+  .lvl-podium-xp-label { font-size: 0.55rem; }
+  .lvl-podium-lv { font-size: 0.58rem; padding: 0.08rem 0.35rem; }
 }
