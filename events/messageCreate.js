@@ -39,14 +39,16 @@ module.exports = {
             if (raw === '🔒' || raw === '\uD83D\uDD12') {
               const r = await channelLock.lockChannel(message.channel, {
                 guildId,
-                mode: 'chat',
+                mode: 'media',
                 reason: 'Emoji lock',
                 lockedBy: message.author.id,
                 lockedByTag: message.author.tag,
               });
               if (r.ok) {
                 await message.react('🔒').catch(() => {});
-                await message.channel.send({ content: '🔒 Channel locked.' }).catch(() => {});
+                await message.channel.send({
+                  content: '🔒 **Locked** — chat & media muted. Reactions stay as this channel already allows. Type 🔓 to open.',
+                }).catch(() => {});
               }
             } else {
               const r = await channelLock.unlockChannel(message.channel, {
@@ -55,7 +57,7 @@ module.exports = {
               });
               if (r.ok) {
                 await message.react('🔓').catch(() => {});
-                await message.channel.send({ content: '🔓 Channel unlocked.' }).catch(() => {});
+                await message.channel.send({ content: '🔓 **Unlocked** — chat is open again.' }).catch(() => {});
               }
             }
           } catch (err) {
