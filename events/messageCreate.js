@@ -51,9 +51,7 @@ module.exports = {
               });
               if (r.ok) {
                 await message.react('🔒').catch(() => {});
-                await message.channel.send({
-                  content: '🔒 **Locked** — chat & media muted. Reactions stay as this channel allows. Type 🔓 to open.',
-                }).catch(() => {});
+                await message.channel.send({ content: '🔒 **Locked**' }).catch(() => {});
               } else if (r.error === 'already_locked') {
                 await message.react('🔒').catch(() => {});
               } else {
