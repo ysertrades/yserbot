@@ -406,8 +406,75 @@
     rateGrid.append(field('Weekend boost', iWeekend, '1 = off'));
     cfg.append(rateGrid);
     cfg.append(el('h2', null, 'Exclusions'));
-    const chNo = multi(L.channelOpts || [], L.noXpChannelIds);
-    const roleNo = multi(L.roleOpts || [], L.noXpRoleIds);
+    cfg.append(el('p', 'hint', 'Pick from the list — each choice appears as a chip you can remove anytime.'));
+
+    function chipPicker(opts, selectedIds, blankLabel, nameOf) {
+      const wrap = el('div', 'lvl-chip-picker');
+      const draft = (selectedIds || []).map(String).filter(Boolean);
+      const chips = el('div', 'lvl-chip-row');
+      const sel = document.createElement('select');
+      sel.className = 'lvl-input';
+      function paint() {
+        chips.replaceChildren();
+        draft.forEach(function (id, idx) {
+          const chip = el('span', 'lvl-excl-chip');
+          chip.append(el('span', null, nameOf(id)));
+          const x = el('button', 'lvl-excl-x', '×');
+          x.type = 'button';
+          x.title = 'Remove';
+          x.addEventListener('click', function () {
+            draft.splice(idx, 1);
+            paint();
+            fillSelect();
+          });
+          chip.append(x);
+          chips.append(chip);
+        });
+        if (!draft.length) chips.append(el('span', 'hint', 'None selected'));
+      }
+      function fillSelect() {
+        sel.replaceChildren();
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = blankLabel;
+        sel.append(blank);
+        const taken = new Set(draft);
+        (opts || []).forEach(function (o) {
+          const id = String(o.id || o.value || '');
+          if (!id || taken.has(id)) return;
+          const op = document.createElement('option');
+          op.value = id;
+          op.textContent = o.name || o.label || id;
+          sel.append(op);
+        });
+      }
+      sel.addEventListener('change', function () {
+        const v = sel.value;
+        if (!v || draft.indexOf(v) >= 0) return;
+        draft.push(v);
+        paint();
+        fillSelect();
+        sel.value = '';
+      });
+      fillSelect();
+      paint();
+      wrap.append(sel);
+      wrap.append(chips);
+      wrap._ids = function () { return draft.slice(); };
+      return wrap;
+    }
+
+    function chName(id) {
+      const o = (L.channelOpts || []).find(function (c) { return String(c.id) === String(id); });
+      return o ? ('#' + o.name) : id;
+    }
+    function roleName(id) {
+      const o = (L.roleOpts || []).find(function (c) { return String(c.id) === String(id); });
+      return o ? o.name : id;
+    }
+
+    const chNo = chipPicker(L.channelOpts || [], L.noXpChannelIds, 'Add no-XP channel…', chName);
+    const roleNo = chipPicker(L.roleOpts || [], L.noXpRoleIds, 'Add no-XP role…', roleName);
     const excl = el('div', 'lvl-channel-grid');
     excl.append(field('No-XP channels', chNo));
     excl.append(field('No-XP roles', roleNo));
@@ -441,8 +508,8 @@
         xpMax: Number(iMax.value),
         cooldownSec: Number(iCd.value),
         weekendBoost: Number(iWeekend.value) || 1,
-        noXpChannelIds: selectedValues(chNo),
-        noXpRoleIds: selectedValues(roleNo),
+        noXpChannelIds: typeof chNo._ids === 'function' ? chNo._ids() : selectedValues(chNo),
+        noXpRoleIds: typeof roleNo._ids === 'function' ? roleNo._ids() : selectedValues(roleNo),
         journalForumChannelId: iJournal.value || null,
         journalXpMin: Number(iJMin.value) || 30,
         journalXpMax: Number(iJMax.value) || 50,
@@ -457,7 +524,7 @@
       if (typeof askConfirm === 'function') {
         const ok = await askConfirm({
           title: 'Reset leveling?',
-          message: 'Clears all XP and restores default roles, rates, curve (quadratic), and unlocks.',
+          message: 'Restores default roles, rates, curve, and unlocks. Member XP and levels are kept.',
           confirmLabel: 'Reset', danger: true,
         });
         if (!ok) return;
@@ -489,6 +556,21 @@
       root.append(ev);
     }
   }
+  
+  function ensureChipStyles() {
+    if (document.getElementById('lvl-excl-chip-css')) return;
+    var s = document.createElement('style');
+    s.id = 'lvl-excl-chip-css';
+    s.textContent = [
+      '.lvl-chip-picker{display:flex;flex-direction:column;gap:.55rem}',
+      '.lvl-chip-row{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;min-height:1.75rem}',
+      '.lvl-excl-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.28rem .55rem;border-radius:999px;background:rgba(139,92,246,.14);border:1px solid rgba(139,92,246,.35);color:var(--ink,#F3F4F6);font-size:.82rem}',
+      '.lvl-excl-x{border:0;background:transparent;color:inherit;cursor:pointer;font-size:1rem;line-height:1;padding:0 .15rem;opacity:.75}',
+      '.lvl-excl-x:hover{opacity:1}',
+    ].join('');
+    document.head.appendChild(s);
+  }
+
   function ensurePodiumStyles() {
     if (document.getElementById('lvl-podium-css-link')) return;
     var link = document.createElement('link');
@@ -499,6 +581,7 @@
   }
   function boot() {
     ensurePodiumStyles();
+    ensureChipStyles();
     function tryRender() {
       if (!document.getElementById('leveling-root') || !window.state || !window.state.overview) return;
       render();

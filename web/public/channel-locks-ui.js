@@ -140,21 +140,54 @@
     root.append(list);
   }
 
+  let liveTimer = null;
+  async function pullLocksLive() {
+    if (!document.querySelector('.section[data-section="moderation"][data-active]')) return;
+    if (!state?.guildId) return;
+    try {
+      const data = await (typeof get === 'function'
+        ? get('/api/guild/' + state.guildId)
+        : fetch('/api/guild/' + state.guildId, { credentials: 'same-origin' }).then(function (r) { return r.json(); }));
+      if (!data) return;
+      state.overview = data;
+      render();
+    } catch (e) { /* keep last good list */ }
+  }
+  function startLive() {
+    stopLive();
+    liveTimer = setInterval(pullLocksLive, 8000);
+  }
+  function stopLive() {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  }
   function boot() {
     document.addEventListener('panel-overview', render);
     const obs = new MutationObserver(function () {
-      if (document.querySelector('.section[data-section="moderation"][data-active]')) render();
+      if (document.querySelector('.section[data-section="moderation"][data-active]')) {
+        render();
+        startLive();
+      } else {
+        stopLive();
+      }
     });
     if (document.body) obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-active'] });
     const prev = window.showSection;
     if (typeof prev === 'function') {
       window.showSection = function (name) {
         const r = prev.apply(this, arguments);
-        if (name === 'moderation') setTimeout(render, 40);
+        if (name === 'moderation') {
+          setTimeout(render, 40);
+          startLive();
+        } else {
+          stopLive();
+        }
         return r;
       };
     }
-    setTimeout(render, 800);
+    setTimeout(function () {
+      render();
+      if (document.querySelector('.section[data-section="moderation"][data-active]')) startLive();
+    }, 800);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

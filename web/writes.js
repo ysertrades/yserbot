@@ -618,6 +618,20 @@ Object.assign(OPS, {
       `✉️ DM sent to <@${r.userId}>`, 'moderation');
     return r;
   },
+  async channellock(guildId, body, ctx) {
+    const r = await moderationPanel.channelLockOp(guildId, body, ctx);
+    if (r.error) return r;
+    const who = ctx.session?.name || 'panel';
+    if (r.op === 'lock') {
+      await announce(ctx.client, guildId, ctx.session,
+        `🔒 **#${r.channelName}** locked (${r.mode}) by ${who}`, 'moderation');
+    } else if (r.op === 'unlock') {
+      await announce(ctx.client, guildId, ctx.session,
+        `🔓 **#${r.channelName}** unlocked by ${who}`, 'moderation');
+    }
+    return r;
+  },
+
   async leveling(guildId, body, ctx) {
     try {
       const leveling = require('../utils/levelingEngine');
