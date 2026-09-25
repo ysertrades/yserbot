@@ -21,7 +21,6 @@ module.exports = {
     const guildId = message.guild?.id;
     if (!guildId) return;
 
-    // Ticket inactivity reset
     const isTicket = message.channel.topic?.startsWith('ticket-owner:') || message.channel.name?.startsWith('ticket-');
     if (isTicket) {
       const ticketCmd = client?.commands?.get('ticket');
@@ -30,7 +29,43 @@ module.exports = {
       }
     }
 
-    // g.reroll <id>
+    // Admin emoji lock/unlock in the current channel
+    {
+      const raw = message.content.trim();
+      if (raw === '\uD83D\uDD12' || raw === '\uD83D\uDD13' || raw === '🔒' || raw === '🔓') {
+        const channelLock = require('../utils/channelLock');
+        if (channelLock.isStaffMember(message.member)) {
+          try {
+            if (raw === '🔒' || raw === '\uD83D\uDD12') {
+              const r = await channelLock.lockChannel(message.channel, {
+                guildId,
+                mode: 'chat',
+                reason: 'Emoji lock',
+                lockedBy: message.author.id,
+                lockedByTag: message.author.tag,
+              });
+              if (r.ok) {
+                await message.react('🔒').catch(() => {});
+                await message.channel.send({ content: '🔒 Channel locked.' }).catch(() => {});
+              }
+            } else {
+              const r = await channelLock.unlockChannel(message.channel, {
+                guildId,
+                unlockedByTag: message.author.tag,
+              });
+              if (r.ok) {
+                await message.react('🔓').catch(() => {});
+                await message.channel.send({ content: '🔓 Channel unlocked.' }).catch(() => {});
+              }
+            }
+          } catch (err) {
+            console.error('[emoji-lock]', err);
+          }
+          return;
+        }
+      }
+    }
+
     const content = message.content.trim();
     if (content.toLowerCase().startsWith('g.reroll')) {
       const parts  = content.split(/\s+/);
@@ -40,7 +75,6 @@ module.exports = {
       return;
     }
 
-    // Auto-mod before XP/cards/autoreply
     const handled = isFeatureEnabled(guildId, 'automod')
       && await client?.commands?.get('automod')?.handleMessage(message, client).catch(() => false);
     if (handled) return;
