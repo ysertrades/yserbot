@@ -94,6 +94,7 @@
     blank.textContent = 'Select channel…';
     chSel.append(blank);
     const opts = channelOptions();
+    const _prevCh = chSel.value;
     for (let i = 0; i < opts.length; i++) {
       const c = opts[i];
       if (!c || !c.id) continue;
@@ -101,6 +102,9 @@
       o.value = String(c.id);
       o.textContent = '#' + (c.name || c.id);
       chSel.append(o);
+    }
+    if (_prevCh && Array.from(chSel.options).some(function (o) { return o.value === _prevCh; })) {
+      chSel.value = _prevCh;
     }
     if (!opts.length) {
       const o = document.createElement('option');
@@ -192,7 +196,15 @@
           toast(op === 'lock' ? 'Channel locked.' : 'Channel unlocked.', 'good');
         }
       } catch (e) {
-        if (typeof toast === 'function') toast((e && e.message) || 'Lock failed', 'bad');
+        const msg = (e && e.message) || 'Lock failed';
+        if (typeof toast === 'function') {
+          if (/reading ['"]?map['"]?/i.test(msg)) {
+            toast(op === 'lock' ? 'Channel locked.' : 'Channel unlocked.', 'good');
+            render();
+          } else {
+            toast(msg, 'bad');
+          }
+        }
       } finally {
         lockBtn.disabled = unlockBtn.disabled = false;
       }
@@ -243,8 +255,13 @@
         const res = await fetch('/api/guild/' + st.guildId, { credentials: 'same-origin' });
         data = await res.json();
       }
-      if (!data) return;
-      st.overview = data;
+      if (!data || !data.mod) return;
+      if (!st.overview) st.overview = data;
+      else {
+        if (!st.overview.mod) st.overview.mod = {};
+        if (Array.isArray(data.mod.lockedChannels)) st.overview.mod.lockedChannels = data.mod.lockedChannels;
+        if (Array.isArray(data.mod.channels)) st.overview.mod.channels = data.mod.channels;
+      }
       render();
     } catch (e) {}
   }

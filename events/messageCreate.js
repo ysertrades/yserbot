@@ -47,6 +47,7 @@ module.exports = {
                 reason: 'Emoji lock',
                 lockedBy: message.author.id,
                 lockedByTag: message.author.tag,
+                announce: false,
               });
               if (r.ok) {
                 await message.react('🔒').catch(() => {});
@@ -62,6 +63,7 @@ module.exports = {
               const r = await channelLock.unlockChannel(message.channel, {
                 guildId,
                 unlockedByTag: message.author.tag,
+                announce: false,
               });
               if (r.ok) {
                 await message.react('🔓').catch(() => {});

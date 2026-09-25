@@ -30,9 +30,7 @@ const MODES = {
   },
 };
 
-function modeKeys() {
-  return Object.keys(MODES);
-}
+function modeKeys() { return Object.keys(MODES); }
 
 function resolveMode(mode) {
   let m = String(mode || 'media').toLowerCase().trim();
@@ -48,9 +46,8 @@ function modePerms(modeKey) {
 function _modAdminRoleIds(guildId, guild) {
   const config = readJson('config.json', {});
   const setup = (config[guildId] && config[guildId].cmdSetup) || {};
-  const ids = [...new Set([...(setup.modRoles || []), ...(setup.adminRoles || [])])]
+  return [...new Set([...(setup.modRoles || []), ...(setup.adminRoles || [])])]
     .filter((id) => id && (!guild || guild.roles.cache.has(id)));
-  return ids;
 }
 
 function _snapshot(channel, roleId, perms) {
@@ -62,11 +59,18 @@ function _snapshot(channel, roleId, perms) {
       if (ow?.allow?.has?.(PermissionFlagsBits[perm])) snap[perm] = true;
       else if (ow?.deny?.has?.(PermissionFlagsBits[perm])) snap[perm] = false;
       else snap[perm] = null;
-    } catch {
-      snap[perm] = null;
-    }
+    } catch { snap[perm] = null; }
   }
   return snap;
+}
+
+function _cleanOverwrite(obj) {
+  if (!obj || typeof obj !== 'object') return {};
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === true || v === false) out[k] = v;
+  }
+  return out;
 }
 
 function listLocked(guildId, guild) {
@@ -98,11 +102,7 @@ function isLocked(guildId, channelId) {
 }
 
 async function lockChannel(channel, {
-  guildId,
-  mode = 'media',
-  reason = null,
-  lockedBy = null,
-  lockedByTag = null,
+  guildId, mode = 'media', reason = null, lockedBy = null, lockedByTag = null, announce = true,
 }) {
   if (!channel || typeof channel.isTextBased !== 'function' || !channel.isTextBased()) {
     return { ok: false, error: 'not_text', detail: 'Not a text channel' };
@@ -110,33 +110,21 @@ async function lockChannel(channel, {
   if (typeof channel.isThread === 'function' && channel.isThread()) {
     return { ok: false, error: 'not_text', detail: 'Cannot lock a thread' };
   }
-
   const locks = readJson(LOCK_FILE, {});
   if (locks[guildId]?.[channel.id]) {
     return { ok: false, error: 'already_locked', detail: 'Already locked' };
   }
-
   const modeKey = resolveMode(mode);
   const perms = modePerms(modeKey);
-  if (!perms.length) {
-    return { ok: false, error: 'bad_mode', detail: 'No permissions for mode' };
-  }
+  if (!perms.length) return { ok: false, error: 'bad_mode', detail: 'No permissions for mode' };
 
   const everyoneId = channel.guild.roles.everyone.id;
   const modAdminRoleIds = _modAdminRoleIds(guildId, channel.guild);
+  const snapshot = { everyone: _snapshot(channel, everyoneId, perms), roles: {} };
+  for (const roleId of modAdminRoleIds) snapshot.roles[roleId] = _snapshot(channel, roleId, perms);
 
-  const snapshot = {
-    everyone: _snapshot(channel, everyoneId, perms),
-    roles: {},
-  };
-  for (const roleId of modAdminRoleIds) {
-    snapshot.roles[roleId] = _snapshot(channel, roleId, perms);
-  }
-
-  const denyAll = {};
-  for (const p of perms) denyAll[p] = false;
-  const allowAll = {};
-  for (const p of perms) allowAll[p] = true;
+  const denyAll = {}; for (const p of perms) denyAll[p] = false;
+  const allowAll = {}; for (const p of perms) allowAll[p] = true;
 
   try {
     const jobs = [
@@ -145,36 +133,31 @@ async function lockChannel(channel, {
       }),
     ];
     for (const roleId of modAdminRoleIds) {
-      jobs.push(channel.permissionOverwrites.edit(roleId, allowAll, {
-        reason: 'Lock: keep staff access',
-      }));
+      jobs.push(channel.permissionOverwrites.edit(roleId, allowAll, { reason: 'Lock: keep staff access' }));
     }
     await Promise.all(jobs);
   } catch (err) {
     console.error('[channelLock.lock]', err);
-    return {
-      ok: false,
-      error: 'perm_failed',
-      detail: String(err?.message || err).slice(0, 180),
-    };
+    return { ok: false, error: 'perm_failed', detail: String(err?.message || err).slice(0, 180) };
   }
 
   if (!locks[guildId]) locks[guildId] = {};
   locks[guildId][channel.id] = {
-    snapshot,
-    mode: modeKey,
-    perms,
-    reason,
-    channelName: channel.name,
-    lockedBy,
-    lockedByTag,
-    timestamp: Date.now(),
+    snapshot, mode: modeKey, perms, reason, channelName: channel.name,
+    lockedBy, lockedByTag, timestamp: Date.now(),
   };
   writeJson(LOCK_FILE, locks);
+
+  if (announce) {
+    const line = modeKey === 'full'
+      ? '🔒 **Locked** — full lockdown. Type 🔓 to open.'
+      : '🔒 **Locked** — chat & media muted. Reactions stay as this channel allows. Type 🔓 to open.';
+    await channel.send({ content: line }).catch(() => {});
+  }
   return { ok: true, mode: modeKey };
 }
 
-async function unlockChannel(channel, { guildId, unlockedByTag = null }) {
+async function unlockChannel(channel, { guildId, unlockedByTag = null, announce = true }) {
   const locks = readJson(LOCK_FILE, {});
   if (!locks[guildId] || !locks[guildId][channel.id]) {
     return { ok: false, error: 'not_locked', detail: 'Not locked' };
@@ -188,31 +171,29 @@ async function unlockChannel(channel, { guildId, unlockedByTag = null }) {
     const jobs = [];
     if (everyoneSnap && channel.guild?.roles?.everyone) {
       jobs.push(channel.permissionOverwrites.edit(
-        channel.guild.roles.everyone.id,
-        everyoneSnap,
+        channel.guild.roles.everyone.id, _cleanOverwrite(everyoneSnap),
         { reason: `Unlock by ${unlockedByTag || 'staff'}` },
       ));
     }
     for (const [roleId, overwrite] of Object.entries(roleSnaps)) {
       if (!overwrite || typeof overwrite !== 'object') continue;
       if (!channel.guild.roles.cache.has(roleId)) continue;
-      jobs.push(channel.permissionOverwrites.edit(roleId, overwrite, {
+      jobs.push(channel.permissionOverwrites.edit(roleId, _cleanOverwrite(overwrite), {
         reason: `Unlock by ${unlockedByTag || 'staff'}`,
       }));
     }
     if (jobs.length) await Promise.all(jobs);
   } catch (err) {
     console.error('[channelLock.unlock]', err);
-    return {
-      ok: false,
-      error: 'perm_failed',
-      detail: String(err?.message || err).slice(0, 180),
-    };
   }
 
   delete locks[guildId][channel.id];
   if (!Object.keys(locks[guildId]).length) delete locks[guildId];
   writeJson(LOCK_FILE, locks);
+
+  if (announce) {
+    await channel.send({ content: '🔓 **Unlocked** — chat is open again.' }).catch(() => {});
+  }
   return { ok: true };
 }
 
@@ -226,13 +207,6 @@ function isStaffMember(member) {
 }
 
 module.exports = {
-  LOCK_FILE,
-  MODES,
-  modeKeys,
-  resolveMode,
-  listLocked,
-  isLocked,
-  lockChannel,
-  unlockChannel,
-  isStaffMember,
+  LOCK_FILE, MODES, modeKeys, resolveMode, listLocked, isLocked,
+  lockChannel, unlockChannel, isStaffMember,
 };
