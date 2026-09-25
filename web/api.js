@@ -91,12 +91,15 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
   const econcal  = getEconCalSettings(guildId);
   const automod  = getAutoModSettings(guildId);
   const modlog   = getModLogSettings(guildId);
+
+  const channelName = id => (id && guild.channels.cache.get(id)?.name) || null;
+
   const shop     = readJson('shop.json', {})[guildId]?.items || {};
   const embeds   = readJson('embeds.json', {})[guildId] || {};
-  const casesList = readJson('moderation.json', {})[guildId]?.cases || [];
-
-  let giveawayState = { active: [], ended: [] };
-  try { giveawayState = giveaways.read(guildId, guild); } catch (e) { console.warn('[api] giveaways', e.message); }
+  const casesRaw = readJson('cases.json', {})[guildId] || [];
+  const casesList = Array.isArray(casesRaw) ? casesRaw : Object.values(casesRaw || {});
+  const known    = listSources();
+  const giveawayState = giveaways.list(guildId, guild);
 
   return {
     guild: {
@@ -104,33 +107,47 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       name: guild.name,
       icon: guild.iconURL({ size: 128, extension: 'png', forceStatic: true }) || null,
       members: guild.memberCount,
+      channels: guild.channels.cache.filter(c => !c.isThread?.() && c.type !== ChannelType.GuildCategory).size,
+      categories: guild.channels.cache.filter(c => c.type === ChannelType.GuildCategory).size,
     },
     newsfeed: {
       enabled: !!newsfeed.enabled,
-      channelId: newsfeed.channelId || null,
-      sources: newsfeed.sources || [],
-      filterTopics: newsfeed.filterTopics || [],
-      availableSources: listSources(),
-      availableTopics: TOPICS,
+      channelId: newsfeed.channelId ?? null,
+      channel: channelName(newsfeed.channelId),
+      topics: newsfeed.filterTopics || [],
+      topicOptions: TOPICS.map(t => ({
+        value: t.key,
+        label: `${t.emoji} ${t.label}`,
+        hint: t.description,
+      })),
+      sources: (newsfeed.sources || []).map(key => ({
+        key,
+        label: (known.find(s => s.key === key) || {}).label || key,
+      })),
+      sourceOptions: known.map(s => ({ value: s.key, label: s.label })),
     },
     econcal: {
       enabled: !!econcal.enabled,
-      channelId: econcal.channelId || null,
-      roleId: econcal.roleId || null,
-      impactFilter: econcal.impactFilter || [],
-      currencyFilter: econcal.currencyFilter || [],
-      weeklyPost: econcal.weeklyPost || {},
-      impacts: IMPACT_LEVELS,
-      currencies: CURRENCIES,
+      channelId: econcal.channelId ?? null,
+      channel: channelName(econcal.channelId),
+      impact: econcal.filterImpact || [],
+      currencies: econcal.filterCurrency || [],
+      impactOptions: [...IMPACT_LEVELS],
+      currencyOptions: [...CURRENCIES],
+      weeklyChannelId: econcal.weeklyChannelId ?? null,
+      weeklyChannel: channelName(econcal.weeklyChannelId),
+      postHour: econcal.postHour ?? 8,
+      postMinute: econcal.postMinute ?? 0,
     },
     automod: {
       badWords: !!automod.badWords,
       linkFilter: !!automod.linkFilter,
-      mentionSpamProtection: !!automod.mentionSpamProtection,
-      customWords: automod.customWords || [],
+      mentionSpam: !!automod.mentionSpamProtection,
+      customWords: (automod.customWords || []).length,
     },
     modlog: {
-      channelId: getModLogChannel(guild)?.id || null,
+      channelId: modlog.channelId ?? getModLogChannel(guildId) ?? null,
+      channel: channelName(modlog.channelId || getModLogChannel(guildId)),
       members: !!modlog.members,
       messages: !!modlog.messages,
       roles: !!modlog.roles,
