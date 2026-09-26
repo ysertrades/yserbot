@@ -1,11 +1,16 @@
 'use strict';
 
 /**
- * /leaderboard — QuantLab Ladder Desk (top 10).
- * Full desk layout: header + gold / silver / bronze cards + field 4–10.
+ * /leaderboard — QuantLab Ladder Desk (top 10) · one embed.
+ *
+ * Layout:
+ *  - Generated podium image: top 3 faces in a row + ranks 4–10 below
+ *  - Inline Gold / Silver / Bronze fields with live progress bars
+ *  - Field list 4–10 with bars
+ *  - Hard separator line above the action zone
+ *  - Up to 5 action rows (Discord max) — select + button banks
+ *
  * Progress bars always use the *current* curve (base + multiplier).
- * Short brand dividers only — no long rules that wrap on phones.
- * Buttons: Refresh (edit in place), Me (ephemeral rank card).
  * Does not touch the XP engine, role sync, or panel paths.
  */
 
@@ -15,17 +20,20 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  AttachmentBuilder,
 } = require('discord.js');
 const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
 const { BRAND_PURPLE } = require('../../utils/dropFormat');
+const { generateLeaderboardImage } = require('../../utils/leaderboardVisual');
+const { fetchAvatarPng } = require('../../utils/avatarUtil');
 
 /** Short brand divider — stays on one phone line. */
 const DIV = '✧ · · · · · · ✧';
-
-const COLOR_GOLD = 0xc9a227;
-const COLOR_SILVER = 0xa8b0c0;
-const COLOR_BRONZE = 0xb87333;
+/** Hard straight rule above the action zone (embed cannot host buttons inside). */
+const HARD_LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
 function levelBar(into, need, cells = 10) {
   const n = Math.max(1, Number(need) || 1);
@@ -64,7 +72,7 @@ async function resolveMentions(guild, ids) {
         label: '<@' + id + '>',
         name: m.displayName || m.user?.globalName || m.user?.username || null,
         inGuild: true,
-        avatar: m.user?.displayAvatarURL?.({ extension: 'png', size: 128 }) || null,
+        avatar: m.user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null,
       });
     }
   } catch { /* fall through */ }
@@ -77,7 +85,7 @@ async function resolveMentions(guild, ids) {
         label: '<@' + id + '>',
         name: m.displayName || m.user?.globalName || m.user?.username || null,
         inGuild: true,
-        avatar: m.user?.displayAvatarURL?.({ extension: 'png', size: 128 }) || null,
+        avatar: m.user?.displayAvatarURL?.({ extension: 'png', size: 256 }) || null,
       });
       continue;
     } catch { /* not in guild */ }
@@ -88,7 +96,7 @@ async function resolveMentions(guild, ids) {
         label: name ? '**' + name + '**' : '`' + id + '`',
         name,
         inGuild: false,
-        avatar: u.displayAvatarURL?.({ extension: 'png', size: 128 }) || null,
+        avatar: u.displayAvatarURL?.({ extension: 'png', size: 256 }) || null,
       });
     } catch {
       out.set(id, { label: '`' + id + '`', name: null, inGuild: false, avatar: null });
@@ -103,56 +111,158 @@ function who(resolved, id) {
   return '<@' + id + '>';
 }
 
-function medalCard(rank, u, resolved, color, title) {
+function medalField(label, u, resolved) {
   const into = u.into ?? 0;
   const need = u.need ?? 1;
   const pct = levelPct(into, need);
-  const bar = levelBar(into, need, 12);
-  const avatar = resolved.get(u.id)?.avatar || null;
-
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(title)
-    .setDescription(
-      [
-        who(resolved, u.id),
-        '**' + fmt(u.totalXp) + '** XP  ·  Level **' + u.level + '**',
-        '`' + bar + '`  **' + pct + '%** into next',
-      ].join('\n'),
-    );
-
-  if (avatar) embed.setThumbnail(avatar);
-  return embed;
+  return {
+    name: label,
+    value: [
+      who(resolved, u.id),
+      '**' + fmt(u.totalXp) + '** XP · Lv **' + u.level + '**',
+      '`' + levelBar(into, need, 10) + '` **' + pct + '%**',
+    ].join('\n'),
+    inline: true,
+  };
 }
 
-function buildDeskPayload(guild, ranked, resolved) {
-  const icon = serverIcon(guild);
-  const embeds = [];
+/** Discord max = 5 action rows. Fill the bank without breaking limits. */
+function buildActionRows() {
+  const mode = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('lb:mode')
+      .setPlaceholder('Board · All-time XP')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel('All-time XP')
+          .setDescription('Top 10 by total QuantLab XP')
+          .setValue('alltime')
+          .setEmoji('🏆')
+          .setDefault(true),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Curve live')
+          .setDescription('Bars always follow current base × mult')
+          .setValue('curve')
+          .setEmoji('📈'),
+      ),
+  );
 
-  const header = new EmbedBuilder()
+  const rowPrimary = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('lb:refresh').setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:me').setLabel('Me').setEmoji('📍').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('lb:climb').setLabel('Climb').setEmoji('📈').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('lb:podium').setLabel('Podium').setEmoji('🥇').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:field').setLabel('4–10').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+  );
+
+  const rowSecondary = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('lb:curve').setLabel('Curve').setEmoji('📉').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:bars').setLabel('How bars work').setEmoji('▰').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:top1').setLabel('#1').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:top2').setLabel('#2').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:top3').setLabel('#3').setStyle(ButtonStyle.Secondary),
+  );
+
+  const rowTertiary = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('lb:xp').setLabel('My XP').setEmoji('✨').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('lb:next').setLabel('XP to next').setEmoji('🎯').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:tracked').setLabel('Tracked').setEmoji('👥').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:help').setLabel('Help').setEmoji('❓').setStyle(ButtonStyle.Secondary),
+  );
+
+  // 5th row — keeps the message at Discord’s action-row ceiling
+  const rowQuorum = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('lb:refresh2').setLabel('Hard refresh').setEmoji('♻️').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId('lb:me2').setLabel('My rank card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('lb:desk').setLabel('Ladder Desk').setEmoji('🖥️').setStyle(ButtonStyle.Secondary),
+  );
+
+  return [mode, rowPrimary, rowSecondary, rowTertiary, rowQuorum];
+}
+
+async function buildImageAttachment(ranked, resolved) {
+  const entries = [];
+  for (let i = 0; i < ranked.length; i++) {
+    const r = ranked[i];
+    const meta = resolved.get(r.id) || {};
+    let avatarPng = null;
+    if (meta.avatar) {
+      try {
+        avatarPng = await fetchAvatarPng(meta.avatar);
+      } catch {
+        avatarPng = null;
+      }
+    }
+    entries.push({
+      rank: i + 1,
+      name: meta.name || 'Unknown',
+      level: r.level,
+      totalXp: r.totalXp,
+      avatarPng,
+    });
+  }
+
+  try {
+    const buf = generateLeaderboardImage({
+      entries,
+      title: 'QUANTLAB LADDER',
+      subtitle: 'TOP 10 · CURVE LIVE',
+    });
+    return new AttachmentBuilder(buf, { name: 'ladder-desk.png' });
+  } catch (err) {
+    console.warn('[leaderboard] image gen failed:', err.message || err);
+    return null;
+  }
+}
+
+async function buildLiveDesk(guild) {
+  const ranked = levelingEngine.getLeaderboard(guild.id, 10);
+  const icon = serverIcon(guild);
+
+  if (!ranked.length) {
+    const empty = new EmbedBuilder()
+      .setColor(BRAND_PURPLE)
+      .setAuthor({ name: 'QuantLab  ·  Ladder Desk', iconURL: icon || undefined })
+      .setTitle('TOP 10  ·  All-time XP')
+      .setDescription('No ranks yet — chat in allowed channels to earn XP.\n\n' + HARD_LINE)
+      .setFooter({ text: 'QuantLab ranks  ·  actions below' });
+    if (icon) empty.setThumbnail(icon);
+    return {
+      embeds: [empty],
+      components: buildActionRows(),
+      files: [],
+      allowedMentions: { parse: [] },
+    };
+  }
+
+  const resolved = await resolveMentions(
+    guild,
+    ranked.map((r) => r.id),
+  );
+
+  const file = await buildImageAttachment(ranked, resolved);
+
+  const embed = new EmbedBuilder()
     .setColor(BRAND_PURPLE)
     .setAuthor({ name: 'QuantLab  ·  Ladder Desk', iconURL: icon || undefined })
     .setTitle('TOP 10  ·  All-time XP')
     .setDescription(
-      'Progress bars use the **current** curve  ·  into next level\n' + DIV,
-    )
-    .setFooter({
-      text: 'Top ' + ranked.length + '  ·  curve live  ·  QuantLab',
-    })
-    .setTimestamp();
-  if (icon) header.setThumbnail(icon);
-  embeds.push(header);
+      [
+        'Podium faces in a **row** · ranks **4–10** under them',
+        'Progress bars use the **current** curve · into next level',
+        DIV,
+      ].join('\n'),
+    );
 
+  // Top 3 inline = three-across text row under the image
   const medals = [
-    { idx: 0, color: COLOR_GOLD, title: '➀  Gold' },
-    { idx: 1, color: COLOR_SILVER, title: '➁  Silver' },
-    { idx: 2, color: COLOR_BRONZE, title: '➂  Bronze' },
+    { idx: 0, label: '➀ Gold' },
+    { idx: 1, label: '➁ Silver' },
+    { idx: 2, label: '➂ Bronze' },
   ];
-
   for (const m of medals) {
     const u = ranked[m.idx];
-    if (!u) continue;
-    embeds.push(medalCard(m.idx + 1, u, resolved, m.color, m.title));
+    if (u) embed.addFields(medalField(m.label, u, resolved));
   }
 
   const rest = ranked.slice(3, 10);
@@ -163,72 +273,83 @@ function buildDeskPayload(guild, ranked, resolved) {
       const need = u.need ?? 1;
       const pct = levelPct(into, need);
       return (
-        '`' + rank + '`  ' + who(resolved, u.id) +
-        '  ·  Lv **' + u.level + '**  ·  **' + fmt(u.totalXp) + '** XP\n' +
-        ' `' + levelBar(into, need, 10) + '`  ' + pct + '%'
+        '`' + rank + '` ' + who(resolved, u.id) +
+        ' · Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP\n' +
+        ' `' + levelBar(into, need, 10) + '` ' + pct + '%'
       );
     });
-
-    const field = new EmbedBuilder()
-      .setColor(BRAND_PURPLE)
-      .setTitle(DIV + '  4 – 10  ' + DIV)
-      .setDescription(lines.join('\n\n').slice(0, 3900));
-    embeds.push(field);
+    embed.addFields({
+      name: DIV + '  4 – 10  ' + DIV,
+      value: lines.join('\n\n').slice(0, 1020),
+      inline: false,
+    });
   }
 
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId('lb:refresh')
-      .setLabel('Refresh')
-      .setEmoji('🔄')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('lb:me')
-      .setLabel('Me')
-      .setEmoji('📍')
-      .setStyle(ButtonStyle.Primary),
-  );
+  // Hard line — visual break before Discord’s action rows (buttons sit under the embed)
+  embed.addFields({
+    name: '\u200b',
+    value: HARD_LINE + '\n**Actions** · board controls below this line',
+    inline: false,
+  });
+
+  embed.setFooter({
+    text: 'Top ' + ranked.length + '  ·  curve live  ·  QuantLab',
+  });
+  embed.setTimestamp();
+
+  if (file) {
+    embed.setImage('attachment://ladder-desk.png');
+  } else if (icon) {
+    embed.setThumbnail(icon);
+  }
 
   const mentionIds = ranked
     .filter((r) => resolved.get(r.id)?.inGuild)
     .map((r) => r.id);
 
   return {
-    embeds,
-    components: [row],
+    embeds: [embed],
+    components: buildActionRows(),
+    files: file ? [file] : [],
     allowedMentions: { parse: [], users: mentionIds },
   };
 }
 
-async function buildLiveDesk(guild) {
-  const ranked = levelingEngine.getLeaderboard(guild.id, 10);
-  if (!ranked.length) {
-    const icon = serverIcon(guild);
-    const empty = new EmbedBuilder()
-      .setColor(BRAND_PURPLE)
-      .setAuthor({ name: 'QuantLab  ·  Ladder Desk', iconURL: icon || undefined })
-      .setTitle('TOP 10  ·  All-time XP')
-      .setDescription('No ranks yet — chat in allowed channels to earn XP.')
-      .setFooter({ text: 'QuantLab ranks' });
-    if (icon) empty.setThumbnail(icon);
-    return {
-      embeds: [empty],
-      components: [],
-      allowedMentions: { parse: [] },
-    };
-  }
+function ephemeralCard(interaction, title, lines) {
+  const embed = new EmbedBuilder()
+    .setColor(BRAND_PURPLE)
+    .setAuthor({
+      name: interaction.member?.displayName || interaction.user.globalName || interaction.user.username,
+      iconURL: interaction.user.displayAvatarURL({ extension: 'png', size: 64 }),
+    })
+    .setTitle(title)
+    .setDescription(lines.join('\n'));
+  return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+}
 
-  const resolved = await resolveMentions(
-    guild,
-    ranked.map((r) => r.id),
-  );
-  return buildDeskPayload(guild, ranked, resolved);
+async function replyMyRank(interaction) {
+  const snap = levelingEngine.getUserRank(interaction.guild.id, interaction.user.id);
+  const u = snap.user;
+  const into = u.xp ?? 0;
+  const need = u.neededXp ?? 1;
+  const pct = levelPct(into, need);
+  const bar = levelBar(into, need, 12);
+  const lines = [
+    snap.rank
+      ? '**#' + snap.rank + '** of **' + snap.tracked + '** ranked'
+      : 'Not ranked yet — chat to earn XP',
+    'Level **' + u.level + '**  ·  **' + fmt(u.totalXp || 0) + '** XP',
+    '`' + bar + '`  **' + pct + '%** into next',
+    DIV,
+    'Bars follow the **current** curve (base × multiplier).',
+  ];
+  return ephemeralCard(interaction, 'Your ladder position', lines);
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('leaderboard')
-    .setDescription('Top 10 members by Quantlab XP — Ladder Desk'),
+    .setDescription('Top 10 QuantLab XP — Ladder Desk (podium + bars)'),
 
   async execute(interaction) {
     if (!isFeatureEnabled(interaction.guild.id, 'leveling')) {
@@ -238,11 +359,12 @@ module.exports = {
       });
     }
 
+    await interaction.deferReply();
     const payload = await buildLiveDesk(interaction.guild);
-    return interaction.reply(payload);
+    return interaction.editReply(payload);
   },
 
-  /** Button handler — routed from interactionCreate for customId lb:* */
+  /** Buttons + select — routed from interactionCreate for customId lb:* */
   async handleButton(interaction) {
     const id = interaction.customId;
 
@@ -253,51 +375,136 @@ module.exports = {
       }).catch(() => {});
     }
 
-    if (id === 'lb:refresh') {
-      const payload = await buildLiveDesk(interaction.guild);
-      try {
-        return await interaction.update(payload);
-      } catch {
-        return interaction.reply({
-          content: 'Could not refresh — run `/leaderboard` again.',
-          ephemeral: true,
-        }).catch(() => {});
+    // Select menu also arrives as component interaction with customId lb:mode
+    if (id === 'lb:mode') {
+      const value = interaction.values?.[0] || 'alltime';
+      if (value === 'curve') {
+        return ephemeralCard(interaction, 'Curve live', [
+          'Every progress bar is computed from the **current** XP curve.',
+          'Change **base** or **multiplier** in the panel → bars update on next Refresh.',
+          DIV,
+          '`into / need` · percent into the next level.',
+        ]);
       }
+      // alltime → soft refresh
+      await interaction.deferUpdate();
+      const payload = await buildLiveDesk(interaction.guild);
+      return interaction.editReply(payload).catch(() => {});
     }
 
-    if (id === 'lb:me') {
-      const snap = levelingEngine.getUserRank(
-        interaction.guild.id,
-        interaction.user.id,
-      );
-      const u = snap.user;
-      const into = u.xp ?? 0;
-      const need = u.neededXp ?? 1;
-      const pct = levelPct(into, need);
-      const bar = levelBar(into, need, 12);
+    if (id === 'lb:refresh' || id === 'lb:refresh2' || id === 'lb:desk') {
+      await interaction.deferUpdate();
+      const payload = await buildLiveDesk(interaction.guild);
+      return interaction.editReply(payload).catch(() => {});
+    }
 
+    if (id === 'lb:me' || id === 'lb:me2' || id === 'lb:xp' || id === 'lb:next') {
+      return replyMyRank(interaction);
+    }
+
+    if (id === 'lb:climb') {
+      const snap = levelingEngine.getUserRank(interaction.guild.id, interaction.user.id);
       const lines = [
         snap.rank
-          ? '**#' + snap.rank + '** of **' + snap.tracked + '** ranked'
-          : 'Not ranked yet — chat to earn XP',
-        'Level **' + u.level + '**  ·  **' + fmt(u.totalXp || 0) + '** XP',
-        '`' + bar + '`  **' + pct + '%** into next',
+          ? 'You are **#' + snap.rank + '** on the all-time ladder.'
+          : 'You are not on the ladder yet — earn XP to appear.',
+        'Climb the board by posting in tracked channels (and journals when enabled).',
         DIV,
-        'Bars follow the **current** curve.',
+        'Hit **Refresh** after you gain XP to see moves.',
       ];
+      return ephemeralCard(interaction, 'Climb', lines);
+    }
 
-      const embed = new EmbedBuilder()
-        .setColor(BRAND_PURPLE)
-        .setAuthor({
-          name: interaction.member?.displayName || interaction.user.globalName || interaction.user.username,
-          iconURL: interaction.user.displayAvatarURL({ extension: 'png', size: 64 }),
-        })
-        .setTitle('Your ladder position')
-        .setDescription(lines.join('\n'));
+    if (id === 'lb:podium') {
+      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 3);
+      if (!ranked.length) {
+        return ephemeralCard(interaction, 'Podium', ['No ranks yet.']);
+      }
+      const resolved = await resolveMentions(interaction.guild, ranked.map((r) => r.id));
+      const lines = ranked.map((u, i) => {
+        const medal = ['➀ Gold', '➁ Silver', '➂ Bronze'][i] || '#' + (i + 1);
+        const pct = levelPct(u.into, u.need);
+        return (
+          '**' + medal + '**  ' + who(resolved, u.id) +
+          '\nLv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP'
+          + '\n`' + levelBar(u.into, u.need, 10) + '` ' + pct + '%'
+        );
+      });
+      return ephemeralCard(interaction, 'Podium · Top 3', lines);
+    }
 
-      return interaction.reply({ embeds: [embed], ephemeral: true }).catch(() => {});
+    if (id === 'lb:field') {
+      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 10).slice(3);
+      if (!ranked.length) {
+        return ephemeralCard(interaction, 'Ranks 4–10', ['Fewer than 4 members ranked.']);
+      }
+      const resolved = await resolveMentions(interaction.guild, ranked.map((r) => r.id));
+      const lines = ranked.map((u, i) => {
+        const rank = String(i + 4).padStart(2, '0');
+        const pct = levelPct(u.into, u.need);
+        return (
+          '`' + rank + '` ' + who(resolved, u.id) +
+          ' · Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP'
+          + '\n `' + levelBar(u.into, u.need, 10) + '` ' + pct + '%'
+        );
+      });
+      return ephemeralCard(interaction, 'Field · 4–10', lines);
+    }
+
+    if (id === 'lb:curve' || id === 'lb:bars') {
+      return ephemeralCard(interaction, 'How bars work', [
+        'Each bar is **into next level ÷ XP needed for that level**.',
+        'Needed XP comes from the guild **curve** (quadratic or exponential).',
+        'Panel **base** / **multiplier** changes recompute bars on the next Refresh.',
+        DIV,
+        'Image podium + text bars both use the same live engine numbers.',
+      ]);
+    }
+
+    if (id === 'lb:top1' || id === 'lb:top2' || id === 'lb:top3') {
+      const idx = id === 'lb:top1' ? 0 : id === 'lb:top2' ? 1 : 2;
+      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 3);
+      const u = ranked[idx];
+      if (!u) {
+        return ephemeralCard(interaction, 'Podium slot', ['That podium seat is empty.']);
+      }
+      const resolved = await resolveMentions(interaction.guild, [u.id]);
+      const pct = levelPct(u.into, u.need);
+      const title = ['#1 Gold', '#2 Silver', '#3 Bronze'][idx];
+      return ephemeralCard(interaction, title, [
+        who(resolved, u.id),
+        'Level **' + u.level + '** · **' + fmt(u.totalXp) + '** XP',
+        '`' + levelBar(u.into, u.need, 12) + '` **' + pct + '%** into next',
+      ]);
+    }
+
+    if (id === 'lb:tracked') {
+      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 10);
+      const snap = levelingEngine.getUserRank(interaction.guild.id, interaction.user.id);
+      return ephemeralCard(interaction, 'Tracked members', [
+        'Showing **top ' + ranked.length + '** on this board.',
+        'Server tracked (with XP): **' + (snap.tracked || 0) + '**.',
+        DIV,
+        'Only members with XP appear on the ladder.',
+      ]);
+    }
+
+    if (id === 'lb:help') {
+      return ephemeralCard(interaction, 'Ladder Desk help', [
+        '**Refresh** — rebuild podium image + bars from live XP',
+        '**Me / My XP** — your rank and progress bar',
+        '**Podium / 4–10** — quick slices of the board',
+        '**Curve / How bars work** — how progress is calculated',
+        DIV,
+        'Buttons sit **below** the hard line — Discord places components under the embed.',
+      ]);
     }
 
     return interaction.deferUpdate().catch(() => {});
+  },
+
+  /** Select menus share lb: prefix — same handler */
+  async handleSelect(interaction) {
+    return this.handleButton(interaction);
   },
 };
