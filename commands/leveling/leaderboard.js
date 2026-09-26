@@ -8,9 +8,10 @@
  *  - Inline Gold / Silver / Bronze fields with live progress bars
  *  - Field list 4–10 with bars
  *  - Hard separator line above the action zone
- *  - Up to 5 action rows (Discord max) — select + button banks
+ *  - Action rows (select + buttons) — only valid Discord emojis
  *
  * Progress bars always use the *current* curve (base + multiplier).
+ * Image generation failures never kill the command (text board still sends).
  * Does not touch the XP engine, role sync, or panel paths.
  */
 
@@ -27,12 +28,19 @@ const {
 const levelingEngine = require('../../utils/levelingEngine');
 const { isFeatureEnabled } = require('../../utils/featureToggles');
 const { BRAND_PURPLE } = require('../../utils/dropFormat');
-const { generateLeaderboardImage } = require('../../utils/leaderboardVisual');
-const { fetchAvatarPng } = require('../../utils/avatarUtil');
+
+let generateLeaderboardImage = null;
+let fetchAvatarPng = null;
+try {
+  generateLeaderboardImage = require('../../utils/leaderboardVisual').generateLeaderboardImage;
+  fetchAvatarPng = require('../../utils/avatarUtil').fetchAvatarPng;
+} catch (err) {
+  console.warn('[leaderboard] visual modules unavailable:', err.message || err);
+}
 
 /** Short brand divider — stays on one phone line. */
 const DIV = '✧ · · · · · · ✧';
-/** Hard straight rule above the action zone (embed cannot host buttons inside). */
+/** Hard straight rule above the action zone. */
 const HARD_LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
 function levelBar(into, need, cells = 10) {
@@ -126,7 +134,7 @@ function medalField(label, u, resolved) {
   };
 }
 
-/** Discord max = 5 action rows. Fill the bank without breaking limits. */
+/** Only Unicode emojis Discord accepts on buttons/selects (no block glyphs). */
 function buildActionRows() {
   const mode = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
@@ -141,7 +149,7 @@ function buildActionRows() {
           .setDefault(true),
         new StringSelectMenuOptionBuilder()
           .setLabel('Curve live')
-          .setDescription('Bars always follow current base × mult')
+          .setDescription('Bars follow current base × mult')
           .setValue('curve')
           .setEmoji('📈'),
       ),
@@ -152,12 +160,12 @@ function buildActionRows() {
     new ButtonBuilder().setCustomId('lb:me').setLabel('Me').setEmoji('📍').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('lb:climb').setLabel('Climb').setEmoji('📈').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId('lb:podium').setLabel('Podium').setEmoji('🥇').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('lb:field').setLabel('4–10').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:field').setLabel('4-10').setEmoji('📋').setStyle(ButtonStyle.Secondary),
   );
 
   const rowSecondary = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('lb:curve').setLabel('Curve').setEmoji('📉').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('lb:bars').setLabel('How bars work').setEmoji('▰').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('lb:bars').setLabel('How bars work').setEmoji('📊').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('lb:top1').setLabel('#1').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('lb:top2').setLabel('#2').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('lb:top3').setLabel('#3').setStyle(ButtonStyle.Secondary),
@@ -165,22 +173,19 @@ function buildActionRows() {
 
   const rowTertiary = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('lb:xp').setLabel('My XP').setEmoji('✨').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('lb:next').setLabel('XP to next').setEmoji('🎯').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('lb:tracked').setLabel('Tracked').setEmoji('👥').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('lb:help').setLabel('Help').setEmoji('❓').setStyle(ButtonStyle.Secondary),
-  );
-
-  // 5th row — keeps the message at Discord’s action-row ceiling
-  const rowQuorum = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('lb:refresh2').setLabel('Hard refresh').setEmoji('♻️').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('lb:me2').setLabel('My rank card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('lb:desk').setLabel('Ladder Desk').setEmoji('🖥️').setStyle(ButtonStyle.Secondary),
   );
 
-  return [mode, rowPrimary, rowSecondary, rowTertiary, rowQuorum];
+  return [mode, rowPrimary, rowSecondary, rowTertiary];
 }
 
 async function buildImageAttachment(ranked, resolved) {
+  if (typeof generateLeaderboardImage !== 'function' || typeof fetchAvatarPng !== 'function') {
+    return null;
+  }
+
   const entries = [];
   for (let i = 0; i < ranked.length; i++) {
     const r = ranked[i];
@@ -208,6 +213,7 @@ async function buildImageAttachment(ranked, resolved) {
       title: 'QUANTLAB LADDER',
       subtitle: 'TOP 10 · CURVE LIVE',
     });
+    if (!buf || !Buffer.isBuffer(buf)) return null;
     return new AttachmentBuilder(buf, { name: 'ladder-desk.png' });
   } catch (err) {
     console.warn('[leaderboard] image gen failed:', err.message || err);
@@ -240,7 +246,13 @@ async function buildLiveDesk(guild) {
     ranked.map((r) => r.id),
   );
 
-  const file = await buildImageAttachment(ranked, resolved);
+  let file = null;
+  try {
+    file = await buildImageAttachment(ranked, resolved);
+  } catch (err) {
+    console.warn('[leaderboard] attachment build failed:', err.message || err);
+    file = null;
+  }
 
   const embed = new EmbedBuilder()
     .setColor(BRAND_PURPLE)
@@ -254,7 +266,6 @@ async function buildLiveDesk(guild) {
       ].join('\n'),
     );
 
-  // Top 3 inline = three-across text row under the image
   const medals = [
     { idx: 0, label: '➀ Gold' },
     { idx: 1, label: '➁ Silver' },
@@ -285,7 +296,6 @@ async function buildLiveDesk(guild) {
     });
   }
 
-  // Hard line — visual break before Discord’s action rows (buttons sit under the embed)
   embed.addFields({
     name: '\u200b',
     value: HARD_LINE + '\n**Actions** · board controls below this line',
@@ -352,158 +362,186 @@ module.exports = {
     .setDescription('Top 10 QuantLab XP — Ladder Desk (podium + bars)'),
 
   async execute(interaction) {
-    if (!isFeatureEnabled(interaction.guild.id, 'leveling')) {
-      return interaction.reply({
-        content: 'Leveling is turned off on this server.',
-        ephemeral: true,
-      });
-    }
+    try {
+      if (!interaction.guild) {
+        return interaction.reply({ content: 'Use this in a server.', ephemeral: true });
+      }
+      if (!isFeatureEnabled(interaction.guild.id, 'leveling')) {
+        return interaction.reply({
+          content: 'Leveling is turned off on this server.',
+          ephemeral: true,
+        });
+      }
 
-    await interaction.deferReply();
-    const payload = await buildLiveDesk(interaction.guild);
-    return interaction.editReply(payload);
+      await interaction.deferReply();
+      const payload = await buildLiveDesk(interaction.guild);
+      return await interaction.editReply(payload);
+    } catch (err) {
+      console.error('[leaderboard] execute failed:', err);
+      const msg = {
+        content: 'Could not build the ladder right now. Try again in a moment.',
+        ephemeral: true,
+      };
+      try {
+        if (interaction.deferred || interaction.replied) {
+          return await interaction.editReply({
+            content: 'Could not build the ladder right now. Try again in a moment.',
+            embeds: [],
+            components: [],
+            files: [],
+          });
+        }
+        return await interaction.reply(msg);
+      } catch {
+        return null;
+      }
+    }
   },
 
-  /** Buttons + select — routed from interactionCreate for customId lb:* */
   async handleButton(interaction) {
     const id = interaction.customId;
 
-    if (!interaction.guild || !isFeatureEnabled(interaction.guild.id, 'leveling')) {
+    try {
+      if (!interaction.guild || !isFeatureEnabled(interaction.guild.id, 'leveling')) {
+        return interaction.reply({
+          content: 'Leveling is turned off on this server.',
+          ephemeral: true,
+        }).catch(() => {});
+      }
+
+      if (id === 'lb:mode') {
+        const value = interaction.values?.[0] || 'alltime';
+        if (value === 'curve') {
+          return ephemeralCard(interaction, 'Curve live', [
+            'Every progress bar is computed from the **current** XP curve.',
+            'Change **base** or **multiplier** in the panel → bars update on next Refresh.',
+            DIV,
+            '`into / need` · percent into the next level.',
+          ]);
+        }
+        await interaction.deferUpdate();
+        const payload = await buildLiveDesk(interaction.guild);
+        return interaction.editReply(payload).catch(() => {});
+      }
+
+      if (id === 'lb:refresh' || id === 'lb:refresh2' || id === 'lb:desk') {
+        await interaction.deferUpdate();
+        const payload = await buildLiveDesk(interaction.guild);
+        return interaction.editReply(payload).catch(() => {});
+      }
+
+      if (id === 'lb:me' || id === 'lb:me2' || id === 'lb:xp' || id === 'lb:next') {
+        return replyMyRank(interaction);
+      }
+
+      if (id === 'lb:climb') {
+        const snap = levelingEngine.getUserRank(interaction.guild.id, interaction.user.id);
+        const lines = [
+          snap.rank
+            ? 'You are **#' + snap.rank + '** on the all-time ladder.'
+            : 'You are not on the ladder yet — earn XP to appear.',
+          'Climb the board by posting in tracked channels (and journals when enabled).',
+          DIV,
+          'Hit **Refresh** after you gain XP to see moves.',
+        ];
+        return ephemeralCard(interaction, 'Climb', lines);
+      }
+
+      if (id === 'lb:podium') {
+        const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 3);
+        if (!ranked.length) {
+          return ephemeralCard(interaction, 'Podium', ['No ranks yet.']);
+        }
+        const resolved = await resolveMentions(interaction.guild, ranked.map((r) => r.id));
+        const lines = ranked.map((u, i) => {
+          const medal = ['➀ Gold', '➁ Silver', '➂ Bronze'][i] || '#' + (i + 1);
+          const pct = levelPct(u.into, u.need);
+          return (
+            '**' + medal + '**  ' + who(resolved, u.id) +
+            '\nLv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP'
+            + '\n`' + levelBar(u.into, u.need, 10) + '` ' + pct + '%'
+          );
+        });
+        return ephemeralCard(interaction, 'Podium · Top 3', lines);
+      }
+
+      if (id === 'lb:field') {
+        const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 10).slice(3);
+        if (!ranked.length) {
+          return ephemeralCard(interaction, 'Ranks 4–10', ['Fewer than 4 members ranked.']);
+        }
+        const resolved = await resolveMentions(interaction.guild, ranked.map((r) => r.id));
+        const lines = ranked.map((u, i) => {
+          const rank = String(i + 4).padStart(2, '0');
+          const pct = levelPct(u.into, u.need);
+          return (
+            '`' + rank + '` ' + who(resolved, u.id) +
+            ' · Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP'
+            + '\n `' + levelBar(u.into, u.need, 10) + '` ' + pct + '%'
+          );
+        });
+        return ephemeralCard(interaction, 'Field · 4–10', lines);
+      }
+
+      if (id === 'lb:curve' || id === 'lb:bars') {
+        return ephemeralCard(interaction, 'How bars work', [
+          'Each bar is **into next level ÷ XP needed for that level**.',
+          'Needed XP comes from the guild **curve** (quadratic or exponential).',
+          'Panel **base** / **multiplier** changes recompute bars on the next Refresh.',
+          DIV,
+          'Image podium + text bars both use the same live engine numbers.',
+        ]);
+      }
+
+      if (id === 'lb:top1' || id === 'lb:top2' || id === 'lb:top3') {
+        const idx = id === 'lb:top1' ? 0 : id === 'lb:top2' ? 1 : 2;
+        const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 3);
+        const u = ranked[idx];
+        if (!u) {
+          return ephemeralCard(interaction, 'Podium slot', ['That podium seat is empty.']);
+        }
+        const resolved = await resolveMentions(interaction.guild, [u.id]);
+        const pct = levelPct(u.into, u.need);
+        const title = ['#1 Gold', '#2 Silver', '#3 Bronze'][idx];
+        return ephemeralCard(interaction, title, [
+          who(resolved, u.id),
+          'Level **' + u.level + '** · **' + fmt(u.totalXp) + '** XP',
+          '`' + levelBar(u.into, u.need, 12) + '` **' + pct + '%** into next',
+        ]);
+      }
+
+      if (id === 'lb:tracked') {
+        const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 10);
+        const snap = levelingEngine.getUserRank(interaction.guild.id, interaction.user.id);
+        return ephemeralCard(interaction, 'Tracked members', [
+          'Showing **top ' + ranked.length + '** on this board.',
+          'Server tracked (with XP): **' + (snap.tracked || 0) + '**.',
+          DIV,
+          'Only members with XP appear on the ladder.',
+        ]);
+      }
+
+      if (id === 'lb:help') {
+        return ephemeralCard(interaction, 'Ladder Desk help', [
+          '**Refresh** — rebuild podium image + bars from live XP',
+          '**Me / My XP** — your rank and progress bar',
+          '**Podium / 4–10** — quick slices of the board',
+          '**Curve / How bars work** — how progress is calculated',
+          DIV,
+          'Buttons sit **below** the hard line — Discord places components under the embed.',
+        ]);
+      }
+
+      return interaction.deferUpdate().catch(() => {});
+    } catch (err) {
+      console.error('[leaderboard] handleButton failed:', id, err);
       return interaction.reply({
-        content: 'Leveling is turned off on this server.',
+        content: 'That action failed. Try **Refresh** or run `/leaderboard` again.',
         ephemeral: true,
       }).catch(() => {});
     }
-
-    // Select menu also arrives as component interaction with customId lb:mode
-    if (id === 'lb:mode') {
-      const value = interaction.values?.[0] || 'alltime';
-      if (value === 'curve') {
-        return ephemeralCard(interaction, 'Curve live', [
-          'Every progress bar is computed from the **current** XP curve.',
-          'Change **base** or **multiplier** in the panel → bars update on next Refresh.',
-          DIV,
-          '`into / need` · percent into the next level.',
-        ]);
-      }
-      // alltime → soft refresh
-      await interaction.deferUpdate();
-      const payload = await buildLiveDesk(interaction.guild);
-      return interaction.editReply(payload).catch(() => {});
-    }
-
-    if (id === 'lb:refresh' || id === 'lb:refresh2' || id === 'lb:desk') {
-      await interaction.deferUpdate();
-      const payload = await buildLiveDesk(interaction.guild);
-      return interaction.editReply(payload).catch(() => {});
-    }
-
-    if (id === 'lb:me' || id === 'lb:me2' || id === 'lb:xp' || id === 'lb:next') {
-      return replyMyRank(interaction);
-    }
-
-    if (id === 'lb:climb') {
-      const snap = levelingEngine.getUserRank(interaction.guild.id, interaction.user.id);
-      const lines = [
-        snap.rank
-          ? 'You are **#' + snap.rank + '** on the all-time ladder.'
-          : 'You are not on the ladder yet — earn XP to appear.',
-        'Climb the board by posting in tracked channels (and journals when enabled).',
-        DIV,
-        'Hit **Refresh** after you gain XP to see moves.',
-      ];
-      return ephemeralCard(interaction, 'Climb', lines);
-    }
-
-    if (id === 'lb:podium') {
-      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 3);
-      if (!ranked.length) {
-        return ephemeralCard(interaction, 'Podium', ['No ranks yet.']);
-      }
-      const resolved = await resolveMentions(interaction.guild, ranked.map((r) => r.id));
-      const lines = ranked.map((u, i) => {
-        const medal = ['➀ Gold', '➁ Silver', '➂ Bronze'][i] || '#' + (i + 1);
-        const pct = levelPct(u.into, u.need);
-        return (
-          '**' + medal + '**  ' + who(resolved, u.id) +
-          '\nLv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP'
-          + '\n`' + levelBar(u.into, u.need, 10) + '` ' + pct + '%'
-        );
-      });
-      return ephemeralCard(interaction, 'Podium · Top 3', lines);
-    }
-
-    if (id === 'lb:field') {
-      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 10).slice(3);
-      if (!ranked.length) {
-        return ephemeralCard(interaction, 'Ranks 4–10', ['Fewer than 4 members ranked.']);
-      }
-      const resolved = await resolveMentions(interaction.guild, ranked.map((r) => r.id));
-      const lines = ranked.map((u, i) => {
-        const rank = String(i + 4).padStart(2, '0');
-        const pct = levelPct(u.into, u.need);
-        return (
-          '`' + rank + '` ' + who(resolved, u.id) +
-          ' · Lv **' + u.level + '** · **' + fmt(u.totalXp) + '** XP'
-          + '\n `' + levelBar(u.into, u.need, 10) + '` ' + pct + '%'
-        );
-      });
-      return ephemeralCard(interaction, 'Field · 4–10', lines);
-    }
-
-    if (id === 'lb:curve' || id === 'lb:bars') {
-      return ephemeralCard(interaction, 'How bars work', [
-        'Each bar is **into next level ÷ XP needed for that level**.',
-        'Needed XP comes from the guild **curve** (quadratic or exponential).',
-        'Panel **base** / **multiplier** changes recompute bars on the next Refresh.',
-        DIV,
-        'Image podium + text bars both use the same live engine numbers.',
-      ]);
-    }
-
-    if (id === 'lb:top1' || id === 'lb:top2' || id === 'lb:top3') {
-      const idx = id === 'lb:top1' ? 0 : id === 'lb:top2' ? 1 : 2;
-      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 3);
-      const u = ranked[idx];
-      if (!u) {
-        return ephemeralCard(interaction, 'Podium slot', ['That podium seat is empty.']);
-      }
-      const resolved = await resolveMentions(interaction.guild, [u.id]);
-      const pct = levelPct(u.into, u.need);
-      const title = ['#1 Gold', '#2 Silver', '#3 Bronze'][idx];
-      return ephemeralCard(interaction, title, [
-        who(resolved, u.id),
-        'Level **' + u.level + '** · **' + fmt(u.totalXp) + '** XP',
-        '`' + levelBar(u.into, u.need, 12) + '` **' + pct + '%** into next',
-      ]);
-    }
-
-    if (id === 'lb:tracked') {
-      const ranked = levelingEngine.getLeaderboard(interaction.guild.id, 10);
-      const snap = levelingEngine.getUserRank(interaction.guild.id, interaction.user.id);
-      return ephemeralCard(interaction, 'Tracked members', [
-        'Showing **top ' + ranked.length + '** on this board.',
-        'Server tracked (with XP): **' + (snap.tracked || 0) + '**.',
-        DIV,
-        'Only members with XP appear on the ladder.',
-      ]);
-    }
-
-    if (id === 'lb:help') {
-      return ephemeralCard(interaction, 'Ladder Desk help', [
-        '**Refresh** — rebuild podium image + bars from live XP',
-        '**Me / My XP** — your rank and progress bar',
-        '**Podium / 4–10** — quick slices of the board',
-        '**Curve / How bars work** — how progress is calculated',
-        DIV,
-        'Buttons sit **below** the hard line — Discord places components under the embed.',
-      ]);
-    }
-
-    return interaction.deferUpdate().catch(() => {});
   },
 
-  /** Select menus share lb: prefix — same handler */
   async handleSelect(interaction) {
     return this.handleButton(interaction);
   },
