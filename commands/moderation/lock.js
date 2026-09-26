@@ -13,7 +13,6 @@ module.exports = {
       .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(false))
     .addStringOption(o => o.setName('mode').setDescription('How hard to lock')
       .addChoices(
-        { name: 'Chat only', value: 'chat' },
         { name: 'Chat + media', value: 'media' },
         { name: 'Full lockdown', value: 'full' },
       ).setRequired(false))
@@ -22,7 +21,7 @@ module.exports = {
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel') || interaction.channel;
     const reason = interaction.options.getString('reason') || null;
-    const mode = interaction.options.getString('mode') || 'chat';
+    const mode = interaction.options.getString('mode') || 'media';
     const guildId = interaction.guild.id;
 
     await interaction.deferReply();

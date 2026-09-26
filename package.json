@@ -1,7 +1,7 @@
 {
-  "name": "@workspace/flowbot",
+  "name": "quantbot",
   "version": "1.0.0",
-  "description": "YSER Flow - All-in-One Discord Bot",
+  "description": "QuantLab / Quantbot — Discord control panel and bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
