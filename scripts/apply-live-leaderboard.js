@@ -1,1 +1,3 @@
-PLACEHOLDER_WILL_REPLACE
+#!/usr/bin/env node
+'use strict';
+console.log('placeholder thin');
