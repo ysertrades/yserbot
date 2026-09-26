@@ -3,6 +3,7 @@
 /**
  * /rank — member-pad style embed (no pixel PNG).
  * Hero line: **name** · rank · level · two stat cards · badges if economy on.
+ * Progress bar always uses the *current* curve (base + multiplier).
  */
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
@@ -14,6 +15,20 @@ const { BRAND_PURPLE } = require('../../utils/dropFormat');
 
 function fmt(n) {
   return Number(n || 0).toLocaleString('en-US');
+}
+
+function levelBar(into, need, cells = 10) {
+  const n = Math.max(1, Number(need) || 1);
+  const i = Math.max(0, Number(into) || 0);
+  const pct = Math.max(0, Math.min(1, i / n));
+  const filled = Math.round(pct * cells);
+  return '▰'.repeat(filled) + '▱'.repeat(Math.max(0, cells - filled));
+}
+
+function levelPct(into, need) {
+  const n = Math.max(1, Number(need) || 1);
+  const i = Math.max(0, Number(into) || 0);
+  return Math.round(Math.max(0, Math.min(1, i / n)) * 100);
 }
 
 function badgeLabels(userId, guildId) {
@@ -56,15 +71,16 @@ module.exports = {
       }
     } catch { /* keep username */ }
 
+    // Live from engine — into/need track the current curve base + multiplier
     const snap = levelingEngine.getUserRank(interaction.guild.id, user.id);
     const u = snap.user;
     const into = u.xp ?? 0;
     const need = u.neededXp ?? 1;
+    const pct = levelPct(into, need);
 
     const avatar =
       user.displayAvatarURL({ extension: 'png', size: 128 }) || undefined;
 
-    // Single hero line first — bold name (was author), no @handle, no top author row
     const hero = ['**' + displayName + '**'];
     if (snap.rank) {
       hero.push('**#' + snap.rank + '** of ' + snap.tracked + ' ranked');
@@ -81,7 +97,7 @@ module.exports = {
     embed.addFields(
       {
         name: 'Into next level',
-        value: '**' + fmt(into) + '** / **' + fmt(need) + '** XP',
+        value: '**' + fmt(into) + '** / **' + fmt(need) + '** XP\n`' + levelBar(into, need, 10) + '` · ' + pct + '%',
         inline: true,
       },
       {
