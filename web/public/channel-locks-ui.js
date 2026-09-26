@@ -87,6 +87,16 @@
       { id: 'full', label: 'Full lockdown' },
     ];
 
+    // Preserve picker values across live re-renders so selection does not wipe
+    let prevChannel = '';
+    let prevMode = 'media';
+    try {
+      const oldCh = root.querySelector('select.lock-sel');
+      const sels = root.querySelectorAll('select.lock-sel');
+      if (sels[0]) prevChannel = sels[0].value || '';
+      if (sels[1]) prevMode = sels[1].value || 'media';
+    } catch (e) {}
+
     root.replaceChildren();
 
     const head = el('div', 'queue-head');
@@ -114,7 +124,6 @@
     blank.textContent = 'Select channel…';
     chSel.append(blank);
     const opts = channelOptions();
-    const _prevCh = chSel.value;
     for (let i = 0; i < opts.length; i++) {
       const c = opts[i];
       if (!c || !c.id) continue;
@@ -123,8 +132,8 @@
       o.textContent = channelLabel(c);
       chSel.append(o);
     }
-    if (_prevCh && Array.from(chSel.options).some(function (o) { return o.value === _prevCh; })) {
-      chSel.value = _prevCh;
+    if (prevChannel && Array.from(chSel.options).some(function (o) { return o.value === prevChannel; })) {
+      chSel.value = prevChannel;
     }
     if (!opts.length) {
       const o = document.createElement('option');
@@ -145,7 +154,7 @@
       const o = document.createElement('option');
       o.value = md.id;
       o.textContent = md.label;
-      if (md.id === 'media') o.selected = true;
+      if (md.id === (prevMode || 'media')) o.selected = true;
       modeSel.append(o);
     }
     f2.append(modeSel);
