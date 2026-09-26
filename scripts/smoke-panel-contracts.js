@@ -74,6 +74,22 @@ if (openB !== closeB) fail('css.brace', `unbalanced braces {=${openB} }=${closeB
 else pass('css.brace', `balanced ${openB}`);
 mustInclude('css.mobile', css, 'overflow-x: clip', 'mobile overflow lock');
 mustInclude('writes.imageupload', writes, 'imageupload', 'imageupload handler');
+
+mustMatch('panelLog.shape', api, /panelLog:\s*\{[\s\S]*?categories:[\s\S]*?values:/, 'panelLog must expose categories + values');
+mustInclude('channellock.writes', writes, 'channellock', 'channellock write op');
+mustInclude('channellock.server', read('web/server.js'), "op === 'channellock'", 'server skips overview for channellock');
+mustInclude('lock.modes', read('commands/moderation/lock.js'), "value: 'media'", 'lock default media');
+mustNotMatch('lock.chatonly', read('commands/moderation/lock.js'), /Chat only/, 'lock must not offer Chat only');
+mustInclude('econcal.weekly', api, 'weekly:', 'econcal exposes weekly object for Feeds tab');
+for (const rel of ['web/writes.js', 'web/server.js', 'web/public/app.js', 'web/public/index.html']) {
+  const head = read(rel).slice(0, 200);
+  if (/PLACEHOLDER_WILL_BE_REPLACED|LOADING_FROM_DISK/.test(head)) fail('placeholder.' + rel, rel + ' starts with PLACEHOLDER');
+  else pass('placeholder.' + rel, rel + ' not placeholder');
+  const sz = fs.statSync(path.join(root, rel)).size;
+  if (sz < 1000) fail('size.' + rel, rel + ' too small (' + sz + ')');
+  else pass('size.' + rel, rel + ' size ' + sz);
+}
+
 console.log('=== smoke-panel-contracts ===');
 for (const line of ok) console.log('  OK  ', line);
 for (const line of fails) console.log('  FAIL', line);

@@ -118,6 +118,7 @@ const PANEL_LOG_CATEGORIES = {
   appearance: { label: 'Bot message wording and colour' },
   tickets:    { label: 'Tickets' },
   automation: { label: 'Schedules and auto-replies' },
+  whop:       { label: 'Whop tracker' },
 };
 
 function getPanelLogSettings(guildId) {
