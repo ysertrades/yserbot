@@ -963,6 +963,10 @@ module.exports = {
     if (interaction.isStringSelectMenu()) {
       const id = interaction.customId;
       try {
+        // XP Ladder Desk — mode select
+        if (id.startsWith('lb:')) {
+          return await client.commands.get('leaderboard')?.handleButton(interaction);
+        }
         // Delete / cancel selectors (+ embed field-removal selector)
         if (id === 'embed_delselect' || id.startsWith('embed_fieldsel_'))
           return await client.commands.get('embed')?.handleEmbedSelect(interaction);
