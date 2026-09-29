@@ -34,7 +34,6 @@ function canSend(channel, me) {
 function isDeskChannel(ch) {
   if (!ch || ch.isThread?.()) return false;
   if (typeof ch.isTextBased === 'function' && !ch.isTextBased()) return false;
-  // Skip pure voice; allow announcement/text/forum threads are already skipped
   if (ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice) return false;
   return true;
 }
@@ -65,6 +64,8 @@ async function listChannels(guild) {
   if (!me) {
     try { me = await guild.members.fetchMe(); } catch { me = null; }
   }
+  // Cache can be partial after restarts — refresh so the desk dropdown fills
+  try { await guild.channels.fetch(); } catch { /* keep cache */ }
   const channels = [];
   for (const ch of guild.channels.cache.values()) {
     if (!isDeskChannel(ch)) continue;
