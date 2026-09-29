@@ -13,14 +13,8 @@ let cache = null;
 
 function injectState(body) {
   if (body.includes('window.state = state')) return body;
-  const inject = '\nwindow.state = state;\n';
-  const needle = 'gawBump: null,';
-  const idx = body.indexOf(needle);
-  if (idx !== -1) {
-    const close = body.indexOf('};', idx);
-    if (close !== -1) return body.slice(0, close + 2) + inject + body.slice(close + 2);
-  }
-  return body + inject;
+  // Append only — never splice mid-file (breaks JS and leaves panel on Loading).
+  return body + '\n;window.state = state;\n';
 }
 
 function loadLocal() {
