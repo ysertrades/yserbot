@@ -1,30 +1,25 @@
 'use strict';
-/* Emergency panel restore — load last known-good app.js from jsDelivr (works on iPhone).
-   Desk auth (window.state) will be fixed in a follow-up once the panel is stable. */
+/* Load full panel from same-origin /panel-app.js (server proxies last good build). */
 (function () {
-  var CDN =
-    'https://cdn.jsdelivr.net/gh/ysertrades/yserbot@cf3277b2cde73a9f153a225f03a517f81b4063f5/web/public/app.js';
-
   function fail(msg) {
     try {
       var el = document.getElementById('root') || document.body;
-      if (el) el.textContent = msg;
+      if (el) el.textContent = 'Panel restore failed: ' + msg;
     } catch (e) {}
     console.error('[panel-restore]', msg);
   }
-
-  var s = document.createElement('script');
-  s.src = CDN;
-  s.async = false;
-  s.onload = function () {
-    // Best-effort: if the loaded script ever sets window.state, desk can use it.
-    // Full window.state bridge needs the in-repo file restored on a computer later.
-    try {
-      if (typeof state !== 'undefined' && state && !window.state) window.state = state;
-    } catch (e) {}
-  };
-  s.onerror = function () {
-    fail('Panel restore failed: could not load panel script. Restart the bot or try again later.');
-  };
-  (document.head || document.documentElement).appendChild(s);
+  fetch('/panel-app.js?_=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
+    .then(function (code) {
+      if (!code || code.length < 100000) throw new Error('script too small (' + (code && code.length) + ')');
+      var s = document.createElement('script');
+      s.textContent = code;
+      (document.head || document.documentElement).appendChild(s);
+    })
+    .catch(function (e) {
+      fail(e && e.message ? e.message : String(e));
+    });
 })();
