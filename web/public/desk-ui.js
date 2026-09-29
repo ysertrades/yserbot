@@ -301,6 +301,7 @@
     var gid = guildId();
     var sel = document.getElementById('desk-channel');
     if (!gid || !sel) return;
+    if (sel.dataset.loaded === gid) return;
     try {
       var res = await fetch('/api/guild/' + gid + '/desk/channels', {
         credentials: 'same-origin',
@@ -328,6 +329,7 @@
         });
         sel.append(og);
       });
+      sel.dataset.loaded = gid;
       if (prev && Array.from(sel.options).some(function (o) { return o.value === prev; })) {
         sel.value = prev;
       }
@@ -480,16 +482,27 @@
 
   function mount() {
     if (!root()) return;
+    // Always paint chrome first so Overview never shows a blank panel
     ensureShell();
+    var feed = document.getElementById('desk-feed');
+    if (feed && !feed.childNodes.length) paintFeed();
+    if (!window.state || !window.state.guildId) return;
     loadChannels();
     if (desk.channelId && !desk.paused) startPoll();
   }
 
   function boot() {
+    var tries = 0;
     function tryMount() {
       if (!root()) return;
-      if (!window.state || !window.state.guildId) return;
       mount();
+    }
+    function retryUntilGuild() {
+      tryMount();
+      if ((!window.state || !window.state.guildId) && tries < 60) {
+        tries += 1;
+        setTimeout(retryUntilGuild, 500);
+      }
     }
     document.addEventListener('panel-overview', tryMount);
     var obs = new MutationObserver(function () {
@@ -503,9 +516,12 @@
     if (document.body) {
       obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-active', 'data-section'] });
     }
+    try {
+      obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-section'] });
+    } catch (e) {}
     document.addEventListener('visibilitychange', function () {
       if (pageVisible() && overviewActive() && desk.channelId && !desk.paused) startPoll();
-      else stopPoll();
+      else if (!pageVisible()) stopPoll();
     });
     var prev = window.showSection;
     if (typeof prev === 'function') {
@@ -520,7 +536,7 @@
         return r;
       };
     }
-    setTimeout(tryMount, 700);
+    retryUntilGuild();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
