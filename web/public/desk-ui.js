@@ -3,6 +3,7 @@
 (function () {
   var POLL_MS = 2500;
   var MAX_ROWS = 120;
+  var STORE_KEY = 'yserflow.session';
   var desk = {
     channelId: null,
     messages: [],
@@ -14,6 +15,7 @@
     paused: false,
     pendingNew: 0,
     stickBottom: true,
+    csrf: null,
   };
 
   function el(tag, cls, text) {
@@ -23,15 +25,55 @@
     return n;
   }
 
+  /** app.js uses script-scoped `const state` — not on window. Use URL + storage. */
   function guildId() {
-    try { return window.state && window.state.guildId; } catch (e) { return null; }
+    try {
+      if (window.state && window.state.guildId) return window.state.guildId;
+    } catch (e) {}
+    try {
+      var g = new URLSearchParams(location.search).get('g');
+      if (g && /^\d{5,25}$/.test(g)) return g;
+    } catch (e) {}
+    return null;
+  }
+
+  function sessionToken() {
+    try {
+      if (window.state && window.state.token) return window.state.token;
+    } catch (e) {}
+    try {
+      return localStorage.getItem(STORE_KEY);
+    } catch (e) {}
+    return null;
   }
 
   function headers(json) {
-    var h = { 'x-csrf-token': (window.state && window.state.csrf) || '' };
+    var h = {};
     if (json) h['content-type'] = 'application/json';
-    try { if (typeof authHeaders === 'function') Object.assign(h, authHeaders()); } catch (e) {}
+    var tok = sessionToken();
+    if (tok) h['authorization'] = 'Bearer ' + tok;
+    var csrf = desk.csrf;
+    try {
+      if (!csrf && window.state && window.state.csrf) csrf = window.state.csrf;
+    } catch (e) {}
+    if (csrf) h['x-csrf-token'] = csrf;
     return h;
+  }
+
+  async function ensureCsrf() {
+    if (desk.csrf) return desk.csrf;
+    try {
+      if (window.state && window.state.csrf) {
+        desk.csrf = window.state.csrf;
+        return desk.csrf;
+      }
+    } catch (e) {}
+    try {
+      var res = await fetch('/api/me', { credentials: 'same-origin', headers: headers(false) });
+      var data = await res.json().catch(function () { return {}; });
+      if (data.csrf) desk.csrf = data.csrf;
+    } catch (e) {}
+    return desk.csrf;
   }
 
   function overviewActive() {
@@ -77,6 +119,8 @@
     var sel = document.createElement('select');
     sel.className = 'desk-select';
     sel.id = 'desk-channel';
+    // Prevent app.js enhanceSelects from wrapping this (was causing double "Select channel…")
+    sel.dataset.cselect = '1';
     sel.innerHTML = '<option value="">Select channel…</option>';
     controls.append(sel);
 
@@ -195,6 +239,13 @@
     if (feed) feed.scrollTop = feed.scrollHeight;
   }
 
+  function setFeedMsg(text) {
+    var feed = document.getElementById('desk-feed');
+    if (!feed) return;
+    feed.replaceChildren();
+    feed.append(el('p', 'desk-empty', text));
+  }
+
   function paintFeed() {
     var feed = document.getElementById('desk-feed');
     if (!feed) return;
@@ -300,8 +351,12 @@
   async function loadChannels() {
     var gid = guildId();
     var sel = document.getElementById('desk-channel');
-    if (!gid || !sel) return;
-    if (sel.dataset.loaded === gid) return;
+    if (!gid || !sel) {
+      if (!gid) setFeedMsg('Waiting for server…');
+      return;
+    }
+    if (sel.dataset.loaded === gid && sel.options.length > 1) return;
+    setPill('live', 'Loading');
     try {
       var res = await fetch('/api/guild/' + gid + '/desk/channels', {
         credentials: 'same-origin',
@@ -310,13 +365,19 @@
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok) {
         setPill('err', 'Error');
+        setFeedMsg(
+          res.status === 401 ? 'Sign in again to load channels.'
+            : res.status === 403 ? 'No access to this server.'
+            : ('Could not load channels (' + (data.error || res.status) + ').')
+        );
         return;
       }
       var prev = desk.channelId || sel.value;
       sel.replaceChildren();
       sel.append(new Option('Select channel…', ''));
+      var list = data.channels || [];
       var groups = {};
-      (data.channels || []).forEach(function (c) {
+      list.forEach(function (c) {
         var cat = c.category || 'Channels';
         if (!groups[cat]) groups[cat] = [];
         groups[cat].push(c);
@@ -333,9 +394,17 @@
       if (prev && Array.from(sel.options).some(function (o) { return o.value === prev; })) {
         sel.value = prev;
       }
+      if (!list.length) {
+        setPill('err', 'Empty');
+        setFeedMsg('No channels Quantbot can read. Check View Channel + Read History permissions.');
+      } else {
+        setPill('paused', 'Idle');
+        if (!desk.channelId) setFeedMsg('Select a channel to open the desk.');
+      }
     } catch (e) {
       console.warn('[desk] channels', e);
       setPill('err', 'Error');
+      setFeedMsg('Network error loading channels.');
     }
   }
 
@@ -374,6 +443,9 @@
       var data = await res.json().catch(function () { return {}; });
       if (!res.ok) {
         setPill('err', data.error === 'no_access' ? 'No access' : 'Error');
+        if (!delta) setFeedMsg(data.error === 'no_access'
+          ? 'Quantbot cannot read this channel.'
+          : 'Could not load messages.');
         return;
       }
       desk.canSend = !!data.canSend;
@@ -401,11 +473,9 @@
         desk.messages = desk.messages.slice(-MAX_ROWS);
       }
       if (added) {
-        if (desk.stickBottom) {
-          paintFeed();
-        } else {
+        paintFeed();
+        if (!desk.stickBottom) {
           desk.pendingNew += added;
-          paintFeed();
           showNewChip();
         }
       }
@@ -428,6 +498,7 @@
     if (sendBtn) sendBtn.disabled = true;
     desk.busy = true;
     try {
+      await ensureCsrf();
       var res = await fetch('/api/guild/' + gid + '/desk/' + desk.channelId + '/send', {
         method: 'POST',
         credentials: 'same-origin',
@@ -482,11 +553,11 @@
 
   function mount() {
     if (!root()) return;
-    // Always paint chrome first so Overview never shows a blank panel
     ensureShell();
     var feed = document.getElementById('desk-feed');
     if (feed && !feed.childNodes.length) paintFeed();
-    if (!window.state || !window.state.guildId) return;
+    var gid = guildId();
+    if (!gid) return;
     loadChannels();
     if (desk.channelId && !desk.paused) startPoll();
   }
@@ -499,9 +570,9 @@
     }
     function retryUntilGuild() {
       tryMount();
-      if ((!window.state || !window.state.guildId) && tries < 60) {
+      if (!guildId() && tries < 80) {
         tries += 1;
-        setTimeout(retryUntilGuild, 500);
+        setTimeout(retryUntilGuild, 400);
       }
     }
     document.addEventListener('panel-overview', tryMount);
@@ -519,6 +590,12 @@
     try {
       obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-section'] });
     } catch (e) {}
+    // URL ?g= updates when switching servers
+    window.addEventListener('popstate', function () {
+      var sel = document.getElementById('desk-channel');
+      if (sel) delete sel.dataset.loaded;
+      tryMount();
+    });
     document.addEventListener('visibilitychange', function () {
       if (pageVisible() && overviewActive() && desk.channelId && !desk.paused) startPoll();
       else if (!pageVisible()) stopPoll();
