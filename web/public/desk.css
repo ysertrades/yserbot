@@ -1,8 +1,4 @@
 /* Channel Desk — Overview live feed (isolated .desk-* classes) */
-/* Collapse until desk-ui sets data-ready — prevents blank empty panel */
-#overview-desk:not([data-ready]) {
-  display: none !important;
-}
 .desk-panel {
   margin-top: 1.25rem;
   display: flex;
