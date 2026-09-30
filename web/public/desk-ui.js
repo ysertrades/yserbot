@@ -53,12 +53,33 @@
     return date + ' · ' + time + ' EST';
   }
 
+  function wireDeskSelect(scope) {
+    try {
+      if (typeof enhanceSelects === 'function') enhanceSelects(scope || document);
+    } catch (e) {}
+  }
+
   function fillChannelSelect(sel, channels, opts) {
     if (!sel) return;
     opts = opts || {};
     var keep = sel.value || '';
+    try {
+      var wrap = sel.closest && sel.closest('.cselect');
+      if (wrap && wrap.parentNode) {
+        wrap.parentNode.insertBefore(sel, wrap);
+        wrap.remove();
+      }
+      sel.classList.remove('cselect-native');
+      sel.removeAttribute('aria-hidden');
+      sel.style.cssText = '';
+    } catch (e) {}
+
     sel.replaceChildren();
-    sel.append(new Option(opts.placeholder || 'Select channel...', ''));
+    var ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = opts.placeholder || 'Select channel…';
+    sel.appendChild(ph);
+
     var list = Array.isArray(channels) ? channels.slice() : [];
     var groups = {}, order = [];
     list.forEach(function (c) {
@@ -67,13 +88,21 @@
       groups[cat].push(c);
     });
     order.forEach(function (cat) {
-      var og = document.createElement('optgroup');
-      og.label = cat;
-      groups[cat].forEach(function (c) { og.appendChild(new Option('#' + c.name, c.id)); });
-      sel.appendChild(og);
+      var sep = document.createElement('option');
+      sep.value = '';
+      sep.disabled = true;
+      sep.textContent = cat;
+      sel.appendChild(sep);
+      groups[cat].forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = '#' + c.name;
+        sel.appendChild(o);
+      });
     });
     if (keep) { try { sel.value = keep; } catch (e) {} }
-    try { if (typeof window.enhanceSelects === 'function') window.enhanceSelects(sel.parentNode || document); } catch (e) {}
+    var scope = sel.parentNode || document;
+    requestAnimationFrame(function () { wireDeskSelect(scope); });
   }
   window.yserFillChannelSelect = fillChannelSelect;
 
@@ -94,10 +123,12 @@
     var controls = el('div', 'desk-controls');
     var selWrap = el('div', 'desk-select-wrap');
     var sel = document.createElement('select');
-    sel.className = 'desk-select'; sel.id = 'desk-channel'; sel.dataset.cselect = '1';
+    sel.className = 'lvl-input desk-channel-sel';
+    sel.id = 'desk-channel';
     sel.setAttribute('aria-label', 'Channel');
-    sel.innerHTML = '<option value="">Select channel...</option>';
-    selWrap.append(sel); controls.append(selWrap);
+    sel.innerHTML = '<option value="">Select channel…</option>';
+    selWrap.append(sel);
+    controls.append(selWrap);
     var pill = el('span', 'desk-pill paused', 'Idle'); pill.id = 'desk-pill';
     controls.append(pill);
     var pause = el('button', 'btn small', 'Pause');
@@ -187,7 +218,6 @@
 
     function pick() { openCh(sel.value || null); }
     sel.addEventListener('change', pick);
-    sel.addEventListener('input', pick);
     pause.addEventListener('click', function () {
       desk.paused = !desk.paused;
       pause.textContent = desk.paused ? 'Resume' : 'Pause';
@@ -210,6 +240,7 @@
       }
     });
     window.__deskOpenPad = openPad;
+    /* Do not enhance empty select on shell — wait until channels load */
     return host;
   }
 
@@ -439,7 +470,7 @@
         return;
       }
       desk.channels = data.channels || [];
-      fillChannelSelect(sel, desk.channels, { placeholder: 'Select channel...' });
+      fillChannelSelect(sel, desk.channels, { placeholder: 'Select channel…' });
       sel.dataset.loaded = g;
       setPill('paused', 'Idle');
       if (!desk.channelId) setFeed('Select a channel to open the desk.');
