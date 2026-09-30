@@ -4,7 +4,7 @@
   if (host && !host.dataset.ready) {
     host.innerHTML = '<div style="padding:1rem;color:#9aa3b5;font-size:.9rem">Channel Desk…</div>';
   }
-  var N = 4;
+  var N = 6;
   var parts = new Array(N);
   var left = N;
   function fail(msg) {
