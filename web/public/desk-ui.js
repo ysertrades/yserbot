@@ -8,7 +8,7 @@
     console.error('[desk-ui]', msg);
   }
   try {
-    var N = 2;
+    var N = 3;
     var chunks = [];
     for (var i = 0; i < N; i++) {
       var r = await fetch('/desk-ui.b' + i + '.txt?_=' + Date.now(), { cache: 'no-store' });
