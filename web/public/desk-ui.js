@@ -1,19 +1,31 @@
 'use strict';
 (function () {
-  var host = document.getElementById('overview-desk');
+  function hostEl() {
+    return document.getElementById('overview-desk');
+  }
+  function showStatus(msg, isErr) {
+    try {
+      var host = hostEl();
+      if (!host) return;
+      host.dataset.ready = '1';
+      host.className = 'panel desk-panel';
+      var color = isErr ? '#f87171' : '#9aa3b5';
+      host.innerHTML = '<div style="padding:1rem;color:' + color + ';font-size:.9rem">' + msg + '</div>';
+    } catch (e) {}
+  }
+  showStatus('Channel Desk loading...');
   var N = 13;
   var parts = new Array(N);
   var left = N;
+  var failed = false;
   function fail(msg) {
-    try {
-      if (host) {
-        host.dataset.ready = '1';
-        host.innerHTML = '<div style="padding:1rem;color:#f87171;font-size:.9rem">Channel Desk failed: ' + msg + '</div>';
-      }
-    } catch (e) {}
+    if (failed) return;
+    failed = true;
+    showStatus('Channel Desk failed: ' + msg, true);
     console.error('[desk-ui]', msg);
   }
   function done() {
+    if (failed) return;
     try {
       var b64 = parts.join('');
       var code = atob(b64);
@@ -33,6 +45,7 @@
           return r.text();
         })
         .then(function (t) {
+          if (failed) return;
           parts[idx] = String(t).replace(/\s+/g, '');
           if (--left === 0) done();
         })
