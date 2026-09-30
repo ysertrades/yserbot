@@ -2,7 +2,7 @@
 (function () {
   var host = document.getElementById('overview-desk');
   if (host && !host.dataset.ready) {
-    host.innerHTML = '<div style="padding:1rem;color:#9aa3b5;font-size:.9rem">Channel Desk…</div>';
+    host.innerHTML = '<div style="padding:1rem;color:#9aa3b5;font-size:.9rem">Channel Desk...</div>';
   }
   var N = 6;
   var parts = new Array(N);
@@ -15,7 +15,8 @@
   }
   function done() {
     try {
-      var code = parts.join('');
+      var b64 = parts.join('');
+      var code = atob(b64);
       if (code.length < 8000) throw new Error('incomplete (' + code.length + ')');
       var s = document.createElement('script');
       s.textContent = code;
@@ -32,7 +33,7 @@
           return r.text();
         })
         .then(function (t) {
-          parts[idx] = t;
+          parts[idx] = String(t).replace(/\s+/g, '');
           if (--left === 0) done();
         })
         .catch(function (e) {
