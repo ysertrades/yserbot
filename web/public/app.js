@@ -1,5 +1,5 @@
 'use strict';
-/* Load full panel from same-origin /panel-app.js — keep stock Loading… UI. */
+/* Same-origin panel bootstrap — no extra connecting flash. */
 (function () {
   var s = document.createElement('script');
   s.src = '/panel-app.js?_=' + Date.now();

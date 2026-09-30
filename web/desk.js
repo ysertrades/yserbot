@@ -40,6 +40,35 @@ function isDeskChannel(ch) {
 
 function serializeMessage(m) {
   const author = m.author;
+  const attachments = [];
+  try {
+    if (m.attachments && m.attachments.size) {
+      for (const a of m.attachments.values()) {
+        attachments.push({
+          id: a.id,
+          url: a.url || a.proxyURL || null,
+          name: a.name || 'file',
+          contentType: a.contentType || '',
+          width: a.width || null,
+          height: a.height || null,
+          size: a.size || null,
+        });
+        if (attachments.length >= 8) break;
+      }
+    }
+  } catch { /* ignore */ }
+
+  const images = [];
+  try {
+    if (Array.isArray(m.embeds)) {
+      for (const e of m.embeds) {
+        const u = e.image?.url || e.thumbnail?.url || null;
+        if (u) images.push({ url: u, name: 'embed' });
+        if (images.length >= 4) break;
+      }
+    }
+  } catch { /* ignore */ }
+
   return {
     id: m.id,
     content: String(m.content || '').slice(0, 2000),
@@ -52,7 +81,8 @@ function serializeMessage(m) {
         : null),
       bot: !!author?.bot,
     },
-    attachments: m.attachments?.size || 0,
+    attachments,
+    images,
     embeds: Array.isArray(m.embeds) ? m.embeds.length : 0,
     referenceId: m.reference?.messageId || null,
   };
@@ -64,7 +94,6 @@ async function listChannels(guild) {
   if (!me) {
     try { me = await guild.members.fetchMe(); } catch { me = null; }
   }
-  // Cache can be partial after restarts — refresh so the desk dropdown fills
   try { await guild.channels.fetch(); } catch { /* keep cache */ }
   const channels = [];
   for (const ch of guild.channels.cache.values()) {
@@ -74,14 +103,17 @@ async function listChannels(guild) {
       id: ch.id,
       name: ch.name,
       category: ch.parent?.name || null,
+      categoryId: ch.parentId || null,
+      position: typeof ch.rawPosition === 'number' ? ch.rawPosition : (ch.position || 0),
       canSend: canSend(ch, me),
     });
   }
   channels.sort((a, b) => {
-    const ca = (a.category || 'zzz').toLowerCase();
-    const cb = (b.category || 'zzz').toLowerCase();
-    if (ca !== cb) return ca.localeCompare(cb);
-    return a.name.localeCompare(b.name);
+    const ca = (a.category || '\uffff').toLowerCase();
+    const cb = (b.category || '\uffff').toLowerCase();
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    if (a.position !== b.position) return a.position - b.position;
+    return String(a.name).localeCompare(String(b.name));
   });
   return { channels };
 }
