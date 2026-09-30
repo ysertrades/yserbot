@@ -168,7 +168,14 @@
     row.append(send); composer.append(row); host.append(composer);
 
     var pad = el('div', 'desk-pad'); pad.id = 'desk-pad'; pad.hidden = true;
-    pad.innerHTML = '<div class="desk-pad-card"><div class="desk-pad-head"><span>Forward message</span><button type="button" class="desk-pad-x" id="desk-pad-x">×</button></div><p class="desk-pad-preview muted" id="desk-pad-preview"></p><div class="desk-pad-list" id="desk-pad-list"></div><div class="desk-pad-foot"><button type="button" class="btn small" id="desk-pad-cancel">Cancel</button><button type="button" class="btn primary small" id="desk-pad-go" disabled>Forward here</button></div></div>';
+    pad.innerHTML = '<div class="desk-pad-card">' +
+      '<div class="desk-pad-head"><span>Forward message</span><button type="button" class="desk-pad-x" id="desk-pad-x">×</button></div>' +
+      '<p class="desk-pad-preview muted" id="desk-pad-preview"></p>' +
+      '<label class="desk-pad-note-label" for="desk-pad-note">Add a note (optional — appears with the forward)</label>' +
+      '<textarea id="desk-pad-note" class="desk-pad-note" rows="2" placeholder="@everyone check this out…"></textarea>' +
+      '<div class="desk-pad-list" id="desk-pad-list"></div>' +
+      '<div class="desk-pad-foot"><button type="button" class="btn small" id="desk-pad-cancel">Cancel</button><button type="button" class="btn primary small" id="desk-pad-go" disabled>Forward here</button></div>' +
+      '</div>';
     host.append(pad);
 
     var lb = el('div', 'desk-lightbox'); lb.id = 'desk-lightbox'; lb.hidden = true;
@@ -176,11 +183,16 @@
     host.append(lb);
 
     var padTarget = null;
-    function closePad() { desk.forwardMsg = null; padTarget = null; pad.hidden = true; var go = $('desk-pad-go'); if (go) go.disabled = true; }
+    function closePad() {
+      desk.forwardMsg = null; padTarget = null; pad.hidden = true;
+      var go = $('desk-pad-go'); if (go) go.disabled = true;
+      var note = $('desk-pad-note'); if (note) note.value = '';
+    }
     function openPad(m) {
       desk.forwardMsg = m; padTarget = null;
       var prev = $('desk-pad-preview');
       if (prev) prev.textContent = ((m.author && m.author.name) || '?') + ': ' + String(m.content || '(attachment)').slice(0, 160);
+      var note = $('desk-pad-note'); if (note) note.value = '';
       var list = $('desk-pad-list');
       if (list) {
         list.replaceChildren();
@@ -240,7 +252,6 @@
       }
     });
     window.__deskOpenPad = openPad;
-    /* Do not enhance empty select on shell — wait until channels load */
     return host;
   }
 
@@ -408,13 +419,17 @@
   }
 
   async function doForward(targetId, m) {
-    if (!targetId || !m) return;
+    if (!targetId || !m || !m.id) return;
     desk.busy = true; setComposer();
     try {
-      var who = (m.author && m.author.name) || 'user';
-      var text = '**Forwarded from ' + who + ':**\n' + String(m.content || '').slice(0, 1800);
-      if (!m.content && m.attachments && m.attachments[0] && m.attachments[0].url) text += m.attachments[0].url;
-      var out = await deskPost(targetId, { content: text });
+      var noteEl = $('desk-pad-note');
+      var note = noteEl ? String(noteEl.value || '').trim().slice(0, 2000) : '';
+      var out = await deskPost(targetId, {
+        action: 'forward',
+        messageId: m.id,
+        sourceChannelId: desk.channelId,
+        content: note
+      });
       if (!out.res.ok || out.data.error) setPill('err', 'Forward failed');
       else setPill('live', 'Forwarded');
     } catch (e) { setPill('err', 'Error'); }
