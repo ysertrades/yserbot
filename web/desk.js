@@ -31,6 +31,16 @@ function canSend(channel, me) {
   }
 }
 
+function canManageMessages(channel, me) {
+  if (!channel || !me) return false;
+  try {
+    const perms = channel.permissionsFor(me);
+    return !!(perms && perms.has(PermissionFlagsBits.ManageMessages));
+  } catch {
+    return false;
+  }
+}
+
 function isDeskChannel(ch) {
   if (!ch || ch.isThread?.()) return false;
   if (typeof ch.isTextBased === 'function' && !ch.isTextBased()) return false;
@@ -88,12 +98,25 @@ function serializeMessage(m) {
   };
 }
 
-async function listChannels(guild) {
-  if (!guild) return { error: 'no_guild' };
+async function resolveChannel(guild, channelId) {
+  let ch = guild.channels.cache.get(channelId);
+  if (!ch) {
+    try { ch = await guild.channels.fetch(channelId); } catch { ch = null; }
+  }
+  return ch;
+}
+
+async function resolveMe(guild) {
   let me = meMember(guild);
   if (!me) {
     try { me = await guild.members.fetchMe(); } catch { me = null; }
   }
+  return me;
+}
+
+async function listChannels(guild) {
+  if (!guild) return { error: 'no_guild' };
+  const me = await resolveMe(guild);
   try { await guild.channels.fetch(); } catch { /* keep cache */ }
   const channels = [];
   for (const ch of guild.channels.cache.values()) {
@@ -122,16 +145,10 @@ async function history(guild, channelId, opts = {}) {
   if (!guild) return { error: 'no_guild' };
   if (!/^\d{5,25}$/.test(String(channelId || ''))) return { error: 'bad_channel' };
 
-  let ch = guild.channels.cache.get(channelId);
-  if (!ch) {
-    try { ch = await guild.channels.fetch(channelId); } catch { ch = null; }
-  }
+  const ch = await resolveChannel(guild, channelId);
   if (!ch || !isDeskChannel(ch)) return { error: 'not_found' };
 
-  let me = meMember(guild);
-  if (!me) {
-    try { me = await guild.members.fetchMe(); } catch { me = null; }
-  }
+  const me = await resolveMe(guild);
   if (!canRead(ch, me)) return { error: 'no_access' };
 
   const limit = Math.min(50, Math.max(1, Number(opts.limit) || 50));
@@ -157,26 +174,101 @@ async function history(guild, channelId, opts = {}) {
     channelName: ch.name,
     messages,
     canSend: canSend(ch, me),
+    canManage: canManageMessages(ch, me),
   };
+}
+
+async function deleteMessage(guild, channelId, messageId) {
+  if (!guild) return { error: 'no_guild' };
+  if (!/^\d{5,25}$/.test(String(channelId || ''))) return { error: 'bad_channel' };
+  if (!/^\d{5,25}$/.test(String(messageId || ''))) return { error: 'bad_message' };
+
+  const ch = await resolveChannel(guild, channelId);
+  if (!ch || !isDeskChannel(ch)) return { error: 'not_found' };
+  const me = await resolveMe(guild);
+  if (!canManageMessages(ch, me) && !canSend(ch, me)) return { error: 'cannot_manage' };
+
+  let msg;
+  try {
+    msg = await ch.messages.fetch(String(messageId));
+  } catch {
+    return { error: 'message_not_found' };
+  }
+
+  const isOwn = msg.author?.id && me?.id && msg.author.id === me.id;
+  if (!isOwn && !canManageMessages(ch, me)) return { error: 'cannot_manage' };
+
+  try {
+    await msg.delete();
+    return { ok: true, deletedId: String(messageId) };
+  } catch (err) {
+    console.warn('[desk] delete failed:', err.message || err);
+    return { error: 'delete_failed', detail: String(err.message || err).slice(0, 140) };
+  }
+}
+
+async function purgeMessages(guild, channelId, body = {}) {
+  if (!guild) return { error: 'no_guild' };
+  if (!/^\d{5,25}$/.test(String(channelId || ''))) return { error: 'bad_channel' };
+
+  const ch = await resolveChannel(guild, channelId);
+  if (!ch || !isDeskChannel(ch)) return { error: 'not_found' };
+  const me = await resolveMe(guild);
+  if (!canManageMessages(ch, me)) return { error: 'cannot_manage' };
+
+  const amount = Math.min(100, Math.max(1, Number(body.amount) || 10));
+  const userId = body.userId && /^\d{5,25}$/.test(String(body.userId)) ? String(body.userId) : null;
+
+  let col;
+  try {
+    col = await ch.messages.fetch({ limit: Math.min(100, userId ? 100 : amount) });
+  } catch (err) {
+    return { error: 'fetch_failed', detail: String(err.message || err).slice(0, 140) };
+  }
+
+  const twoWeeks = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  let list = [...col.values()].filter((m) => m.createdTimestamp > twoWeeks);
+  if (userId) list = list.filter((m) => m.author?.id === userId);
+  list = list.slice(0, amount);
+
+  if (!list.length) return { ok: true, deleted: 0 };
+
+  try {
+    if (typeof ch.bulkDelete === 'function' && list.length > 1) {
+      const deleted = await ch.bulkDelete(list, true);
+      return { ok: true, deleted: deleted.size || list.length };
+    }
+    let n = 0;
+    for (const m of list) {
+      try { await m.delete(); n++; } catch { /* skip */ }
+    }
+    return { ok: true, deleted: n };
+  } catch (err) {
+    console.warn('[desk] purge failed:', err.message || err);
+    return { error: 'purge_failed', detail: String(err.message || err).slice(0, 140) };
+  }
 }
 
 async function sendAsBot(guild, channelId, body = {}) {
   if (!guild) return { error: 'no_guild' };
   if (!/^\d{5,25}$/.test(String(channelId || ''))) return { error: 'bad_channel' };
 
+  const action = String(body.action || 'send').toLowerCase();
+
+  if (action === 'delete') {
+    return deleteMessage(guild, channelId, body.messageId);
+  }
+  if (action === 'purge' || action === 'purgeuser') {
+    return purgeMessages(guild, channelId, body);
+  }
+
   const text = String(body.content || '').trim().slice(0, 2000);
   if (!text) return { error: 'empty_message' };
 
-  let ch = guild.channels.cache.get(channelId);
-  if (!ch) {
-    try { ch = await guild.channels.fetch(channelId); } catch { ch = null; }
-  }
+  const ch = await resolveChannel(guild, channelId);
   if (!ch || !isDeskChannel(ch)) return { error: 'not_found' };
 
-  let me = meMember(guild);
-  if (!me) {
-    try { me = await guild.members.fetchMe(); } catch { me = null; }
-  }
+  const me = await resolveMe(guild);
   if (!canSend(ch, me)) return { error: 'cannot_send' };
 
   const replyTo = body.replyTo && /^\d{5,25}$/.test(String(body.replyTo))
@@ -197,4 +289,4 @@ async function sendAsBot(guild, channelId, body = {}) {
   }
 }
 
-module.exports = { listChannels, history, sendAsBot };
+module.exports = { listChannels, history, sendAsBot, deleteMessage, purgeMessages };
