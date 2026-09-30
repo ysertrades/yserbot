@@ -259,6 +259,9 @@ async function purgeMessages(guild, channelId, body = {}) {
 /**
  * Native Discord forward — keeps video/images/embeds via message snapshot.
  * Optional note is bot text on the same message (for @user / @everyone).
+ *
+ * Uses REST message_reference.type = 1 (FORWARD) so a note never causes a
+ * plain text-only send without the forwarded snapshot.
  */
 async function forwardMessage(guild, targetChannelId, body = {}) {
   if (!guild) return { error: 'no_guild' };
@@ -289,48 +292,72 @@ async function forwardMessage(guild, targetChannelId, body = {}) {
     return { error: 'message_not_found' };
   }
 
-  const forwardType = (MessageReferenceType && MessageReferenceType.Forward != null)
-    ? MessageReferenceType.Forward
-    : 1;
-
-  const payload = {
-    messageReference: {
-      type: forwardType,
-      messageId: sourceMsg.id,
-      channelId: sourceCh.id,
-      guildId: guild.id,
-      failIfNotExists: false,
+  const restBody = {
+    message_reference: {
+      type: 1,
+      message_id: sourceMsg.id,
+      channel_id: sourceCh.id,
+      guild_id: guild.id,
     },
-    allowedMentions: { parse: ['users', 'roles', 'everyone'] },
+    allowed_mentions: { parse: ['users', 'roles', 'everyone'] },
   };
-  if (note) payload.content = note;
+  if (note) restBody.content = note;
 
   try {
-    const msg = await targetCh.send(payload);
-    return { ok: true, message: serializeMessage(msg) };
-  } catch (err) {
-    console.warn('[desk] forward via reference failed:', err.message || err);
+    const client = targetCh.client;
+    const raw = await client.rest.post(`/channels/${targetCh.id}/messages`, { body: restBody });
+    let msg = null;
     try {
-      if (typeof sourceMsg.forward === 'function') {
-        const msg = await sourceMsg.forward(targetCh);
-        if (note && msg && typeof msg.edit === 'function') {
-          try {
-            await msg.edit({
-              content: note,
-              allowedMentions: { parse: ['users', 'roles', 'everyone'] },
-            });
-          } catch (editErr) {
-            console.warn('[desk] forward note edit failed:', editErr.message || editErr);
-          }
-        }
-        return { ok: true, message: serializeMessage(msg) };
-      }
-    } catch (err2) {
-      console.warn('[desk] forward() failed:', err2.message || err2);
-      return { error: 'forward_failed', detail: String((err2 && err2.message) || err.message || err).slice(0, 140) };
+      msg = targetCh.messages.cache.get(raw.id) || await targetCh.messages.fetch(raw.id);
+    } catch {
+      msg = null;
     }
-    return { error: 'forward_failed', detail: String(err.message || err).slice(0, 140) };
+    if (msg) return { ok: true, message: serializeMessage(msg) };
+    return {
+      ok: true,
+      message: {
+        id: raw.id,
+        content: String(raw.content || note || '').slice(0, 2000),
+        createdAt: raw.timestamp ? Date.parse(raw.timestamp) : Date.now(),
+        author: {
+          id: raw.author?.id || me?.id || null,
+          name: raw.author?.global_name || raw.author?.username || 'Quantbot',
+          avatar: null,
+          bot: true,
+        },
+        attachments: [],
+        images: [],
+        embeds: Array.isArray(raw.embeds) ? raw.embeds.length : 0,
+        referenceId: raw.message_reference?.message_id || sourceMsg.id,
+      },
+    };
+  } catch (err) {
+    console.warn('[desk] forward REST failed:', err.message || err);
   }
+
+  // Fallback: snapshot via Message#forward, then note as a reply to that forward
+  try {
+    if (typeof sourceMsg.forward === 'function') {
+      const msg = await sourceMsg.forward(targetCh);
+      if (note) {
+        try {
+          await targetCh.send({
+            content: note,
+            reply: { messageReference: msg.id, failIfNotExists: false },
+            allowedMentions: { parse: ['users', 'roles', 'everyone'] },
+          });
+        } catch (noteErr) {
+          console.warn('[desk] forward note reply failed:', noteErr.message || noteErr);
+        }
+      }
+      return { ok: true, message: serializeMessage(msg) };
+    }
+  } catch (err2) {
+    console.warn('[desk] forward() failed:', err2.message || err2);
+    return { error: 'forward_failed', detail: String(err2.message || err2).slice(0, 140) };
+  }
+
+  return { error: 'forward_failed', detail: 'Native forward unavailable' };
 }
 
 async function sendAsBot(guild, channelId, body = {}) {
