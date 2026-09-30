@@ -7,6 +7,13 @@
 
 const { PermissionFlagsBits, ChannelType } = require('discord.js');
 
+let MessageReferenceType;
+try {
+  MessageReferenceType = require('discord.js').MessageReferenceType;
+} catch {
+  MessageReferenceType = { Default: 0, Forward: 1 };
+}
+
 function meMember(guild) {
   return guild.members.me || null;
 }
@@ -249,6 +256,83 @@ async function purgeMessages(guild, channelId, body = {}) {
   }
 }
 
+/**
+ * Native Discord forward — keeps video/images/embeds via message snapshot.
+ * Optional note is bot text on the same message (for @user / @everyone).
+ */
+async function forwardMessage(guild, targetChannelId, body = {}) {
+  if (!guild) return { error: 'no_guild' };
+  if (!/^\d{5,25}$/.test(String(targetChannelId || ''))) return { error: 'bad_channel' };
+
+  const messageId = String(body.messageId || '');
+  const sourceChannelId = String(body.sourceChannelId || '');
+  if (!/^\d{5,25}$/.test(messageId) || !/^\d{5,25}$/.test(sourceChannelId)) {
+    return { error: 'bad_message' };
+  }
+
+  const note = String(body.content || '').trim().slice(0, 2000);
+
+  const sourceCh = await resolveChannel(guild, sourceChannelId);
+  if (!sourceCh || !isDeskChannel(sourceCh)) return { error: 'source_not_found' };
+
+  const targetCh = await resolveChannel(guild, targetChannelId);
+  if (!targetCh || !isDeskChannel(targetCh)) return { error: 'not_found' };
+
+  const me = await resolveMe(guild);
+  if (!canRead(sourceCh, me)) return { error: 'no_access' };
+  if (!canSend(targetCh, me)) return { error: 'cannot_send' };
+
+  let sourceMsg;
+  try {
+    sourceMsg = await sourceCh.messages.fetch(messageId);
+  } catch {
+    return { error: 'message_not_found' };
+  }
+
+  const forwardType = (MessageReferenceType && MessageReferenceType.Forward != null)
+    ? MessageReferenceType.Forward
+    : 1;
+
+  const payload = {
+    messageReference: {
+      type: forwardType,
+      messageId: sourceMsg.id,
+      channelId: sourceCh.id,
+      guildId: guild.id,
+      failIfNotExists: false,
+    },
+    allowedMentions: { parse: ['users', 'roles', 'everyone'] },
+  };
+  if (note) payload.content = note;
+
+  try {
+    const msg = await targetCh.send(payload);
+    return { ok: true, message: serializeMessage(msg) };
+  } catch (err) {
+    console.warn('[desk] forward via reference failed:', err.message || err);
+    try {
+      if (typeof sourceMsg.forward === 'function') {
+        const msg = await sourceMsg.forward(targetCh);
+        if (note && msg && typeof msg.edit === 'function') {
+          try {
+            await msg.edit({
+              content: note,
+              allowedMentions: { parse: ['users', 'roles', 'everyone'] },
+            });
+          } catch (editErr) {
+            console.warn('[desk] forward note edit failed:', editErr.message || editErr);
+          }
+        }
+        return { ok: true, message: serializeMessage(msg) };
+      }
+    } catch (err2) {
+      console.warn('[desk] forward() failed:', err2.message || err2);
+      return { error: 'forward_failed', detail: String((err2 && err2.message) || err.message || err).slice(0, 140) };
+    }
+    return { error: 'forward_failed', detail: String(err.message || err).slice(0, 140) };
+  }
+}
+
 async function sendAsBot(guild, channelId, body = {}) {
   if (!guild) return { error: 'no_guild' };
   if (!/^\d{5,25}$/.test(String(channelId || ''))) return { error: 'bad_channel' };
@@ -260,6 +344,9 @@ async function sendAsBot(guild, channelId, body = {}) {
   }
   if (action === 'purge' || action === 'purgeuser') {
     return purgeMessages(guild, channelId, body);
+  }
+  if (action === 'forward') {
+    return forwardMessage(guild, channelId, body);
   }
 
   const text = String(body.content || '').trim().slice(0, 2000);
@@ -289,4 +376,4 @@ async function sendAsBot(guild, channelId, body = {}) {
   }
 }
 
-module.exports = { listChannels, history, sendAsBot, deleteMessage, purgeMessages };
+module.exports = { listChannels, history, sendAsBot, deleteMessage, purgeMessages, forwardMessage };
