@@ -5,10 +5,11 @@
 .desk-kicker{margin:0;font-size:.72rem;font-weight:700;letter-spacing:.12em;color:var(--muted,#9aa3b5)}
 .desk-title-block .muted{margin:.2rem 0 0;font-size:.8rem}
 .desk-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem}
-.desk-select{min-width:12rem;max-width:18rem;padding:.45rem .65rem;border-radius:10px;border:1px solid color-mix(in srgb,var(--accent) 25%,var(--rule,#2a2d38));background:var(--raised,#1a1b24);color:var(--ink,#e8ebf1);font-size:.85rem}
-.desk-select:focus{outline:2px solid color-mix(in srgb,var(--accent) 50%,transparent);outline-offset:1px}
-.desk-select-wrap{position:relative;min-width:12rem;max-width:18rem}
-.desk-select-wrap .cselect,.desk-select-wrap .cselect-trigger{width:100%}
+.desk-select-wrap{position:relative;min-width:14rem;max-width:20rem;flex:1 1 14rem}
+.desk-select-wrap .cselect{width:100%}
+.desk-select-wrap .cselect-trigger{width:100%;box-sizing:border-box;min-height:2.5rem}
+.desk-select-wrap select.lvl-input,
+.desk-select-wrap select.desk-channel-sel{width:100%;min-height:2.5rem;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#12141A;color:#F3F4F6;padding:.62rem .75rem;font-size:.88rem}
 .desk-pill{display:inline-flex;align-items:center;gap:.35rem;padding:.22rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border:1px solid transparent}
 .desk-pill.live{color:#34d399;background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.35)}
 .desk-pill.live::before{content:'';width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.25);animation:desk-pulse 1.6s ease-in-out infinite}
@@ -74,4 +75,5 @@
 .desk-pad-ch.is-on{border-color:color-mix(in srgb,var(--accent) 50%,transparent);background:color-mix(in srgb,var(--accent) 18%,transparent)}
 .desk-pad-ch.is-current{opacity:.55}
 .desk-pad-foot{display:flex;justify-content:flex-end;gap:.4rem;padding:.65rem 1rem;border-top:1px solid var(--rule,#2a2d38)}
-@media (max-width:720px){.desk-panel{max-height:min(75vh,560px)}.desk-select,.desk-select-wrap{max-width:100%;width:100%;min-width:0}.desk-actions,.desk-side,.desk-when{opacity:1}.desk-thumb{max-width:120px;max-height:90px}}
+#overview-desk .cselect-menu{max-height:min(320px,50vh)}
+@media (max-width:720px){.desk-panel{max-height:min(75vh,560px)}.desk-select-wrap{max-width:100%;width:100%;min-width:0;flex:1 1 100%}.desk-actions,.desk-side,.desk-when{opacity:1}.desk-thumb{max-width:120px;max-height:90px}}
