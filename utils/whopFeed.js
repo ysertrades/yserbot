@@ -251,7 +251,6 @@ async function listExperiences(apiKey, settings) {
   return courseApps.length ? courseApps : best;
 }
 
-/** Auto video-frame / mux thumb — not a hand-uploaded banner. */
 function isAutoVideoFrameUrl(u) {
   const s = String(u || '').toLowerCase();
   if (!s) return false;
@@ -400,10 +399,8 @@ function considerLesson(lesson, onlyVideos) {
 }
 
 function lessonLink(settings, entry, lesson) {
-  // Prefer experience / joined — legacy /{route}/courses/{id} 404s on new Whop.
   const route = settings.companyRoute ? encodeURIComponent(settings.companyRoute) : null;
   const courseId = entry?.courseId || entry?.id || null;
-  const lessonId = lesson?.id || null;
   const expId = entry?.experienceId || lesson?.experienceId || null;
   if (expId) return `https://whop.com/experiences/${encodeURIComponent(expId)}`;
   if (route) return `https://whop.com/joined/${route}`;
@@ -416,15 +413,14 @@ async function baselineEntry(apiKey, entry) {
   const known = { ...(entry.known || {}) };
   try {
     const lessons = await listLessons(apiKey, entry.id);
-    for (let l of lessons) {
-      l = await enrichLesson(apiKey, l);
-      if (considerLesson(l, true) === 'draft') continue;
-      known[l.id] = true;
+    for (const l of lessons) {
+      if (l && l.id) known[l.id] = true;
     }
+    return { ...entry, known, baselined: true };
   } catch (err) {
     console.warn(`[WHOP] baseline ${entry.id}:`, err.message);
+    return { ...entry, known, baselined: false };
   }
-  return { ...entry, known, baselined: true };
 }
 
 async function resolveAppCourseIds(settings, entry) {
@@ -443,19 +439,22 @@ async function resolveAppCourseIds(settings, entry) {
 async function baselineAppEntry(apiKey, entry, courseIds) {
   const known = { ...(entry.known || {}) };
   const targets = Array.isArray(courseIds) ? courseIds.filter(Boolean) : [];
+  let anyOk = false;
+  let anyFail = false;
   for (const cid of targets) {
     try {
       const lessons = await listLessons(apiKey, cid);
-      for (let l of lessons) {
-        l = await enrichLesson(apiKey, l);
-        if (considerLesson(l, true) === 'draft') continue;
-        known[l.id] = true;
+      for (const l of lessons) {
+        if (l && l.id) known[l.id] = true;
       }
+      anyOk = true;
     } catch (err) {
+      anyFail = true;
       console.warn(`[WHOP] baseline app course ${cid}:`, err.message);
     }
   }
-  return { ...entry, known, baselined: true };
+  const baselined = targets.length === 0 ? true : (anyOk && !anyFail);
+  return { ...entry, known, baselined };
 }
 
 async function baselineAll(guildId) {
@@ -544,30 +543,33 @@ async function scanCourses(guildId) {
   for (const c of catalog) {
     if (!c.experienceId || appsMap.has(c.experienceId)) continue;
     appsMap.set(c.experienceId, {
-      id: c.experienceId, name: c.experienceName || c.experienceId, description: null,
-      appName: null, image: c.cover || null,
+      id: c.experienceId, name: c.experienceName || c.experienceId,
+      description: null, appName: null, image: null,
       courseCount: catalog.filter(x => x.experienceId === c.experienceId).length,
     });
   }
-  const allApps = [...appsMap.values()];
-  const withCourses = allApps.filter(a => (a.courseCount || 0) > 0);
-  const courseNamed = allApps.filter(a =>
-    /course/i.test(String(a.appName || '')) || /course/i.test(String(a.name || '')));
-  const apps = (withCourses.length ? withCourses : (courseNamed.length ? courseNamed : allApps))
-    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
-  setSettings(guildId, {
-    catalog, apps,
+  const logIds = new Set(s.log.map(e => e.id));
+  catalog = catalog.map(c => ({ ...c, inLog: logIds.has(c.id) }));
+
+  return setSettings(guildId, {
+    catalog,
+    apps: [...appsMap.values()],
     companyRoute: companyRoute || s.companyRoute,
     companyTitle: companyTitle || s.companyTitle,
-    lastScanAt: Date.now(), lastError: null,
+    lastScanAt: Date.now(),
+    lastError: null,
   });
-  return getSettings(guildId);
 }
 
 async function addToLog(guildId, courseId, { channelId = null, mentionRoleId = null } = {}) {
   const s = getSettings(guildId);
   if (s.log.some(e => e.id === courseId)) return { ok: true, already: true, settings: s };
+  const fromCatalogEarly = (s.catalog || []).find(c => c.id === courseId);
+  if (fromCatalogEarly && fromCatalogEarly.experienceId) {
+    const covered = s.log.some(e => e.type === 'app' && e.id === fromCatalogEarly.experienceId);
+    if (covered) return { ok: true, already: true, settings: s };
+  }
   const fromCatalog = s.catalog.find(c => c.id === courseId);
   if (!fromCatalog) return { error: 'unknown_course' };
   let cover = fromCatalog.cover || null;
@@ -644,12 +646,7 @@ async function newLessons(guildId) {
         }
         const courseMeta = (s.catalog || []).find(c => c.id === cid) || {};
         for (let lesson of lessons) {
-          if (known[lesson.id]) {
-            lesson = await enrichLesson(s.apiKey, lesson);
-            const d = considerLesson(lesson, s.onlyVideos);
-            if (d === 'draft') delete known[lesson.id];
-            else continue;
-          }
+          if (!lesson || !lesson.id) continue;
           if (known[lesson.id]) continue;
           lesson = await enrichLesson(s.apiKey, lesson, { force: true });
           const decision = considerLesson(lesson, s.onlyVideos);
@@ -681,7 +678,6 @@ async function newLessons(guildId) {
       continue;
     }
 
-    // course entry
     if (!e.baselined) {
       e = await baselineEntry(s.apiKey, e);
       nextLog.push(e);
@@ -710,12 +706,7 @@ async function newLessons(guildId) {
     const known = { ...(e.known || {}) };
     const fresh = [];
     for (let lesson of lessons) {
-      if (known[lesson.id]) {
-        lesson = await enrichLesson(s.apiKey, lesson);
-        const d = considerLesson(lesson, s.onlyVideos);
-        if (d === 'draft') delete known[lesson.id];
-        else continue;
-      }
+      if (!lesson || !lesson.id) continue;
       if (known[lesson.id]) continue;
       lesson = await enrichLesson(s.apiKey, lesson, { force: true });
       const decision = considerLesson(lesson, s.onlyVideos);
@@ -751,8 +742,8 @@ async function newLessons(guildId) {
 }
 
 module.exports = {
-  FILE, DEFAULTS, getSettings, setSettings, maskKey,
-  resolveCompany, fetchCompanyRoute, listCourses, listExperiences, listLessons,
-  scanCourses, addToLog, addAppToLog, removeFromLog, updateLogEntry,
-  baselineAll, newLessons, lessonLink, isLessonReady, isPlaceholderTitle, pickCover, pickLessonBanner, isAutoVideoFrameUrl,
+  getSettings, setSettings, maskKey,
+  listCourses, listExperiences, scanCourses,
+  addToLog, addAppToLog, removeFromLog, updateLogEntry,
+  newLessons, baselineAll,
 };
