@@ -44,18 +44,11 @@ const botProfile = require('./botProfile');
 
 function me(session, client) {
   const owner = auth.isOwner(session.uid);
-  // Overview server pills: guilds from the login snapshot (Discord owner /
-  // Administrator / Manage Server) plus live staff grants. Never every guild
-  // the bot is in — that list stays on the owner console only.
-  //
-  // Operator sessions can land with an empty snapshot (owner login path).
-  // In that case also surface guilds this Discord account actually owns so
-  // Overview does not render a blank header.
   const ids = new Set([...(session.guilds || []), ...auth.staffGuildsFor(session.uid)]);
-  const uid = String(session.uid);
-  for (const g of client.guilds.cache.values()) {
-    if (g.ownerId && String(g.ownerId) === uid) ids.add(g.id);
-  }
+  // Bot operator: include every guild the bot is in so Overview can select a
+  // server and render the crest / SYSTEMS block. Non-operators only see
+  // session + staff guilds from login.
+  if (owner) for (const id of client.guilds.cache.keys()) ids.add(id);
 
   const guilds = [...ids]
     .filter(id => client.guilds.cache.has(id))
