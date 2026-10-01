@@ -13,10 +13,10 @@
  * login:
  *
  *   1. The account must OWN the guild being accessed (Discord owner flag),
- *      or hold a live staff grant. Ownership is established at login and
- *      carried in the session. Staff grants are read live on every request.
- *      PANEL_OWNER_IDS is for the owner console only — not a free pass into
- *      every guild's panel data routes.
+ *      or hold a live staff grant, or be in PANEL_OWNER_IDS. Ownership is
+ *      established at login and carried in the session, so it is only as
+ *      fresh as SESSION_TTL_MS — which is why that is hours, not weeks.
+ *      Staff grants are read live on every request so a revoke is immediate.
  *   2. The guild must be one the bot is currently in, and must pass the
  *      PANEL_GUILD_IDS allowlist. Both are checked live against the bot's own
  *      state on every request, so revoking access is immediate.
@@ -32,29 +32,11 @@ const MANAGE_GUILD = 1n << 5n;
 
 const SESSION_COOKIE = 'yf_session';
 const STATE_COOKIE   = 'yf_state';
-// Effectively "until you sign out": a long window that slides forward every
-// time the panel is opened, so ordinary use never ends in a login screen.
-//
-// It is still bounded, and the bound matters: the guild list inside a session
-// is only as fresh as the session, so this is also the window in which a
-// revoked Manage Server has not taken effect yet. Bot-presence and the guild
-// allowlist are re-checked live on every request regardless, so the worst case
-// is a former manager keeping access to a guild the bot is still in — not to
-// a guild they were never in. PANEL_SESSION_DAYS tightens it if that trade
-// ever stops being acceptable.
 const SESSION_DAYS = Math.min(365, Math.max(1, Number(process.env.PANEL_SESSION_DAYS) || 90));
 const SESSION_TTL_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
-// Reissued once a week of use, so the window keeps sliding without minting a
-// new token on every single request.
 const REFRESH_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
-const STATE_TTL_MS   = 10 * 60 * 1000;      // 10 minutes to finish logging in
-
-// How long an embed link keeps working with nobody touching it. Expiry is not
-// really the control here — revocation is (see embedVersion below) — so this
-// is set long enough that it is never the reason someone gets logged out.
+const STATE_TTL_MS   = 10 * 60 * 1000;
 const EMBED_LINK_TTL_MS = 5 * 365 * 24 * 60 * 60 * 1000;
-
-/* ─── config ─────────────────────────────────────────────────────────────── */
 
 function config() {
   const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
@@ -64,34 +46,23 @@ function config() {
     secret:       process.env.SESSION_SECRET || '',
     baseUrl:      base,
     redirectUri:  base ? `${base}/auth/callback` : '',
-    // Empty means "any guild the bot is in that you can manage".
     allowlist: (process.env.PANEL_GUILD_IDS || '')
       .split(',').map(s => s.trim()).filter(Boolean),
-    // Origins allowed to embed the panel. Empty (the default) means nobody.
     frameAncestors: (process.env.PANEL_FRAME_ANCESTORS || '')
       .split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
-    // The bot's own operator(s) — sees and manages every guild the bot is in
-    // via the owner console, not via free panel access to every guild.
-    // Empty (the default) means nobody gets the owner console.
     ownerIds: (process.env.PANEL_OWNER_IDS || '')
       .split(',').map(s => s.trim()).filter(Boolean),
   };
 }
 
-/** Whether the panel is configured to be embedded anywhere at all. */
 function embeddable() {
   return config().frameAncestors.length > 0;
 }
 
-/**
- * Whether this Discord account is the bot's own operator, wired through
- * PANEL_OWNER_IDS rather than any per-guild permission.
- */
 function isOwner(uid) {
   return config().ownerIds.includes(String(uid));
 }
 
-/** Which required settings are missing, so the server can say so precisely. */
 function missingConfig() {
   const c = config();
   const missing = [];
@@ -101,8 +72,6 @@ function missingConfig() {
   if (!c.baseUrl)      missing.push('PUBLIC_BASE_URL');
   return missing;
 }
-
-/* ─── signed tokens ──────────────────────────────────────────────────────── */
 
 const b64 = buf => Buffer.from(buf).toString('base64url');
 
@@ -116,14 +85,11 @@ function verify(token, secret) {
   if (typeof token !== 'string') return null;
   const dot = token.lastIndexOf('.');
   if (dot <= 0) return null;
-
   const body = token.slice(0, dot);
   const mac  = token.slice(dot + 1);
   const want = crypto.createHmac('sha256', secret).update(body).digest('base64url');
-
   const a = Buffer.from(mac), b = Buffer.from(want);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-
   try {
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     if (!payload || typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
@@ -132,8 +98,6 @@ function verify(token, secret) {
     return null;
   }
 }
-
-/* ─── cookies ────────────────────────────────────────────────────────────── */
 
 function parseCookies(req) {
   const out = {};
@@ -162,8 +126,6 @@ function clearCookie(name) {
   return `${name}=; Path=/; HttpOnly; Secure; SameSite=${sameSite()}; Max-Age=0${partitioned()}`;
 }
 
-/* ─── login flow ─────────────────────────────────────────────────────────── */
-
 function authorizeUrl({ popup = false, handoff = null } = {}) {
   const c = config();
   const state = sign({
@@ -190,7 +152,6 @@ async function discord(path, init) {
 
 async function completeLogin(code, client) {
   const c = config();
-
   const token = await discord('/oauth2/token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -202,13 +163,11 @@ async function completeLogin(code, client) {
       redirect_uri: c.redirectUri,
     }),
   });
-
   const bearer = { headers: { authorization: `Bearer ${token.access_token}` } };
   const [user, guilds] = await Promise.all([
     discord('/users/@me', bearer),
     discord('/users/@me/guilds', bearer),
   ]);
-
   const PERM_ADMINISTRATOR = 0x8n;
   const PERM_MANAGE_GUILD = 0x20n;
   const canManageGuild = (g) => {
@@ -226,13 +185,11 @@ async function completeLogin(code, client) {
     .filter(g => client.guilds.cache.has(g.id))
     .filter(g => c.allowlist.length === 0 || c.allowlist.includes(g.id))
     .map(g => g.id);
-
   if (manageable.length === 0 && !c.ownerIds.includes(user.id)) {
     const err = new Error('no_manageable_guilds');
     err.code = 'no_manageable_guilds';
     throw err;
   }
-
   return {
     token: sign({
       uid: user.id,
@@ -246,9 +203,7 @@ async function completeLogin(code, client) {
   };
 }
 
-/* ─── handoff ─────────────────────────────────────────────────────────────── */
-
-const handoffs = new Map(); // id → { token, at }
+const handoffs = new Map();
 const HANDOFF_TTL_MS = 2 * 60 * 1000;
 
 function parkHandoff(id, token) {
@@ -268,8 +223,6 @@ function collectHandoff(id) {
   return entry.token;
 }
 
-/* ─── request-time checks ────────────────────────────────────────────────── */
-
 function adoptable(req) {
   const c = config();
   if (!c.secret) return null;
@@ -284,15 +237,12 @@ const EMBED_SESSIONS_FILE = 'panel_embed_sessions.json';
 
 function mintEmbedLink(session) {
   const { uid, name, avatar, guilds } = session;
-
   const versions = readJson('panel_embed_links.json', {});
   versions[uid] = (versions[uid] || 1) + 1;
   writeJson('panel_embed_links.json', versions);
-
   const store = readJson(EMBED_SESSIONS_FILE, {});
   for (const [existingId, rec] of Object.entries(store)) if (rec.uid === uid) delete store[existingId];
   pruneEmbedSessions(store);
-
   const id = crypto.randomBytes(16).toString('base64url');
   store[id] = { uid, name, avatar, guilds, ev: versions[uid], exp: Date.now() + EMBED_LINK_TTL_MS };
   writeJson(EMBED_SESSIONS_FILE, store);
@@ -322,7 +272,6 @@ function revokeEmbedLinks(uid) {
   const versions = readJson('panel_embed_links.json', {});
   versions[uid] = (versions[uid] || 1) + 1;
   writeJson('panel_embed_links.json', versions);
-
   const store = readJson(EMBED_SESSIONS_FILE, {});
   let changed = false;
   for (const [id, rec] of Object.entries(store)) {
@@ -399,7 +348,6 @@ function sessionForToken(token) {
 function sessionFor(req) {
   const c = config();
   if (!c.secret) return null;
-
   const header = req.headers.authorization || '';
   if (header.startsWith('Bearer ')) {
     const fromHeader = resolveToken(header.slice(7).trim());
@@ -408,24 +356,16 @@ function sessionFor(req) {
   return resolveToken(parseCookies(req)[SESSION_COOKIE]);
 }
 
-/**
- * Whether a session may act on a guild, re-verified live.
- * `session.guilds` is only as fresh as the session; the bot-presence and
- * allowlist checks are current as of this instant.
- */
 function canAccessGuild(session, guildId, client) {
   if (!session) return false;
   if (!client.guilds.cache.has(guildId)) return false;
 
-  // Panel access is only for servers this account owns, has Manage Server /
-  // Administrator on, or holds a staff grant for. The bot operator does NOT
-  // get a free pass here — owner-console routes check isOwner themselves.
+  // Bot operator may open any guild the bot is in (owner console + panel).
+  if (isOwner(session.uid)) return true;
+
   const { allowlist } = config();
   if (allowlist.length > 0 && !allowlist.includes(guildId)) return false;
 
-  // Either the ownership snapshot this session was minted with, or a staff
-  // grant checked fresh against right now — see staffGuildsFor above for why
-  // those two get different freshness guarantees.
   if (Array.isArray(session.guilds) && session.guilds.includes(guildId)) return true;
   return staffGuildsFor(session.uid).includes(guildId);
 }
