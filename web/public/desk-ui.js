@@ -13,6 +13,11 @@
     return n;
   }
   function gid() {
+    try { if (window.state && window.state.guildId) return String(window.state.guildId); } catch (e) {}
+    try {
+      var g = new URLSearchParams(location.search).get('g');
+      if (g && /^\d{5,25}$/.test(g)) return g;
+    } catch (e) {}
     try {
       var s = localStorage.getItem(STORE);
       if (!s) return null;
@@ -51,7 +56,7 @@
     if (t) headers.Authorization = 'Bearer ' + t;
     var csrf = await ensureCsrf();
     if (csrf) headers['X-CSRF-Token'] = csrf;
-    var r = await fetch('/desk/' + encodeURIComponent(channelId) + '/send', {
+    var g = gid(); var r = await fetch('/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(channelId) + '/send', {
       method: 'POST', credentials: 'same-origin', headers: headers, body: JSON.stringify(body || {})
     });
     var data = await r.json().catch(function () { return {}; });
@@ -195,7 +200,7 @@
   async function hist(full) {
     if (!desk.channelId || desk.busy) return;
     try {
-      var q = '/desk/' + encodeURIComponent(desk.channelId) + '?limit=50';
+      var g = gid(); var q = '/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(desk.channelId) + '?limit=50';
       var out = await deskGet(q);
       if (!out.res.ok || out.data.error) {
         setPill('err', 'Error');
@@ -215,13 +220,13 @@
   async function loadCh() {
     var g = gid();
     if (!g) return;
-    var out = await deskGet('/desk/channels?guildId=' + encodeURIComponent(g));
+    var out = await deskGet('/api/guild/' + encodeURIComponent(g) + '/desk/channels');
     if (!out.res.ok || out.data.error) return;
     desk.channels = out.data.channels || [];
     var sel = $('desk-channel-sel');
     if (!sel) return;
     sel.replaceChildren();
-    sel.append(el('option', '', 'Select channel…')).value = '';
+    var _ph = el('option', '', 'Select channel…'); _ph.value = ''; sel.append(_ph);
     var groups = {}, order = [];
     desk.channels.forEach(function (c) {
       var cat = (c.category && String(c.category).trim()) || 'Channels';
@@ -240,7 +245,15 @@
       sel.appendChild(og);
     });
     try {
-      if (typeof window.enhanceSelects === 'function') window.enhanceSelects(sel.parentElement || sel);
+      var wrap = sel.closest && sel.closest('.cselect');
+      if (wrap && wrap.parentNode) {
+        wrap.parentNode.insertBefore(sel, wrap);
+        wrap.remove();
+      }
+      sel.classList.remove('cselect-native');
+      sel.removeAttribute('aria-hidden');
+      sel.style.cssText = '';
+      if (typeof window.enhanceSelects === 'function') window.enhanceSelects(sel.parentElement || document);
     } catch (e) {}
   }
   async function openCh(id) {
