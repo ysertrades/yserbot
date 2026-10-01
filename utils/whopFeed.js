@@ -411,6 +411,7 @@ function lessonLink(settings, entry, lesson) {
 
 async function baselineEntry(apiKey, entry) {
   const known = { ...(entry.known || {}) };
+  let ok = false;
   try {
     const lessons = await listLessons(apiKey, entry.id);
     for (const l of lessons) {
@@ -572,6 +573,16 @@ async function addToLog(guildId, courseId, { channelId = null, mentionRoleId = n
   }
   const fromCatalog = s.catalog.find(c => c.id === courseId);
   if (!fromCatalog) return { error: 'unknown_course' };
+
+  // Already covered by a tracked course-app → refuse second poster
+  if (fromCatalog.experienceId) {
+    const coveredByApp = s.log.some(
+      e => e.type === 'app' && e.id === fromCatalog.experienceId
+    );
+    if (coveredByApp) {
+      return { ok: true, already: true, coveredByApp: true, settings: s };
+    }
+  }
   let cover = fromCatalog.cover || null;
   if (!cover && s.apiKey) {
     const full = await retrieveCourse(s.apiKey, courseId);

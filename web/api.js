@@ -44,11 +44,11 @@ const botProfile = require('./botProfile');
 
 function me(session, client) {
   const owner = auth.isOwner(session.uid);
+  // Top picker: only guilds this account owns/admins or holds a staff grant for.
+  // Owner tab still lists every bot guild via /api/owner/guilds.
+  // Do NOT inject client.guilds.cache here — that put other people's servers
+  // in the picker. Overview crest still renders from the selected session guild.
   const ids = new Set([...(session.guilds || []), ...auth.staffGuildsFor(session.uid)]);
-  // Bot operator: include every guild the bot is in so Overview can select a
-  // server and render the crest / SYSTEMS block. Non-operators only see
-  // session + staff guilds from login.
-  if (owner) for (const id of client.guilds.cache.keys()) ids.add(id);
 
   const guilds = [...ids]
     .filter(id => client.guilds.cache.has(id))

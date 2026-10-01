@@ -18,6 +18,12 @@ function injectState(body) {
 }
 
 function loadLocal() {
+  // Prefer the patched full panel on disk (dropdown + baseline fixes)
+  const fullPath = path.join(__dirname, 'public', 'app.full.js');
+  if (fs.existsSync(fullPath)) {
+    const body = fs.readFileSync(fullPath, 'utf8');
+    if (body && body.length >= 100000) return injectState(body);
+  }
   const first = path.join(__dirname, 'app.pack.0.b64');
   if (!fs.existsSync(first)) return null;
   const parts = [];
