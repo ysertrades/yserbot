@@ -25,7 +25,7 @@ const { listSources } = require('../utils/newsFeed');
 const { TOPICS } = require('../utils/newsTopics');
 const { allBannerCopy } = require('../utils/bannerCopy');
 const { IMPACT_LEVELS, CURRENCIES } = require('../utils/economicCalendar');
-const { stats: renderStats } = require('../utils/renderCache');
+const { stats as renderStats } = require('../utils/renderCache');
 const composer = require('./composer');
 const giveaways = require('./giveaways');
 const settings = require('./settings');
@@ -44,8 +44,9 @@ const botProfile = require('./botProfile');
 
 function me(session, client) {
   const owner = auth.isOwner(session.uid);
+  // Overview server pills: only guilds this account owns / admins / has staff
+  // on. The full bot network stays on the owner console (/api/owner/guilds).
   const ids = new Set([...(session.guilds || []), ...auth.staffGuildsFor(session.uid)]);
-  if (owner) for (const id of client.guilds.cache.keys()) ids.add(id);
 
   const guilds = [...ids]
     .filter(id => client.guilds.cache.has(id))
@@ -133,7 +134,6 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       roleId: econcal.roleId ?? null,
       impact: econcal.impactFilter || [],
       currencies: econcal.currencyFilter || [],
-      // Aliases the Feeds tab still reads
       impactLevels: [...IMPACT_LEVELS],
       currencyCodes: [...CURRENCIES],
       impactOptions: [...IMPACT_LEVELS],
