@@ -25,7 +25,7 @@ const { listSources } = require('../utils/newsFeed');
 const { TOPICS } = require('../utils/newsTopics');
 const { allBannerCopy } = require('../utils/bannerCopy');
 const { IMPACT_LEVELS, CURRENCIES } = require('../utils/economicCalendar');
-const { stats as renderStats } = require('../utils/renderCache');
+const { stats: renderStats } = require('../utils/renderCache');
 const composer = require('./composer');
 const giveaways = require('./giveaways');
 const settings = require('./settings');
@@ -146,7 +146,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
         offsetMinutes: (econcal.weeklyPost && econcal.weeklyPost.offsetMinutes) ?? 0,
       },
       weeklyChannelId: econcal.weeklyChannelId ?? null,
-      weeklyChannel: channelName(econcal.weeklyChannelId),
+      weeklyChannel: channelName(econcal.channelId),
       postHour: econcal.postHour ?? 8,
       postMinute: econcal.postMinute ?? 0,
     },
