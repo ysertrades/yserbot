@@ -18,46 +18,43 @@
       var g = new URLSearchParams(location.search).get('g');
       if (g && /^\d{5,25}$/.test(g)) return g;
     } catch (e) {}
-    try {
-      var s = localStorage.getItem(STORE);
-      if (!s) return null;
-      var j = JSON.parse(s);
-      return j && j.guildId ? String(j.guildId) : null;
-    } catch (e) { return null; }
+    return null;
   }
-  function token() {
+  function tok() {
+    try { if (window.state && window.state.token) return window.state.token; } catch (e) {}
+    try { return localStorage.getItem(STORE); } catch (e) {}
+    return null;
+  }
+  function hdr(json) {
+    var h = { Accept: 'application/json' };
+    if (json) h['Content-Type'] = 'application/json';
+    var t = tok(); if (t) h.Authorization = 'Bearer ' + t;
     try {
-      var s = localStorage.getItem(STORE);
-      if (!s) return null;
-      var j = JSON.parse(s);
-      return j && j.token ? String(j.token) : null;
-    } catch (e) { return null; }
+      var c = (window.state && window.state.csrf) || window.__csrf || '';
+      if (c) h['X-CSRF-Token'] = c;
+    } catch (e) {}
+    return h;
   }
   async function ensureCsrf() {
     try {
       if (window.__csrf) return window.__csrf;
-      var r = await fetch('/api/csrf', { credentials: 'same-origin' });
+      if (window.state && window.state.csrf) { window.__csrf = window.state.csrf; return window.__csrf; }
+      var r = await fetch('/api/csrf', { credentials: 'same-origin', headers: hdr(false) });
       var j = await r.json().catch(function () { return {}; });
       if (j && j.csrf) window.__csrf = j.csrf;
       return window.__csrf || '';
     } catch (e) { return window.__csrf || ''; }
   }
   async function deskGet(path) {
-    var t = token();
-    var headers = { Accept: 'application/json' };
-    if (t) headers.Authorization = 'Bearer ' + t;
-    var r = await fetch(path, { credentials: 'same-origin', headers: headers });
+    var r = await fetch(path, { credentials: 'same-origin', headers: hdr(false) });
     var data = await r.json().catch(function () { return {}; });
     return { res: r, data: data };
   }
   async function deskPost(channelId, body) {
-    var t = token();
-    var headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
-    if (t) headers.Authorization = 'Bearer ' + t;
-    var csrf = await ensureCsrf();
-    if (csrf) headers['X-CSRF-Token'] = csrf;
-    var g = gid(); var r = await fetch('/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(channelId) + '/send', {
-      method: 'POST', credentials: 'same-origin', headers: headers, body: JSON.stringify(body || {})
+    await ensureCsrf();
+    var g = gid();
+    var r = await fetch('/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(channelId) + '/send', {
+      method: 'POST', credentials: 'same-origin', headers: hdr(true), body: JSON.stringify(body || {})
     });
     var data = await r.json().catch(function () { return {}; });
     return { res: r, data: data };
@@ -217,44 +214,70 @@
       setPill('err', 'Error');
     }
   }
+  function setFeed(msg) {
+    var feed = $('desk-feed');
+    if (!feed) return;
+    feed.replaceChildren();
+    feed.append(el('div', 'desk-empty', msg || ''));
+  }
   async function loadCh() {
     var g = gid();
-    if (!g) return;
-    var out = await deskGet('/api/guild/' + encodeURIComponent(g) + '/desk/channels');
-    if (!out.res.ok || out.data.error) return;
-    desk.channels = out.data.channels || [];
     var sel = $('desk-channel-sel');
-    if (!sel) return;
-    sel.replaceChildren();
-    var _ph = el('option', '', 'Select channel…'); _ph.value = ''; sel.append(_ph);
-    var groups = {}, order = [];
-    desk.channels.forEach(function (c) {
-      var cat = (c.category && String(c.category).trim()) || 'Channels';
-      if (!groups[cat]) { groups[cat] = []; order.push(cat); }
-      groups[cat].push(c);
-    });
-    order.forEach(function (cat) {
-      var og = document.createElement('optgroup');
-      og.label = cat;
-      groups[cat].forEach(function (c) {
-        var o = document.createElement('option');
-        o.value = c.id;
-        o.textContent = '# ' + c.name;
-        og.appendChild(o);
-      });
-      sel.appendChild(og);
-    });
+    if (!g || !sel) {
+      if (!g) setFeed('Waiting for server…');
+      return false;
+    }
+    if (sel.dataset.loaded === g && sel.options.length > 1) return true;
+    setPill('live', 'Loading');
     try {
-      var wrap = sel.closest && sel.closest('.cselect');
-      if (wrap && wrap.parentNode) {
-        wrap.parentNode.insertBefore(sel, wrap);
-        wrap.remove();
+      var out = await deskGet('/api/guild/' + encodeURIComponent(g) + '/desk/channels');
+      if (!out.res.ok || out.data.error) {
+        setPill('err', 'Error');
+        setFeed(out.res.status === 401 ? 'Sign in again to load channels.' : 'Could not load channels.');
+        return false;
       }
-      sel.classList.remove('cselect-native');
-      sel.removeAttribute('aria-hidden');
-      sel.style.cssText = '';
-      if (typeof window.enhanceSelects === 'function') window.enhanceSelects(sel.parentElement || document);
-    } catch (e) {}
+      desk.channels = out.data.channels || [];
+      try {
+        var wrap = sel.closest && sel.closest('.cselect');
+        if (wrap && wrap.parentNode) {
+          wrap.parentNode.insertBefore(sel, wrap);
+          wrap.remove();
+        }
+        sel.classList.remove('cselect-native');
+        sel.removeAttribute('aria-hidden');
+        sel.style.cssText = '';
+      } catch (e) {}
+      sel.replaceChildren();
+      var _ph = el('option', '', 'Select channel…'); _ph.value = ''; sel.append(_ph);
+      var groups = {}, order = [];
+      desk.channels.forEach(function (c) {
+        var cat = (c.category && String(c.category).trim()) || 'Channels';
+        if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+        groups[cat].push(c);
+      });
+      order.forEach(function (cat) {
+        var og = document.createElement('optgroup');
+        og.label = cat;
+        groups[cat].forEach(function (c) {
+          var o = document.createElement('option');
+          o.value = c.id;
+          o.textContent = '# ' + c.name;
+          og.appendChild(o);
+        });
+        sel.appendChild(og);
+      });
+      sel.dataset.loaded = g;
+      try {
+        if (typeof window.enhanceSelects === 'function') window.enhanceSelects(sel.parentElement || document);
+      } catch (e) {}
+      setPill('paused', 'Idle');
+      if (!desk.channelId) setFeed(desk.channels.length ? 'Select a channel to open the desk.' : 'No channels available.');
+      return true;
+    } catch (e) {
+      setPill('err', 'Error');
+      setFeed('Network error loading channels.');
+      return false;
+    }
   }
   async function openCh(id) {
     desk.channelId = id || null;
@@ -351,7 +374,7 @@
           credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: 'Bearer ' + (token() || ''),
+            Authorization: 'Bearer ' + (tok() || ''),
             'X-CSRF-Token': window.__csrf || ''
           },
           body: JSON.stringify({ channelId: desk.channelId, lock: kind === 'lock' })
@@ -615,7 +638,6 @@
     });
     paint();
     setComposer();
-    loadCh();
   }
   function tick() {
     if (desk.paused || !desk.channelId) return;
@@ -625,6 +647,20 @@
   function boot() {
     if (!$('overview-desk')) return;
     shell();
+    var tries = 0;
+    function retryLoad() {
+      if (gid()) {
+        loadCh();
+        return;
+      }
+      if (tries < 80) {
+        tries++;
+        setTimeout(retryLoad, 400);
+      } else {
+        setFeed('Waiting for server… open Overview after the panel finishes loading.');
+      }
+    }
+    retryLoad();
     if (desk.timer) clearInterval(desk.timer);
     desk.timer = setInterval(tick, POLL);
   }
