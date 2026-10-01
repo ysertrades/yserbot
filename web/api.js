@@ -146,7 +146,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
         offsetMinutes: (econcal.weeklyPost && econcal.weeklyPost.offsetMinutes) ?? 0,
       },
       weeklyChannelId: econcal.weeklyChannelId ?? null,
-      weeklyChannel: channelName(econcal.channelId),
+      weeklyChannel: channelName(econcal.weeklyChannelId),
       postHour: econcal.postHour ?? 8,
       postMinute: econcal.postMinute ?? 0,
     },
