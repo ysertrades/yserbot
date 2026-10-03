@@ -1097,7 +1097,7 @@ function renderOverviewCards() {
     const img = crest.querySelector('img');
     if (icon) {
       if (img) {
-        if (img.getAttribute('src') !== icon) img.src = icon;
+        if (img.dataset.iconUrl !== icon) { img.dataset.iconUrl = icon; img.src = icon; }
       } else {
         crest.replaceChildren(Object.assign(el('img'), { src: icon, alt: '' }));
       }
@@ -2896,10 +2896,15 @@ function countdownEl(endsAt, startedAt = null) {
 }
 
 function startTicking() {
-  clearInterval(tickTimer);
+  // Only start once. Re-calling from every renderLive reset the 1s timer
+  // and re-walked countdown nodes on each overview push.
+  if (tickTimer) return;
   tickTimer = setInterval(() => {
     for (const paint of [...ticking]) if (!paint()) ticking.delete(paint);
   }, 1000);
+}
+function stopTicking() {
+  if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
 }
 
 
@@ -5548,6 +5553,12 @@ function renderSettings() {
   if (!form) return;
   // Keep chips selectable — live overview refresh must not wipe in-progress picks
   if (form.dataset.dirty === '1' && root.dataset.section === 'settings') return;
+  // Skip rebuild when settings payload is unchanged (stops Settings form flicker)
+  try {
+    const sig = JSON.stringify({ values: s.values, fields: (s.fields || []).map(f => f.key + ':' + f.type) });
+    if (form.dataset.sig === sig && form.childNodes.length) return;
+    form.dataset.sig = sig;
+  } catch (_) {}
 
   const draft = {};
   for (const f of s.fields) draft[f.key] = s.values[f.key];
@@ -5783,8 +5794,22 @@ const DEFAULT_PRESENCE = {
 function renderBotProfile() {
   const box = $('#bot-profile');
   if (!box) return;
+  // User is editing — do not wipe Status / profile fields.
+  if (box.dataset.dirty === '1') return;
   const bp = state.overview?.botProfile;
   if (!bp) { box.replaceChildren(el('p', 'muted', 'Profile unavailable.')); return; }
+
+  // Skip full rebuild when profile data is unchanged. Without this, every
+  // renderOverview() (live stream / soft refresh) recreated Status chips
+  // and inputs from scratch — the 1Hz Settings flicker.
+  const sig = JSON.stringify({
+    g: bp.global || null,
+    guild: bp.guild || null,
+    presence: bp.presence || null,
+    can: [!!bp.canEditPresence, !!bp.canEditGlobal, !!bp.canEditNickname],
+  });
+  if (box.dataset.sig === sig && box.childNodes.length) return;
+  box.dataset.sig = sig;
 
   const nodes = [];
   const g = bp.global || {};
@@ -5841,6 +5866,7 @@ function renderBotProfile() {
       if (opt.value === presenceDraft.status) b.setAttribute('aria-pressed', 'true');
       b.addEventListener('click', () => {
         presenceDraft.status = opt.value;
+        box.dataset.dirty = '1';
         for (const c of statusChips.querySelectorAll('.chip-toggle')) c.removeAttribute('aria-pressed');
         b.setAttribute('aria-pressed', 'true');
       });
@@ -5850,9 +5876,10 @@ function renderBotProfile() {
     nodes.push(statusWrap);
 
     nodes.push(select('Activity type', presenceDraft.activityType, ACTIVITY_OPTIONS,
-      v => { presenceDraft.activityType = v; }));
+      v => { presenceDraft.activityType = v; box.dataset.dirty = '1'; }));
     nodes.push(textField('Status text', presenceDraft.activityText, v => {
       presenceDraft.activityText = v.slice(0, 128);
+      box.dataset.dirty = '1';
     }, { placeholder: 'e.g. charts · /help · live signals' }));
     nodes.push(el('p', 'hint', 'Leave blank to clear the activity line. Max 128 characters.'));
 
@@ -5876,6 +5903,8 @@ function renderBotProfile() {
           try {
             state.overview = await get(`/api/guild/${state.guildId}`);
           } catch { /* keep local */ }
+          box.dataset.dirty = '0';
+          delete box.dataset.sig;
           renderBotProfile();
         }
       } finally {
