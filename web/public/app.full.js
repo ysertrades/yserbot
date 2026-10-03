@@ -2879,17 +2879,35 @@ function countdownEl(endsAt, startedAt = null) {
 
   const loop = () => {
     if (!paint()) return;
+    // Only animate the bar while Giveaways is active. rAF on every frame
+    // while on Settings/Composer forced continuous style recalc panel-wide.
+    if (root.dataset.section !== 'giveaways' || document.visibilityState === 'hidden') {
+      raf = 0;
+      return;
+    }
     raf = requestAnimationFrame(loop);
   };
   paint();
-  raf = requestAnimationFrame(loop);
+  if (root.dataset.section === 'giveaways' && document.visibilityState !== 'hidden') {
+    raf = requestAnimationFrame(loop);
+  }
   // Still register with ticking so cleanup on re-render works
   const tickPaint = () => {
     if (!document.body.contains(node)) {
       if (raf) cancelAnimationFrame(raf);
+      raf = 0;
       return false;
     }
-    return paint();
+    const ok = paint();
+    if (ok && !raf && root.dataset.section === 'giveaways' && document.visibilityState !== 'hidden') {
+      const loop2 = () => {
+        if (!paint()) { raf = 0; return; }
+        if (root.dataset.section !== 'giveaways' || document.visibilityState === 'hidden') { raf = 0; return; }
+        raf = requestAnimationFrame(loop2);
+      };
+      raf = requestAnimationFrame(loop2);
+    }
+    return ok;
   };
   ticking.add(tickPaint);
   return { node, bar };
@@ -8657,12 +8675,16 @@ function _sigChanged(key, value) {
   return true;
 }
 
+let _livePaintAt = 0;
 function renderLive() {
   if (!state.overview) return;
   if (isEditing() || sheetIsOpen()) { liveMissed = true; return; }
   liveMissed = false;
+  const now = Date.now();
+  const throttled = (now - _livePaintAt) < 400;
+  if (!throttled) _livePaintAt = now;
 
-  renderOverviewCards();
+  if (!throttled) renderOverviewCards();
   if (!root.dataset.entered) revealOverviewChrome();
 
   const o = state.overview;
@@ -8794,10 +8816,16 @@ window.addEventListener('pageshow', (e) => {
       });
       if (onlyCselect) continue;
       if (t) clearTimeout(t);
+      // 200ms + gate: live/desk/giveaway DOM churn used to call enhanceSelects
+      // every tick even when every select was already enhanced — full-document
+      // work on ALL tabs (~1Hz flicker).
       t = setTimeout(() => {
         t = null;
-        try { enhanceSelects(document); } catch (_) {}
-      }, 50);
+        try {
+          if (!document.querySelector('select:not([data-cselect])')) return;
+          enhanceSelects(document);
+        } catch (_) {}
+      }, 200);
       break;
     }
   });
@@ -8811,9 +8839,13 @@ window.addEventListener('pageshow', (e) => {
 
 function enhanceSelects(scope) {
   if (window.__cselectEnhancing) return;
+  const rootEl = scope || document;
+  // Fast path: nothing new to wrap — skip orphan sweep and DOM lock.
+  // Without this, every live/desk mutation paid for a full select scan.
+  const pending = rootEl.querySelectorAll('select:not([data-cselect])');
+  if (!pending.length) return;
   window.__cselectEnhancing = true;
   try {
-    const rootEl = scope || document;
     try {
       document.querySelectorAll('.cselect-menu').forEach((m) => {
         const id = m.dataset.forSelect;
@@ -8821,7 +8853,7 @@ function enhanceSelects(scope) {
         if (!document.querySelector('select[data-cselect-id="' + id + '"]')) m.remove();
       });
     } catch (_) {}
-    rootEl.querySelectorAll('select:not([data-cselect])').forEach((sel) => {
+    pending.forEach((sel) => {
       if (sel.closest('.cselect')) return;
       if (!sel.isConnected) return;
       sel.dataset.cselect = '1';
