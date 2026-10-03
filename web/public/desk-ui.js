@@ -94,7 +94,65 @@
       return d.toLocaleString();
     }
   }
-  function paint() {
+  
+  function roleMap() {
+    var map = {};
+    try {
+      var roles = (window.state && window.state.overview && window.state.overview.settings && window.state.overview.settings.roles) || [];
+      roles.forEach(function (r) { if (r && r.id) map[String(r.id)] = r.name || r.id; });
+    } catch (e) {}
+    try {
+      if (desk.roles) {
+        Object.keys(desk.roles).forEach(function (id) { map[id] = desk.roles[id]; });
+      }
+    } catch (e) {}
+    return map;
+  }
+  function channelMap() {
+    var map = {};
+    try {
+      (desk.channels || []).forEach(function (c) { if (c && c.id) map[String(c.id)] = c.name || c.id; });
+    } catch (e) {}
+    return map;
+  }
+  /** Render Discord mention tokens as readable chips; keep plain text safe. */
+  function formatDeskContent(text) {
+    var host = el('div', 'desk-text');
+    if (text == null || text === '') return host;
+    var s = String(text);
+    var roles = roleMap();
+    var chans = channelMap();
+    var re = /<@&(\d+)>|<@!?(\d+)>|<#(\d+)>|@(everyone|here)/g;
+    var last = 0, m;
+    while ((m = re.exec(s)) !== null) {
+      if (m.index > last) host.appendChild(document.createTextNode(s.slice(last, m.index)));
+      var chip = document.createElement('span');
+      chip.className = 'desk-mention';
+      if (m[1]) {
+        // Role mention
+        chip.className = 'desk-mention desk-mention-role';
+        chip.textContent = '@' + (roles[m[1]] || 'role');
+        chip.title = roles[m[1]] ? ('Role · ' + roles[m[1]]) : ('Role ' + m[1]);
+      } else if (m[2]) {
+        chip.className = 'desk-mention desk-mention-user';
+        chip.textContent = '@user';
+        chip.title = 'User ' + m[2];
+      } else if (m[3]) {
+        chip.className = 'desk-mention desk-mention-channel';
+        chip.textContent = '#' + (chans[m[3]] || 'channel');
+        chip.title = chans[m[3]] ? ('#' + chans[m[3]]) : ('Channel ' + m[3]);
+      } else {
+        chip.className = 'desk-mention desk-mention-role';
+        chip.textContent = '@' + m[4];
+      }
+      host.appendChild(chip);
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) host.appendChild(document.createTextNode(s.slice(last)));
+    return host;
+  }
+
+function paint() {
     var feed = $('desk-feed');
     if (!feed) return;
     if (desk.stickBottom == null) desk.stickBottom = true;
@@ -125,7 +183,7 @@
       if (m.referenceId) meta.append(el('span', 'desk-ref', 'reply'));
       meta.append(el('span', 'desk-when', fmtWhen(m.createdAt)));
       body.append(meta);
-      if (m.content) body.append(el('div', 'desk-text', m.content));
+      if (m.content) body.append(formatDeskContent(m.content));
       var media = el('div', 'desk-media');
       var imgs = [].concat(m.images || [], (m.attachments || []).filter(function (a) {
         return a && a.url && (/^image\//i.test(a.contentType || '') || /\.(png|jpe?g|gif|webp)(\?|$)/i.test(a.url));

@@ -108,3 +108,9 @@
 .desk-actions,.desk-side,.desk-when{opacity:1}
 .desk-thumb{max-width:120px;max-height:90px}
 }
+
+/* Discord-style mention chips in Channel Desk (display only) */
+.desk-mention{display:inline;padding:0 .28em;border-radius:4px;font-weight:600;line-height:1.4}
+.desk-mention-role{background:rgba(88,101,242,.28);color:#c9cdfb}
+.desk-mention-user{background:rgba(88,101,242,.22);color:#c9cdfb}
+.desk-mention-channel{background:rgba(88,101,242,.18);color:#b5baf5}

@@ -720,12 +720,10 @@ function paintTiles(specs) {
     const n = t.firstElementChild;
     const next = String(s.value);
     if (n.textContent !== next) {
+      // Update digits only — no opacity animation / forced reflow.
+      // The old ticked class + offsetWidth reflow flashed tiles on every
+      // live overview tick (~1s), which looked like the whole panel shaking.
       n.textContent = next;
-      // Only on a real change, so a repaint that altered nothing stays
-      // perfectly still. Restarting the class is what lets it run twice.
-      n.classList.remove('ticked');
-      void n.offsetWidth;
-      n.classList.add('ticked');
     }
     const cls = `tile ${s.kind}`.trim();
     if (t.className !== cls) t.className = cls;
