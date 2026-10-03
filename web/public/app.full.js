@@ -627,9 +627,18 @@ function renderGuildPicker() {
     const live = state.guilds.find(x => x.id === state.overview.guild.id);
     if (live) live.icon = state.overview.guild.icon;
   }
-  $('#guilds').replaceChildren(...state.guilds.map(g => {
+  const home = state.homeGuildIds || new Set();
+  const ordered = [...state.guilds].sort((a, b) => {
+    const ah = home.has(a.id) ? 0 : 1;
+    const bh = home.has(b.id) ? 0 : 1;
+    if (ah !== bh) return ah - bh;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+  const host = $('#guilds');
+  host.replaceChildren(...ordered.map(g => {
     const b = el('button');
     b.type = 'button';
+    b.dataset.guildId = g.id;
     if (g.icon) {
       const i = el('img');
       i.src = g.icon;
@@ -648,6 +657,25 @@ function renderGuildPicker() {
     b.addEventListener('click', () => selectGuild(g.id));
     return b;
   }));
+  let back = document.getElementById('guild-back-home');
+  const onForeign = state.guildId && home.size && !home.has(state.guildId);
+  if (onForeign) {
+    const homeG = state.guilds.find(g => home.has(g.id));
+    if (!back) {
+      back = el('button', 'btn small', '');
+      back.type = 'button';
+      back.id = 'guild-back-home';
+      if (host.parentNode) host.parentNode.insertBefore(back, host.nextSibling);
+    }
+    back.textContent = homeG ? ('← ' + (homeG.name || 'Your server')) : '← Your server';
+    back.onclick = () => {
+      const id = (homeG && homeG.id) ? homeG.id : [...home][0];
+      if (id) selectGuild(id);
+    };
+    back.hidden = false;
+  } else if (back) {
+    back.hidden = true;
+  }
 }
 
 /* ── overview ──────────────────────────────────────────────────────────── */
@@ -1065,9 +1093,23 @@ function renderOverviewCards() {
   const d = state.overview;
   if (!d) return;
 
-  $('#crest').replaceChildren(...(d.guild.icon
-    ? [Object.assign(el('img'), { src: d.guild.icon, alt: '' })]
-    : [el('span', null, d.guild.name.slice(0, 1).toUpperCase())]));
+  const crest = $('#crest');
+  if (crest) {
+    const icon = d.guild.icon || '';
+    const img = crest.querySelector('img');
+    if (icon) {
+      if (img) {
+        if (img.getAttribute('src') !== icon) img.src = icon;
+      } else {
+        crest.replaceChildren(Object.assign(el('img'), { src: icon, alt: '' }));
+      }
+    } else {
+      const letter = d.guild.name.slice(0, 1).toUpperCase();
+      const span = crest.querySelector('span');
+      if (span) span.textContent = letter;
+      else crest.replaceChildren(el('span', null, letter));
+    }
+  }
   $('#server-name').textContent = d.guild.name;
   $('#server-meta').textContent = `${num(d.guild.members)} members · ${num(d.guild.channels)} channels`;
 
@@ -7603,9 +7645,10 @@ function renderOwnerConsole() {
       if (!state.guilds.some(x => x.id === g.id)) {
         state.guilds = [...state.guilds, { id: g.id, name: g.name, icon: g.icon, members: g.members }];
       }
+      renderGuildPicker();
       await selectGuild(g.id).catch(reportLoadFailure);
       showSection('overview');
-      toast(`Opened ${g.name}.`, 'good');
+      toast(`Opened ${g.name}. Click your server pill to return.`, 'good');
     });
     const leaveBtn = el('button', 'btn small danger', 'Leave server');
     leaveBtn.type = 'button';
@@ -9195,7 +9238,11 @@ async function main() {
   state.csrf = me.csrf;
   if (me.token) { state.token = me.token; remember(me.token); }
   state.guilds = me.guilds;
+  state.homeGuildIds = new Set((me.guilds || []).map(g => g.id));
   state.me = me.user;
+  if (typeof embedded !== 'undefined' && embedded) {
+    try { document.documentElement.dataset.embedded = '1'; } catch (_) {}
+  }
   renderIdentity(me.user);
   initSections();
   try { enhanceSelects(document); } catch (e) {}

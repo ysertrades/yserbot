@@ -1,15 +1,20 @@
 /* Channel Desk */
 .desk-panel{margin-top:1.25rem;display:flex;flex-direction:column;min-height:320px;max-height:min(70vh,640px);overflow:hidden;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--rule,#2a2d38));background:color-mix(in srgb,var(--panel,#15161d) 92%,#0b0d11);position:relative}
-.desk-head{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.65rem 1rem;padding:.85rem 1rem;border-bottom:1px solid var(--rule,#2a2d38)}
+.desk-head{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.65rem 1rem;padding:.85rem 1rem;border-bottom:1px solid var(--rule,#2a2d38);overflow:visible;position:relative;z-index:5}
 .desk-title-block{flex:1 1 auto;min-width:10rem}
 .desk-kicker{margin:0;font-size:.72rem;font-weight:700;letter-spacing:.12em;color:var(--muted,#9aa3b5)}
 .desk-title-block .muted{margin:.2rem 0 0;font-size:.8rem}
-.desk-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem}
-.desk-select-wrap{position:relative;min-width:14rem;max-width:20rem;flex:1 1 14rem}
+.desk-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;overflow:visible}
+.desk-select-wrap{position:relative;min-width:14rem;max-width:20rem;flex:1 1 14rem;overflow:visible;z-index:6}
 .desk-select-wrap .cselect{width:100%}
 .desk-select-wrap .cselect-trigger{width:100%;box-sizing:border-box;min-height:2.5rem}
 .desk-select-wrap select.lvl-input,
 .desk-select-wrap select.desk-channel-sel{width:100%;min-height:2.5rem;border-radius:10px;border:1px solid rgba(255,255,255,.08);background:#12141A;color:#F3F4F6;padding:.62rem .75rem;font-size:.88rem}
+.desk-select-wrap select.cselect-native,
+.desk-select-wrap .cselect select{
+  position:absolute!important;opacity:0!important;pointer-events:none!important;
+  width:1px!important;height:1px!important;margin:0!important;padding:0!important;border:0!important;
+}
 .desk-pill{display:inline-flex;align-items:center;gap:.35rem;padding:.22rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;border:1px solid transparent}
 .desk-pill.live{color:#34d399;background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.35)}
 .desk-pill.live::before{content:'';width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.25);animation:desk-pulse 1.6s ease-in-out infinite}

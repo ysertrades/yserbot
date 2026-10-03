@@ -2,6 +2,7 @@
 (function () {
   var POLL = 2800, STORE = 'yserflow.session';
   var desk = {
+    stickBottom: true,
     channelId: null, channels: [], messages: [], paused: false, busy: false,
     replyTo: null, forwardMsg: null, deleteMsg: null, padMode: null, timer: null, lastSig: ''
   };
@@ -96,6 +97,10 @@
   function paint() {
     var feed = $('desk-feed');
     if (!feed) return;
+    if (desk.stickBottom == null) desk.stickBottom = true;
+    var stick = desk.stickBottom !== false;
+    var prevScroll = feed.scrollTop, prevH = feed.scrollHeight;
+    desk._painting = true;
     feed.replaceChildren();
     if (!desk.messages.length) {
       feed.append(el('div', 'desk-empty', desk.channelId ? 'No messages yet' : 'Select a channel'));
@@ -192,7 +197,16 @@
       }
       feed.append(row);
     });
-    try { feed.scrollTop = feed.scrollHeight; } catch (e) {}
+    try {
+      if (stick) {
+        feed.scrollTop = feed.scrollHeight;
+        desk.stickBottom = true;
+      } else {
+        feed.scrollTop = prevScroll + (feed.scrollHeight - prevH);
+        desk.stickBottom = false;
+      }
+    } catch (e) {}
+    requestAnimationFrame(function () { desk._painting = false; });
   }
   async function hist(full) {
     if (!desk.channelId || desk.busy) return;
@@ -244,6 +258,8 @@
           wrap.remove();
         }
         sel.classList.remove('cselect-native');
+        sel.removeAttribute('data-cselect');
+        sel.removeAttribute('data-cselect-id');
         sel.removeAttribute('aria-hidden');
         sel.style.cssText = '';
       } catch (e) {}
@@ -268,7 +284,13 @@
       });
       sel.dataset.loaded = g;
       try {
-        if (typeof window.enhanceSelects === 'function') window.enhanceSelects(sel.parentElement || document);
+        if (typeof window.enhanceSelects === 'function') {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              window.enhanceSelects(document);
+            });
+          });
+        }
       } catch (e) {}
       setPill('paused', 'Idle');
       if (!desk.channelId) setFeed(desk.channels.length ? 'Select a channel to open the desk.' : 'No channels available.');
@@ -552,7 +574,12 @@
     host.append(mod);
     var wrapF = el('div', 'desk-feed-wrap');
     var feed = el('div', 'desk-feed');
-    feed.id = 'desk-feed';
+    feed.id = 'desk-feed'
+    feed.addEventListener('scroll', function () {
+      if (desk._painting) return;
+      var near = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 48;
+      desk.stickBottom = near;
+    });;
     wrapF.append(feed);
     host.append(wrapF);
     var composer = el('div', 'desk-composer');
