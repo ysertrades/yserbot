@@ -55,7 +55,13 @@ const LIMITS = {
 // Mirrors normalizeTemplate() in embed.js: older templates are a bare embed
 // object, newer ones are { embeds: [...] }.
 function normalize(raw) {
-  if (raw && Array.isArray(raw.embeds)) return { around: null, ...raw };
+  if (raw && Array.isArray(raw.embeds)) {
+    const out = { around: null, ...raw };
+    if (raw.format === 'v2') out.format = 'v2';
+    if (Array.isArray(raw.blocks)) out.blocks = raw.blocks;
+    if (raw.buttonsOutside != null) out.buttonsOutside = !!raw.buttonsOutside;
+    return out;
+  }
   return {
     around: null,
     embeds: [{
@@ -242,9 +248,95 @@ function sanitizeEmbed(input) {
 /* ─── operations ─────────────────────────────────────────────────────────── */
 
 /** Create or replace a template's embeds. Buttons are untouched. */
+
+function sanitizeBlocks(input) {
+  if (!Array.isArray(input)) return { error: 'bad_blocks' };
+  const blocks = [];
+  for (const b of input.slice(0, 40)) {
+    if (!b || typeof b !== 'object') continue;
+    const type = String(b.type || '').toLowerCase();
+    if (type === 'text' || type === 'heading') {
+      const content = String(b.content ?? b.text ?? '').slice(0, 4000);
+      if (!content.trim()) continue;
+      blocks.push({ type: type === 'heading' ? 'heading' : 'text', content });
+    } else if (type === 'separator') {
+      blocks.push({ type: 'separator', divider: b.divider !== false, spacing: b.spacing === 2 ? 2 : 1 });
+    } else if (type === 'media' && b.url) {
+      const url = String(b.url).slice(0, 500);
+      if (/^https:\/\//i.test(url) || /^attachment:\/\//i.test(url)) {
+        blocks.push({ type: 'media', url });
+      }
+    }
+  }
+  return { blocks };
+}
+
+function buildV2PayloadFromTemplate(tpl, buttons) {
+  const v2 = require('../utils/componentsV2');
+  const kids = [];
+  for (const b of (tpl.blocks || [])) {
+    if (b.type === 'text') kids.push(v2.text(b.content));
+    else if (b.type === 'heading') {
+      const c = String(b.content || '');
+      kids.push(v2.text(c.startsWith('#') ? c : '# ' + c));
+    } else if (b.type === 'separator') {
+      kids.push(v2.separator({ divider: b.divider !== false, spacing: b.spacing }));
+    } else if (b.type === 'media' && b.url) {
+      const m = v2.media(b.url);
+      if (m) kids.push(m);
+    }
+  }
+  const outside = !!tpl.buttonsOutside;
+  const btnRows = [];
+  if (Array.isArray(buttons) && buttons.length) {
+    const STYLE = { Primary: 1, Secondary: 2, Success: 3, Danger: 4, Link: 5 };
+    let row = [];
+    for (const b of buttons.slice(0, 25)) {
+      const style = STYLE[b.style] || 1;
+      let built;
+      if (b.type === 'link' || style === 5) {
+        if (!b.url) continue;
+        built = v2.button({ label: b.label || 'Link', style: 5, url: b.url, emoji: b.emoji || undefined });
+      } else {
+        built = v2.button({
+          customId: b.id || ('btn_' + Math.random().toString(36).slice(2, 8)),
+          label: b.label || 'Button',
+          style,
+          emoji: b.emoji || undefined,
+        });
+      }
+      row.push(built);
+      if (row.length === 5) { btnRows.push(v2.row(...row)); row = []; }
+    }
+    if (row.length) btnRows.push(v2.row(...row));
+  }
+  if (!kids.length && !btnRows.length) return { error: 'empty_v2' };
+  if (!outside && btnRows.length) kids.push(...btnRows);
+  const top = [v2.container(kids)];
+  if (outside && btnRows.length) top.push(...btnRows);
+  return v2.payload(top);
+}
+
 function saveTemplate(guildId, body) {
   const name = clean(body.name, 80);
   if (!name) return { error: 'bad_template' };
+  if (body.format === 'v2') {
+    const br = sanitizeBlocks(body.blocks || []);
+    if (br.error) return br;
+    if (!br.blocks.length) return { error: 'empty_message' };
+    const all = readJson('embeds.json', {});
+    if (!all[guildId]) all[guildId] = {};
+    const isNew = !all[guildId][name];
+    all[guildId][name] = {
+      format: 'v2',
+      blocks: br.blocks,
+      buttonsOutside: !!body.buttonsOutside,
+      embeds: [],
+      around: null,
+    };
+    writeJson('embeds.json', all);
+    return { ok: true, name, isNew };
+  }
   if (!Array.isArray(body.embeds)) return { error: 'no_embeds' };
   if (body.embeds.length > LIMITS.embeds) return { error: 'too_many_embeds' };
   // Embeds are optional — text-only messages (above/below/picture) are valid.
@@ -436,6 +528,29 @@ async function send(guildId, body, { guild }) {
 
   const channel = guild.channels.cache.get(channelId);
   if (!channel || !channel.isTextBased?.()) return { error: 'bad_channel' };
+
+  // Components V2 path
+  {
+    const rawTpl = readJson('embeds.json', {})[guildId]?.[name];
+    if (rawTpl && (rawTpl.format === 'v2' || (Array.isArray(rawTpl.blocks) && rawTpl.blocks.length))) {
+      try {
+        const tpl = normalize(rawTpl);
+        const buttons = buttonsFor(guildId, name);
+        const built = buildV2PayloadFromTemplate(tpl, buttons);
+        if (built.error) return built;
+        const msg = await channel.send({
+          flags: built.flags,
+          components: built.components,
+          allowedMentions: { parse: [] },
+        });
+        rememberPost(guildId, msg.id, { templateName: name, channelId: channel.id });
+        return { ok: true, channelId: channel.id, messageId: msg.id, format: 'v2' };
+      } catch (err) {
+        console.error('[Panel] V2 send failed:', err.message);
+        return { error: 'send_failed', detail: String(err.message || err).slice(0, 140) };
+      }
+    }
+  }
 
   const payload = embedCommand().buildEmbedPayload(guild, name, { channel });
   if (!payload) return { error: 'unknown_template' };
