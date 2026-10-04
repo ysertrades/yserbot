@@ -7192,27 +7192,47 @@ function renderTickets() {
   const draft = {
     supportRoleIds: Array.isArray(t.supportRoleIds) ? [...t.supportRoleIds] : (t.supportRoleId ? [t.supportRoleId] : []),
   };
-  $('#form-tickets').replaceChildren(
-    pickManyRoles(
-      'Support roles',
-      roleList(),
-      draft.supportRoleIds,
-      ids => { draft.supportRoleIds = ids; },
-    ),
-    el('p', 'hint', 'Members with any of these roles can see and answer tickets. Pick one or more.'),
-    actions(() => post('tickets', draft)),
-  );
+  const rolesForm = $('#form-tickets');
+  if (rolesForm) {
+    const rolesSig = JSON.stringify(draft.supportRoleIds || []);
+    // Do not rebuild while the user is interacting, or when nothing changed.
+    if (rolesForm.dataset.dirty !== '1' && rolesForm.dataset.sig !== rolesSig) {
+      rolesForm.dataset.sig = rolesSig;
+      rolesForm.replaceChildren(
+        pickManyRoles(
+          'Support roles',
+          roleList(),
+          draft.supportRoleIds,
+          ids => { draft.supportRoleIds = ids; rolesForm.dataset.dirty = '1'; },
+        ),
+        el('p', 'hint', 'Members with any of these roles can see and answer tickets. Pick one or more.'),
+        actions(async () => {
+          const out = await post('tickets', draft);
+          if (out) rolesForm.dataset.dirty = '0';
+          return out;
+        }),
+      );
+      try { enhanceSelects(rolesForm); } catch (_) {}
+    }
+  }
 
-  /* -- post the panel ----------------------------------------------------- */
-  const panel = { channelId: '' };
+  /* -- post the panel -----------------------------------------------------
+     Build once. Live overview ticks used to replaceChildren this form every
+     time open tickets changed, which destroyed the open cselect (dropdown
+     vanished) and made the whole card flicker. */
   const postForm = $('#form-ticketpanel');
-  postForm.replaceChildren(
-    pickOne('Channel', 'channel', '', v => { panel.channelId = v; }, { blank: 'Pick a channel' }),
-    actions(async () => {
-      if (!panel.channelId) { toast('Pick a channel first.', 'bad'); return; }
-      await post('ticketpanel', panel);
-    }, { label: 'Post the panel', busyLabel: 'Posting…' }),
-  );
+  if (postForm && postForm.dataset.wired !== '1') {
+    postForm.dataset.wired = '1';
+    const panel = { channelId: '' };
+    postForm.replaceChildren(
+      pickOne('Channel', 'channel', '', v => { panel.channelId = v; }, { blank: 'Pick a channel' }),
+      actions(async () => {
+        if (!panel.channelId) { toast('Pick a channel first.', 'bad'); return; }
+        await post('ticketpanel', panel);
+      }, { label: 'Post the panel', busyLabel: 'Posting…' }),
+    );
+    try { enhanceSelects(postForm); } catch (_) {}
+  }
 }
 
 /** Closing deletes the channel, so it asks in the sheet rather than inline. */
