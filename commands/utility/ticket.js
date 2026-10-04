@@ -35,15 +35,38 @@ async function sendTempReply(interaction, embed) {
  * one of them, which is exactly what happened. There is one now.
  */
 function buildTicketPanel(guild) {
-  const embed = messageStyle.build(guild.id, 'ticket.panel', {
-    tokens: { server: guild.name },
-  });
-  const row = messageStyle.buildButtons(guild.id, 'ticket.panel',
-    { ButtonBuilder, ActionRowBuilder, ButtonStyle });
+  // Components V2 panel (title / body from Appearance; dropdown topics fixed defaults for now).
+  // Legacy create_ticket button panels already posted in channels still work via handleButton.
+  const { buildTicketPanelV2 } = require('../../utils/componentsV2');
+  const { readJson } = require('../../utils/jsonStorage');
+  let title = 'OPEN A TICKET';
+  let description = 'A private channel with staff. Just you and us.';
+  let accent = 0x5865F2;
+  try {
+    const entry = require('../../utils/messageStyle').entry
+      ? require('../../utils/messageStyle').entry(guild.id, 'ticket.panel')
+      : null;
+    // Prefer built embed fields when available
+    const emb = messageStyle.build(guild.id, 'ticket.panel', {
+      tokens: { server: guild.name },
+    });
+    if (emb?.data?.title) title = emb.data.title;
+    else if (emb?.title) title = emb.title;
+    if (emb?.data?.description) description = emb.data.description;
+    else if (emb?.description) description = emb.description;
+    const color = emb?.data?.color ?? emb?.color;
+    if (typeof color === 'number') accent = color;
+  } catch (_) {}
+  // Optional per-guild topic overrides stored on ticketSettings
+  let topics = null;
+  try {
+    const conf = readJson('config.json', {})[guild.id] || {};
+    const ts = conf.ticketSettings || {};
+    if (Array.isArray(ts.panelTopics) && ts.panelTopics.length) topics = ts.panelTopics;
+  } catch (_) {}
+  const v2 = buildTicketPanelV2({ title, description, topics, accent });
   return {
-    embeds: embed ? [embed] : [],
-    components: row ? [row] : [],
-    // Nothing on this panel should ever ping anyone.
+    ...v2,
     allowedMentions: { parse: [] },
   };
 }
@@ -147,8 +170,18 @@ module.exports = {
       return;
     }
 
-    if (interaction.customId !== 'create_ticket') return;
-    return module.exports.openTicket(interaction);
+    // Legacy button panels (already posted) still work.
+    
+    // Components V2 topic dropdown on the ticket panel
+    if (interaction.isStringSelectMenu?.() && interaction.customId === 'ticket_topic_select') {
+      const topic = (interaction.values && interaction.values[0]) || 'other';
+      return module.exports.openTicket(interaction, { topic });
+    }
+
+    if (interaction.customId === 'create_ticket') {
+      return module.exports.openTicket(interaction);
+    }
+    return;
   },
 
   /**
@@ -160,7 +193,7 @@ module.exports = {
    * ticket was and told the clicker the button was misconfigured. It was not —
    * nothing could open a ticket except the one panel button.
    */
-  openTicket: async function(interaction) {
+  openTicket: async function(interaction, opts = {}) {
     // ── Create ticket ───────────────────────────────────────────────────
     const guild   = interaction.guild;
     const config  = readJson('config.json', {});
@@ -197,7 +230,7 @@ module.exports = {
     const channel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildText,
-      topic: `ticket-owner:${interaction.user.id}`,
+      topic: `ticket-owner:${interaction.user.id}${(opts && opts.topic) ? '|' + String(opts.topic).slice(0, 32) : ''}`,
       permissionOverwrites: overwrites,
     });
 
