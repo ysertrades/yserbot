@@ -35,18 +35,13 @@ async function sendTempReply(interaction, embed) {
  * one of them, which is exactly what happened. There is one now.
  */
 function buildTicketPanel(guild) {
-  // Components V2 panel (title / body from Appearance; dropdown topics fixed defaults for now).
-  // Legacy create_ticket button panels already posted in channels still work via handleButton.
+  // Components V2: title/body from Appearance; topic dropdown opens tickets.
   const { buildTicketPanelV2 } = require('../../utils/componentsV2');
   const { readJson } = require('../../utils/jsonStorage');
   let title = 'OPEN A TICKET';
   let description = 'A private channel with staff. Just you and us.';
   let accent = 0x5865F2;
   try {
-    const entry = require('../../utils/messageStyle').entry
-      ? require('../../utils/messageStyle').entry(guild.id, 'ticket.panel')
-      : null;
-    // Prefer built embed fields when available
     const emb = messageStyle.build(guild.id, 'ticket.panel', {
       tokens: { server: guild.name },
     });
@@ -57,7 +52,6 @@ function buildTicketPanel(guild) {
     const color = emb?.data?.color ?? emb?.color;
     if (typeof color === 'number') accent = color;
   } catch (_) {}
-  // Optional per-guild topic overrides stored on ticketSettings
   let topics = null;
   try {
     const conf = readJson('config.json', {})[guild.id] || {};
@@ -65,10 +59,7 @@ function buildTicketPanel(guild) {
     if (Array.isArray(ts.panelTopics) && ts.panelTopics.length) topics = ts.panelTopics;
   } catch (_) {}
   const v2 = buildTicketPanelV2({ title, description, topics, accent });
-  return {
-    ...v2,
-    allowedMentions: { parse: [] },
-  };
+  return { ...v2, allowedMentions: { parse: [] } };
 }
 
 module.exports = {
@@ -170,14 +161,12 @@ module.exports = {
       return;
     }
 
-    // Legacy button panels (already posted) still work.
-    
-    // Components V2 topic dropdown on the ticket panel
+    // Topic dropdown (Components V2 panel)
     if (interaction.isStringSelectMenu?.() && interaction.customId === 'ticket_topic_select') {
       const topic = (interaction.values && interaction.values[0]) || 'other';
       return module.exports.openTicket(interaction, { topic });
     }
-
+    // Legacy button panels already posted in channels
     if (interaction.customId === 'create_ticket') {
       return module.exports.openTicket(interaction);
     }
@@ -203,7 +192,7 @@ module.exports = {
     const supportRoleId = supportRoleIds[0];
 
     const existing = guild.channels.cache.find(c =>
-      c.topic === `ticket-owner:${interaction.user.id}`
+      (c.topic === `ticket-owner:${interaction.user.id}` || (c.topic && c.topic.startsWith(`ticket-owner:${interaction.user.id}|`)))
     ) || guild.channels.cache.find(c =>
       c.name === `ticket-${interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, '')}` && c.parentId
     );
