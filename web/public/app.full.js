@@ -2482,7 +2482,7 @@ function renderComposer() {
   // New messages default to Components V2; existing legacy templates stay legacy.
   if (!draft.format && (!draft.embeds || !draft.embeds.length) && !draft.blocks) {
     draft.format = 'v2';
-    draft.blocks = [{ type: 'text', content: '' }, { type: 'separator' }, { type: 'text', content: '' }];
+    draft.blocks = [{ type: 'text', content: '' }];
     draft.buttonsOutside = false;
     draft.embeds = [];
   }
@@ -2497,24 +2497,18 @@ function renderComposer() {
   head.append(el('h2', null, 'Message'));
   head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
 
-  // Compact V2 structure editor
+
+  // ── Composer V2: progressive, stable (no select/cselect churn) ──
   if (draft.format !== 'legacy') {
     draft.format = 'v2';
     if (!Array.isArray(draft.blocks)) draft.blocks = [];
-    if (!draft.blocks.length) {
-      draft.blocks = [
-        { type: 'heading', content: '' },
-        { type: 'separator' },
-        { type: 'text', content: '' },
-      ];
-    }
+    if (!draft.blocks.length) draft.blocks = [{ type: 'text', content: '' }];
 
     const panel = el('div', 'panel composer-v2');
     const top = el('div', 'queue-head');
-    top.append(el('h2', null, 'Structure'));
-    const mode = el('button', 'btn small', 'Classic');
+    top.append(el('h2', null, 'Message'));
+    const mode = el('button', 'btn small', 'Use classic embed');
     mode.type = 'button';
-    mode.title = 'Switch to classic embed';
     mode.addEventListener('click', function () {
       draft.format = 'legacy';
       if (!draft.embeds || !draft.embeds.length) {
@@ -2525,79 +2519,85 @@ function renderComposer() {
     });
     top.append(mode);
     panel.append(top);
+    panel.append(el('p', 'hint', 'One message field by default. Add a heading, line, or image only when you need it.'));
 
     const preview = el('div', 'composer-v2-preview');
     function paintPreview() {
       preview.replaceChildren();
       const card = el('div');
-      card.style.cssText = 'background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;padding:12px 14px';
+      card.style.cssText = 'background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;padding:12px 14px;min-height:2.5rem';
+      let any = false;
       for (let bi = 0; bi < draft.blocks.length; bi++) {
         const b = draft.blocks[bi];
         if (b.type === 'separator') {
           const line = el('div');
           line.style.cssText = 'height:1px;background:#3a3e4a;margin:10px 0';
           card.append(line);
-        } else if (b.type === 'heading') {
-          const h = el('div', null, b.content || 'Heading');
-          h.style.cssText = 'font-weight:700;font-size:1.05rem;margin:0 0 6px;opacity:' + (b.content ? '1' : '.4');
+          any = true;
+        } else if (b.type === 'heading' && b.content) {
+          const h = el('div', null, b.content);
+          h.style.cssText = 'font-weight:700;font-size:1.05rem;margin:0 0 6px';
           card.append(h);
-        } else if (b.type === 'text') {
-          const t = el('div', null, b.content || 'Text');
-          t.style.cssText = 'line-height:1.45;white-space:pre-wrap;color:#949ba4;opacity:' + (b.content ? '1' : '.4');
+          any = true;
+        } else if (b.type === 'text' && b.content) {
+          const t = el('div', null, b.content);
+          t.style.cssText = 'line-height:1.45;white-space:pre-wrap;color:#dbdee1';
           card.append(t);
-        } else if (b.type === 'media') {
-          const m = el('div', null, b.url ? 'Image' : 'Image URL');
+          any = true;
+        } else if (b.type === 'media' && b.url) {
+          const m = el('div', null, 'Image');
           m.style.cssText = 'font-size:.8rem;margin:8px 0;padding:16px;border:1px dashed #3a3e4a;border-radius:8px;text-align:center;color:#949ba4';
           card.append(m);
+          any = true;
         }
       }
+      if (!any) card.append(el('span', 'muted', 'Preview appears as you type'));
       preview.append(card);
     }
 
     const list = el('div', 'composer-v2-list');
+    function midFor(b) {
+      const mid = el('div');
+      if (b.type === 'separator') {
+        mid.append(el('span', 'muted', 'Separator line'));
+      } else if (b.type === 'media') {
+        const inp = document.createElement('input');
+        inp.type = 'url';
+        inp.placeholder = 'Image URL (https://…)';
+        inp.value = b.url || '';
+        inp.addEventListener('input', function () { b.url = inp.value; paintPreview(); });
+        mid.append(inp);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.rows = b.type === 'heading' ? 2 : 4;
+        ta.placeholder = b.type === 'heading' ? 'Heading' : 'Write your message…';
+        ta.value = b.content || '';
+        ta.addEventListener('input', function () { b.content = ta.value; paintPreview(); });
+        mid.append(ta);
+      }
+      return mid;
+    }
+
     function paintBlocks() {
       list.replaceChildren();
       draft.blocks.forEach(function (b, idx) {
         const row = el('div', 'composer-v2-row');
-
-        const typeSel = document.createElement('select');
-        [['heading', 'Heading'], ['text', 'Text'], ['separator', 'Line'], ['media', 'Image']].forEach(function (pair) {
-          const o = document.createElement('option');
-          o.value = pair[0];
-          o.textContent = pair[1];
-          if (b.type === pair[0]) o.selected = true;
-          typeSel.appendChild(o);
+        const typeBar = el('div', 'composer-v2-types');
+        [['text', 'Text'], ['heading', 'Heading'], ['separator', 'Line'], ['media', 'Image']].forEach(function (pair) {
+          const btn = el('button', 'btn small' + (b.type === pair[0] ? ' on' : ''), pair[1]);
+          btn.type = 'button';
+          btn.addEventListener('click', function () {
+            if (b.type === pair[0]) return;
+            b.type = pair[0];
+            if (pair[0] === 'separator') { delete b.content; delete b.url; }
+            else if (pair[0] === 'media') { b.url = b.url || ''; delete b.content; }
+            else { b.content = b.content || ''; delete b.url; }
+            paintBlocks();
+          });
+          typeBar.append(btn);
         });
-        typeSel.addEventListener('change', function () {
-          const v = typeSel.value;
-          b.type = v;
-          if (v === 'separator') { delete b.content; delete b.url; }
-          else if (v === 'media') { b.url = b.url || ''; delete b.content; }
-          else { b.content = b.content || ''; delete b.url; }
-          paintBlocks();
-        });
-        row.append(typeSel);
-
-        const mid = el('div');
-        if (b.type === 'separator') {
-          mid.append(el('span', 'muted', 'Separator line'));
-        } else if (b.type === 'media') {
-          const inp = document.createElement('input');
-          inp.type = 'url';
-          inp.placeholder = 'https://…';
-          inp.value = b.url || '';
-          inp.addEventListener('input', function () { b.url = inp.value; paintPreview(); });
-          mid.append(inp);
-        } else {
-          const ta = document.createElement('textarea');
-          ta.rows = b.type === 'heading' ? 1 : 3;
-          ta.placeholder = b.type === 'heading' ? 'Heading' : 'Write something…';
-          ta.value = b.content || '';
-          ta.addEventListener('input', function () { b.content = ta.value; paintPreview(); });
-          mid.append(ta);
-        }
-        row.append(mid);
-
+        row.append(typeBar);
+        row.append(midFor(b));
         const tools = el('div', 'composer-v2-tools');
         const up = el('button', 'btn small', '↑');
         up.type = 'button';
@@ -2621,7 +2621,9 @@ function renderComposer() {
         });
         const rm = el('button', 'btn small danger', '×');
         rm.type = 'button';
+        rm.disabled = draft.blocks.length <= 1;
         rm.addEventListener('click', function () {
+          if (draft.blocks.length <= 1) return;
           draft.blocks.splice(idx, 1);
           paintBlocks();
         });
@@ -2650,15 +2652,16 @@ function renderComposer() {
 
     var savedTpl = ((state.overview && state.overview.composer) || []).find(function (t) { return t.name === draft.name; });
     if (savedTpl && Array.isArray(savedTpl.buttons) && savedTpl.buttons.length) {
-      panel.append(select(
-        'Buttons',
+      const comp = el('div', 'composer-v2-components');
+      comp.append(el('h2', null, 'Components'));
+      comp.append(el('p', 'hint', 'Buttons on this message. Placement applies when you send.'));
+      comp.append(select(
+        'Button placement',
         draft.buttonsOutside ? 'outside' : 'inside',
-        [
-          { value: 'inside', label: 'Inside message' },
-          { value: 'outside', label: 'Below message' },
-        ],
+        [{ value: 'inside', label: 'Inside message' }, { value: 'outside', label: 'Below message' }],
         function (v) { draft.buttonsOutside = v === 'outside'; }
       ));
+      panel.append(comp);
     }
 
     panel.append(el('p', 'hint', 'Preview'));
@@ -2668,6 +2671,8 @@ function renderComposer() {
 
 
 
+  // V2 skips legacy message body — content lives in blocks above
+  if (draft.format === 'legacy') {
   const a = draft.around;
 
   /* -- Plain text message (no embeds) ---------------------------------- */
@@ -2862,6 +2867,8 @@ function renderComposer() {
   }
   head.append(saveRow);
   parts.push(head);
+
+  } // end legacy-only body
 
   /* -- buttons ---------------------------------------------------------- */
   const btnPanel = el('div', 'panel');
