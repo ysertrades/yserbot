@@ -4892,6 +4892,54 @@ function renderAppearanceIndex() {
   wrap.replaceChildren(...nodes);
 }
 
+
+/** Discord-like V2 ticket panel preview (Appearance + Tickets). */
+function ticketPanelPreviewV2(title, body, topics, placeholder) {
+  const card = el('div', 'v2-preview');
+  card.style.cssText = 'background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;padding:14px 16px;max-width:420px';
+  const h = el('div', null, title || 'OPEN A TICKET');
+  h.style.cssText = 'font-weight:700;font-size:1.05rem;letter-spacing:.02em;margin:0 0 10px';
+  card.append(h);
+  const line = el('div');
+  line.style.cssText = 'height:1px;background:#3a3e4a;margin:0 0 10px';
+  card.append(line);
+  if (body) {
+    const d = el('p', 'muted', body);
+    d.style.cssText = 'margin:0 0 12px;line-height:1.45';
+    card.append(d);
+  }
+  const line2 = el('div');
+  line2.style.cssText = 'height:1px;background:#3a3e4a;margin:0 0 12px';
+  card.append(line2);
+  const sel = el('div', null, placeholder || 'Select a topic to open a ticket');
+  sel.style.cssText = 'border:1px solid #3a3e4a;border-radius:10px;padding:10px 12px;color:#949ba4;display:flex;justify-content:space-between;align-items:center';
+  sel.append(el('span', null, ' ›'));
+  card.append(sel);
+  const list = el('div');
+  list.style.cssText = 'margin-top:10px;border:1px solid #2a2d38;border-radius:10px;overflow:hidden';
+  const opts = Array.isArray(topics) && topics.length ? topics : [
+    { label: 'Billing', description: 'Plans, payments, Whop', emoji: '💳' },
+    { label: 'Access', description: "Roles, channels you can't see", emoji: '🔑' },
+    { label: 'Tech issue', description: 'Something broken', emoji: '🛠️' },
+    { label: 'Other', description: 'Anything else', emoji: '📁' },
+  ];
+  opts.forEach((t, i) => {
+    const row = el('div');
+    row.style.cssText = 'padding:10px 12px;border-top:' + (i ? '1px solid #2a2d38' : 'none');
+    const top = el('div', null, (t.emoji ? t.emoji + ' ' : '') + (t.label || t.value || 'Option'));
+    top.style.fontWeight = '600';
+    row.append(top);
+    if (t.description) {
+      const sub = el('div', 'muted', t.description);
+      sub.style.cssText = 'font-size:.82rem;margin-top:2px';
+      row.append(sub);
+    }
+    list.append(row);
+  });
+  card.append(list);
+  return card;
+}
+
 function renderAppearance() {
   const data = state.overview?.appearance;
   const body = $('#appearance-body');
@@ -4923,6 +4971,17 @@ function renderAppearance() {
   const preview = el('div', 'style-preview');
   const previewEntry = { ...entry, fixedFields: FIXED_FIELDS[entry.key] || [] };
   const repaint = () => {
+    if (entry.key === 'ticket.panel' && values.enabled !== false) {
+      const topics = (state.overview?.tickets?.panelTopics) || state._ticketTopicsDraft || null;
+      const ph = state.overview?.tickets?.panelPlaceholder || state._ticketPlaceholderDraft || 'Select a topic to open a ticket';
+      preview.replaceChildren(ticketPanelPreviewV2(
+        fillTokens(values.title, sample) || 'OPEN A TICKET',
+        fillTokens(values.body, sample),
+        topics,
+        ph,
+      ));
+      return;
+    }
     preview.replaceChildren(
       values.enabled === false
         ? el('p', 'muted', 'Switched off — this message is not sent at all.')
@@ -5007,6 +5066,80 @@ function renderAppearance() {
       renderOverview();
     }
   });
+
+
+  // Ticket panel topics (Components V2 dropdown) — stored on ticketSettings, not messageStyle
+  if (entry.key === 'ticket.panel') {
+    if (!state._ticketTopicsDraft) {
+      const cur = state.overview?.tickets?.panelTopics;
+      state._ticketTopicsDraft = Array.isArray(cur) && cur.length
+        ? cur.map(t => ({ ...t }))
+        : [
+            { value: 'billing', label: 'Billing', description: 'Plans, payments, Whop', emoji: '💳' },
+            { value: 'access', label: 'Access', description: "Roles, channels you can't see", emoji: '🔑' },
+            { value: 'tech', label: 'Tech issue', description: 'Something broken', emoji: '🛠️' },
+            { value: 'other', label: 'Other', description: 'Anything else', emoji: '📁' },
+          ];
+      state._ticketPlaceholderDraft = state.overview?.tickets?.panelPlaceholder || 'Select a topic to open a ticket';
+    }
+    const topicsBox = el('div', 'panel');
+    topicsBox.style.marginTop = '1rem';
+    topicsBox.append(el('h2', null, 'Ticket topics'));
+    topicsBox.append(el('p', 'hint', 'Dropdown options on the Components V2 panel. Value is the internal id (no spaces).'));
+    topicsBox.append(textField('Dropdown placeholder', state._ticketPlaceholderDraft, v => {
+      state._ticketPlaceholderDraft = v;
+      repaint();
+    }));
+    const listHost = el('div');
+    const paintTopics = () => {
+      listHost.replaceChildren();
+      state._ticketTopicsDraft.forEach((t, idx) => {
+        const row = el('div', 'item');
+        row.style.cssText = 'padding:.6rem 0;border-bottom:1px solid var(--rule,#2a2d38)';
+        row.append(
+          textField('Label', t.label || '', v => { t.label = v; repaint(); }),
+          textField('Value (id)', t.value || '', v => { t.value = v; }),
+          textField('Description', t.description || '', v => { t.description = v; repaint(); }),
+          textField('Emoji', t.emoji || '', v => { t.emoji = v; repaint(); }),
+        );
+        const rm = el('button', 'btn small danger', 'Remove');
+        rm.type = 'button';
+        rm.addEventListener('click', () => {
+          if (state._ticketTopicsDraft.length <= 1) { toast('Keep at least one topic.', 'bad'); return; }
+          state._ticketTopicsDraft.splice(idx, 1);
+          paintTopics();
+          repaint();
+        });
+        row.append(rm);
+        listHost.append(row);
+      });
+    };
+    paintTopics();
+    topicsBox.append(listHost);
+    const addT = el('button', 'btn small', '＋ Add topic');
+    addT.type = 'button';
+    addT.addEventListener('click', () => {
+      if (state._ticketTopicsDraft.length >= 25) return;
+      state._ticketTopicsDraft.push({ value: 'topic' + (state._ticketTopicsDraft.length + 1), label: 'New topic', description: '', emoji: '' });
+      paintTopics();
+      repaint();
+    });
+    topicsBox.append(addT);
+    card.append(topicsBox);
+
+    // Hook save to also persist topics
+    const origSave = save.onclick;
+    save.addEventListener('click', async () => {
+      try {
+        await post('tickets', {
+          panelTopics: state._ticketTopicsDraft,
+          panelPlaceholder: state._ticketPlaceholderDraft,
+          supportRoleIds: state.overview?.tickets?.supportRoleIds,
+        });
+      } catch (_) {}
+    }, true);
+  }
+
 
   const foot = el('div', 'actions');
   foot.append(save, revert, reset);

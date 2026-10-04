@@ -82,6 +82,7 @@ function read(guildId, guild) {
     id,
     name: guild?.roles?.cache?.get(id)?.name || id,
   }));
+  const ts = conf.ticketSettings || {};
   return {
     fields: FIELDS,
     values: {},
@@ -91,6 +92,8 @@ function read(guildId, guild) {
     supportRoleId: supportRoleIds[0] || null,
     supportRole: supportRoles[0]?.name || null,
     open: openTickets(guild),
+    panelTopics: Array.isArray(ts.panelTopics) ? ts.panelTopics : null,
+    panelPlaceholder: typeof ts.panelPlaceholder === 'string' ? ts.panelPlaceholder : null,
   };
 }
 
@@ -150,6 +153,33 @@ function save(guildId, body, guild) {
   }
 
   if (!changed.length) return { unchanged: true };
+  
+  if ('panelTopics' in body) {
+    const raw = body.panelTopics;
+    if (!Array.isArray(raw)) return { error: 'bad_topics' };
+    const cleaned = [];
+    for (const t of raw.slice(0, 25)) {
+      if (!t || typeof t !== 'object') continue;
+      const value = String(t.value || t.id || '').trim().slice(0, 100).replace(/[^a-z0-9_-]/gi, '') || null;
+      const label = String(t.label || '').trim().slice(0, 100);
+      if (!value || !label) continue;
+      const row = { value, label };
+      if (t.description) row.description = String(t.description).trim().slice(0, 100);
+      if (t.emoji) row.emoji = String(t.emoji).trim().slice(0, 32);
+      cleaned.push(row);
+    }
+    if (cleaned.length < 1) return { error: 'need_topics' };
+    next.panelTopics = cleaned;
+    changed.push('panel topics');
+  }
+  if ('panelPlaceholder' in body && typeof body.panelPlaceholder === 'string') {
+    const ph = body.panelPlaceholder.trim().slice(0, 150);
+    if (ph !== (current.panelPlaceholder || '')) {
+      next.panelPlaceholder = ph || undefined;
+      changed.push('panel placeholder');
+    }
+  }
+
   config[guildId].ticketSettings = next;
   writeJson('config.json', config);
   return { ok: true, changed };
