@@ -2479,14 +2479,108 @@ function renderComposer() {
   // to rather than each field having to cope with it being absent.
   draft.around = draft.around || { above: '', below: '', picture: '', pictureAbove: '' };
   if (draft.around.pictureAbove == null) draft.around.pictureAbove = '';
+  // New messages default to Components V2; existing legacy templates stay legacy.
+  if (!draft.format && (!draft.embeds || !draft.embeds.length) && !draft.blocks) {
+    draft.format = 'v2';
+    draft.blocks = [{ type: 'text', content: '' }, { type: 'separator' }, { type: 'text', content: '' }];
+    draft.buttonsOutside = false;
+    draft.embeds = [];
+  }
+  if (draft.format === 'v2' && !Array.isArray(draft.blocks)) draft.blocks = [];
   state.draft = draft;
 
   const parts = [];
 
   /* -- name + embeds --------------------------------------------------- */
   const head = el('div', 'panel');
+
   head.append(el('h2', null, 'Message'));
   head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
+  // Format toggle
+  head.append(select('Format', draft.format === 'v2' ? 'v2' : 'legacy', [
+    { value: 'v2', label: 'Component V2 (default)' },
+    { value: 'legacy', label: 'Classic embed' },
+  ], v => {
+    draft.format = v;
+    if (v === 'v2' && !draft.blocks?.length) {
+      draft.blocks = [{ type: 'text', content: '' }, { type: 'separator' }, { type: 'text', content: '' }];
+      draft.embeds = [];
+    }
+    state.draft = draft;
+    renderComposer();
+  }));
+
+  if (draft.format === 'v2') {
+    const blocksPanel = el('div', 'panel');
+    blocksPanel.append(el('h2', null, 'Components'));
+    blocksPanel.append(el('p', 'hint', 'Build the message as blocks. Separators are real Discord V2 lines, not dashes.'));
+    if (!Array.isArray(draft.blocks)) draft.blocks = [];
+    const host = el('div');
+    const paintBlocks = () => {
+      host.replaceChildren();
+      draft.blocks.forEach((b, idx) => {
+        const card = el('div', 'item');
+        card.style.cssText = 'padding:.75rem 0;border-bottom:1px solid var(--rule,#2a2d38)';
+        const tag = el('span', 'tag', b.type || 'block');
+        card.append(tag);
+        if (b.type === 'text' || b.type === 'heading') {
+          card.append(areaField(b.type === 'heading' ? 'Heading' : 'Text', b.content || '', v => { b.content = v; }));
+        } else if (b.type === 'separator') {
+          card.append(el('p', 'muted', '— horizontal separator line —'));
+        } else if (b.type === 'media') {
+          card.append(textField('Image URL (https)', b.url || '', v => { b.url = v; }));
+        }
+        const row = el('div', 'actions');
+        const up = el('button', 'btn small', '↑');
+        up.type = 'button';
+        up.disabled = idx === 0;
+        up.addEventListener('click', () => {
+          if (idx < 1) return;
+          const t = draft.blocks[idx - 1];
+          draft.blocks[idx - 1] = draft.blocks[idx];
+          draft.blocks[idx] = t;
+          paintBlocks();
+        });
+        const down = el('button', 'btn small', '↓');
+        down.type = 'button';
+        down.disabled = idx >= draft.blocks.length - 1;
+        down.addEventListener('click', () => {
+          if (idx >= draft.blocks.length - 1) return;
+          const t = draft.blocks[idx + 1];
+          draft.blocks[idx + 1] = draft.blocks[idx];
+          draft.blocks[idx] = t;
+          paintBlocks();
+        });
+        const rm = el('button', 'btn small danger', 'Remove');
+        rm.type = 'button';
+        rm.addEventListener('click', () => { draft.blocks.splice(idx, 1); paintBlocks(); });
+        row.append(up, down, rm);
+        card.append(row);
+        host.append(card);
+      });
+    };
+    paintBlocks();
+    blocksPanel.append(host);
+    const addRow = el('div', 'actions');
+    const addText = el('button', 'btn small', '+ Text');
+    addText.type = 'button';
+    addText.addEventListener('click', () => { draft.blocks.push({ type: 'text', content: '' }); paintBlocks(); });
+    const addSep = el('button', 'btn small', '+ Separator');
+    addSep.type = 'button';
+    addSep.addEventListener('click', () => { draft.blocks.push({ type: 'separator' }); paintBlocks(); });
+    const addHead = el('button', 'btn small', '+ Heading');
+    addHead.type = 'button';
+    addHead.addEventListener('click', () => { draft.blocks.push({ type: 'heading', content: '' }); paintBlocks(); });
+    addRow.append(addText, addHead, addSep);
+    blocksPanel.append(addRow);
+    blocksPanel.append(select('Button placement', draft.buttonsOutside ? 'outside' : 'inside', [
+      { value: 'inside', label: 'Inside message (default)' },
+      { value: 'outside', label: 'Outside message' },
+    ], v => { draft.buttonsOutside = v === 'outside'; }));
+    parts.push(blocksPanel);
+  }
+
+
 
   const a = draft.around;
 
@@ -2649,7 +2743,10 @@ function renderComposer() {
       if (bare) { toast(`Embed ${i + 1} is empty — add content or remove it.`, 'bad'); return; }
     }
     saveBtn.disabled = true;
-    const res = await post('template', { name: draft.name, embeds: draft.embeds, around: draft.around });
+    const res = await post('template', { name: draft.name, embeds: draft.embeds, around: draft.around,
+        format: draft.format || 'legacy',
+        blocks: draft.blocks || [],
+        buttonsOutside: !!draft.buttonsOutside});
     saveBtn.disabled = false;
     if (res?.ok) { state.tplName = draft.name; state.draft = null; renderComposer(); }
     else if (res?.error === 'empty_message') toast('Add an embed or some text around the message.', 'bad');
