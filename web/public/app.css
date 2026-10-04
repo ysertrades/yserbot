@@ -3526,3 +3526,28 @@ button.primary:hover {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Composer V2 — stable progressive editor */
+.composer-v2 .queue-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.35rem}
+.composer-v2 .queue-head h2{margin:0}
+.composer-v2-list{margin-top:.25rem}
+.composer-v2-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:.5rem .65rem;
+  align-items:start;
+  padding:.65rem 0;
+  border-bottom:1px solid var(--rule,#2a2d38);
+}
+.composer-v2-types{display:flex;flex-wrap:wrap;gap:.3rem;grid-column:1 / -1}
+.composer-v2-types .btn.on{outline:1px solid var(--accent,#5865F2);background:rgba(88,101,242,.12)}
+.composer-v2-row textarea,
+.composer-v2-row input[type=url]{width:100%;box-sizing:border-box;margin:0}
+.composer-v2-tools{display:flex;flex-direction:column;gap:.2rem}
+.composer-v2-add{margin-top:.55rem;flex-wrap:wrap;gap:.35rem}
+.composer-v2-preview{margin-top:.35rem}
+.composer-v2-components{margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--rule,#2a2d38)}
+@media (max-width:720px){
+  .composer-v2-row{grid-template-columns:1fr}
+  .composer-v2-tools{flex-direction:row}
+}
