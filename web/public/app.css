@@ -3501,3 +3501,28 @@ button.primary:hover {
   outline: 2px solid rgba(139, 92, 246, 0.65);
   outline-offset: 2px;
 }
+
+
+/* Composer V2 — compact structure editor */
+.composer-v2 .composer-v2-list { margin-top: .35rem; }
+.composer-v2-row select { max-width: 72px; }
+.composer-v2-row textarea,
+.composer-v2-row input[type=url] {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+.composer-v2-preview { margin-top: .5rem; }
+.composer-v2 .queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .5rem;
+}
+.composer-v2 .queue-head h2 { margin: 0; }
+@media (max-width: 720px) {
+  .composer-v2-row {
+    grid-template-columns: 1fr !important;
+  }
+}

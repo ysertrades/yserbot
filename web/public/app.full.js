@@ -2496,45 +2496,113 @@ function renderComposer() {
 
   head.append(el('h2', null, 'Message'));
   head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
-  // Format toggle
-  head.append(select('Format', draft.format === 'v2' ? 'v2' : 'legacy', [
-    { value: 'v2', label: 'Component V2 (default)' },
-    { value: 'legacy', label: 'Classic embed' },
-  ], v => {
-    draft.format = v;
-    if (v === 'v2' && !draft.blocks?.length) {
-      draft.blocks = [{ type: 'text', content: '' }, { type: 'separator' }, { type: 'text', content: '' }];
-      draft.embeds = [];
-    }
-    state.draft = draft;
-    renderComposer();
-  }));
 
-  if (draft.format === 'v2') {
-    const blocksPanel = el('div', 'panel');
-    blocksPanel.append(el('h2', null, 'Components'));
-    blocksPanel.append(el('p', 'hint', 'Build the message as blocks. Separators are real Discord V2 lines, not dashes.'));
+  // Compact V2 structure editor
+  if (draft.format !== 'legacy') {
+    draft.format = 'v2';
     if (!Array.isArray(draft.blocks)) draft.blocks = [];
-    const host = el('div');
-    const paintBlocks = () => {
-      host.replaceChildren();
-      draft.blocks.forEach((b, idx) => {
-        const card = el('div', 'item');
-        card.style.cssText = 'padding:.75rem 0;border-bottom:1px solid var(--rule,#2a2d38)';
-        const tag = el('span', 'tag', b.type || 'block');
-        card.append(tag);
-        if (b.type === 'text' || b.type === 'heading') {
-          card.append(areaField(b.type === 'heading' ? 'Heading' : 'Text', b.content || '', v => { b.content = v; }));
-        } else if (b.type === 'separator') {
-          card.append(el('p', 'muted', '— horizontal separator line —'));
+    if (!draft.blocks.length) {
+      draft.blocks = [
+        { type: 'heading', content: '' },
+        { type: 'separator' },
+        { type: 'text', content: '' },
+      ];
+    }
+
+    const panel = el('div', 'panel composer-v2');
+    const top = el('div', 'queue-head');
+    top.append(el('h2', null, 'Structure'));
+    const mode = el('button', 'btn small', 'Classic');
+    mode.type = 'button';
+    mode.title = 'Switch to classic embed';
+    mode.addEventListener('click', function () {
+      draft.format = 'legacy';
+      if (!draft.embeds || !draft.embeds.length) {
+        draft.embeds = [{ title: '', description: '', color: '#5865F2', fields: [] }];
+      }
+      state.draft = draft;
+      renderComposer();
+    });
+    top.append(mode);
+    panel.append(top);
+
+    const preview = el('div', 'composer-v2-preview');
+    function paintPreview() {
+      preview.replaceChildren();
+      const card = el('div');
+      card.style.cssText = 'background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;padding:12px 14px';
+      for (let bi = 0; bi < draft.blocks.length; bi++) {
+        const b = draft.blocks[bi];
+        if (b.type === 'separator') {
+          const line = el('div');
+          line.style.cssText = 'height:1px;background:#3a3e4a;margin:10px 0';
+          card.append(line);
+        } else if (b.type === 'heading') {
+          const h = el('div', null, b.content || 'Heading');
+          h.style.cssText = 'font-weight:700;font-size:1.05rem;margin:0 0 6px;opacity:' + (b.content ? '1' : '.4');
+          card.append(h);
+        } else if (b.type === 'text') {
+          const t = el('div', null, b.content || 'Text');
+          t.style.cssText = 'line-height:1.45;white-space:pre-wrap;color:#949ba4;opacity:' + (b.content ? '1' : '.4');
+          card.append(t);
         } else if (b.type === 'media') {
-          card.append(textField('Image URL (https)', b.url || '', v => { b.url = v; }));
+          const m = el('div', null, b.url ? 'Image' : 'Image URL');
+          m.style.cssText = 'font-size:.8rem;margin:8px 0;padding:16px;border:1px dashed #3a3e4a;border-radius:8px;text-align:center;color:#949ba4';
+          card.append(m);
         }
-        const row = el('div', 'actions');
+      }
+      preview.append(card);
+    }
+
+    const list = el('div', 'composer-v2-list');
+    function paintBlocks() {
+      list.replaceChildren();
+      draft.blocks.forEach(function (b, idx) {
+        const row = el('div', 'composer-v2-row');
+
+        const typeSel = document.createElement('select');
+        [['heading', 'Heading'], ['text', 'Text'], ['separator', 'Line'], ['media', 'Image']].forEach(function (pair) {
+          const o = document.createElement('option');
+          o.value = pair[0];
+          o.textContent = pair[1];
+          if (b.type === pair[0]) o.selected = true;
+          typeSel.appendChild(o);
+        });
+        typeSel.addEventListener('change', function () {
+          const v = typeSel.value;
+          b.type = v;
+          if (v === 'separator') { delete b.content; delete b.url; }
+          else if (v === 'media') { b.url = b.url || ''; delete b.content; }
+          else { b.content = b.content || ''; delete b.url; }
+          paintBlocks();
+        });
+        row.append(typeSel);
+
+        const mid = el('div');
+        if (b.type === 'separator') {
+          mid.append(el('span', 'muted', 'Separator line'));
+        } else if (b.type === 'media') {
+          const inp = document.createElement('input');
+          inp.type = 'url';
+          inp.placeholder = 'https://…';
+          inp.value = b.url || '';
+          inp.addEventListener('input', function () { b.url = inp.value; paintPreview(); });
+          mid.append(inp);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.rows = b.type === 'heading' ? 1 : 3;
+          ta.placeholder = b.type === 'heading' ? 'Heading' : 'Write something…';
+          ta.value = b.content || '';
+          ta.addEventListener('input', function () { b.content = ta.value; paintPreview(); });
+          mid.append(ta);
+        }
+        row.append(mid);
+
+        const tools = el('div', 'composer-v2-tools');
         const up = el('button', 'btn small', '↑');
         up.type = 'button';
         up.disabled = idx === 0;
-        up.addEventListener('click', () => {
+        up.addEventListener('click', function () {
           if (idx < 1) return;
           const t = draft.blocks[idx - 1];
           draft.blocks[idx - 1] = draft.blocks[idx];
@@ -2544,40 +2612,58 @@ function renderComposer() {
         const down = el('button', 'btn small', '↓');
         down.type = 'button';
         down.disabled = idx >= draft.blocks.length - 1;
-        down.addEventListener('click', () => {
+        down.addEventListener('click', function () {
           if (idx >= draft.blocks.length - 1) return;
           const t = draft.blocks[idx + 1];
           draft.blocks[idx + 1] = draft.blocks[idx];
           draft.blocks[idx] = t;
           paintBlocks();
         });
-        const rm = el('button', 'btn small danger', 'Remove');
+        const rm = el('button', 'btn small danger', '×');
         rm.type = 'button';
-        rm.addEventListener('click', () => { draft.blocks.splice(idx, 1); paintBlocks(); });
-        row.append(up, down, rm);
-        card.append(row);
-        host.append(card);
+        rm.addEventListener('click', function () {
+          draft.blocks.splice(idx, 1);
+          paintBlocks();
+        });
+        tools.append(up, down, rm);
+        row.append(tools);
+        list.append(row);
       });
-    };
+      paintPreview();
+    }
     paintBlocks();
-    blocksPanel.append(host);
-    const addRow = el('div', 'actions');
-    const addText = el('button', 'btn small', '+ Text');
-    addText.type = 'button';
-    addText.addEventListener('click', () => { draft.blocks.push({ type: 'text', content: '' }); paintBlocks(); });
-    const addSep = el('button', 'btn small', '+ Separator');
-    addSep.type = 'button';
-    addSep.addEventListener('click', () => { draft.blocks.push({ type: 'separator' }); paintBlocks(); });
-    const addHead = el('button', 'btn small', '+ Heading');
-    addHead.type = 'button';
-    addHead.addEventListener('click', () => { draft.blocks.push({ type: 'heading', content: '' }); paintBlocks(); });
-    addRow.append(addText, addHead, addSep);
-    blocksPanel.append(addRow);
-    blocksPanel.append(select('Button placement', draft.buttonsOutside ? 'outside' : 'inside', [
-      { value: 'inside', label: 'Inside message (default)' },
-      { value: 'outside', label: 'Outside message' },
-    ], v => { draft.buttonsOutside = v === 'outside'; }));
-    parts.push(blocksPanel);
+    panel.append(list);
+
+    const addBar = el('div', 'actions composer-v2-add');
+    [['text', 'Text'], ['heading', 'Heading'], ['separator', 'Line'], ['media', 'Image']].forEach(function (pair) {
+      const btn = el('button', 'btn small', '+ ' + pair[1]);
+      btn.type = 'button';
+      btn.addEventListener('click', function () {
+        if (pair[0] === 'separator') draft.blocks.push({ type: 'separator' });
+        else if (pair[0] === 'media') draft.blocks.push({ type: 'media', url: '' });
+        else draft.blocks.push({ type: pair[0], content: '' });
+        paintBlocks();
+      });
+      addBar.append(btn);
+    });
+    panel.append(addBar);
+
+    var savedTpl = ((state.overview && state.overview.composer) || []).find(function (t) { return t.name === draft.name; });
+    if (savedTpl && Array.isArray(savedTpl.buttons) && savedTpl.buttons.length) {
+      panel.append(select(
+        'Buttons',
+        draft.buttonsOutside ? 'outside' : 'inside',
+        [
+          { value: 'inside', label: 'Inside message' },
+          { value: 'outside', label: 'Below message' },
+        ],
+        function (v) { draft.buttonsOutside = v === 'outside'; }
+      ));
+    }
+
+    panel.append(el('p', 'hint', 'Preview'));
+    panel.append(preview);
+    parts.push(panel);
   }
 
 
