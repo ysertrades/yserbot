@@ -963,6 +963,11 @@ module.exports = {
     if (interaction.isStringSelectMenu()) {
       const id = interaction.customId;
       try {
+        // Ticket panel topic dropdown (Components V2)
+        if (id === 'ticket_topic_select') {
+          return await client.commands.get('ticket')?.handleButton(interaction, [], client);
+        }
+
         // XP Ladder Desk — mode select
         if (id.startsWith('lb:')) {
           return await client.commands.get('leaderboard')?.handleButton(interaction);
