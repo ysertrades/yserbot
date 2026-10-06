@@ -6083,6 +6083,7 @@ function syncFeatureNav() {
     document.getElementById('nav-' + name) || document.querySelector('[data-goto="' + name + '"]');
 
   const econOff = !featureOn('economy');
+  const casOff = !featureOn('casino');
   const calOff  = !featureOn('econ_calendar');
   const whopOff = !featureOn('whop');
   const gawOff  = !featureOn('giveaways');
