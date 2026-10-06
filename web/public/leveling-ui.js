@@ -294,14 +294,23 @@
 
 
 
-    // Daily XP Leaderboard — America/New_York, panel pickOne (cselect)
-    (function () {
-      const dl = L.dailyLeaderboard || {};
-      const dailyPanel = el('div', 'panel lvl-daily-lb');
-      dailyPanel.append(el('h2', null, 'Daily XP Leaderboard'));
-      dailyPanel.append(el('p', 'muted', 'Posts today\'s XP rankings once per day at the exact Eastern Time you set (America/New_York — EST/EDT automatic).'));
 
-      const dlState = {
+    // ═══ Daily Leaderboard Automation (existing XP leaderboard + schedule) ═══
+    (function () {
+      const dl = (L && L.dailyLeaderboard) || {};
+      const card = el('div', 'panel lvl-auto-card');
+      const head = el('div', 'queue-head');
+      head.append(el('h2', null, 'Daily leaderboard automation'));
+      const onLbl = el('label', 'lvl-auto-toggle');
+      const onChk = document.createElement('input');
+      onChk.type = 'checkbox';
+      onChk.checked = !!dl.enabled;
+      onLbl.append(onChk, document.createTextNode(' ON'));
+      head.append(onLbl);
+      card.append(head);
+      card.append(el('p', 'muted', 'Publishes the existing daily XP rankings every day at the Eastern Time you choose. Does not change how XP is calculated.'));
+
+      const st = {
         enabled: !!dl.enabled,
         hour: dl.hour != null ? dl.hour : 20,
         minute: dl.minute != null ? dl.minute : 0,
@@ -313,18 +322,10 @@
         footer: dl.footer || '',
       };
 
-      const onRow = el('label', 'field');
-      const onChk = document.createElement('input');
-      onChk.type = 'checkbox'; onChk.checked = dlState.enabled;
-      onChk.addEventListener('change', function () { dlState.enabled = onChk.checked; paintNext(); });
-      onRow.append(onChk, document.createTextNode(' Automatic posting'));
-      dailyPanel.append(onRow);
-
-      const nextEl = el('p', 'hint', '');
+      const nextP = el('p', 'lvl-auto-next');
       function paintNext() {
-        if (!dlState.enabled) { nextEl.textContent = 'Next post: — (disabled)'; return; }
+        if (!st.enabled) { nextP.innerHTML = '<span class="tag">OFF</span> Next post: —'; return; }
         try {
-          // mirror formatNextPostLabel client-side
           const ET = 'America/New_York';
           const pad = function (n) { return String(n).padStart(2, '0'); };
           const now = Date.now();
@@ -341,92 +342,95 @@
             return hi;
           }
           var p0 = Object.fromEntries(fmt.formatToParts(new Date(now)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
-          var y = +p0.year, m = +p0.month, d = +p0.day;
-          var t = zoned(y, m, d, dlState.hour, dlState.minute);
+          var t = zoned(+p0.year, +p0.month, +p0.day, st.hour, st.minute);
           if (t <= now + 2000) {
-            var noon = zoned(y, m, d, 12, 0) + 36 * 3600e3;
+            var noon = zoned(+p0.year, +p0.month, +p0.day, 12, 0) + 36 * 3600e3;
             var p1 = Object.fromEntries(fmt.formatToParts(new Date(noon)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
-            t = zoned(+p1.year, +p1.month, +p1.day, dlState.hour, dlState.minute);
+            t = zoned(+p1.year, +p1.month, +p1.day, st.hour, st.minute);
           }
           var pF = Object.fromEntries(fmt.formatToParts(new Date(t)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
           var hh = +pF.hour, mm = +pF.minute;
           var h12 = ((hh + 11) % 12) + 1, ampm = hh >= 12 ? 'PM' : 'AM';
           var todayKey = p0.year + '-' + p0.month + '-' + p0.day;
           var fireKey = pF.year + '-' + pF.month + '-' + pF.day;
-          nextEl.textContent = 'Next post: ' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + h12 + ':' + pad(mm) + ' ' + ampm + ' ET';
-        } catch (e) { nextEl.textContent = 'Next post: (timezone calc unavailable)'; }
+          nextP.innerHTML = '<span class="pill on">ACTIVE</span> Next post: <strong>' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + h12 + ':' + pad(mm) + ' ' + ampm + ' ET</strong>';
+        } catch (e) { nextP.textContent = 'Next post: (unavailable)'; }
       }
+      onChk.addEventListener('change', function () { st.enabled = onChk.checked; paintNext(); });
       paintNext();
-      dailyPanel.append(nextEl);
+      card.append(nextP);
 
-      dailyPanel.append(el('h3', null, 'Schedule (Eastern Time)'));
-      const sched = el('div', 'lvl-daily-sched');
+      card.append(el('h3', null, 'Schedule'));
+      card.append(el('p', 'hint', 'Timezone locked to Eastern Time (America/New_York) — handles EST/EDT automatically.'));
       const timeInp = document.createElement('input');
       timeInp.type = 'time';
-      timeInp.value = String(dlState.hour).padStart(2, '0') + ':' + String(dlState.minute).padStart(2, '0');
+      timeInp.value = String(st.hour).padStart(2, '0') + ':' + String(st.minute).padStart(2, '0');
       timeInp.addEventListener('change', function () {
         var p = (timeInp.value || '20:00').split(':');
-        dlState.hour = parseInt(p[0], 10) || 0;
-        dlState.minute = parseInt(p[1], 10) || 0;
-        paintNext();
+        st.hour = parseInt(p[0], 10) || 0; st.minute = parseInt(p[1], 10) || 0; paintNext();
       });
-      sched.append(el('span', 'hint', 'Post time (ET)'), timeInp, el('span', 'hint', 'Timezone: America/New_York'));
-      dailyPanel.append(sched);
+      card.append(timeInp);
 
-      dailyPanel.append(el('h3', null, 'Destination'));
-      if (typeof window.pickOne === 'function') {
-        dailyPanel.append(window.pickOne('Post channel', 'channel', dlState.channelId, function (v) { dlState.channelId = v || ''; }, { blank: 'Select channel…' }));
-        dailyPanel.append(window.pickOne('Ping role', 'role', dlState.roleId, function (v) { dlState.roleId = v || ''; }, { blank: 'No role ping' }));
-      } else if (typeof pickOne === 'function') {
-        dailyPanel.append(pickOne('Post channel', 'channel', dlState.channelId, function (v) { dlState.channelId = v || ''; }, { blank: 'Select channel…' }));
-        dailyPanel.append(pickOne('Ping role', 'role', dlState.roleId, function (v) { dlState.roleId = v || ''; }, { blank: 'No role ping' }));
+      card.append(el('h3', null, 'Destination'));
+      const pick = (typeof window.pickOne === 'function') ? window.pickOne : (typeof pickOne === 'function' ? pickOne : null);
+      if (pick) {
+        card.append(pick('Channel', 'channel', st.channelId, function (v) { st.channelId = v || ''; }, { blank: 'Select channel…' }));
+        card.append(pick('Ping role', 'role', st.roleId, function (v) { st.roleId = v || ''; }, { blank: 'No role ping' }));
       } else {
-        dailyPanel.append(el('p', 'muted', 'Channel/role pickers loading… refresh if missing.'));
+        card.append(el('p', 'muted', 'Open this tab after the main panel loads so channel/role pickers appear.'));
       }
 
-      dailyPanel.append(el('h3', null, 'Leaderboard'));
-      const limSel = document.createElement('select');
-      [5,10,15,20,25].forEach(function (n) {
-        var o = document.createElement('option'); o.value = String(n); o.textContent = 'Top ' + n;
-        if (n === dlState.limit) o.selected = true; limSel.appendChild(o);
-      });
-      limSel.addEventListener('change', function () { dlState.limit = parseInt(limSel.value, 10) || 10; });
-      dailyPanel.append(limSel);
+      card.append(el('h3', null, 'Appearance'));
+      var titleInp = document.createElement('input'); titleInp.type = 'text'; titleInp.value = st.title;
+      titleInp.addEventListener('input', function () { st.title = titleInp.value; });
+      var descInp = document.createElement('input'); descInp.type = 'text'; descInp.value = st.description || '';
+      descInp.addEventListener('input', function () { descInp && (st.description = descInp.value); });
+      card.append(titleInp, descInp);
 
-      dailyPanel.append(el('h3', null, 'Appearance'));
-      var titleInp = document.createElement('input'); titleInp.type = 'text'; titleInp.value = dlState.title;
-      titleInp.addEventListener('input', function () { dlState.title = titleInp.value; });
-      var descInp = document.createElement('input'); descInp.type = 'text'; descInp.value = dlState.description || '';
-      descInp.addEventListener('input', function () { dlState.description = descInp.value; });
-      var footInp = document.createElement('input'); footInp.type = 'text'; footInp.placeholder = 'Footer'; footInp.value = dlState.footer || '';
-      footInp.addEventListener('input', function () { dlState.footer = footInp.value; });
-      dailyPanel.append(titleInp, descInp, footInp);
-
-      var dlSave = el('button', 'btn', 'Save daily leaderboard');
-      dlSave.type = 'button';
-      dlSave.addEventListener('click', async function () {
-        dlSave.disabled = true;
+      const actions = el('div', 'actions');
+      const testBtn = el('button', 'btn small', 'Test post');
+      testBtn.type = 'button';
+      testBtn.addEventListener('click', async function () {
+        if (!st.channelId) { if (typeof toast === 'function') toast('Pick a channel first', 'bad'); return; }
+        testBtn.disabled = true;
         try {
           var res = await post({
             dailyLeaderboard: {
-              enabled: dlState.enabled, hour: dlState.hour, minute: dlState.minute,
-              timeZone: 'America/New_York',
-              channelId: dlState.channelId || null, roleId: dlState.roleId || null,
-              limit: dlState.limit, title: dlState.title, description: dlState.description,
-              footer: dlState.footer || null,
+              enabled: st.enabled, hour: st.hour, minute: st.minute, timeZone: 'America/New_York',
+              channelId: st.channelId, roleId: st.roleId || null, limit: st.limit,
+              title: st.title, description: st.description, footer: st.footer || null,
+            },
+            testDailyLeaderboard: true,
+          });
+          if (typeof toast === 'function') toast((res && res.ok) ? 'Test post sent' : ((res && res.error) || 'Test failed'), res && res.ok ? 'good' : 'bad');
+        } catch (e) {
+          if (typeof toast === 'function') toast('Test failed', 'bad');
+        } finally { testBtn.disabled = false; }
+      });
+      const saveBtn = el('button', 'btn', 'Save changes');
+      saveBtn.type = 'button';
+      saveBtn.addEventListener('click', async function () {
+        saveBtn.disabled = true;
+        try {
+          var res = await post({
+            dailyLeaderboard: {
+              enabled: st.enabled, hour: st.hour, minute: st.minute, timeZone: 'America/New_York',
+              channelId: st.channelId || null, roleId: st.roleId || null, limit: st.limit,
+              title: st.title, description: st.description, footer: st.footer || null,
             },
           });
           if (res && res.overview) state.overview = res.overview;
           else if (res && res.levels && state.overview && state.overview.features) state.overview.features.levels = res.levels;
-          if (typeof toast === 'function') toast('Daily leaderboard saved', 'good');
-          render();
+          if (typeof toast === 'function') toast('Automation saved', 'good');
+          paintNext();
         } catch (e) {
           if (typeof toast === 'function') toast('Save failed', 'bad');
-        } finally { dlSave.disabled = false; }
+        } finally { saveBtn.disabled = false; }
       });
-      dailyPanel.append(dlSave);
-      root.append(dailyPanel);
-      try { if (typeof enhanceSelects === 'function') enhanceSelects(dailyPanel); } catch (e) {}
+      actions.append(testBtn, saveBtn);
+      card.append(actions);
+      root.append(card);
+      try { if (typeof enhanceSelects === 'function') enhanceSelects(card); } catch (e) {}
     })();
 
     const ranks = el('div', 'panel');

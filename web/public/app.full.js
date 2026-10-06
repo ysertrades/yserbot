@@ -2502,143 +2502,118 @@ function renderComposer() {
   head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
 
 
-  // ── Composer V2: progressive, stable (no select/cselect churn) ──
+
+  // ── Composer CANVAS (V2) — one writing surface + toolbar ──
   if (draft.format !== 'legacy') {
     draft.format = 'v2';
     if (!Array.isArray(draft.blocks)) draft.blocks = [];
     if (!draft.blocks.length) draft.blocks = [{ type: 'text', content: '' }];
+    if (draft._active == null) draft._active = 0;
+    if (draft._dirty == null) draft._dirty = false;
+    if (draft._boldNext == null) draft._boldNext = false;
 
-    const panel = el('div', 'panel composer-v2');
-    const top = el('div', 'queue-head');
-    top.append(el('h2', null, 'Message'));
-    const mode = el('button', 'btn small', 'Use classic embed');
-    mode.type = 'button';
-    mode.addEventListener('click', function () {
+    const panel = el('div', 'panel composer-canvas');
+    // Mode switch
+    const modeRow = el('div', 'composer-mode-row');
+    const v2Btn = el('button', 'btn small on', 'Component V2');
+    v2Btn.type = 'button';
+    const classicBtn = el('button', 'btn small', 'Classic embed');
+    classicBtn.type = 'button';
+    classicBtn.addEventListener('click', function () {
       draft.format = 'legacy';
       if (!draft.embeds || !draft.embeds.length) {
-        draft.embeds = [{ title: '', description: '', color: '#5865F2', fields: [] }];
+        draft.embeds = [{ title: '', description: (draft.blocks[0] && draft.blocks[0].content) || '', color: '#5865F2', fields: [] }];
       }
       state.draft = draft;
       renderComposer();
     });
-    top.append(mode);
-    panel.append(top);
-    panel.append(el('p', 'hint', 'One message field by default. Add a heading, line, or image only when you need it.'));
+    modeRow.append(v2Btn, classicBtn, el('span', 'tag on', 'ACTIVE'));
+    panel.append(modeRow);
+    panel.append(textField('Name', draft.name || '', function (v) { draft.name = v; draft._dirty = true; paintSave(); }));
 
-    const preview = el('div', 'composer-v2-preview');
-    function paintPreview() {
+    // Canvas list — stable nodes: only rebuild structure when blocks length/type order changes
+    const canvas = el('div', 'composer-canvas-body');
+    canvas.setAttribute('data-composer-canvas', '1');
+    const preview = el('div', 'composer-live-preview');
+    let structureSig = '';
+
+    function blockSig() {
+      return draft.blocks.map(function (b) { return b.type + (b.level || ''); }).join('|');
+    }
+
+    function paintPreviewOnly() {
       preview.replaceChildren();
-      const card = el('div');
-      card.style.cssText = 'background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;padding:12px 14px;min-height:2.5rem';
-      let any = false;
-      for (let bi = 0; bi < draft.blocks.length; bi++) {
-        const b = draft.blocks[bi];
+      const card = el('div', 'v2-preview-card');
+      draft.blocks.forEach(function (b) {
         if (b.type === 'separator') {
-          const line = el('div');
-          line.style.cssText = 'height:1px;background:#3a3e4a;margin:10px 0';
+          const line = el('div', 'v2-sep');
           card.append(line);
-          any = true;
-        } else if (b.type === 'heading' && b.content) {
-          const h = el('div', null, b.content);
-          h.style.cssText = 'font-weight:700;font-size:1.05rem;margin:0 0 6px';
+        } else if (b.type === 'heading') {
+          const t = (b.content || '').replace(/^#{1,3}\s*/, '') || 'Heading';
+          const h = el('div', 'v2-h' + (b.level || 1), t);
+          if (!(b.content || '').replace(/^#{1,3}\s*/, '')) h.classList.add('placeholder');
           card.append(h);
-          any = true;
-        } else if (b.type === 'text' && b.content) {
-          const t = el('div', null, b.content);
-          t.style.cssText = 'line-height:1.45;white-space:pre-wrap;color:#dbdee1';
+        } else if (b.type === 'text') {
+          const raw = b.content || '';
+          const t = el('div', 'v2-text');
+          // simple **bold** render
+          t.textContent = raw || 'Text';
+          if (!raw) t.classList.add('placeholder');
+          else {
+            t.innerHTML = '';
+            raw.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
+              if (/^\*\*[^*]+\*\*$/.test(part)) {
+                const s = document.createElement('strong');
+                s.textContent = part.slice(2, -2);
+                t.appendChild(s);
+              } else t.appendChild(document.createTextNode(part));
+            });
+          }
           card.append(t);
-          any = true;
-        } else if (b.type === 'media' && b.url) {
-          const m = el('div', null, 'Image');
-          m.style.cssText = 'font-size:.8rem;margin:8px 0;padding:16px;border:1px dashed #3a3e4a;border-radius:8px;text-align:center;color:#949ba4';
+        } else if (b.type === 'media') {
+          const m = el('div', 'v2-media', b.url ? 'Image' : 'Image URL…');
           card.append(m);
-          any = true;
         }
-      }
-      if (!any) card.append(el('span', 'muted', 'Preview appears as you type'));
+      });
       preview.append(card);
     }
 
-    const list = el('div', 'composer-v2-list');
-    function midFor(b) {
-      const mid = el('div');
-      if (b.type === 'separator') {
-        mid.append(el('span', 'muted', 'Separator line'));
-      } else if (b.type === 'media') {
-        const inp = document.createElement('input');
-        inp.type = 'url';
-        inp.placeholder = 'Image URL (https://…)';
-        inp.value = b.url || '';
-        inp.addEventListener('input', function () { b.url = inp.value; paintPreview(); });
-        mid.append(inp);
-      } else {
-        const ta = document.createElement('textarea');
-        ta.rows = b.type === 'heading' ? 2 : 4;
-        ta.placeholder = b.type === 'heading' ? 'Heading text' : 'Write your message…';
-        if (b.type === 'heading') {
-          if (!b.level) b.level = 1;
-          const lvl = select('Size', String(b.level), [
-            { value: '1', label: 'Heading 1' },
-            { value: '2', label: 'Heading 2' },
-            { value: '3', label: 'Heading 3' },
-          ], function (v) {
-            b.level = parseInt(v, 10) || 1;
-            // Discord Text Display: # ## ###
-            var prefixes = { 1: '# ', 2: '## ', 3: '### ' };
-            var raw = (b.content || '').replace(/^#{1,3}\s*/, '');
-            b.content = (prefixes[b.level] || '# ') + raw;
-            ta.value = b.content;
-            paintPreview();
-          });
-          mid.append(lvl);
-        }
-        ta.value = b.content || '';
-        ta.addEventListener('input', function () { b.content = ta.value; paintPreview(); });
-        mid.append(ta);
-      }
-      return mid;
+    function focusBlock(idx) {
+      draft._active = idx;
+      requestAnimationFrame(function () {
+        const node = canvas.querySelector('[data-bi="' + idx + '"] textarea, [data-bi="' + idx + '"] input');
+        if (node) { try { node.focus(); } catch (e) {} }
+      });
     }
 
-    function paintBlocks() {
-      list.replaceChildren();
+    function paintStructure() {
+      const sig = blockSig();
+      if (sig === structureSig && canvas.childNodes.length) {
+        paintPreviewOnly();
+        return;
+      }
+      structureSig = sig;
+      canvas.replaceChildren();
       draft.blocks.forEach(function (b, idx) {
-        const row = el('div', 'composer-v2-row');
-        const typeBar = el('div', 'composer-v2-types');
-        [['text', 'Text'], ['heading', 'Heading'], ['separator', 'Line'], ['media', 'Image']].forEach(function (pair) {
-          const btn = el('button', 'btn small' + (b.type === pair[0] ? ' on' : ''), pair[1]);
-          btn.type = 'button';
-          btn.addEventListener('click', function () {
-            if (b.type === pair[0]) return;
-            b.type = pair[0];
-            if (pair[0] === 'separator') { delete b.content; delete b.url; }
-            else if (pair[0] === 'media') { b.url = b.url || ''; delete b.content; }
-            else { b.content = b.content || ''; delete b.url; }
-            paintBlocks();
-          });
-          typeBar.append(btn);
-        });
-        row.append(typeBar);
-        row.append(midFor(b));
-        const tools = el('div', 'composer-v2-tools');
+        const row = el('div', 'composer-block' + (draft._active === idx ? ' is-active' : ''));
+        row.dataset.bi = String(idx);
+
+        const tools = el('div', 'composer-block-tools');
         const up = el('button', 'btn small', '↑');
         up.type = 'button';
         up.disabled = idx === 0;
         up.addEventListener('click', function () {
           if (idx < 1) return;
-          const t = draft.blocks[idx - 1];
-          draft.blocks[idx - 1] = draft.blocks[idx];
-          draft.blocks[idx] = t;
-          paintBlocks();
+          var t = draft.blocks[idx - 1]; draft.blocks[idx - 1] = draft.blocks[idx]; draft.blocks[idx] = t;
+          draft._active = idx - 1; draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(idx - 1);
         });
         const down = el('button', 'btn small', '↓');
         down.type = 'button';
         down.disabled = idx >= draft.blocks.length - 1;
         down.addEventListener('click', function () {
           if (idx >= draft.blocks.length - 1) return;
-          const t = draft.blocks[idx + 1];
-          draft.blocks[idx + 1] = draft.blocks[idx];
-          draft.blocks[idx] = t;
-          paintBlocks();
+          var t = draft.blocks[idx + 1]; draft.blocks[idx + 1] = draft.blocks[idx]; draft.blocks[idx] = t;
+          draft._active = idx + 1; draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(idx + 1);
         });
         const rm = el('button', 'btn small danger', '×');
         rm.type = 'button';
@@ -2646,45 +2621,158 @@ function renderComposer() {
         rm.addEventListener('click', function () {
           if (draft.blocks.length <= 1) return;
           draft.blocks.splice(idx, 1);
-          paintBlocks();
+          draft._active = Math.max(0, idx - 1);
+          draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(draft._active);
         });
         tools.append(up, down, rm);
-        row.append(tools);
-        list.append(row);
+
+        if (b.type === 'separator') {
+          row.classList.add('is-sep');
+          row.append(el('div', 'composer-sep-line'), tools);
+        } else if (b.type === 'media') {
+          const inp = document.createElement('input');
+          inp.type = 'url';
+          inp.placeholder = 'Image URL (https://…)';
+          inp.value = b.url || '';
+          inp.addEventListener('focus', function () { draft._active = idx; });
+          inp.addEventListener('input', function () {
+            b.url = inp.value; draft._dirty = true; paintPreviewOnly(); paintSave();
+          });
+          row.append(inp, tools);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.rows = b.type === 'heading' ? 2 : 5;
+          ta.placeholder = b.type === 'heading' ? 'Heading…' : 'Write your message…';
+          ta.value = b.content || '';
+          if (b.type === 'heading') ta.className = 'composer-heading-input';
+          ta.addEventListener('focus', function () { draft._active = idx; });
+          ta.addEventListener('input', function () {
+            var v = ta.value;
+            if (draft._boldNext && v.length) {
+              // wrap last typed char roughly — simpler: if no selection and boldNext, user uses ** via button
+              draft._boldNext = false;
+            }
+            b.content = v;
+            draft._dirty = true;
+            paintPreviewOnly();
+            paintSave();
+          });
+          row.append(ta, tools);
+        }
+        canvas.append(row);
       });
-      paintPreview();
-    }
-    paintBlocks();
-    panel.append(list);
-
-    const addBar = el('div', 'actions composer-v2-add');
-    [['text', 'Text'], ['heading', 'Heading'], ['separator', 'Line'], ['media', 'Image']].forEach(function (pair) {
-      const btn = el('button', 'btn small', '+ ' + pair[1]);
-      btn.type = 'button';
-      btn.addEventListener('click', function () {
-        if (pair[0] === 'separator') draft.blocks.push({ type: 'separator' });
-        else if (pair[0] === 'media') draft.blocks.push({ type: 'media', url: '' });
-        else draft.blocks.push({ type: pair[0], content: '' });
-        paintBlocks();
-      });
-      addBar.append(btn);
-    });
-    panel.append(addBar);
-
-    var savedTpl = ((state.overview && state.overview.composer) || []).find(function (t) { return t.name === draft.name; });
-    if (savedTpl && Array.isArray(savedTpl.buttons) && savedTpl.buttons.length) {
-      const comp = el('div', 'composer-v2-components');
-      comp.append(el('h2', null, 'Components'));
-      comp.append(el('p', 'hint', 'Buttons on this message. Placement applies when you send.'));
-      comp.append(select(
-        'Button placement',
-        draft.buttonsOutside ? 'outside' : 'inside',
-        [{ value: 'inside', label: 'Inside message' }, { value: 'outside', label: 'Below message' }],
-        function (v) { draft.buttonsOutside = v === 'outside'; }
-      ));
-      panel.append(comp);
+      paintPreviewOnly();
+      try { if (typeof enhanceSelects === 'function') enhanceSelects(panel); } catch (e) {}
     }
 
+    function insertAfterActive(block) {
+      var i = Math.min(draft._active == null ? draft.blocks.length - 1 : draft._active, draft.blocks.length - 1);
+      draft.blocks.splice(i + 1, 0, block);
+      draft._active = i + 1;
+      draft._dirty = true;
+      structureSig = '';
+      paintStructure();
+      paintSave();
+      focusBlock(draft._active);
+    }
+
+    function ensureTextAfter(idx) {
+      if (idx + 1 >= draft.blocks.length || draft.blocks[idx + 1].type === 'separator') {
+        draft.blocks.splice(idx + 1, 0, { type: 'text', content: '' });
+      }
+      draft._active = idx + 1;
+      structureSig = '';
+      paintStructure();
+      focusBlock(draft._active);
+    }
+
+    paintStructure();
+    panel.append(canvas);
+
+    // Toolbar
+    const bar = el('div', 'composer-toolbar');
+    function tool(label, fn, cls) {
+      const b = el('button', 'btn small' + (cls ? ' ' + cls : ''), label);
+      b.type = 'button';
+      b.addEventListener('click', fn);
+      return b;
+    }
+    bar.append(tool('Text', function () {
+      var i = draft._active || 0;
+      if (draft.blocks[i] && draft.blocks[i].type !== 'text') {
+        draft.blocks[i].type = 'text';
+        delete draft.blocks[i].level;
+        structureSig = ''; paintStructure(); focusBlock(i);
+      } else insertAfterActive({ type: 'text', content: '' });
+      draft._dirty = true; paintSave();
+    }));
+
+    // Heading — real panel select (cselect)
+    const headWrap = el('div', 'composer-tool-heading');
+    const headSel = select('Heading', String((draft.blocks[draft._active] && draft.blocks[draft._active].level) || 1), [
+      { value: '1', label: 'Heading 1' },
+      { value: '2', label: 'Heading 2' },
+      { value: '3', label: 'Heading 3' },
+    ], function (v) {
+      var i = draft._active || 0;
+      var b = draft.blocks[i];
+      if (!b) return;
+      var level = parseInt(v, 10) || 1;
+      var raw = (b.content || '').replace(/^#{1,3}\s*/, '');
+      b.type = 'heading';
+      b.level = level;
+      var prefix = level === 2 ? '## ' : level === 3 ? '### ' : '# ';
+      b.content = prefix + raw;
+      draft._dirty = true;
+      structureSig = '';
+      paintStructure();
+      paintSave();
+      ensureTextAfter(i);
+    }, { blank: null });
+    // tighten label
+    headWrap.append(headSel);
+    bar.append(headWrap);
+
+    bar.append(tool('B', function () {
+      var i = draft._active || 0;
+      var b = draft.blocks[i];
+      if (!b || (b.type !== 'text' && b.type !== 'heading')) return;
+      var ta = canvas.querySelector('[data-bi="' + i + '"] textarea');
+      if (ta && typeof ta.selectionStart === 'number' && ta.selectionStart !== ta.selectionEnd) {
+        var a = ta.selectionStart, z = ta.selectionEnd;
+        var val = ta.value;
+        var selected = val.slice(a, z);
+        var next = val.slice(0, a) + '**' + selected + '**' + val.slice(z);
+        ta.value = next; b.content = next;
+        draft._dirty = true; paintPreviewOnly(); paintSave();
+        try { ta.focus(); ta.setSelectionRange(a + 2, z + 2); } catch (e) {}
+      } else {
+        // toggle bold markers at end
+        b.content = (b.content || '') + '****';
+        draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(i);
+        requestAnimationFrame(function () {
+          var t2 = canvas.querySelector('[data-bi="' + i + '"] textarea');
+          if (t2) { var pos = (b.content || '').length - 2; try { t2.setSelectionRange(pos, pos); } catch (e) {} }
+        });
+      }
+    }, 'composer-bold'));
+
+    bar.append(tool('Separator', function () {
+      var i = draft._active == null ? draft.blocks.length - 1 : draft._active;
+      draft.blocks.splice(i + 1, 0, { type: 'separator' }, { type: 'text', content: '' });
+      draft._active = i + 2;
+      draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(draft._active);
+    }));
+
+    bar.append(tool('Image', function () {
+      insertAfterActive({ type: 'media', url: '' });
+    }));
+
+    bar.append(tool('Button', function () {
+      toast('Save the template first, then add buttons in the section below.', 'ok');
+    }));
+
+    panel.append(bar);
     panel.append(el('p', 'hint', 'Preview'));
     panel.append(preview);
     parts.push(panel);
