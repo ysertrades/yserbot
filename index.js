@@ -49,7 +49,7 @@ process.on('uncaughtException', (err) => {
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
-const SKIP_COMMAND_FOLDERS = new Set(['_disabled', 'economy', 'casino', 'jobs']); // shelved mid-rewrite — not loaded
+const SKIP_COMMAND_FOLDERS = new Set(['_disabled']); // restored economy/casino/jobs
 for (const folder of commandFolders) {
     if (SKIP_COMMAND_FOLDERS.has(folder)) continue;
     const commandsPath = path.join(foldersPath, folder);
@@ -67,7 +67,7 @@ for (const folder of commandFolders) {
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
-const SKIP_EVENT_FILES = new Set(['casinoInteraction.js', 'jobsInteraction.js']); // economy/casino gated
+const SKIP_EVENT_FILES = new Set(); // casino + jobs restored
 for (const file of eventFiles) {
     if (SKIP_EVENT_FILES.has(file)) continue;
     const filePath = path.join(eventsPath, file);

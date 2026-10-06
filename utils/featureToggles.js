@@ -33,6 +33,17 @@
 const { readJson, writeJson } = require('./jsonStorage');
 
 const FEATURE_GROUPS = [
+  {
+    key: 'economy', label: 'Economy',
+    description: 'Balances, daily, work, shop and related commands.',
+    commands: ['balance', 'daily', 'work', 'pay', 'shop'],
+  },
+  {
+    key: 'casino', label: 'Casino',
+    description: 'Casino games and coin-giveaway wheel.',
+    commands: ['casino', 'casino-settings', 'coinsgiveaway'],
+  },
+
       {
     key: 'fishing_mining', label: 'Fishing & Mining',
     description: '/fish and /mine.',

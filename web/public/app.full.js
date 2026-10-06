@@ -6082,7 +6082,7 @@ function syncFeatureNav() {
   const nav = (name) =>
     document.getElementById('nav-' + name) || document.querySelector('[data-goto="' + name + '"]');
 
-  const econOff = true /* economy gated */;
+  const econOff = !featureOn('economy');
   const calOff  = !featureOn('econ_calendar');
   const whopOff = !featureOn('whop');
   const gawOff  = !featureOn('giveaways');
@@ -6091,7 +6091,7 @@ function syncFeatureNav() {
   // Feeds holds calendar + Whop — keep the tab if either is on.
   const feedsOff = calOff && whopOff;
 
-  hide(nav('economy'), true);
+  hide(nav('economy'), econOff);
   hide(nav('feeds'), feedsOff);
   hide(nav('giveaways'), gawOff);
   hide(nav('tickets'), tixOff);
