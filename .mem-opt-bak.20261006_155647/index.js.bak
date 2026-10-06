@@ -1,22 +1,11 @@
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, GatewayIntentBits, Partials, Events, Options } = require('discord.js'); /* Options below */;
+const { Client, Collection, GatewayIntentBits, Partials, Events } = require('discord.js');
 const { connect: connectMongo } = require('./utils/mongoStorage');
 const { warm: warmRenderCache } = require('./utils/dynamicEmbedImages');
 const { start: startPanel } = require('./web/server');
-const { configure: configureErrorReporter, reportAndLog } = require('./utils/errorReporter')
-  makeCache: Options.cacheWithLimits({
-    ...Options.DefaultMakeCacheSettings,
-    MessageManager: 100,
-    ThreadManager: 50,
-  }),
-  sweepers: {
-    ...Options.DefaultSweeperSettings,
-    messages: { interval: 300, lifetime: 600 },
-    threads: { interval: 3600, lifetime: 3600 },
-  },
-;
+const { configure: configureErrorReporter, reportAndLog } = require('./utils/errorReporter');
 
 const client = new Client({
     intents: [

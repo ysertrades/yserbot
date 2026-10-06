@@ -242,7 +242,7 @@ async function connect(uri) {
 
   try {
     const { MongoClient } = require('mongodb');
-    const client = new MongoClient(uri, { maxPoolSize: 5, 
+    const client = new MongoClient(uri, {
       serverSelectionTimeoutMS: 10_000,
     });
     await client.connect();

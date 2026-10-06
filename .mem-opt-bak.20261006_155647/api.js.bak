@@ -33,7 +33,7 @@ const features = require('./features');
 const featureToggles = require('./featureToggles');
 const tickets = require('./tickets');
 const pollsPanel = require('./polls');
-let economyPanel; try { economyPanel = require('./economy'); } catch { economyPanel = null; };
+const economyPanel = require('./economy');
 const links = require('./links');
 const moderation = require('./moderation');
 const appearance = require('./appearance');

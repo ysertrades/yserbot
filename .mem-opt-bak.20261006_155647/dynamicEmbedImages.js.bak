@@ -40,8 +40,8 @@ const DYNAMIC_IMAGES = {
   futuresOpen:      { filename: 'futures_open.png',      generate: memoizeRender(generateFuturesOpenImage,     { name: 'futuresOpen',      max: 1 }) },
   riskGuide:        { filename: 'risk_guide.png',       generate: memoizeRender(generateRiskGuideImage,       { name: 'riskGuide',        max: 1 }) },
   newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: memoizeRender(generateNewsfeedGuideImage,   { name: 'newsfeedGuide',    max: 1 }) },
-  tradingViewBanner: { filename: 'tradingview_banner.png', takesCopy: true, generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 1 }) },
-  whopBanner:        { filename: 'whop_banner.png',        takesCopy: true, generate: memoizeRender(generateWhopBannerImage,        { name: 'whopBanner',        max: 1 }) },
+  tradingViewBanner: { filename: 'tradingview_banner.png', takesCopy: true, generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 8 }) },
+  whopBanner:        { filename: 'whop_banner.png',        takesCopy: true, generate: memoizeRender(generateWhopBannerImage,        { name: 'whopBanner',        max: 8 }) },
   prizeGiveawayBanner: { filename: 'prize_giveaway_banner.png', takesCopy: true, generate: memoizeRender(generatePrizeGiveawayBannerImage, { name: 'prizeGiveawayBanner', max: 8 }) },
 };
 

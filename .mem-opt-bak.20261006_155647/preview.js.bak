@@ -32,19 +32,19 @@ const TEMPLATES = {
     label: 'TradingView indicator',
     filename: 'tradingview_banner.png',
     defaults: TV_DEFAULTS,
-    render: memoizeRender(generateTradingViewBannerImage, { name: 'preview:tradingview', max: 4 }),
+    render: memoizeRender(generateTradingViewBannerImage, { name: 'preview:tradingview', max: 24 }),
   },
   whop: {
     label: 'Whop membership',
     filename: 'whop_banner.png',
     defaults: WHOP_DEFAULTS,
-    render: memoizeRender(generateWhopBannerImage, { name: 'preview:whop', max: 4 }),
+    render: memoizeRender(generateWhopBannerImage, { name: 'preview:whop', max: 24 }),
   },
   prize: {
     label: 'Prize giveaway',
     filename: 'prize_giveaway_banner.png',
     defaults: PRIZE_DEFAULTS,
-    render: memoizeRender(generatePrizeGiveawayBannerImage, { name: 'preview:prize', max: 4 }),
+    render: memoizeRender(generatePrizeGiveawayBannerImage, { name: 'preview:prize', max: 24 }),
   },
 };
 

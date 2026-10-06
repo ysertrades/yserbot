@@ -63,7 +63,7 @@ function memoizeRender(fn, { name = fn.name || 'anonymous', max = DEFAULT_MAX_EN
       // A defensive copy costs microseconds against a 60-210 ms render, and
       // means a caller that ever writes into the buffer cannot poison the
       // entry for everyone after it.
-      return hit;
+      return Buffer.from(hit);
     }
 
     stat.misses++;
@@ -74,7 +74,7 @@ function memoizeRender(fn, { name = fn.name || 'anonymous', max = DEFAULT_MAX_EN
     if (Buffer.isBuffer(out)) {
       cache.set(key, out);
       if (cache.size > max) cache.delete(cache.keys().next().value); // oldest
-      return out;
+      return Buffer.from(out);
     }
     return out; // not a Buffer — leave it alone, don't cache it
   };
@@ -91,7 +91,7 @@ function memoizeRender(fn, { name = fn.name || 'anonymous', max = DEFAULT_MAX_EN
     const hit = cache.get(key);
     if (hit === undefined) return undefined;
     cache.delete(key); cache.set(key, hit); // keep LRU ordering honest
-    return hit;
+    return Buffer.from(hit);
   };
 
   return wrapped;

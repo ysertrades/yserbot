@@ -4,7 +4,7 @@
   "description": "QuantLab / Quantbot — Discord control panel and bot",
   "main": "index.js",
   "scripts": {
-    "start": "node --max-semi-space-size=4 index.js",
+    "start": "node index.js",
     "deploy": "node deploy-commands.js",
     "smoke": "node scripts/smoke-panel-contracts.js",
     "audit:static": "node scripts/smoke-full-audit.js",
