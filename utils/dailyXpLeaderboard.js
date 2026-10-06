@@ -63,9 +63,12 @@ function normalizeDailyLb(raw) {
 function dailyXpRows(g, { dayKey, timeZone, limit = 10 } = {}) {
   const key = dayKey || dayKeyInTz(Date.now(), timeZone);
   const xpMap = {};
-  for (const e of g.xpEvents || []) {
+  // Live engine uses `events`; contribution engine used `xpEvents`
+  const log = Array.isArray(g.events) ? g.events : (g.xpEvents || []);
+  for (const e of log) {
     if (!e || !e.userId || !e.xp) continue;
-    if (dayKeyInTz(e.createdAt || 0, timeZone) !== key) continue;
+    const ts = e.createdAt || e.at || e.ts || 0;
+    if (dayKeyInTz(ts, timeZone) !== key) continue;
     xpMap[e.userId] = (xpMap[e.userId] || 0) + Number(e.xp);
   }
   return Object.entries(xpMap)

@@ -55,6 +55,12 @@ function defaultGuild() {
     channelUnlocks: DEFAULT_CHANNEL_UNLOCKS.map(u => ({ ...u, roleIds: [...(u.roleIds || [])], roleLabels: [...(u.roleLabels || [])] })),
     users: {},
     events: [],
+    dailyLeaderboard: {
+      enabled: false, hour: 20, minute: 0, timeZone: 'America/New_York',
+      channelId: null, roleId: null, limit: 10,
+      title: 'Daily XP Leaderboard', description: "Today's top contributors",
+      footer: null, showAvatars: true, lastPostedDay: null,
+    },
   };
 }
 
@@ -570,6 +576,17 @@ function panelSnapshot(guildId, guild) {
       ? `xp_to_next(n) = ${g.curveBase ?? 100} × ${g.curveMult ?? 1.5}ⁿ`
       : 'xp_to_next(n) = 5·n² + 50·n + 100',
     leaderboard: tracked ? leaderboardRows(g, guild, 15) : [],
+    leaderboardDay: (function () {
+      try {
+        const { dailyXpRows, normalizeDailyLb } = require('./dailyXpLeaderboard');
+        const conf = normalizeDailyLb(g.dailyLeaderboard);
+        return dailyXpRows(g, { timeZone: conf.timeZone, limit: conf.limit || 10 });
+      } catch (_) { return []; }
+    })(),
+    dailyLeaderboard: (function () {
+      try { return require('./dailyXpLeaderboard').normalizeDailyLb(g.dailyLeaderboard); }
+      catch (_) { return g.dailyLeaderboard || { enabled: false }; }
+    })(),
     recentEvents: tracked ? (Array.isArray(g.events) ? g.events : []).slice(0, 15).map(e => ({ ...e, name: displayName(guild, e.userId) || e.userId })) : [],
     channelOpts, roleOpts, configVersion: g.configVersion || 0,
   };
