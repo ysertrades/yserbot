@@ -645,6 +645,7 @@ async function syncAllRolesOnStartup(client) {
 }
 
 module.exports = {
+  loadAll, saveAll, guildState,
   handleMessage, processMessage: handleMessage, handleThreadCreate,
   panelSnapshot, saveConfig, manualXp, resetAllXp,
   getUserRank, getLeaderboard, resetUser, setUserLevel,

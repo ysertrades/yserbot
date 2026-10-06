@@ -105,6 +105,11 @@ module.exports = {
 
         await syncSlashCommands(client);
         startScheduleRunner(client);
+        try {
+          const { startDailyLeaderboardRunner } = require('../utils/dailyXpLeaderboard');
+          const leveling = require('../utils/levelingEngine');
+          startDailyLeaderboardRunner(client, leveling);
+        } catch (e) { console.warn('[dailyXpLb] not started:', e.message); }
         startEconCalRunner(client);
         startLotteryRunner(client);
         startWhopRunner(client);

@@ -2673,6 +2673,27 @@ function renderComposer() {
 
   // V2 skips legacy message body — content lives in blocks above
   if (draft.format === 'legacy') {
+
+  {
+    const sw = el('div', 'panel');
+    const row = el('div', 'queue-head');
+    row.append(el('h2', null, 'Classic embed'));
+    const back = el('button', 'btn small', 'Use Component V2');
+    back.type = 'button';
+    back.addEventListener('click', function () {
+      draft.format = 'v2';
+      if (!Array.isArray(draft.blocks) || !draft.blocks.length) {
+        const emb = draft.embeds && draft.embeds[0];
+        draft.blocks = [{ type: 'text', content: (emb && (emb.description || emb.title)) || '' }];
+      }
+      state.draft = draft;
+      renderComposer();
+    });
+    row.append(back);
+    sw.append(row);
+    sw.append(el('p', 'hint', 'Switch back anytime. V2 blocks are kept when possible.'));
+    parts.push(sw);
+  }
   const a = draft.around;
 
   /* -- Plain text message (no embeds) ---------------------------------- */
@@ -2985,6 +3006,49 @@ function renderComposer() {
       }
     }
     parts.push(sendPanel);
+  }
+
+
+  {
+    const bar = el('div', 'composer-save-bar panel');
+    bar.style.cssText = 'position:sticky;bottom:0;z-index:6;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;margin-top:1rem;padding:.75rem 1rem;border:1px solid var(--rule,#2a2d38);background:var(--panel,#12131a)';
+    const left = el('div');
+    left.append(el('span', 'tag', draft.format === 'v2' ? 'Component V2' : 'Classic embed'));
+    if (draft.name) left.append(el('span', 'muted', ' · ' + draft.name));
+    const saveBtn = el('button', 'btn', 'Save template');
+    saveBtn.type = 'button';
+    let saving = false;
+    saveBtn.addEventListener('click', async function () {
+      if (saving) return;
+      const name = (draft.name || '').trim();
+      if (!name) { toast('Name this template first.', 'bad'); return; }
+      if (draft.format === 'v2') {
+        const has = (draft.blocks || []).some(function (b) {
+          return ((b.type === 'text' || b.type === 'heading') && (b.content || '').trim()) || b.type === 'separator' || (b.type === 'media' && b.url);
+        });
+        if (!has) { toast('Add some content before saving.', 'bad'); return; }
+      }
+      saving = true; saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+      try {
+        const res = await post('template', {
+          name: name,
+          format: draft.format === 'v2' ? 'v2' : 'legacy',
+          blocks: draft.blocks || [],
+          buttonsOutside: !!draft.buttonsOutside,
+          embeds: draft.format === 'v2' ? [] : (draft.embeds || []),
+          around: draft.format === 'v2' ? null : (draft.around || null),
+        });
+        if (res && (res.ok || res.name)) {
+          toast('Template saved', 'good');
+          state.draft = null; state.tplName = name;
+          state.overview = await get('/api/guild/' + state.guildId);
+          renderComposer();
+        } else toast((res && res.error) || 'Save failed', 'bad');
+      } catch (e) { toast('Save failed', 'bad'); }
+      finally { saving = false; saveBtn.disabled = false; saveBtn.textContent = 'Save template'; }
+    });
+    bar.append(left, saveBtn);
+    parts.push(bar);
   }
 
   body.replaceChildren(...parts);

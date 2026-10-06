@@ -3551,3 +3551,9 @@ button.primary:hover {
   .composer-v2-row{grid-template-columns:1fr}
   .composer-v2-tools{flex-direction:row}
 }
+
+.lvl-daily-lb h3{margin:1rem 0 .35rem;font-size:.85rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#949ba4)}
+.lvl-daily-sched{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.35rem 0}
+.lvl-daily-preview{margin-top:.75rem}
+.lvl-daily-lb input[type=text],.lvl-daily-lb input[type=time],.lvl-daily-lb select{width:100%;max-width:320px;margin:.25rem 0}
+.composer-save-bar{box-shadow:0 -8px 24px rgba(0,0,0,.25)}
