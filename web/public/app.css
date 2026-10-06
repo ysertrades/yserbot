@@ -3558,34 +3558,35 @@ button.primary:hover {
 .lvl-daily-lb input[type=text],.lvl-daily-lb input[type=time],.lvl-daily-lb select{width:100%;max-width:320px;margin:.25rem 0}
 .composer-save-bar{box-shadow:0 -8px 24px rgba(0,0,0,.25)}
 
-/* Composer canvas */
-.composer-canvas .composer-mode-row{display:flex;gap:.4rem;align-items:center;margin-bottom:.75rem;flex-wrap:wrap}
-.composer-canvas-body{display:flex;flex-direction:column;gap:.5rem;min-height:8rem;padding:.25rem 0}
-.composer-block{display:grid;grid-template-columns:1fr auto;gap:.4rem;align-items:start;padding:.35rem 0;border-bottom:1px solid transparent}
-.composer-block.is-active{border-bottom-color:var(--rule,#2a2d38)}
-.composer-block textarea{width:100%;min-height:6rem;resize:vertical;box-sizing:border-box;margin:0;border-radius:10px}
-.composer-block textarea.composer-heading-input{min-height:2.8rem;font-size:1.15rem;font-weight:700}
-.composer-block-tools{display:flex;flex-direction:column;gap:.2rem;opacity:.45}
-.composer-block:hover .composer-block-tools,.composer-block.is-active .composer-block-tools{opacity:1}
-.composer-sep-line{height:1px;background:#3a3e4a;margin:1rem 0;width:100%}
-.composer-block.is-sep{grid-template-columns:1fr auto;align-items:center}
-.composer-toolbar{display:flex;flex-wrap:wrap;gap:.4rem;align-items:flex-end;padding:.65rem 0;margin-top:.35rem;border-top:1px solid var(--rule,#2a2d38);position:sticky;bottom:3.5rem;background:var(--panel,#12131a);z-index:4}
-.composer-tool-heading label.field{margin:0}
-.composer-tool-heading select{min-width:7.5rem}
+/* Composer canvas — stable single preview */
+.composer-canvas .composer-mode-row{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.75rem}
+.composer-canvas-body{display:flex;flex-direction:column;gap:.45rem;min-height:5rem}
+.composer-block{display:grid;grid-template-columns:1fr auto;gap:.35rem;align-items:start}
+.composer-block textarea{width:100%;min-height:5.5rem;resize:vertical;box-sizing:border-box;margin:0;border-radius:10px;transition:none}
+.composer-block textarea.composer-heading-input{min-height:2.6rem;font-size:1.12rem;font-weight:700}
+.composer-block.is-sep{min-height:0;padding:.2rem 0}
+.composer-sep-line{height:1px;background:#3a3e4a;width:100%;margin:.35rem 0}
+.composer-block-tools{display:flex;flex-direction:column;gap:.2rem;opacity:.4}
+.composer-block:hover .composer-block-tools{opacity:1}
+.composer-toolbar{display:flex;flex-wrap:wrap;gap:.4rem;align-items:flex-end;padding:.6rem 0;margin-top:.4rem;border-top:1px solid var(--rule,#2a2d38);position:sticky;bottom:3.4rem;background:var(--panel,#12131a);z-index:5}
 .composer-live-preview{margin-top:.5rem}
-.v2-preview-card{background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;padding:14px 16px;min-height:3rem}
-.v2-sep{height:1px;background:#3a3e4a;margin:12px 0}
-.v2-h1{font-weight:800;font-size:1.25rem;margin:0 0 8px}
-.v2-h2{font-weight:700;font-size:1.1rem;margin:0 0 6px}
-.v2-h3{font-weight:600;font-size:1rem;margin:0 0 6px}
+.composer-live-preview .v2-preview-card{
+  background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;
+  padding:14px 16px;min-height:3.25rem;max-width:100%;
+}
+.composer-live-preview .v2-preview-card > * + *{margin-top:.5rem}
+.v2-sep{height:1px;background:#3a3e4a;margin:.65rem 0;width:100%}
+.v2-h1{font-weight:800;font-size:1.25rem}
+.v2-h2{font-weight:700;font-size:1.1rem}
+.v2-h3{font-weight:600;font-size:1rem}
 .v2-text{line-height:1.5;color:#dbdee1;white-space:pre-wrap}
-.v2-text.placeholder,.v2-h1.placeholder,.v2-h2.placeholder,.v2-h3.placeholder{opacity:.35}
-.v2-media{padding:20px;border:1px dashed #3a3e4a;border-radius:8px;text-align:center;color:#949ba4;font-size:.85rem}
+.v2-text.placeholder,.v2-h1.placeholder,.v2-h2.placeholder,.v2-h3.placeholder{opacity:.4}
+.v2-media{padding:18px;border:1px dashed #3a3e4a;border-radius:8px;text-align:center;color:#949ba4;font-size:.85rem}
 .composer-bold{font-weight:800}
-/* Levelling automation card */
-.lvl-auto-card h3{margin:1rem 0 .35rem;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#949ba4)}
-.lvl-auto-toggle{display:flex;align-items:center;gap:.35rem;font-weight:600}
-.lvl-auto-next{margin:.5rem 0 0}
+/* Leveling schedule chips — in-web only */
+.lvl-time-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.35rem 0 .5rem}
+.lvl-auto-card h3{margin:.9rem 0 .3rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#949ba4)}
+.lvl-auto-next{margin:.45rem 0 .6rem}
 .lvl-auto-card input[type=time],.lvl-auto-card input[type=text]{max-width:280px;width:100%;margin:.25rem 0}
 
 

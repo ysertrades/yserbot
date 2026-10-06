@@ -296,7 +296,8 @@
 
 
 
-    // ═══ Daily Leaderboard Automation — schedule only ═══
+
+    // ═══ Daily Leaderboard Automation (in-web schedule only) ═══
     (function () {
       const dl = (L && L.dailyLeaderboard) || {};
       const card = el('div', 'panel lvl-auto-card');
@@ -309,12 +310,12 @@
       onLbl.append(onChk, document.createTextNode(' ON'));
       head.append(onLbl);
       card.append(head);
-      card.append(el('p', 'muted', 'Posts today\'s XP leaderboard once a day at Eastern Time. Same rankings your members already earn — just automatic delivery.'));
+      card.append(el('p', 'muted', 'Posts today\'s XP rankings once per day at Eastern Time. Fully in-panel — no browser time picker.'));
 
       const st = {
         enabled: !!dl.enabled,
         hour: dl.hour != null ? dl.hour : 20,
-        minute: dl.minute != null ? dl.minute : 0,
+        minute: [0, 15, 30, 45].includes(dl.minute) ? dl.minute : 0,
         channelId: dl.channelId || '',
         roleId: dl.roleId || '',
         limit: dl.limit || 10,
@@ -324,9 +325,13 @@
       };
 
       const nextP = el('p', 'lvl-auto-next');
+      function fmtHM(h, m) {
+        var h12 = ((h + 11) % 12) + 1;
+        return h12 + ':' + String(m).padStart(2, '0') + ' ' + (h >= 12 ? 'PM' : 'AM');
+      }
       function paintNext() {
         if (!st.enabled) {
-          nextP.innerHTML = '<span class="tag">OFF</span> Enable to schedule the next post.';
+          nextP.innerHTML = '<span class="tag">OFF</span> Turn on to schedule the next post.';
           return;
         }
         try {
@@ -353,72 +358,54 @@
             t = zoned(+p1.year, +p1.month, +p1.day, st.hour, st.minute);
           }
           var pF = Object.fromEntries(fmt.formatToParts(new Date(t)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
-          var hh = +pF.hour, mm = +pF.minute;
-          var h12 = ((hh + 11) % 12) + 1, ampm = hh >= 12 ? 'PM' : 'AM';
           var todayKey = p0.year + '-' + p0.month + '-' + p0.day;
           var fireKey = pF.year + '-' + pF.month + '-' + pF.day;
-          nextP.innerHTML = '<span class="pill on">SCHEDULED</span> <strong>' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + h12 + ':' + pad(mm) + ' ' + ampm + ' ET</strong>';
+          nextP.innerHTML = '<span class="pill on">SCHEDULED</span> <strong>' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + fmtHM(+pF.hour, +pF.minute) + ' ET</strong>';
         } catch (e) {
-          nextP.textContent = 'Next post unavailable';
+          nextP.textContent = 'Next: ' + fmtHM(st.hour, st.minute) + ' ET';
         }
       }
       onChk.addEventListener('change', function () { st.enabled = onChk.checked; paintNext(); });
       paintNext();
       card.append(nextP);
 
-      // Creative preset chips — not a broken hour list
-      card.append(el('h3', null, 'When (Eastern Time)'));
-      const presets = el('div', 'lvl-time-chips');
-      const PRESETS = [
-        { h: 9, m: 0, label: '9:00 AM' },
-        { h: 12, m: 0, label: '12:00 PM' },
-        { h: 18, m: 0, label: '6:00 PM' },
-        { h: 20, m: 0, label: '8:00 PM' },
-        { h: 22, m: 0, label: '10:00 PM' },
-      ];
-      function paintChips() {
-        presets.replaceChildren();
-        PRESETS.forEach(function (p) {
-          const b = el('button', 'chip-toggle' + (st.hour === p.h && st.minute === p.m ? ' on' : ''), p.label);
+      card.append(el('h3', null, 'Time (Eastern)'));
+      const hourChips = el('div', 'lvl-time-chips');
+      const HOURS = [8, 9, 10, 12, 14, 16, 18, 20, 21, 22];
+      function paintHours() {
+        hourChips.replaceChildren();
+        HOURS.forEach(function (h) {
+          var b = el('button', 'chip-toggle' + (st.hour === h ? ' on' : ''), fmtHM(h, 0).replace(':00', ''));
           b.type = 'button';
-          b.addEventListener('click', function () {
-            st.hour = p.h; st.minute = p.m;
-            paintChips(); paintNext();
-          });
-          presets.append(b);
+          b.addEventListener('click', function () { st.hour = h; paintHours(); paintNext(); });
+          hourChips.appendChild(b);
         });
-        // custom marker
-        var isCustom = !PRESETS.some(function (p) { return p.h === st.hour && p.m === st.minute; });
-        const custom = el('button', 'chip-toggle' + (isCustom ? ' on' : ''), isCustom
-          ? (((st.hour + 11) % 12) + 1) + ':' + String(st.minute).padStart(2, '0') + ' ' + (st.hour >= 12 ? 'PM' : 'AM')
-          : 'Custom…');
-        custom.type = 'button';
-        custom.addEventListener('click', function () {
-          var v = window.prompt('Hour 0–23 (Eastern)', String(st.hour));
-          if (v == null) return;
-          var h = parseInt(v, 10);
-          if (!Number.isFinite(h) || h < 0 || h > 23) return;
-          var mv = window.prompt('Minute 0–59', String(st.minute));
-          if (mv == null) return;
-          var m = parseInt(mv, 10);
-          if (!Number.isFinite(m) || m < 0 || m > 59) return;
-          st.hour = h; st.minute = m;
-          paintChips(); paintNext();
-        });
-        presets.append(custom);
       }
-      paintChips();
-      card.append(presets);
-      card.append(el('p', 'hint', 'America/New_York · EST/EDT automatic'));
+      paintHours();
+      card.append(hourChips);
 
-      card.append(el('h3', null, 'Where'));
+      const minChips = el('div', 'lvl-time-chips');
+      function paintMins() {
+        minChips.replaceChildren();
+        [0, 15, 30, 45].forEach(function (m) {
+          var b = el('button', 'chip-toggle' + (st.minute === m ? ' on' : ''), ':' + String(m).padStart(2, '0'));
+          b.type = 'button';
+          b.addEventListener('click', function () { st.minute = m; paintMins(); paintNext(); });
+          minChips.appendChild(b);
+        });
+      }
+      paintMins();
+      card.append(minChips);
+      card.append(el('p', 'hint', 'America/New_York · EST/EDT handled automatically'));
+
+      card.append(el('h3', null, 'Channel & ping'));
       const pick = (typeof window.pickOne === 'function') ? window.pickOne
         : (typeof pickOne === 'function' ? pickOne : null);
       if (pick) {
         card.append(pick('Channel', 'channel', st.channelId, function (v) { st.channelId = v || ''; }, { blank: 'Select channel…' }));
         card.append(pick('Ping role', 'role', st.roleId, function (v) { st.roleId = v || ''; }, { blank: 'No role ping' }));
       } else {
-        card.append(el('p', 'muted', 'Channel/role pickers load with the main panel — hard-refresh if missing.'));
+        card.append(el('p', 'muted', 'Hard-refresh the panel if channel/role pickers are missing.'));
       }
 
       const actions = el('div', 'actions');
@@ -465,7 +452,10 @@
       card.append(actions);
       root.append(card);
       try {
-        if (typeof enhanceSelects === 'function') enhanceSelects(card);
+        if (typeof enhanceSelects === 'function') {
+          var sels = card.querySelectorAll('select:not([data-cselect])');
+          if (sels.length) enhanceSelects(card);
+        }
       } catch (e) {}
     })();
 
