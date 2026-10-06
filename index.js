@@ -67,7 +67,7 @@ for (const folder of commandFolders) {
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
-const SKIP_EVENT_FILES = new Set(); // casino + jobs restored
+const SKIP_EVENT_FILES = new Set(['casinoInteraction.js', 'jobsInteraction.js']); // economy/casino gated
 for (const file of eventFiles) {
     if (SKIP_EVENT_FILES.has(file)) continue;
     const filePath = path.join(eventsPath, file);

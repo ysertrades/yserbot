@@ -70,15 +70,12 @@ async function warm() {
   } catch (err) {
     console.warn('[RenderCache] quant logo preload:', err.message);
   }
+  // Memory: warm only prize giveaway banner at boot; other templates lazy on first use.
   for (const [key, entry] of Object.entries(DYNAMIC_IMAGES)) {
+    if (key !== 'prizeGiveawayBanner') continue;
     try {
-      // No guild at boot, so the banners warm their default wording. A guild
-      // that has customised one pays a single render on first send and is
-      // cached from then on.
       renderDynamic(key, entry, null);
     } catch (err) {
-      // A broken generator must not stop the bot from starting — it just
-      // means that one template pays for its render on first use, as before.
       console.error(`[RenderCache] failed to warm "${key}":`, err.message);
     }
     await new Promise(resolve => setImmediate(resolve));
