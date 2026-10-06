@@ -2541,57 +2541,66 @@ function renderComposer() {
     }
 
     function paintPreviewOnly() {
-      // ONE continuous message card — separators are lines inside, never new cards
-      let card = preview.querySelector('.v2-preview-card');
+      // Exactly one message surface — separators are lines inside it
+      var card = preview.querySelector('.v2-preview-card');
       if (!card) {
         preview.replaceChildren();
         card = el('div', 'v2-preview-card');
-        preview.append(card);
+        preview.appendChild(card);
       }
-      // Rebuild inner content only (card node stays mounted → no flicker)
       card.replaceChildren();
-      let any = false;
-      draft.blocks.forEach(function (b) {
+      var any = false;
+      (draft.blocks || []).forEach(function (b) {
+        if (!b) return;
         if (b.type === 'separator') {
-          card.append(el('div', 'v2-sep'));
+          var sep = document.createElement('div');
+          sep.className = 'v2-sep';
+          card.appendChild(sep);
           any = true;
           return;
         }
         if (b.type === 'heading') {
-          const raw = (b.content || '').replace(/^#{1,3}\s*/, '');
-          const h = el('div', 'v2-h' + (b.level || 1), raw || 'Heading');
+          var raw = String(b.content || '').replace(/^#{1,3}\s*/, '');
+          var h = document.createElement('div');
+          h.className = 'v2-h' + (b.level || 1);
+          h.textContent = raw || 'Heading';
           if (!raw) h.classList.add('placeholder');
-          card.append(h);
-          any = true;
-          return;
-        }
-        if (b.type === 'text') {
-          const raw = b.content || '';
-          const t = el('div', 'v2-text');
-          if (!raw) {
-            t.classList.add('placeholder');
-            t.textContent = 'Message preview';
-          } else {
-            raw.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
-              if (/^\*\*[^*]+\*\*$/.test(part)) {
-                const s = document.createElement('strong');
-                s.textContent = part.slice(2, -2);
-                t.appendChild(s);
-              } else t.appendChild(document.createTextNode(part));
-            });
-          }
-          card.append(t);
+          card.appendChild(h);
           any = true;
           return;
         }
         if (b.type === 'media') {
-          card.append(el('div', 'v2-media', b.url ? 'Image' : 'Image URL…'));
+          var med = document.createElement('div');
+          med.className = 'v2-media';
+          med.textContent = b.url ? 'Image' : 'Image URL…';
+          card.appendChild(med);
           any = true;
+          return;
         }
+        // text
+        var rawT = String(b.content || '');
+        var t = document.createElement('div');
+        t.className = 'v2-text';
+        if (!rawT) {
+          t.classList.add('placeholder');
+          t.textContent = 'Message preview';
+        } else {
+          rawT.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
+            if (/^\*\*[^*]+\*\*$/.test(part)) {
+              var s = document.createElement('strong');
+              s.textContent = part.slice(2, -2);
+              t.appendChild(s);
+            } else t.appendChild(document.createTextNode(part));
+          });
+        }
+        card.appendChild(t);
+        any = true;
       });
       if (!any) {
-        const empty = el('div', 'v2-text placeholder', 'Preview appears as you type');
-        card.append(empty);
+        var empty = document.createElement('div');
+        empty.className = 'v2-text placeholder';
+        empty.textContent = 'Message preview';
+        card.appendChild(empty);
       }
     }
 

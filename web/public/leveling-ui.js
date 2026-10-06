@@ -295,7 +295,8 @@
 
 
 
-    // ═══ Daily Leaderboard Automation (existing XP leaderboard + schedule) ═══
+
+    // ═══ Daily Leaderboard Automation — schedule only ═══
     (function () {
       const dl = (L && L.dailyLeaderboard) || {};
       const card = el('div', 'panel lvl-auto-card');
@@ -308,7 +309,7 @@
       onLbl.append(onChk, document.createTextNode(' ON'));
       head.append(onLbl);
       card.append(head);
-      card.append(el('p', 'muted', 'Publishes the existing daily XP rankings every day at the Eastern Time you choose. Does not change how XP is calculated.'));
+      card.append(el('p', 'muted', 'Posts today\'s XP leaderboard once a day at Eastern Time. Same rankings your members already earn — just automatic delivery.'));
 
       const st = {
         enabled: !!dl.enabled,
@@ -324,7 +325,10 @@
 
       const nextP = el('p', 'lvl-auto-next');
       function paintNext() {
-        if (!st.enabled) { nextP.innerHTML = '<span class="tag">OFF</span> Next post: —'; return; }
+        if (!st.enabled) {
+          nextP.innerHTML = '<span class="tag">OFF</span> Enable to schedule the next post.';
+          return;
+        }
         try {
           const ET = 'America/New_York';
           const pad = function (n) { return String(n).padStart(2, '0'); };
@@ -353,56 +357,69 @@
           var h12 = ((hh + 11) % 12) + 1, ampm = hh >= 12 ? 'PM' : 'AM';
           var todayKey = p0.year + '-' + p0.month + '-' + p0.day;
           var fireKey = pF.year + '-' + pF.month + '-' + pF.day;
-          nextP.innerHTML = '<span class="pill on">ACTIVE</span> Next post: <strong>' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + h12 + ':' + pad(mm) + ' ' + ampm + ' ET</strong>';
-        } catch (e) { nextP.textContent = 'Next post: (unavailable)'; }
+          nextP.innerHTML = '<span class="pill on">SCHEDULED</span> <strong>' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + h12 + ':' + pad(mm) + ' ' + ampm + ' ET</strong>';
+        } catch (e) {
+          nextP.textContent = 'Next post unavailable';
+        }
       }
       onChk.addEventListener('change', function () { st.enabled = onChk.checked; paintNext(); });
       paintNext();
       card.append(nextP);
 
-      card.append(el('h3', null, 'Schedule'));
-      card.append(el('p', 'hint', 'Timezone locked to Eastern Time (America/New_York) — handles EST/EDT automatically.'));
-      const timeRow = el('div', 'lvl-auto-time');
-      const hourSel = document.createElement('select');
-      hourSel.className = 'pill-select';
-      for (var h = 0; h < 24; h++) {
-        var oh = document.createElement('option');
-        oh.value = String(h);
-        var h12 = ((h + 11) % 12) + 1;
-        oh.textContent = h12 + ':00 ' + (h >= 12 ? 'PM' : 'AM');
-        if (h === st.hour) oh.selected = true;
-        hourSel.appendChild(oh);
+      // Creative preset chips — not a broken hour list
+      card.append(el('h3', null, 'When (Eastern Time)'));
+      const presets = el('div', 'lvl-time-chips');
+      const PRESETS = [
+        { h: 9, m: 0, label: '9:00 AM' },
+        { h: 12, m: 0, label: '12:00 PM' },
+        { h: 18, m: 0, label: '6:00 PM' },
+        { h: 20, m: 0, label: '8:00 PM' },
+        { h: 22, m: 0, label: '10:00 PM' },
+      ];
+      function paintChips() {
+        presets.replaceChildren();
+        PRESETS.forEach(function (p) {
+          const b = el('button', 'chip-toggle' + (st.hour === p.h && st.minute === p.m ? ' on' : ''), p.label);
+          b.type = 'button';
+          b.addEventListener('click', function () {
+            st.hour = p.h; st.minute = p.m;
+            paintChips(); paintNext();
+          });
+          presets.append(b);
+        });
+        // custom marker
+        var isCustom = !PRESETS.some(function (p) { return p.h === st.hour && p.m === st.minute; });
+        const custom = el('button', 'chip-toggle' + (isCustom ? ' on' : ''), isCustom
+          ? (((st.hour + 11) % 12) + 1) + ':' + String(st.minute).padStart(2, '0') + ' ' + (st.hour >= 12 ? 'PM' : 'AM')
+          : 'Custom…');
+        custom.type = 'button';
+        custom.addEventListener('click', function () {
+          var v = window.prompt('Hour 0–23 (Eastern)', String(st.hour));
+          if (v == null) return;
+          var h = parseInt(v, 10);
+          if (!Number.isFinite(h) || h < 0 || h > 23) return;
+          var mv = window.prompt('Minute 0–59', String(st.minute));
+          if (mv == null) return;
+          var m = parseInt(mv, 10);
+          if (!Number.isFinite(m) || m < 0 || m > 59) return;
+          st.hour = h; st.minute = m;
+          paintChips(); paintNext();
+        });
+        presets.append(custom);
       }
-      hourSel.addEventListener('change', function () { st.hour = parseInt(hourSel.value, 10) || 0; st.minute = 0; paintNext(); });
-      const minSel = document.createElement('select');
-      minSel.className = 'pill-select';
-      [0, 15, 30, 45].forEach(function (m) {
-        var om = document.createElement('option');
-        om.value = String(m);
-        om.textContent = (m < 10 ? '0' : '') + m + ' min';
-        if (m === st.minute) om.selected = true;
-        minSel.appendChild(om);
-      });
-      minSel.addEventListener('change', function () { st.minute = parseInt(minSel.value, 10) || 0; paintNext(); });
-      timeRow.append(hourSel, minSel);
-      card.append(timeRow);
-      try { if (typeof enhanceSelects === 'function') enhanceSelects(timeRow); } catch (e) {}
+      paintChips();
+      card.append(presets);
+      card.append(el('p', 'hint', 'America/New_York · EST/EDT automatic'));
 
-      card.append(el('h3', null, 'Destination'));
-      const pick = (typeof window.pickOne === 'function') ? window.pickOne : (typeof pickOne === 'function' ? pickOne : null);
+      card.append(el('h3', null, 'Where'));
+      const pick = (typeof window.pickOne === 'function') ? window.pickOne
+        : (typeof pickOne === 'function' ? pickOne : null);
       if (pick) {
         card.append(pick('Channel', 'channel', st.channelId, function (v) { st.channelId = v || ''; }, { blank: 'Select channel…' }));
         card.append(pick('Ping role', 'role', st.roleId, function (v) { st.roleId = v || ''; }, { blank: 'No role ping' }));
       } else {
-        card.append(el('p', 'muted', 'Open this tab after the main panel loads so channel/role pickers appear.'));
+        card.append(el('p', 'muted', 'Channel/role pickers load with the main panel — hard-refresh if missing.'));
       }
-
-      card.append(el('h3', null, 'Appearance'));
-      var titleInp = document.createElement('input'); titleInp.type = 'text'; titleInp.value = st.title;
-      titleInp.addEventListener('input', function () { st.title = titleInp.value; });
-      var descInp = document.createElement('input'); descInp.type = 'text'; descInp.value = st.description || '';
-      descInp.addEventListener('input', function () { descInp && (st.description = descInp.value); });
-      card.append(titleInp, descInp);
 
       const actions = el('div', 'actions');
       const testBtn = el('button', 'btn small', 'Test post');
@@ -424,7 +441,7 @@
           if (typeof toast === 'function') toast('Test failed', 'bad');
         } finally { testBtn.disabled = false; }
       });
-      const saveBtn = el('button', 'btn', 'Save changes');
+      const saveBtn = el('button', 'btn', 'Save schedule');
       saveBtn.type = 'button';
       saveBtn.addEventListener('click', async function () {
         saveBtn.disabled = true;
@@ -438,7 +455,7 @@
           });
           if (res && res.overview) state.overview = res.overview;
           else if (res && res.levels && state.overview && state.overview.features) state.overview.features.levels = res.levels;
-          if (typeof toast === 'function') toast('Automation saved', 'good');
+          if (typeof toast === 'function') toast('Schedule saved', 'good');
           paintNext();
         } catch (e) {
           if (typeof toast === 'function') toast('Save failed', 'bad');
@@ -447,7 +464,9 @@
       actions.append(testBtn, saveBtn);
       card.append(actions);
       root.append(card);
-      try { if (typeof enhanceSelects === 'function') enhanceSelects(card); } catch (e) {}
+      try {
+        if (typeof enhanceSelects === 'function') enhanceSelects(card);
+      } catch (e) {}
     })();
 
     const ranks = el('div', 'panel');

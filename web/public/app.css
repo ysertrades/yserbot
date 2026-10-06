@@ -3614,3 +3614,22 @@ button.primary:hover {
 .composer-block textarea{transition:none}
 .lvl-auto-time{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.35rem 0}
 .lvl-auto-time select,.pill-select{min-width:7rem}
+
+
+/* Leveling schedule chips */
+.lvl-time-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.4rem 0 .6rem}
+.lvl-time-chips .chip-toggle{min-width:auto}
+.lvl-auto-card h3{margin:1rem 0 .35rem;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#949ba4)}
+.lvl-auto-next{margin:.5rem 0 .75rem}
+/* Composer: one message preview */
+.composer-live-preview .v2-preview-card{
+  background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;
+  padding:14px 16px;min-height:3rem;
+}
+.composer-live-preview .v2-preview-card > .v2-text + .v2-sep,
+.composer-live-preview .v2-preview-card > .v2-h1 + .v2-sep,
+.composer-live-preview .v2-preview-card > .v2-h2 + .v2-sep,
+.composer-live-preview .v2-preview-card > .v2-h3 + .v2-sep{margin-top:.75rem}
+.v2-sep{display:block;height:1px;background:#3a3e4a;margin:.75rem 0;width:100%}
+.composer-block.is-sep{min-height:0;padding:.15rem 0}
+.composer-block.is-sep .composer-sep-line{margin:.4rem 0}
