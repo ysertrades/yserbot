@@ -1,26 +1,19 @@
 'use strict';
-/**
- * Automatic daily XP leaderboard posts.
- * Uses xpEvents — XP earned that calendar day in guild TZ (not all-time).
- */
 const { EmbedBuilder } = require('discord.js');
+const ET = 'America/New_York';
 
-function dayKeyInTz(ts, timeZone = 'UTC') {
+function dayKeyInTz(ts, timeZone = ET) {
   try {
     return new Intl.DateTimeFormat('en-CA', {
-      timeZone: timeZone || 'UTC',
-      year: 'numeric', month: '2-digit', day: '2-digit',
+      timeZone: timeZone || ET, year: 'numeric', month: '2-digit', day: '2-digit',
     }).format(new Date(ts));
-  } catch {
-    return new Date(ts).toISOString().slice(0, 10);
-  }
+  } catch { return new Date(ts).toISOString().slice(0, 10); }
 }
 
-function localHM(timeZone = 'UTC', now = Date.now()) {
+function localHM(timeZone = ET, now = Date.now()) {
   try {
     const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: timeZone || 'UTC',
-      hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: timeZone || ET, hour: '2-digit', minute: '2-digit', hour12: false,
     }).formatToParts(new Date(now));
     return {
       hour: parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10),
@@ -32,9 +25,61 @@ function localHM(timeZone = 'UTC', now = Date.now()) {
   }
 }
 
+function zonedLocalToUtc(y, month, day, hour, minute, timeZone = ET) {
+  const target =
+    `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ` +
+    `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  let lo = Date.UTC(y, month - 1, day) - 36 * 3600e3;
+  let hi = Date.UTC(y, month - 1, day) + 36 * 3600e3;
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  while (hi - lo > 500) {
+    const mid = Math.floor((lo + hi) / 2);
+    const p = Object.fromEntries(
+      fmt.formatToParts(new Date(mid)).filter(x => x.type !== 'literal').map(x => [x.type, x.value]),
+    );
+    const key = `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+    if (key < target) lo = mid; else hi = mid;
+  }
+  return hi;
+}
+
+function etParts(now = Date.now()) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: ET, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date(now)).filter(x => x.type !== 'literal').map(x => [x.type, x.value]),
+  );
+  return { y: +p.year, m: +p.month, d: +p.day };
+}
+
+function nextFireUtcMs(hour, minute, now = Date.now()) {
+  const { y, m, d } = etParts(now);
+  let t = zonedLocalToUtc(y, m, d, hour, minute, ET);
+  if (t <= now + 2000) {
+    const noon = zonedLocalToUtc(y, m, d, 12, 0, ET) + 36 * 3600e3;
+    const p2 = etParts(noon);
+    t = zonedLocalToUtc(p2.y, p2.m, p2.d, hour, minute, ET);
+  }
+  return t;
+}
+
+function formatNextPostLabel(hour, minute, now = Date.now()) {
+  const t = nextFireUtcMs(hour, minute, now);
+  const todayKey = dayKeyInTz(now, ET);
+  const fireKey = dayKeyInTz(t, ET);
+  const hm = localHM(ET, t);
+  const h12 = ((hm.hour + 11) % 12) + 1;
+  const ampm = hm.hour >= 12 ? 'PM' : 'AM';
+  const timeStr = `${h12}:${String(hm.minute).padStart(2, '0')} ${ampm} ET`;
+  return (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + timeStr;
+}
+
 function defaultDailyLb() {
   return {
-    enabled: false, hour: 20, minute: 0, timeZone: 'America/New_York',
+    enabled: false, hour: 20, minute: 0, timeZone: ET,
     channelId: null, roleId: null, limit: 10,
     title: 'Daily XP Leaderboard', description: "Today's top contributors",
     footer: null, showAvatars: true, lastPostedDay: null,
@@ -43,12 +88,12 @@ function defaultDailyLb() {
 
 function normalizeDailyLb(raw) {
   const d = defaultDailyLb();
-  if (!raw || typeof raw !== 'object') return d;
+  if (!raw || typeof raw !== 'object') return { ...d };
   return {
     enabled: !!raw.enabled,
     hour: Math.max(0, Math.min(23, Number(raw.hour) ?? d.hour)),
     minute: Math.max(0, Math.min(59, Number(raw.minute) ?? d.minute)),
-    timeZone: String(raw.timeZone || d.timeZone).slice(0, 64),
+    timeZone: ET,
     channelId: raw.channelId ? String(raw.channelId) : null,
     roleId: raw.roleId ? String(raw.roleId) : null,
     limit: Math.max(3, Math.min(25, Number(raw.limit) || 10)),
@@ -60,10 +105,9 @@ function normalizeDailyLb(raw) {
   };
 }
 
-function dailyXpRows(g, { dayKey, timeZone, limit = 10 } = {}) {
+function dailyXpRows(g, { dayKey, timeZone = ET, limit = 10 } = {}) {
   const key = dayKey || dayKeyInTz(Date.now(), timeZone);
   const xpMap = {};
-  // Live engine uses `events`; contribution engine used `xpEvents`
   const log = Array.isArray(g.events) ? g.events : (g.xpEvents || []);
   for (const e of log) {
     if (!e || !e.userId || !e.xp) continue;
@@ -79,9 +123,8 @@ function dailyXpRows(g, { dayKey, timeZone, limit = 10 } = {}) {
 
 async function buildDailyLeaderboardMessage(guild, g, cfg) {
   const conf = normalizeDailyLb(cfg);
-  const tz = conf.timeZone || 'UTC';
-  const today = dayKeyInTz(Date.now(), tz);
-  const rows = dailyXpRows(g, { dayKey: today, timeZone: tz, limit: conf.limit });
+  const today = dayKeyInTz(Date.now(), ET);
+  const rows = dailyXpRows(g, { dayKey: today, timeZone: ET, limit: conf.limit });
   const lines = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -93,19 +136,18 @@ async function buildDailyLeaderboardMessage(guild, g, cfg) {
         const u = await guild.client.users.fetch(r.id).catch(() => null);
         if (u) name = u.username;
       }
-    } catch { /* keep id */ }
+    } catch { /* */ }
     const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `\`${i + 1}.\``;
     lines.push(`${medal} **${name}** — **${r.xp}** XP`);
   }
-  const { EmbedBuilder } = require('discord.js');
   const embed = new EmbedBuilder()
     .setColor(0x5865F2)
     .setTitle(conf.title || 'Daily XP Leaderboard')
     .setTimestamp(new Date());
   if (conf.description) embed.setDescription(conf.description);
-  if (lines.length) embed.addFields({ name: `Top ${rows.length} · ${today}`, value: lines.join('\n').slice(0, 1024) });
-  else embed.addFields({ name: today, value: 'No XP earned yet today.' });
-  embed.setFooter({ text: (conf.footer || `Timezone: ${tz}`).slice(0, 200) });
+  if (lines.length) embed.addFields({ name: `Top ${rows.length} · ${today} ET`, value: lines.join('\n').slice(0, 1024) });
+  else embed.addFields({ name: `${today} ET`, value: 'No XP earned yet today.' });
+  embed.setFooter({ text: (conf.footer || 'America/New_York').slice(0, 200) });
   return {
     content: conf.roleId ? `<@&${conf.roleId}>` : undefined,
     embeds: [embed],
@@ -113,51 +155,74 @@ async function buildDailyLeaderboardMessage(guild, g, cfg) {
   };
 }
 
-async function tickDailyLeaderboards(client, leveling) {
-  if (!client?.guilds?.cache || !leveling) return;
-  for (const [guildId, guild] of client.guilds.cache) {
+async function postOneGuild(client, leveling, guildId, guild) {
+  let g;
+  if (typeof leveling.guildState === 'function') g = leveling.guildState(guildId).g;
+  else if (typeof leveling.loadAll === 'function') g = leveling.loadAll()[guildId];
+  if (!g) return;
+  const conf = normalizeDailyLb(g.dailyLeaderboard);
+  if (!conf.enabled || !conf.channelId) return;
+  const today = dayKeyInTz(Date.now(), ET);
+  if (conf.lastPostedDay === today) return;
+  const ch = guild.channels.cache.get(conf.channelId);
+  if (!ch || !ch.isTextBased?.()) return;
+  await ch.send(await buildDailyLeaderboardMessage(guild, g, conf));
+  g.dailyLeaderboard = { ...conf, lastPostedDay: today };
+  if (typeof leveling.saveAll === 'function') {
+    const bag = leveling.loadAll(); bag[guildId] = g; leveling.saveAll(bag);
+  } else {
+    const { readJson, writeJson } = require('./jsonStorage');
+    const bag = readJson('levels.json', {});
+    bag[guildId] = bag[guildId] || g;
+    bag[guildId].dailyLeaderboard = g.dailyLeaderboard;
+    writeJson('levels.json', bag);
+  }
+}
+
+function clearRunner() {
+  if (global.__dailyXpLbTimeout) { clearTimeout(global.__dailyXpLbTimeout); global.__dailyXpLbTimeout = null; }
+  if (global.__dailyXpLbTimer) { clearInterval(global.__dailyXpLbTimer); global.__dailyXpLbTimer = null; }
+}
+
+function armNext(client, leveling) {
+  clearRunner();
+  let soonest = Infinity;
+  for (const [guildId] of client.guilds.cache) {
     try {
       let g;
       if (typeof leveling.guildState === 'function') g = leveling.guildState(guildId).g;
       else if (typeof leveling.loadAll === 'function') g = leveling.loadAll()[guildId];
-      else continue;
       if (!g) continue;
       const conf = normalizeDailyLb(g.dailyLeaderboard);
       if (!conf.enabled || !conf.channelId) continue;
-      const { hour, minute } = localHM(conf.timeZone);
-      if (hour !== conf.hour || minute !== conf.minute) continue;
-      const today = dayKeyInTz(Date.now(), conf.timeZone);
-      if (conf.lastPostedDay === today) continue;
-      const ch = guild.channels.cache.get(conf.channelId);
-      if (!ch || !ch.isTextBased?.()) continue;
-      await ch.send(await buildDailyLeaderboardMessage(guild, g, conf));
-      g.dailyLeaderboard = { ...conf, lastPostedDay: today };
-      if (typeof leveling.saveAll === 'function') {
-        const bag = leveling.loadAll();
-        bag[guildId] = g;
-        leveling.saveAll(bag);
-      } else {
-        const { readJson, writeJson } = require('./jsonStorage');
-        const bag = readJson('levels.json', {});
-        bag[guildId] = bag[guildId] || g;
-        bag[guildId].dailyLeaderboard = g.dailyLeaderboard;
-        writeJson('levels.json', bag);
-      }
-    } catch (err) {
-      console.warn('[dailyXpLb]', guildId, err.message);
-    }
+      const t = nextFireUtcMs(conf.hour, conf.minute);
+      if (t < soonest) soonest = t;
+    } catch { /* */ }
   }
+  if (!Number.isFinite(soonest)) {
+    global.__dailyXpLbTimeout = setTimeout(() => armNext(client, leveling), 15 * 60e3);
+    return;
+  }
+  const delay = Math.max(1000, soonest - Date.now());
+  console.log('[dailyXpLb] next fire in ' + Math.round(delay / 1000) + 's (America/New_York)');
+  global.__dailyXpLbTimeout = setTimeout(async () => {
+    try {
+      for (const [guildId, guild] of client.guilds.cache) {
+        await postOneGuild(client, leveling, guildId, guild);
+      }
+    } catch (e) { console.warn('[dailyXpLb] post', e.message); }
+    armNext(client, leveling);
+  }, delay);
 }
 
 function startDailyLeaderboardRunner(client, leveling) {
-  if (global.__dailyXpLbTimer) return;
-  const kick = () => tickDailyLeaderboards(client, leveling).catch(e => console.warn('[dailyXpLb]', e.message));
-  const ms = 60000 - (Date.now() % 60000) + 200;
-  setTimeout(() => { kick(); global.__dailyXpLbTimer = setInterval(kick, 60000); }, ms);
-  console.log('[dailyXpLb] runner armed');
+  global.__dailyXpLbStarted = true;
+  armNext(client, leveling);
+  console.log('[dailyXpLb] runner armed (America/New_York, next-fire timer)');
 }
 
 module.exports = {
-  defaultDailyLb, normalizeDailyLb, dayKeyInTz, localHM, dailyXpRows,
-  buildDailyLeaderboardMessage, tickDailyLeaderboards, startDailyLeaderboardRunner,
+  ET, defaultDailyLb, normalizeDailyLb, dayKeyInTz, localHM, nextFireUtcMs,
+  formatNextPostLabel, dailyXpRows, buildDailyLeaderboardMessage,
+  startDailyLeaderboardRunner, armNext,
 };

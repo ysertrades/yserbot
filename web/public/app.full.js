@@ -2073,6 +2073,7 @@ const channelList = () => state.overview?.settings?.channels || [];
 const roleList = () => state.overview?.settings?.roles || [];
 
 function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
+  // exposed for leveling-ui and other tabs
   const items = kind === 'role' ? roleList() : channelList();
   return select(label, value || '',
     items.map(i => ({ value: i.id, label: kind === 'role' ? i.name : `#${i.name}` })),
@@ -2086,6 +2087,9 @@ function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
  * needed it — the Composer's send form uses it too, and a ping target is the
  * same question wherever it is asked.
  */
+window.pickOne = pickOne;
+window.pickMany = typeof pickMany === 'function' ? pickMany : undefined;
+
 function mentionPicker(label, value, onChange, { blank = 'No ping' } = {}) {
   const current = value && value.startsWith('<@&') ? value.replace(/[^0-9]/g, '') : value;
   return select(label, current || '', [
@@ -2570,7 +2574,24 @@ function renderComposer() {
       } else {
         const ta = document.createElement('textarea');
         ta.rows = b.type === 'heading' ? 2 : 4;
-        ta.placeholder = b.type === 'heading' ? 'Heading' : 'Write your message…';
+        ta.placeholder = b.type === 'heading' ? 'Heading text' : 'Write your message…';
+        if (b.type === 'heading') {
+          if (!b.level) b.level = 1;
+          const lvl = select('Size', String(b.level), [
+            { value: '1', label: 'Heading 1' },
+            { value: '2', label: 'Heading 2' },
+            { value: '3', label: 'Heading 3' },
+          ], function (v) {
+            b.level = parseInt(v, 10) || 1;
+            // Discord Text Display: # ## ###
+            var prefixes = { 1: '# ', 2: '## ', 3: '### ' };
+            var raw = (b.content || '').replace(/^#{1,3}\s*/, '');
+            b.content = (prefixes[b.level] || '# ') + raw;
+            ta.value = b.content;
+            paintPreview();
+          });
+          mid.append(lvl);
+        }
         ta.value = b.content || '';
         ta.addEventListener('input', function () { b.content = ta.value; paintPreview(); });
         mid.append(ta);

@@ -293,17 +293,18 @@
     root.append(split);
 
 
-    // Daily XP Leaderboard
+
+    // Daily XP Leaderboard — America/New_York, panel pickOne (cselect)
     (function () {
       const dl = L.dailyLeaderboard || {};
       const dailyPanel = el('div', 'panel lvl-daily-lb');
       dailyPanel.append(el('h2', null, 'Daily XP Leaderboard'));
-      dailyPanel.append(el('p', 'muted', 'Auto-post today\'s XP rankings (not all-time). Timezone is explicit.'));
+      dailyPanel.append(el('p', 'muted', 'Posts today\'s XP rankings once per day at the exact Eastern Time you set (America/New_York — EST/EDT automatic).'));
+
       const dlState = {
         enabled: !!dl.enabled,
         hour: dl.hour != null ? dl.hour : 20,
         minute: dl.minute != null ? dl.minute : 0,
-        timeZone: dl.timeZone || 'America/New_York',
         channelId: dl.channelId || '',
         roleId: dl.roleId || '',
         limit: dl.limit || 10,
@@ -311,13 +312,54 @@
         description: dl.description || "Today's top contributors",
         footer: dl.footer || '',
       };
+
       const onRow = el('label', 'field');
       const onChk = document.createElement('input');
       onChk.type = 'checkbox'; onChk.checked = dlState.enabled;
-      onChk.addEventListener('change', function () { dlState.enabled = onChk.checked; });
+      onChk.addEventListener('change', function () { dlState.enabled = onChk.checked; paintNext(); });
       onRow.append(onChk, document.createTextNode(' Automatic posting'));
       dailyPanel.append(onRow);
-      dailyPanel.append(el('h3', null, 'Schedule'));
+
+      const nextEl = el('p', 'hint', '');
+      function paintNext() {
+        if (!dlState.enabled) { nextEl.textContent = 'Next post: — (disabled)'; return; }
+        try {
+          // mirror formatNextPostLabel client-side
+          const ET = 'America/New_York';
+          const pad = function (n) { return String(n).padStart(2, '0'); };
+          const now = Date.now();
+          const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: ET, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+          function zoned(y, m, d, h, min) {
+            var target = y + '-' + pad(m) + '-' + pad(d) + ' ' + pad(h) + ':' + pad(min);
+            var lo = Date.UTC(y, m - 1, d) - 36 * 3600e3, hi = Date.UTC(y, m - 1, d) + 36 * 3600e3;
+            while (hi - lo > 500) {
+              var mid = Math.floor((lo + hi) / 2);
+              var p = Object.fromEntries(fmt.formatToParts(new Date(mid)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
+              var key = p.year + '-' + p.month + '-' + p.day + ' ' + p.hour + ':' + p.minute;
+              if (key < target) lo = mid; else hi = mid;
+            }
+            return hi;
+          }
+          var p0 = Object.fromEntries(fmt.formatToParts(new Date(now)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
+          var y = +p0.year, m = +p0.month, d = +p0.day;
+          var t = zoned(y, m, d, dlState.hour, dlState.minute);
+          if (t <= now + 2000) {
+            var noon = zoned(y, m, d, 12, 0) + 36 * 3600e3;
+            var p1 = Object.fromEntries(fmt.formatToParts(new Date(noon)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
+            t = zoned(+p1.year, +p1.month, +p1.day, dlState.hour, dlState.minute);
+          }
+          var pF = Object.fromEntries(fmt.formatToParts(new Date(t)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
+          var hh = +pF.hour, mm = +pF.minute;
+          var h12 = ((hh + 11) % 12) + 1, ampm = hh >= 12 ? 'PM' : 'AM';
+          var todayKey = p0.year + '-' + p0.month + '-' + p0.day;
+          var fireKey = pF.year + '-' + pF.month + '-' + pF.day;
+          nextEl.textContent = 'Next post: ' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + h12 + ':' + pad(mm) + ' ' + ampm + ' ET';
+        } catch (e) { nextEl.textContent = 'Next post: (timezone calc unavailable)'; }
+      }
+      paintNext();
+      dailyPanel.append(nextEl);
+
+      dailyPanel.append(el('h3', null, 'Schedule (Eastern Time)'));
       const sched = el('div', 'lvl-daily-sched');
       const timeInp = document.createElement('input');
       timeInp.type = 'time';
@@ -326,36 +368,23 @@
         var p = (timeInp.value || '20:00').split(':');
         dlState.hour = parseInt(p[0], 10) || 0;
         dlState.minute = parseInt(p[1], 10) || 0;
+        paintNext();
       });
-      const tzSel = document.createElement('select');
-      ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','UTC','Europe/London','Europe/Paris','Asia/Dubai','Asia/Singapore'].forEach(function (tz) {
-        var o = document.createElement('option'); o.value = tz; o.textContent = tz;
-        if (tz === dlState.timeZone) o.selected = true; tzSel.appendChild(o);
-      });
-      tzSel.addEventListener('change', function () { dlState.timeZone = tzSel.value; });
-      sched.append(el('span', 'hint', 'Post time'), timeInp, el('span', 'hint', 'Timezone'), tzSel);
+      sched.append(el('span', 'hint', 'Post time (ET)'), timeInp, el('span', 'hint', 'Timezone: America/New_York'));
       dailyPanel.append(sched);
+
       dailyPanel.append(el('h3', null, 'Destination'));
-      const chSel = document.createElement('select');
-      var blankCh = document.createElement('option'); blankCh.value = ''; blankCh.textContent = 'Select channel…'; chSel.appendChild(blankCh);
-      (L.channelOpts || []).forEach(function (c) {
-        var o = document.createElement('option'); o.value = c.id; o.textContent = '#' + c.name;
-        if (c.id === dlState.channelId) o.selected = true; chSel.appendChild(o);
-      });
-      chSel.addEventListener('change', function () { dlState.channelId = chSel.value; });
-      dailyPanel.append(chSel);
-      dailyPanel.append(el('h3', null, 'Notification'));
-      const roleSel = document.createElement('select');
-      var blankR = document.createElement('option'); blankR.value = ''; blankR.textContent = 'No role ping'; roleSel.appendChild(blankR);
-      var roles = (window.state && state.overview && (state.overview.roles || [])) || [];
-      (Array.isArray(roles) ? roles : []).forEach(function (r) {
-        if (!r || !r.id || r.name === '@everyone') return;
-        var o = document.createElement('option'); o.value = r.id; o.textContent = '@' + (r.name || r.id);
-        if (r.id === dlState.roleId) o.selected = true; roleSel.appendChild(o);
-      });
-      roleSel.addEventListener('change', function () { dlState.roleId = roleSel.value; });
-      dailyPanel.append(roleSel);
-      dailyPanel.append(el('h3', null, 'Leaderboard size'));
+      if (typeof window.pickOne === 'function') {
+        dailyPanel.append(window.pickOne('Post channel', 'channel', dlState.channelId, function (v) { dlState.channelId = v || ''; }, { blank: 'Select channel…' }));
+        dailyPanel.append(window.pickOne('Ping role', 'role', dlState.roleId, function (v) { dlState.roleId = v || ''; }, { blank: 'No role ping' }));
+      } else if (typeof pickOne === 'function') {
+        dailyPanel.append(pickOne('Post channel', 'channel', dlState.channelId, function (v) { dlState.channelId = v || ''; }, { blank: 'Select channel…' }));
+        dailyPanel.append(pickOne('Ping role', 'role', dlState.roleId, function (v) { dlState.roleId = v || ''; }, { blank: 'No role ping' }));
+      } else {
+        dailyPanel.append(el('p', 'muted', 'Channel/role pickers loading… refresh if missing.'));
+      }
+
+      dailyPanel.append(el('h3', null, 'Leaderboard'));
       const limSel = document.createElement('select');
       [5,10,15,20,25].forEach(function (n) {
         var o = document.createElement('option'); o.value = String(n); o.textContent = 'Top ' + n;
@@ -363,6 +392,7 @@
       });
       limSel.addEventListener('change', function () { dlState.limit = parseInt(limSel.value, 10) || 10; });
       dailyPanel.append(limSel);
+
       dailyPanel.append(el('h3', null, 'Appearance'));
       var titleInp = document.createElement('input'); titleInp.type = 'text'; titleInp.value = dlState.title;
       titleInp.addEventListener('input', function () { dlState.title = titleInp.value; });
@@ -371,6 +401,7 @@
       var footInp = document.createElement('input'); footInp.type = 'text'; footInp.placeholder = 'Footer'; footInp.value = dlState.footer || '';
       footInp.addEventListener('input', function () { dlState.footer = footInp.value; });
       dailyPanel.append(titleInp, descInp, footInp);
+
       var dlSave = el('button', 'btn', 'Save daily leaderboard');
       dlSave.type = 'button';
       dlSave.addEventListener('click', async function () {
@@ -379,9 +410,10 @@
           var res = await post({
             dailyLeaderboard: {
               enabled: dlState.enabled, hour: dlState.hour, minute: dlState.minute,
-              timeZone: dlState.timeZone, channelId: dlState.channelId || null,
-              roleId: dlState.roleId || null, limit: dlState.limit,
-              title: dlState.title, description: dlState.description, footer: dlState.footer || null,
+              timeZone: 'America/New_York',
+              channelId: dlState.channelId || null, roleId: dlState.roleId || null,
+              limit: dlState.limit, title: dlState.title, description: dlState.description,
+              footer: dlState.footer || null,
             },
           });
           if (res && res.overview) state.overview = res.overview;
@@ -394,6 +426,7 @@
       });
       dailyPanel.append(dlSave);
       root.append(dailyPanel);
+      try { if (typeof enhanceSelects === 'function') enhanceSelects(dailyPanel); } catch (e) {}
     })();
 
     const ranks = el('div', 'panel');
