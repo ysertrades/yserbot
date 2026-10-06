@@ -40,6 +40,7 @@ const appearance = require('./appearance');
 const whopPanel = require('./whop');
 const cardsPanel = require('./cards');
 const botProfile = require('./botProfile');
+const casino = require('./casino');
 
 function me(session, client) {
   const owner = auth.isOwner(session.uid);
@@ -171,6 +172,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     featureToggles: featureToggles.read(guildId),
     tickets: tickets.read(guildId, guild),
     polls: pollsPanel.read(guildId, guild),
+    casino: casino.read(guildId),
     economy: economyPanel.read(guildId),
     cards: cardsPanel.read(guildId, guild),
     links: links.read(guildId, guild),

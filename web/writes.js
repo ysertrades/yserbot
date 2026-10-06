@@ -1,3 +1,4 @@
+const casinoPanel = require('./casino');
 'use strict';
 
 /**
@@ -1019,4 +1020,9 @@ async function apply(op, guildId, body, ctx) {
   if (!handler) return { error: 'unknown_operation' };
   return handler(guildId, body, ctx);
 }
-module.exports = { apply, OPS };
+module.exports = {
+  async casino(guildId, body, ctx) {
+    const r = casinoPanel.save(guildId, body);
+    return r;
+  },
+ apply, OPS };
