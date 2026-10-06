@@ -362,14 +362,31 @@
 
       card.append(el('h3', null, 'Schedule'));
       card.append(el('p', 'hint', 'Timezone locked to Eastern Time (America/New_York) — handles EST/EDT automatically.'));
-      const timeInp = document.createElement('input');
-      timeInp.type = 'time';
-      timeInp.value = String(st.hour).padStart(2, '0') + ':' + String(st.minute).padStart(2, '0');
-      timeInp.addEventListener('change', function () {
-        var p = (timeInp.value || '20:00').split(':');
-        st.hour = parseInt(p[0], 10) || 0; st.minute = parseInt(p[1], 10) || 0; paintNext();
+      const timeRow = el('div', 'lvl-auto-time');
+      const hourSel = document.createElement('select');
+      hourSel.className = 'pill-select';
+      for (var h = 0; h < 24; h++) {
+        var oh = document.createElement('option');
+        oh.value = String(h);
+        var h12 = ((h + 11) % 12) + 1;
+        oh.textContent = h12 + ':00 ' + (h >= 12 ? 'PM' : 'AM');
+        if (h === st.hour) oh.selected = true;
+        hourSel.appendChild(oh);
+      }
+      hourSel.addEventListener('change', function () { st.hour = parseInt(hourSel.value, 10) || 0; st.minute = 0; paintNext(); });
+      const minSel = document.createElement('select');
+      minSel.className = 'pill-select';
+      [0, 15, 30, 45].forEach(function (m) {
+        var om = document.createElement('option');
+        om.value = String(m);
+        om.textContent = (m < 10 ? '0' : '') + m + ' min';
+        if (m === st.minute) om.selected = true;
+        minSel.appendChild(om);
       });
-      card.append(timeInp);
+      minSel.addEventListener('change', function () { st.minute = parseInt(minSel.value, 10) || 0; paintNext(); });
+      timeRow.append(hourSel, minSel);
+      card.append(timeRow);
+      try { if (typeof enhanceSelects === 'function') enhanceSelects(timeRow); } catch (e) {}
 
       card.append(el('h3', null, 'Destination'));
       const pick = (typeof window.pickOne === 'function') ? window.pickOne : (typeof pickOne === 'function' ? pickOne : null);

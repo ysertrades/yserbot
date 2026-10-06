@@ -3587,3 +3587,30 @@ button.primary:hover {
 .lvl-auto-toggle{display:flex;align-items:center;gap:.35rem;font-weight:600}
 .lvl-auto-next{margin:.5rem 0 0}
 .lvl-auto-card input[type=time],.lvl-auto-card input[type=text]{max-width:280px;width:100%;margin:.25rem 0}
+
+
+/* Unified composer preview — single message card */
+.composer-live-preview{margin-top:.65rem}
+.composer-live-preview .v2-preview-card{
+  background:#1e1f22;
+  border:1px solid #2a2d38;
+  border-radius:12px;
+  padding:14px 16px;
+  min-height:3.5rem;
+  max-width:100%;
+}
+.composer-live-preview .v2-preview-card > * + *{margin-top:.55rem}
+.v2-sep{height:1px;background:#3a3e4a;margin:.85rem 0;border:0;padding:0}
+.composer-canvas-body{min-height:4rem}
+.composer-toolbar{
+  position:sticky;bottom:3.25rem;z-index:5;
+  background:var(--panel,#12131a);
+  border-top:1px solid var(--rule,#2a2d38);
+  padding:.55rem 0;
+  display:flex;flex-wrap:wrap;gap:.4rem;align-items:flex-end;
+}
+/* Prevent layout thrash on cselect open */
+.composer-canvas,.composer-canvas .panel{overflow:visible}
+.composer-block textarea{transition:none}
+.lvl-auto-time{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.35rem 0}
+.lvl-auto-time select,.pill-select{min-width:7rem}

@@ -2541,25 +2541,37 @@ function renderComposer() {
     }
 
     function paintPreviewOnly() {
-      preview.replaceChildren();
-      const card = el('div', 'v2-preview-card');
+      // ONE continuous message card — separators are lines inside, never new cards
+      let card = preview.querySelector('.v2-preview-card');
+      if (!card) {
+        preview.replaceChildren();
+        card = el('div', 'v2-preview-card');
+        preview.append(card);
+      }
+      // Rebuild inner content only (card node stays mounted → no flicker)
+      card.replaceChildren();
+      let any = false;
       draft.blocks.forEach(function (b) {
         if (b.type === 'separator') {
-          const line = el('div', 'v2-sep');
-          card.append(line);
-        } else if (b.type === 'heading') {
-          const t = (b.content || '').replace(/^#{1,3}\s*/, '') || 'Heading';
-          const h = el('div', 'v2-h' + (b.level || 1), t);
-          if (!(b.content || '').replace(/^#{1,3}\s*/, '')) h.classList.add('placeholder');
+          card.append(el('div', 'v2-sep'));
+          any = true;
+          return;
+        }
+        if (b.type === 'heading') {
+          const raw = (b.content || '').replace(/^#{1,3}\s*/, '');
+          const h = el('div', 'v2-h' + (b.level || 1), raw || 'Heading');
+          if (!raw) h.classList.add('placeholder');
           card.append(h);
-        } else if (b.type === 'text') {
+          any = true;
+          return;
+        }
+        if (b.type === 'text') {
           const raw = b.content || '';
           const t = el('div', 'v2-text');
-          // simple **bold** render
-          t.textContent = raw || 'Text';
-          if (!raw) t.classList.add('placeholder');
-          else {
-            t.innerHTML = '';
+          if (!raw) {
+            t.classList.add('placeholder');
+            t.textContent = 'Message preview';
+          } else {
             raw.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
               if (/^\*\*[^*]+\*\*$/.test(part)) {
                 const s = document.createElement('strong');
@@ -2569,12 +2581,18 @@ function renderComposer() {
             });
           }
           card.append(t);
-        } else if (b.type === 'media') {
-          const m = el('div', 'v2-media', b.url ? 'Image' : 'Image URL…');
-          card.append(m);
+          any = true;
+          return;
+        }
+        if (b.type === 'media') {
+          card.append(el('div', 'v2-media', b.url ? 'Image' : 'Image URL…'));
+          any = true;
         }
       });
-      preview.append(card);
+      if (!any) {
+        const empty = el('div', 'v2-text placeholder', 'Preview appears as you type');
+        card.append(empty);
+      }
     }
 
     function focusBlock(idx) {
@@ -2661,7 +2679,7 @@ function renderComposer() {
         canvas.append(row);
       });
       paintPreviewOnly();
-      try { if (typeof enhanceSelects === 'function') enhanceSelects(panel); } catch (e) {}
+      try { if (typeof enhanceSelects === 'function') { var _es = panel.querySelectorAll('select:not([data-cselect])'); if (_es.length) enhanceSelects(panel); } } catch (e) {}
     }
 
     function insertAfterActive(block) {
@@ -2676,13 +2694,11 @@ function renderComposer() {
     }
 
     function ensureTextAfter(idx) {
-      if (idx + 1 >= draft.blocks.length || draft.blocks[idx + 1].type === 'separator') {
-        draft.blocks.splice(idx + 1, 0, { type: 'text', content: '' });
-      }
-      draft._active = idx + 1;
+      // Do NOT auto-create empty text fields — user adds via toolbar
+      draft._active = idx;
       structureSig = '';
       paintStructure();
-      focusBlock(draft._active);
+      focusBlock(idx);
     }
 
     paintStructure();
@@ -2758,9 +2774,9 @@ function renderComposer() {
 
     bar.append(tool('Separator', function () {
       var i = draft._active == null ? draft.blocks.length - 1 : draft._active;
-      draft.blocks.splice(i + 1, 0, { type: 'separator' }, { type: 'text', content: '' });
-      draft._active = i + 2;
-      draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(draft._active);
+      draft.blocks.splice(i + 1, 0, { type: 'separator' });
+      draft._active = i + 1;
+      draft._dirty = true; structureSig = ''; paintStructure(); paintSave();
     }));
 
     bar.append(tool('Image', function () {
