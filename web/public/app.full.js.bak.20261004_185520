@@ -1174,6 +1174,7 @@ function renderOverview() {
   renderLegalLinks();
   renderTickets();
   renderPolls();
+  try { if (featureOn('casino')) renderCasino(); } catch (e) { console.warn('[panel] renderCasino', e); }
   renderLinkRequests();
   renderModeration();
   renderGroupForm('#form-lottery', 'lottery');
@@ -2072,7 +2073,6 @@ const channelList = () => state.overview?.settings?.channels || [];
 const roleList = () => state.overview?.settings?.roles || [];
 
 function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
-  // exposed for leveling-ui and other tabs
   const items = kind === 'role' ? roleList() : channelList();
   return select(label, value || '',
     items.map(i => ({ value: i.id, label: kind === 'role' ? i.name : `#${i.name}` })),
@@ -2086,9 +2086,6 @@ function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
  * needed it — the Composer's send form uses it too, and a ping target is the
  * same question wherever it is asked.
  */
-window.pickOne = pickOne;
-window.pickMany = typeof pickMany === 'function' ? pickMany : undefined;
-
 function mentionPicker(label, value, onChange, { blank = 'No ping' } = {}) {
   const current = value && value.startsWith('<@&') ? value.replace(/[^0-9]/g, '') : value;
   return select(label, current || '', [
@@ -2485,7 +2482,7 @@ function renderComposer() {
   // New messages default to Components V2; existing legacy templates stay legacy.
   if (!draft.format && (!draft.embeds || !draft.embeds.length) && !draft.blocks) {
     draft.format = 'v2';
-    draft.blocks = [{ type: 'text', content: '' }];
+    draft.blocks = [{ type: 'text', content: '' }, { type: 'separator' }, { type: 'text', content: '' }];
     draft.buttonsOutside = false;
     draft.embeds = [];
   }
@@ -2499,309 +2496,92 @@ function renderComposer() {
 
   head.append(el('h2', null, 'Message'));
   head.append(textField('Name (how you refer to it)', draft.name, v => { draft.name = v; }));
+  // Format toggle
+  head.append(select('Format', draft.format === 'v2' ? 'v2' : 'legacy', [
+    { value: 'v2', label: 'Component V2 (default)' },
+    { value: 'legacy', label: 'Classic embed' },
+  ], v => {
+    draft.format = v;
+    if (v === 'v2' && !draft.blocks?.length) {
+      draft.blocks = [{ type: 'text', content: '' }, { type: 'separator' }, { type: 'text', content: '' }];
+      draft.embeds = [];
+    }
+    state.draft = draft;
+    renderComposer();
+  }));
 
-
-
-  // ── Composer CANVAS (V2) — one writing surface + toolbar ──
-  if (draft.format !== 'legacy') {
-    draft.format = 'v2';
+  if (draft.format === 'v2') {
+    const blocksPanel = el('div', 'panel');
+    blocksPanel.append(el('h2', null, 'Components'));
+    blocksPanel.append(el('p', 'hint', 'Build the message as blocks. Separators are real Discord V2 lines, not dashes.'));
     if (!Array.isArray(draft.blocks)) draft.blocks = [];
-    if (!draft.blocks.length) draft.blocks = [{ type: 'text', content: '' }];
-    if (draft._active == null) draft._active = 0;
-    if (draft._dirty == null) draft._dirty = false;
-    if (draft._boldNext == null) draft._boldNext = false;
-
-    const panel = el('div', 'panel composer-canvas');
-    // Mode switch
-    const modeRow = el('div', 'composer-mode-row');
-    const v2Btn = el('button', 'btn small on', 'Component V2');
-    v2Btn.type = 'button';
-    const classicBtn = el('button', 'btn small', 'Classic embed');
-    classicBtn.type = 'button';
-    classicBtn.addEventListener('click', function () {
-      draft.format = 'legacy';
-      if (!draft.embeds || !draft.embeds.length) {
-        draft.embeds = [{ title: '', description: (draft.blocks[0] && draft.blocks[0].content) || '', color: '#5865F2', fields: [] }];
-      }
-      state.draft = draft;
-      renderComposer();
-    });
-    modeRow.append(v2Btn, classicBtn, el('span', 'tag on', 'ACTIVE'));
-    panel.append(modeRow);
-    panel.append(textField('Name', draft.name || '', function (v) { draft.name = v; draft._dirty = true; paintSave(); }));
-
-    // Canvas list — stable nodes: only rebuild structure when blocks length/type order changes
-    const canvas = el('div', 'composer-canvas-body');
-    canvas.setAttribute('data-composer-canvas', '1');
-    const preview = el('div', 'composer-live-preview');
-    let structureSig = '';
-
-    function blockSig() {
-      return draft.blocks.map(function (b) { return b.type + (b.level || ''); }).join('|');
-    }
-
-    function paintPreviewOnly() {
-      preview.replaceChildren();
-      const card = el('div', 'v2-preview-card');
-      draft.blocks.forEach(function (b) {
-        if (b.type === 'separator') {
-          const line = el('div', 'v2-sep');
-          card.append(line);
-        } else if (b.type === 'heading') {
-          const t = (b.content || '').replace(/^#{1,3}\s*/, '') || 'Heading';
-          const h = el('div', 'v2-h' + (b.level || 1), t);
-          if (!(b.content || '').replace(/^#{1,3}\s*/, '')) h.classList.add('placeholder');
-          card.append(h);
-        } else if (b.type === 'text') {
-          const raw = b.content || '';
-          const t = el('div', 'v2-text');
-          // simple **bold** render
-          t.textContent = raw || 'Text';
-          if (!raw) t.classList.add('placeholder');
-          else {
-            t.innerHTML = '';
-            raw.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
-              if (/^\*\*[^*]+\*\*$/.test(part)) {
-                const s = document.createElement('strong');
-                s.textContent = part.slice(2, -2);
-                t.appendChild(s);
-              } else t.appendChild(document.createTextNode(part));
-            });
-          }
-          card.append(t);
+    const host = el('div');
+    const paintBlocks = () => {
+      host.replaceChildren();
+      draft.blocks.forEach((b, idx) => {
+        const card = el('div', 'item');
+        card.style.cssText = 'padding:.75rem 0;border-bottom:1px solid var(--rule,#2a2d38)';
+        const tag = el('span', 'tag', b.type || 'block');
+        card.append(tag);
+        if (b.type === 'text' || b.type === 'heading') {
+          card.append(areaField(b.type === 'heading' ? 'Heading' : 'Text', b.content || '', v => { b.content = v; }));
+        } else if (b.type === 'separator') {
+          card.append(el('p', 'muted', '— horizontal separator line —'));
         } else if (b.type === 'media') {
-          const m = el('div', 'v2-media', b.url ? 'Image' : 'Image URL…');
-          card.append(m);
+          card.append(textField('Image URL (https)', b.url || '', v => { b.url = v; }));
         }
-      });
-      preview.append(card);
-    }
-
-    function focusBlock(idx) {
-      draft._active = idx;
-      requestAnimationFrame(function () {
-        const node = canvas.querySelector('[data-bi="' + idx + '"] textarea, [data-bi="' + idx + '"] input');
-        if (node) { try { node.focus(); } catch (e) {} }
-      });
-    }
-
-    function paintStructure() {
-      const sig = blockSig();
-      if (sig === structureSig && canvas.childNodes.length) {
-        paintPreviewOnly();
-        return;
-      }
-      structureSig = sig;
-      canvas.replaceChildren();
-      draft.blocks.forEach(function (b, idx) {
-        const row = el('div', 'composer-block' + (draft._active === idx ? ' is-active' : ''));
-        row.dataset.bi = String(idx);
-
-        const tools = el('div', 'composer-block-tools');
+        const row = el('div', 'actions');
         const up = el('button', 'btn small', '↑');
         up.type = 'button';
         up.disabled = idx === 0;
-        up.addEventListener('click', function () {
+        up.addEventListener('click', () => {
           if (idx < 1) return;
-          var t = draft.blocks[idx - 1]; draft.blocks[idx - 1] = draft.blocks[idx]; draft.blocks[idx] = t;
-          draft._active = idx - 1; draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(idx - 1);
+          const t = draft.blocks[idx - 1];
+          draft.blocks[idx - 1] = draft.blocks[idx];
+          draft.blocks[idx] = t;
+          paintBlocks();
         });
         const down = el('button', 'btn small', '↓');
         down.type = 'button';
         down.disabled = idx >= draft.blocks.length - 1;
-        down.addEventListener('click', function () {
+        down.addEventListener('click', () => {
           if (idx >= draft.blocks.length - 1) return;
-          var t = draft.blocks[idx + 1]; draft.blocks[idx + 1] = draft.blocks[idx]; draft.blocks[idx] = t;
-          draft._active = idx + 1; draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(idx + 1);
+          const t = draft.blocks[idx + 1];
+          draft.blocks[idx + 1] = draft.blocks[idx];
+          draft.blocks[idx] = t;
+          paintBlocks();
         });
-        const rm = el('button', 'btn small danger', '×');
+        const rm = el('button', 'btn small danger', 'Remove');
         rm.type = 'button';
-        rm.disabled = draft.blocks.length <= 1;
-        rm.addEventListener('click', function () {
-          if (draft.blocks.length <= 1) return;
-          draft.blocks.splice(idx, 1);
-          draft._active = Math.max(0, idx - 1);
-          draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(draft._active);
-        });
-        tools.append(up, down, rm);
-
-        if (b.type === 'separator') {
-          row.classList.add('is-sep');
-          row.append(el('div', 'composer-sep-line'), tools);
-        } else if (b.type === 'media') {
-          const inp = document.createElement('input');
-          inp.type = 'url';
-          inp.placeholder = 'Image URL (https://…)';
-          inp.value = b.url || '';
-          inp.addEventListener('focus', function () { draft._active = idx; });
-          inp.addEventListener('input', function () {
-            b.url = inp.value; draft._dirty = true; paintPreviewOnly(); paintSave();
-          });
-          row.append(inp, tools);
-        } else {
-          const ta = document.createElement('textarea');
-          ta.rows = b.type === 'heading' ? 2 : 5;
-          ta.placeholder = b.type === 'heading' ? 'Heading…' : 'Write your message…';
-          ta.value = b.content || '';
-          if (b.type === 'heading') ta.className = 'composer-heading-input';
-          ta.addEventListener('focus', function () { draft._active = idx; });
-          ta.addEventListener('input', function () {
-            var v = ta.value;
-            if (draft._boldNext && v.length) {
-              // wrap last typed char roughly — simpler: if no selection and boldNext, user uses ** via button
-              draft._boldNext = false;
-            }
-            b.content = v;
-            draft._dirty = true;
-            paintPreviewOnly();
-            paintSave();
-          });
-          row.append(ta, tools);
-        }
-        canvas.append(row);
+        rm.addEventListener('click', () => { draft.blocks.splice(idx, 1); paintBlocks(); });
+        row.append(up, down, rm);
+        card.append(row);
+        host.append(card);
       });
-      paintPreviewOnly();
-      try { if (typeof enhanceSelects === 'function') enhanceSelects(panel); } catch (e) {}
-    }
-
-    function insertAfterActive(block) {
-      var i = Math.min(draft._active == null ? draft.blocks.length - 1 : draft._active, draft.blocks.length - 1);
-      draft.blocks.splice(i + 1, 0, block);
-      draft._active = i + 1;
-      draft._dirty = true;
-      structureSig = '';
-      paintStructure();
-      paintSave();
-      focusBlock(draft._active);
-    }
-
-    function ensureTextAfter(idx) {
-      if (idx + 1 >= draft.blocks.length || draft.blocks[idx + 1].type === 'separator') {
-        draft.blocks.splice(idx + 1, 0, { type: 'text', content: '' });
-      }
-      draft._active = idx + 1;
-      structureSig = '';
-      paintStructure();
-      focusBlock(draft._active);
-    }
-
-    paintStructure();
-    panel.append(canvas);
-
-    // Toolbar
-    const bar = el('div', 'composer-toolbar');
-    function tool(label, fn, cls) {
-      const b = el('button', 'btn small' + (cls ? ' ' + cls : ''), label);
-      b.type = 'button';
-      b.addEventListener('click', fn);
-      return b;
-    }
-    bar.append(tool('Text', function () {
-      var i = draft._active || 0;
-      if (draft.blocks[i] && draft.blocks[i].type !== 'text') {
-        draft.blocks[i].type = 'text';
-        delete draft.blocks[i].level;
-        structureSig = ''; paintStructure(); focusBlock(i);
-      } else insertAfterActive({ type: 'text', content: '' });
-      draft._dirty = true; paintSave();
-    }));
-
-    // Heading — real panel select (cselect)
-    const headWrap = el('div', 'composer-tool-heading');
-    const headSel = select('Heading', String((draft.blocks[draft._active] && draft.blocks[draft._active].level) || 1), [
-      { value: '1', label: 'Heading 1' },
-      { value: '2', label: 'Heading 2' },
-      { value: '3', label: 'Heading 3' },
-    ], function (v) {
-      var i = draft._active || 0;
-      var b = draft.blocks[i];
-      if (!b) return;
-      var level = parseInt(v, 10) || 1;
-      var raw = (b.content || '').replace(/^#{1,3}\s*/, '');
-      b.type = 'heading';
-      b.level = level;
-      var prefix = level === 2 ? '## ' : level === 3 ? '### ' : '# ';
-      b.content = prefix + raw;
-      draft._dirty = true;
-      structureSig = '';
-      paintStructure();
-      paintSave();
-      ensureTextAfter(i);
-    }, { blank: null });
-    // tighten label
-    headWrap.append(headSel);
-    bar.append(headWrap);
-
-    bar.append(tool('B', function () {
-      var i = draft._active || 0;
-      var b = draft.blocks[i];
-      if (!b || (b.type !== 'text' && b.type !== 'heading')) return;
-      var ta = canvas.querySelector('[data-bi="' + i + '"] textarea');
-      if (ta && typeof ta.selectionStart === 'number' && ta.selectionStart !== ta.selectionEnd) {
-        var a = ta.selectionStart, z = ta.selectionEnd;
-        var val = ta.value;
-        var selected = val.slice(a, z);
-        var next = val.slice(0, a) + '**' + selected + '**' + val.slice(z);
-        ta.value = next; b.content = next;
-        draft._dirty = true; paintPreviewOnly(); paintSave();
-        try { ta.focus(); ta.setSelectionRange(a + 2, z + 2); } catch (e) {}
-      } else {
-        // toggle bold markers at end
-        b.content = (b.content || '') + '****';
-        draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(i);
-        requestAnimationFrame(function () {
-          var t2 = canvas.querySelector('[data-bi="' + i + '"] textarea');
-          if (t2) { var pos = (b.content || '').length - 2; try { t2.setSelectionRange(pos, pos); } catch (e) {} }
-        });
-      }
-    }, 'composer-bold'));
-
-    bar.append(tool('Separator', function () {
-      var i = draft._active == null ? draft.blocks.length - 1 : draft._active;
-      draft.blocks.splice(i + 1, 0, { type: 'separator' }, { type: 'text', content: '' });
-      draft._active = i + 2;
-      draft._dirty = true; structureSig = ''; paintStructure(); paintSave(); focusBlock(draft._active);
-    }));
-
-    bar.append(tool('Image', function () {
-      insertAfterActive({ type: 'media', url: '' });
-    }));
-
-    bar.append(tool('Button', function () {
-      toast('Save the template first, then add buttons in the section below.', 'ok');
-    }));
-
-    panel.append(bar);
-    panel.append(el('p', 'hint', 'Preview'));
-    panel.append(preview);
-    parts.push(panel);
+    };
+    paintBlocks();
+    blocksPanel.append(host);
+    const addRow = el('div', 'actions');
+    const addText = el('button', 'btn small', '+ Text');
+    addText.type = 'button';
+    addText.addEventListener('click', () => { draft.blocks.push({ type: 'text', content: '' }); paintBlocks(); });
+    const addSep = el('button', 'btn small', '+ Separator');
+    addSep.type = 'button';
+    addSep.addEventListener('click', () => { draft.blocks.push({ type: 'separator' }); paintBlocks(); });
+    const addHead = el('button', 'btn small', '+ Heading');
+    addHead.type = 'button';
+    addHead.addEventListener('click', () => { draft.blocks.push({ type: 'heading', content: '' }); paintBlocks(); });
+    addRow.append(addText, addHead, addSep);
+    blocksPanel.append(addRow);
+    blocksPanel.append(select('Button placement', draft.buttonsOutside ? 'outside' : 'inside', [
+      { value: 'inside', label: 'Inside message (default)' },
+      { value: 'outside', label: 'Outside message' },
+    ], v => { draft.buttonsOutside = v === 'outside'; }));
+    parts.push(blocksPanel);
   }
 
 
 
-  // V2 skips legacy message body — content lives in blocks above
-  if (draft.format === 'legacy') {
-
-  {
-    const sw = el('div', 'panel');
-    const row = el('div', 'queue-head');
-    row.append(el('h2', null, 'Classic embed'));
-    const back = el('button', 'btn small', 'Use Component V2');
-    back.type = 'button';
-    back.addEventListener('click', function () {
-      draft.format = 'v2';
-      if (!Array.isArray(draft.blocks) || !draft.blocks.length) {
-        const emb = draft.embeds && draft.embeds[0];
-        draft.blocks = [{ type: 'text', content: (emb && (emb.description || emb.title)) || '' }];
-      }
-      state.draft = draft;
-      renderComposer();
-    });
-    row.append(back);
-    sw.append(row);
-    sw.append(el('p', 'hint', 'Switch back anytime. V2 blocks are kept when possible.'));
-    parts.push(sw);
-  }
   const a = draft.around;
 
   /* -- Plain text message (no embeds) ---------------------------------- */
@@ -2997,8 +2777,6 @@ function renderComposer() {
   head.append(saveRow);
   parts.push(head);
 
-  } // end legacy-only body
-
   /* -- buttons ---------------------------------------------------------- */
   const btnPanel = el('div', 'panel');
   btnPanel.append(el('h2', null, 'Buttons on this message'));
@@ -3114,49 +2892,6 @@ function renderComposer() {
       }
     }
     parts.push(sendPanel);
-  }
-
-
-  {
-    const bar = el('div', 'composer-save-bar panel');
-    bar.style.cssText = 'position:sticky;bottom:0;z-index:6;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;margin-top:1rem;padding:.75rem 1rem;border:1px solid var(--rule,#2a2d38);background:var(--panel,#12131a)';
-    const left = el('div');
-    left.append(el('span', 'tag', draft.format === 'v2' ? 'Component V2' : 'Classic embed'));
-    if (draft.name) left.append(el('span', 'muted', ' · ' + draft.name));
-    const saveBtn = el('button', 'btn', 'Save template');
-    saveBtn.type = 'button';
-    let saving = false;
-    saveBtn.addEventListener('click', async function () {
-      if (saving) return;
-      const name = (draft.name || '').trim();
-      if (!name) { toast('Name this template first.', 'bad'); return; }
-      if (draft.format === 'v2') {
-        const has = (draft.blocks || []).some(function (b) {
-          return ((b.type === 'text' || b.type === 'heading') && (b.content || '').trim()) || b.type === 'separator' || (b.type === 'media' && b.url);
-        });
-        if (!has) { toast('Add some content before saving.', 'bad'); return; }
-      }
-      saving = true; saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
-      try {
-        const res = await post('template', {
-          name: name,
-          format: draft.format === 'v2' ? 'v2' : 'legacy',
-          blocks: draft.blocks || [],
-          buttonsOutside: !!draft.buttonsOutside,
-          embeds: draft.format === 'v2' ? [] : (draft.embeds || []),
-          around: draft.format === 'v2' ? null : (draft.around || null),
-        });
-        if (res && (res.ok || res.name)) {
-          toast('Template saved', 'good');
-          state.draft = null; state.tplName = name;
-          state.overview = await get('/api/guild/' + state.guildId);
-          renderComposer();
-        } else toast((res && res.error) || 'Save failed', 'bad');
-      } catch (e) { toast('Save failed', 'bad'); }
-      finally { saving = false; saveBtn.disabled = false; saveBtn.textContent = 'Save template'; }
-    });
-    bar.append(left, saveBtn);
-    parts.push(bar);
   }
 
   body.replaceChildren(...parts);
@@ -6193,6 +5928,7 @@ function syncFeatureNav() {
     document.getElementById('nav-' + name) || document.querySelector('[data-goto="' + name + '"]');
 
   const econOff = !featureOn('economy');
+  const casOff  = !featureOn('casino');
   const calOff  = !featureOn('econ_calendar');
   const whopOff = !featureOn('whop');
   const gawOff  = !featureOn('giveaways');
@@ -6202,6 +5938,7 @@ function syncFeatureNav() {
   const feedsOff = calOff && whopOff;
 
   hide(nav('economy'), econOff);
+  hide(nav('casino'), casOff);
   hide(nav('feeds'), feedsOff);
   hide(nav('giveaways'), gawOff);
   hide(nav('tickets'), tixOff);
@@ -6214,7 +5951,7 @@ function syncFeatureNav() {
   hide($('#whop-panel'), whopOff);
 
   const sec = root?.dataset?.section;
-  if ((sec === 'economy' && econOff)
+  if ((sec === 'economy' && econOff) || (sec === 'casino' && casOff)
       || (sec === 'feeds' && feedsOff) || (sec === 'giveaways' && gawOff)
       || (sec === 'tickets' && tixOff)
       || (sec === 'leveling' && lvlOff)) {
@@ -7557,6 +7294,75 @@ function openLinkRequest(r) {
   openSheet(r.domain || 'Link request', body, [approve, denyBtn]);
 }
 
+/* ── casino ────────────────────────────────────────────────────────────────
+   Three forms rather than one, because they are three different decisions:
+   what a bet may be, what the shortcut buttons offer, and which games exist.
+   Saving one should not make you re-confirm the other two. */
+
+function renderCasino() {
+  const c = state.overview?.casino;
+  if (!c) return;
+
+  /* -- table stakes ------------------------------------------------------ */
+  const stakes = { ...c.values };
+  const stakeNote = el('p', 'hint', '');
+  const syncStakeNote = () => {
+    const bad = Number(stakes.minBet) >= Number(stakes.maxBet);
+    stakeNote.textContent = bad
+      ? 'Minimum must be below maximum, or nobody can place a bet at all.'
+      : `Bets between ${num(stakes.minBet)} and ${num(stakes.maxBet)} coins.${Number(stakes.cooldownSeconds) > 0 ? ` ${stakes.cooldownSeconds}s between games.` : ' No cooldown between games.'}`;
+    stakeNote.className = `hint${bad ? ' bad' : ''}`;
+  };
+
+  $('#form-casino').replaceChildren(
+    ...c.fields.map(f => textField(`${f.label}${f.key === 'cooldownSeconds' ? ' — 0 for none' : ''}`,
+      String(stakes[f.key] ?? ''), v => { stakes[f.key] = Number(v); syncStakeNote(); })),
+    stakeNote,
+    actions(() => post('casino', stakes)),
+  );
+  syncStakeNote();
+
+  /* -- quick bets -------------------------------------------------------- */
+  const presets = c.presets.slice();
+  const presetForm = $('#form-casino-presets');
+  const presetNote = el('p', 'hint', '');
+  const syncPresetNote = () => {
+    // Sorted and de-duplicated server-side, so say so rather than letting the
+    // saved order come back looking like the field was ignored.
+    const clean = [...new Set(presets.filter(n => n > 0))].sort((a, b) => a - b);
+    presetNote.textContent = clean.length < presets.length
+      ? `Duplicates and blanks are dropped — this will save as ${clean.join(' / ')} topped up from the defaults.`
+      : `Buttons will read ${clean.join(' / ')}, lowest first.`;
+  };
+
+  presetForm.replaceChildren(
+    ...presets.map((value, i) => textField(`Button ${i + 1}`, String(value), v => {
+      presets[i] = Number(v);
+      syncPresetNote();
+    })),
+    presetNote,
+    actions(() => post('casino', { presets })),
+  );
+  syncPresetNote();
+
+  /* -- games ------------------------------------------------------------- */
+  const games = Object.fromEntries(c.games.map(g => [g.key, g.enabled]));
+  const gamesNote = el('p', 'hint', '');
+  const syncGamesNote = () => {
+    const on = Object.values(games).filter(Boolean).length;
+    gamesNote.textContent = on === 0
+      ? 'Every game is off — the casino menu will say it is closed.'
+      : `${on} of ${c.games.length} games open.`;
+    gamesNote.className = `hint${on === 0 ? ' bad' : ''}`;
+  };
+
+  $('#form-casino-games').replaceChildren(
+    ...c.games.map(g => toggle(g.label, g.enabled, v => { games[g.key] = v; syncGamesNote(); })),
+    gamesNote,
+    actions(() => post('casino', { games })),
+  );
+  syncGamesNote();
+}
 
 /* ── tickets ───────────────────────────────────────────────────────────── */
 
@@ -8985,7 +8791,8 @@ async function initStudio() {
    and which section you are in once the nav has scrolled past. */
 
 const SECTION_NAMES = {
-  overview: 'Overview', composer: 'Composer', studio: 'Studio', tickets: 'Tickets',
+  overview: 'Overview', composer: 'Composer', studio: 'Studio',
+  casino: 'Casino', tickets: 'Tickets',
   giveaways: 'Giveaways', feeds: 'Feeds', economy: 'Economy',
   automation: 'Automation',
   moderation: 'Moderation', settings: 'Settings',

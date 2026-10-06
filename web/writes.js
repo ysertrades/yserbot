@@ -38,7 +38,6 @@ const features = require('./features');
 const featureToggles = require('./featureToggles');
 const tickets = require('./tickets');
 const pollsPanel = require('./polls');
-const casinoPanel = require('./casino');
 const links = require('./links');
 const moderationPanel = require('./moderation');
 const economyPanel = require('./economy');
@@ -690,12 +689,6 @@ Object.assign(OPS, {
     return r;
   },
 
-  /* -- casino ------------------------------------------------------------ */
-  async casino(guildId, body, ctx) {
-    const r = casinoPanel.save(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎰 **Casino** — ${r.changed.join('; ')}`, 'features');
-    return r;
-  },
 
   /* -- tickets ----------------------------------------------------------- */
   async tickets(guildId, body, ctx) {

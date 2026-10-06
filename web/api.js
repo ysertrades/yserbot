@@ -33,7 +33,6 @@ const features = require('./features');
 const featureToggles = require('./featureToggles');
 const tickets = require('./tickets');
 const pollsPanel = require('./polls');
-const casino = require('./casino');
 const economyPanel = require('./economy');
 const links = require('./links');
 const moderation = require('./moderation');
@@ -172,7 +171,6 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     featureToggles: featureToggles.read(guildId),
     tickets: tickets.read(guildId, guild),
     polls: pollsPanel.read(guildId, guild),
-    casino: casino.read(guildId),
     economy: economyPanel.read(guildId),
     cards: cardsPanel.read(guildId, guild),
     links: links.read(guildId, guild),
