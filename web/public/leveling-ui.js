@@ -292,6 +292,110 @@
     split.append(curve);
     root.append(split);
 
+
+    // Daily XP Leaderboard
+    (function () {
+      const dl = L.dailyLeaderboard || {};
+      const dailyPanel = el('div', 'panel lvl-daily-lb');
+      dailyPanel.append(el('h2', null, 'Daily XP Leaderboard'));
+      dailyPanel.append(el('p', 'muted', 'Auto-post today\'s XP rankings (not all-time). Timezone is explicit.'));
+      const dlState = {
+        enabled: !!dl.enabled,
+        hour: dl.hour != null ? dl.hour : 20,
+        minute: dl.minute != null ? dl.minute : 0,
+        timeZone: dl.timeZone || 'America/New_York',
+        channelId: dl.channelId || '',
+        roleId: dl.roleId || '',
+        limit: dl.limit || 10,
+        title: dl.title || 'Daily XP Leaderboard',
+        description: dl.description || "Today's top contributors",
+        footer: dl.footer || '',
+      };
+      const onRow = el('label', 'field');
+      const onChk = document.createElement('input');
+      onChk.type = 'checkbox'; onChk.checked = dlState.enabled;
+      onChk.addEventListener('change', function () { dlState.enabled = onChk.checked; });
+      onRow.append(onChk, document.createTextNode(' Automatic posting'));
+      dailyPanel.append(onRow);
+      dailyPanel.append(el('h3', null, 'Schedule'));
+      const sched = el('div', 'lvl-daily-sched');
+      const timeInp = document.createElement('input');
+      timeInp.type = 'time';
+      timeInp.value = String(dlState.hour).padStart(2, '0') + ':' + String(dlState.minute).padStart(2, '0');
+      timeInp.addEventListener('change', function () {
+        var p = (timeInp.value || '20:00').split(':');
+        dlState.hour = parseInt(p[0], 10) || 0;
+        dlState.minute = parseInt(p[1], 10) || 0;
+      });
+      const tzSel = document.createElement('select');
+      ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','UTC','Europe/London','Europe/Paris','Asia/Dubai','Asia/Singapore'].forEach(function (tz) {
+        var o = document.createElement('option'); o.value = tz; o.textContent = tz;
+        if (tz === dlState.timeZone) o.selected = true; tzSel.appendChild(o);
+      });
+      tzSel.addEventListener('change', function () { dlState.timeZone = tzSel.value; });
+      sched.append(el('span', 'hint', 'Post time'), timeInp, el('span', 'hint', 'Timezone'), tzSel);
+      dailyPanel.append(sched);
+      dailyPanel.append(el('h3', null, 'Destination'));
+      const chSel = document.createElement('select');
+      var blankCh = document.createElement('option'); blankCh.value = ''; blankCh.textContent = 'Select channel…'; chSel.appendChild(blankCh);
+      (L.channelOpts || []).forEach(function (c) {
+        var o = document.createElement('option'); o.value = c.id; o.textContent = '#' + c.name;
+        if (c.id === dlState.channelId) o.selected = true; chSel.appendChild(o);
+      });
+      chSel.addEventListener('change', function () { dlState.channelId = chSel.value; });
+      dailyPanel.append(chSel);
+      dailyPanel.append(el('h3', null, 'Notification'));
+      const roleSel = document.createElement('select');
+      var blankR = document.createElement('option'); blankR.value = ''; blankR.textContent = 'No role ping'; roleSel.appendChild(blankR);
+      var roles = (window.state && state.overview && (state.overview.roles || [])) || [];
+      (Array.isArray(roles) ? roles : []).forEach(function (r) {
+        if (!r || !r.id || r.name === '@everyone') return;
+        var o = document.createElement('option'); o.value = r.id; o.textContent = '@' + (r.name || r.id);
+        if (r.id === dlState.roleId) o.selected = true; roleSel.appendChild(o);
+      });
+      roleSel.addEventListener('change', function () { dlState.roleId = roleSel.value; });
+      dailyPanel.append(roleSel);
+      dailyPanel.append(el('h3', null, 'Leaderboard size'));
+      const limSel = document.createElement('select');
+      [5,10,15,20,25].forEach(function (n) {
+        var o = document.createElement('option'); o.value = String(n); o.textContent = 'Top ' + n;
+        if (n === dlState.limit) o.selected = true; limSel.appendChild(o);
+      });
+      limSel.addEventListener('change', function () { dlState.limit = parseInt(limSel.value, 10) || 10; });
+      dailyPanel.append(limSel);
+      dailyPanel.append(el('h3', null, 'Appearance'));
+      var titleInp = document.createElement('input'); titleInp.type = 'text'; titleInp.value = dlState.title;
+      titleInp.addEventListener('input', function () { dlState.title = titleInp.value; });
+      var descInp = document.createElement('input'); descInp.type = 'text'; descInp.value = dlState.description || '';
+      descInp.addEventListener('input', function () { dlState.description = descInp.value; });
+      var footInp = document.createElement('input'); footInp.type = 'text'; footInp.placeholder = 'Footer'; footInp.value = dlState.footer || '';
+      footInp.addEventListener('input', function () { dlState.footer = footInp.value; });
+      dailyPanel.append(titleInp, descInp, footInp);
+      var dlSave = el('button', 'btn', 'Save daily leaderboard');
+      dlSave.type = 'button';
+      dlSave.addEventListener('click', async function () {
+        dlSave.disabled = true;
+        try {
+          var res = await post({
+            dailyLeaderboard: {
+              enabled: dlState.enabled, hour: dlState.hour, minute: dlState.minute,
+              timeZone: dlState.timeZone, channelId: dlState.channelId || null,
+              roleId: dlState.roleId || null, limit: dlState.limit,
+              title: dlState.title, description: dlState.description, footer: dlState.footer || null,
+            },
+          });
+          if (res && res.overview) state.overview = res.overview;
+          else if (res && res.levels && state.overview && state.overview.features) state.overview.features.levels = res.levels;
+          if (typeof toast === 'function') toast('Daily leaderboard saved', 'good');
+          render();
+        } catch (e) {
+          if (typeof toast === 'function') toast('Save failed', 'bad');
+        } finally { dlSave.disabled = false; }
+      });
+      dailyPanel.append(dlSave);
+      root.append(dailyPanel);
+    })();
+
     const ranks = el('div', 'panel');
     ranks.append(el('h2', null, 'Role rewards'));
     ranks.append(el('p', 'hint', 'Level → role. Only the highest rank is kept; previous rank roles are removed.'));

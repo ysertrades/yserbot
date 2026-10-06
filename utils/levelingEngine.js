@@ -400,6 +400,15 @@ function resetAllXp(guildId, staffId, guild) {
     u.level = levelFromXp(u.xp, g);
   }
   all[guildId] = g;
+  if (patch.dailyLeaderboard && typeof patch.dailyLeaderboard === 'object') {
+    try {
+      const { normalizeDailyLb } = require('./dailyXpLeaderboard');
+      const prev = g.dailyLeaderboard || {};
+      const next = normalizeDailyLb(Object.assign({}, prev, patch.dailyLeaderboard));
+      if (patch.dailyLeaderboard.lastPostedDay === undefined) next.lastPostedDay = prev.lastPostedDay || null;
+      g.dailyLeaderboard = next;
+    } catch (e) { console.warn('[leveling] dailyLeaderboard save', e.message); }
+  }
   saveAll(all);
   return panelSnapshot(guildId, guild || null);
 }
