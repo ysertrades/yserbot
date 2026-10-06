@@ -1,11 +1,13 @@
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client, Collection, GatewayIntentBits, Partials, Events, Options } = require('discord.js'); /* Options below */;
+const { Client, Collection, GatewayIntentBits, Partials, Events, Options} = require('discord.js');
 const { connect: connectMongo } = require('./utils/mongoStorage');
 const { warm: warmRenderCache } = require('./utils/dynamicEmbedImages');
 const { start: startPanel } = require('./web/server');
-const { configure: configureErrorReporter, reportAndLog } = require('./utils/errorReporter')
+const { configure: configureErrorReporter, reportAndLog } = require('./utils/errorReporter');
+
+const client = new Client({
   makeCache: Options.cacheWithLimits({
     ...Options.DefaultMakeCacheSettings,
     MessageManager: 100,
@@ -16,9 +18,7 @@ const { configure: configureErrorReporter, reportAndLog } = require('./utils/err
     messages: { interval: 300, lifetime: 600 },
     threads: { interval: 3600, lifetime: 3600 },
   },
-;
 
-const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
@@ -49,7 +49,7 @@ process.on('uncaughtException', (err) => {
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
-const SKIP_COMMAND_FOLDERS = new Set(['_disabled']); // shelved mid-rewrite — not loaded
+const SKIP_COMMAND_FOLDERS = new Set(['_disabled', 'economy', 'casino', 'jobs']); // shelved mid-rewrite — not loaded
 for (const folder of commandFolders) {
     if (SKIP_COMMAND_FOLDERS.has(folder)) continue;
     const commandsPath = path.join(foldersPath, folder);
