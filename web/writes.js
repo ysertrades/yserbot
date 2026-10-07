@@ -637,6 +637,16 @@ Object.assign(OPS, {
     try {
       const leveling = require('../utils/levelingEngine');
       const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId) || null;
+      if (body && body.testDailyLeaderboard) {
+        if (body.dailyLeaderboard && typeof body.dailyLeaderboard === 'object') {
+          leveling.saveConfig(guildId, { dailyLeaderboard: body.dailyLeaderboard }, ctx.session?.uid, guild);
+        }
+        const lb = require('../utils/dailyXpLeaderboard');
+        if (!guild) return { error: 'no_guild', detail: 'Guild not available' };
+        const r = await lb.postOneGuild(ctx.client, leveling, guildId, guild, { force: true });
+        if (!r || !r.ok) return { error: 'test_failed', detail: (r && r.detail) || (r && r.error) || 'Test failed' };
+        return { ok: true, levels: leveling.panelSnapshot(guildId, guild), tested: true };
+      }
       if (body && body.op === 'manual') {
         const r = leveling.manualXp(guildId, {
           userId: body.userId,
@@ -657,6 +667,15 @@ Object.assign(OPS, {
         return { ok: true, levels: snap, changed: ['XP leaderboard reset'] };
       }
       const snap = leveling.saveConfig(guildId, body || {}, ctx.session?.uid, guild);
+      if (body && body.dailyLeaderboard && ctx.client) {
+        try {
+          const lb = require('../utils/dailyXpLeaderboard');
+          if (typeof lb.armNext === 'function') {
+            lb.armNext(ctx.client, leveling);
+            console.log('[dailyXpLb] rescheduled after config save', guildId);
+          }
+        } catch (e) { console.warn('[dailyXpLb] reschedule', e.message); }
+      }
       return { ok: true, levels: snap, changed: ['Leveling config'] };
     } catch (err) {
       console.error('[writes.leveling]', err);
@@ -840,7 +859,7 @@ Object.assign(OPS, {
     return r;
   },
   async levels(guildId, body, ctx) {
-    return { error: 'Leveling has been removed.' };
+    return module.exports.leveling(guildId, body, ctx);
   },
   async levelrole(guildId, body, ctx) {
     return { error: 'Leveling has been removed.' };

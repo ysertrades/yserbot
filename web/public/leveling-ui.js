@@ -401,7 +401,7 @@
         if (!st.channelId) { if (typeof toast === 'function') toast('Pick a channel first', 'bad'); return; }
         testBtn.disabled = true;
         try {
-          var res = await post({ dailyLeaderboard: payload(), testDailyLeaderboard: true });
+          var res = await writeLeveling({ dailyLeaderboard: payload(), testDailyLeaderboard: true });
           if (typeof toast === 'function') toast((res && res.ok) ? 'Test post sent' : ((res && res.error) || 'Test failed'), res && res.ok ? 'good' : 'bad');
         } catch (e) { if (typeof toast === 'function') toast('Test failed', 'bad'); }
         finally { testBtn.disabled = false; }
@@ -411,7 +411,7 @@
       saveBtn.addEventListener('click', async function () {
         saveBtn.disabled = true;
         try {
-          var res = await post({ dailyLeaderboard: payload() });
+          var res = await writeLeveling({ dailyLeaderboard: payload() });
           if (res && res.overview) state.overview = res.overview;
           else if (res && res.levels && state.overview && state.overview.features) state.overview.features.levels = res.levels;
           if (typeof toast === 'function') toast('Schedule saved', 'good');

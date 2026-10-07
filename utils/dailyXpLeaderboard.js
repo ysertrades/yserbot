@@ -155,28 +155,40 @@ async function buildDailyLeaderboardMessage(guild, g, cfg) {
   };
 }
 
-async function postOneGuild(client, leveling, guildId, guild) {
+async function postOneGuild(client, leveling, guildId, guild, opts = {}) {
+  const force = !!opts.force;
   let g;
   if (typeof leveling.guildState === 'function') g = leveling.guildState(guildId).g;
   else if (typeof leveling.loadAll === 'function') g = leveling.loadAll()[guildId];
-  if (!g) return;
+  if (!g) return { ok: false, error: 'no_guild_state' };
   const conf = normalizeDailyLb(g.dailyLeaderboard);
-  if (!conf.enabled || !conf.channelId) return;
+  if (!force && !conf.enabled) return { ok: false, error: 'disabled' };
+  if (!conf.channelId) return { ok: false, error: 'no_channel', detail: 'No leaderboard channel selected.' };
   const today = dayKeyInTz(Date.now(), ET);
-  if (conf.lastPostedDay === today) return;
-  const ch = guild.channels.cache.get(conf.channelId);
-  if (!ch || !ch.isTextBased?.()) return;
-  await ch.send(await buildDailyLeaderboardMessage(guild, g, conf));
-  g.dailyLeaderboard = { ...conf, lastPostedDay: today };
-  if (typeof leveling.saveAll === 'function') {
-    const bag = leveling.loadAll(); bag[guildId] = g; leveling.saveAll(bag);
-  } else {
-    const { readJson, writeJson } = require('./jsonStorage');
-    const bag = readJson('levels.json', {});
-    bag[guildId] = bag[guildId] || g;
-    bag[guildId].dailyLeaderboard = g.dailyLeaderboard;
-    writeJson('levels.json', bag);
+  if (!force && conf.lastPostedDay === today) return { ok: false, error: 'already_posted_today' };
+  const ch = guild.channels.cache.get(conf.channelId)
+    || await guild.channels.fetch(conf.channelId).catch(() => null);
+  if (!ch || !ch.isTextBased?.()) return { ok: false, error: 'bad_channel', detail: 'Selected channel no longer exists or is not text-based.' };
+  try {
+    await ch.send(await buildDailyLeaderboardMessage(guild, g, conf));
+    console.log('[dailyXpLb] posted', guildId, '→', conf.channelId, force ? '(test)' : '');
+  } catch (e) {
+    console.warn('[dailyXpLb] send failed', e.message);
+    return { ok: false, error: 'send_failed', detail: e.message || String(e) };
   }
+  if (!force) {
+    g.dailyLeaderboard = { ...conf, lastPostedDay: today };
+    if (typeof leveling.saveAll === 'function') {
+      const bag = leveling.loadAll(); bag[guildId] = g; leveling.saveAll(bag);
+    } else {
+      const { readJson, writeJson } = require('./jsonStorage');
+      const bag = readJson('levels.json', {});
+      bag[guildId] = bag[guildId] || g;
+      bag[guildId].dailyLeaderboard = g.dailyLeaderboard;
+      writeJson('levels.json', bag);
+    }
+  }
+  return { ok: true, channelId: conf.channelId };
 }
 
 function clearRunner() {
@@ -224,5 +236,5 @@ function startDailyLeaderboardRunner(client, leveling) {
 module.exports = {
   ET, defaultDailyLb, normalizeDailyLb, dayKeyInTz, localHM, nextFireUtcMs,
   formatNextPostLabel, dailyXpRows, buildDailyLeaderboardMessage,
-  startDailyLeaderboardRunner, armNext,
+  startDailyLeaderboardRunner, armNext, postOneGuild, clearRunner,
 };
