@@ -3649,3 +3649,11 @@ button.primary:hover {
   padding:14px 16px;min-height:3rem;
 }
 .composer-live-preview .v2-preview-card .v2-sep{margin:.65rem 0}
+
+.lvl-time-row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.35rem 0}
+.lvl-time-input{width:5.5rem;padding:.45rem .6rem;border-radius:8px;border:1px solid var(--rule,#2a2d38);background:var(--panel,#12131a);color:inherit;font-variant-numeric:tabular-nums}
+.lvl-time-err{color:#f23f43;font-size:.8rem}
+.composer-canvas .composer-msg{display:flex;flex-direction:column;gap:0;border:1px solid var(--rule,#2a2d38);border-radius:12px;padding:.5rem .65rem;background:#12141a}
+.composer-seg{display:grid;grid-template-columns:1fr auto;gap:.35rem;align-items:start;padding:.2rem 0}
+.composer-seg textarea{width:100%;border:none;background:transparent;resize:vertical;min-height:2.8rem;box-shadow:none;margin:0}
+.composer-block-tools{opacity:0}.composer-seg:hover .composer-block-tools,.composer-seg:focus-within .composer-block-tools{opacity:.85}

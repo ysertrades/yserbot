@@ -256,9 +256,20 @@ function sanitizeBlocks(input) {
     if (!b || typeof b !== 'object') continue;
     const type = String(b.type || '').toLowerCase();
     if (type === 'text' || type === 'heading') {
-      const content = String(b.content ?? b.text ?? '').slice(0, 4000);
-      if (!content.trim()) continue;
-      blocks.push({ type: type === 'heading' ? 'heading' : 'text', content });
+      let content = String(b.content ?? b.text ?? '').slice(0, 4000);
+      let level = null;
+      if (type === 'heading') {
+        const m = content.match(/^(#{1,3})\s+/);
+        if (m) { level = m[1].length; content = content.slice(m[0].length); }
+        else if (b.level) level = Math.min(3, Math.max(1, Number(b.level) || 1));
+        else level = 1;
+      }
+      if (type === 'heading') {
+        blocks.push({ type: 'heading', content, level: level || 1 });
+      } else {
+        if (!content.trim()) continue;
+        blocks.push({ type: 'text', content });
+      }
     } else if (type === 'separator') {
       blocks.push({ type: 'separator', divider: b.divider !== false, spacing: b.spacing === 2 ? 2 : 1 });
     } else if (type === 'media' && b.url) {
@@ -277,8 +288,9 @@ function buildV2PayloadFromTemplate(tpl, buttons) {
   for (const b of (tpl.blocks || [])) {
     if (b.type === 'text') kids.push(v2.text(b.content));
     else if (b.type === 'heading') {
-      const c = String(b.content || '');
-      kids.push(v2.text(c.startsWith('#') ? c : '# ' + c));
+      let c = String(b.content || '').replace(/^#{1,3}\s+/, '');
+      const lv = Math.min(3, Math.max(1, Number(b.level) || 1));
+      kids.push(v2.text('#'.repeat(lv) + ' ' + c));
     } else if (b.type === 'separator') {
       kids.push(v2.separator({ divider: b.divider !== false, spacing: b.spacing }));
     } else if (b.type === 'media' && b.url) {

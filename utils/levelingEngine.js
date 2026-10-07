@@ -41,6 +41,7 @@ function defaultGuild() {
     minMessageLength: 2,
     ignoreEmojiOnly: true,
     noXpChannelIds: [],
+    xpChannelIds: [],
     noXpRoleIds: [],
     roleBoosts: {},
     channelBoosts: {},
@@ -77,6 +78,7 @@ function migrateGuild(g) {
       g.channelUnlocks = DEFAULT_CHANNEL_UNLOCKS.map(u => ({ ...u, roleIds: [...(u.roleIds || [])], roleLabels: [...(u.roleLabels || [])] }));
     }
     if (!Array.isArray(g.noXpChannelIds)) g.noXpChannelIds = [];
+    if (!Array.isArray(g.xpChannelIds)) g.xpChannelIds = [];
     if (!Array.isArray(g.noXpRoleIds)) g.noXpRoleIds = [];
     if (!g.roleBoosts) g.roleBoosts = {};
     if (!g.channelBoosts) g.channelBoosts = {};
@@ -103,6 +105,7 @@ function migrateGuild(g) {
   if (g.cooldownSec != null) fresh.cooldownSec = g.cooldownSec;
   if (typeof g.enabled === 'boolean') fresh.enabled = g.enabled;
   if (Array.isArray(g.noXpChannelIds)) fresh.noXpChannelIds = g.noXpChannelIds;
+  if (Array.isArray(g.xpChannelIds)) fresh.xpChannelIds = g.xpChannelIds;
   if (Array.isArray(g.noXpRoleIds)) fresh.noXpRoleIds = g.noXpRoleIds;
   if (Array.isArray(g.roleRewards) && g.roleRewards.length) fresh.roleRewards = g.roleRewards;
   if (Array.isArray(g.channelUnlocks) && g.channelUnlocks.length) fresh.channelUnlocks = g.channelUnlocks;
@@ -203,10 +206,16 @@ function qualifies(message, g) {
   if (!message?.guild || message.author?.bot) return false;
   if (message.system || message.webhookId) return false;
   const chId = message.channel?.id;
-  if (chId && (g.noXpChannelIds || []).includes(chId)) return false;
-  if (isJournalContext(message, g)) return false;
   const parentId = message.channel?.parentId;
-  if (parentId && (g.noXpChannelIds || []).includes(parentId)) return false;
+  const allow = Array.isArray(g.xpChannelIds) ? g.xpChannelIds : [];
+  if (allow.length > 0) {
+    const ok = (chId && allow.includes(chId)) || (parentId && allow.includes(parentId));
+    if (!ok) return false;
+  } else {
+    if (chId && (g.noXpChannelIds || []).includes(chId)) return false;
+    if (parentId && (g.noXpChannelIds || []).includes(parentId)) return false;
+  }
+  if (isJournalContext(message, g)) return false;
   const member = message.member;
   if (member && (g.noXpRoleIds || []).some(id => member.roles?.cache?.has(id))) return false;
   const content = String(message.content || '').trim();
@@ -439,6 +448,7 @@ function saveConfig(guildId, patch = {}, staffId, guild) {
   if (patch.minMessageLength != null) g.minMessageLength = Math.max(0, Math.min(50, Number(patch.minMessageLength) || 0));
   if (typeof patch.ignoreEmojiOnly === 'boolean') g.ignoreEmojiOnly = patch.ignoreEmojiOnly;
   if (Array.isArray(patch.noXpChannelIds)) g.noXpChannelIds = patch.noXpChannelIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 80);
+  if (Array.isArray(patch.xpChannelIds)) g.xpChannelIds = patch.xpChannelIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 80);
   if (Array.isArray(patch.noXpRoleIds)) g.noXpRoleIds = patch.noXpRoleIds.filter(id => /^\d{5,25}$/.test(String(id))).slice(0, 40);
   if (patch.weekendBoost != null) {
     const w = Number(patch.weekendBoost);
@@ -552,7 +562,7 @@ function panelSnapshot(guildId, guild) {
     totalEvents: (g.events || []).length,
     xpMin: g.xpMin ?? 15, xpMax: g.xpMax ?? 25, cooldownSec: g.cooldownSec ?? 60,
     minMessageLength: g.minMessageLength ?? 2, ignoreEmojiOnly: g.ignoreEmojiOnly !== false,
-    weekendBoost: g.weekendBoost ?? 1, noXpChannelIds: g.noXpChannelIds || [], noXpRoleIds: g.noXpRoleIds || [],
+    weekendBoost: g.weekendBoost ?? 1, noXpChannelIds: g.noXpChannelIds || [], xpChannelIds: g.xpChannelIds || [], noXpRoleIds: g.noXpRoleIds || [],
     journalForumChannelId: g.journalForumChannelId || null,
     journalXpMin: g.journalXpMin ?? 30,
     journalXpMax: g.journalXpMax ?? 50,

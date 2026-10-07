@@ -2968,6 +2968,17 @@ function renderComposer() {
         format: draft.format || 'legacy',
         blocks: draft.blocks || [],
         buttonsOutside: !!draft.buttonsOutside});
+    if (res?.ok && Array.isArray(draft._buttons) && draft._buttons.length) {
+      for (const b of draft._buttons) {
+        try {
+          await post('button', {
+            templateName: draft.name, name: draft.name, id: b.id, label: b.label,
+            type: b.type || 'custom', style: b.style || 'Primary',
+            url: b.url || '', roleId: b.roleId || '', emoji: b.emoji || '',
+          }, { quiet: true });
+        } catch (e) {}
+      }
+    }
     saveBtn.disabled = false;
     if (res?.ok) { state.tplName = draft.name; state.draft = null; renderComposer(); }
     else if (res?.error === 'empty_message') toast('Add an embed or some text around the message.', 'bad');
@@ -9137,6 +9148,7 @@ window.addEventListener('pageshow', (e) => {
   window.__cselectOpenGuard = 0;
   window.cselectObserver = new MutationObserver((mutations) => {
     if (window.__cselectEnhancing) return;
+    if (document.activeElement && document.activeElement.closest && document.activeElement.closest('.composer-canvas')) return;
     for (const m of mutations) {
       const nodes = [...(m.addedNodes || []), ...(m.removedNodes || [])];
       const onlyCselect = nodes.length > 0 && nodes.every((n) => {

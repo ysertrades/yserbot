@@ -297,9 +297,11 @@
 
 
 
-    // ═══ Daily Leaderboard Automation (in-web schedule only) ═══
+
+    // ═══ Daily Leaderboard Automation — exact time + AM/PM ═══
     (function () {
       const dl = (L && L.dailyLeaderboard) || {};
+      if (L && !Array.isArray(L.xpChannelIds)) L.xpChannelIds = [];
       const card = el('div', 'panel lvl-auto-card');
       const head = el('div', 'queue-head');
       head.append(el('h2', null, 'Daily leaderboard automation'));
@@ -310,93 +312,71 @@
       onLbl.append(onChk, document.createTextNode(' ON'));
       head.append(onLbl);
       card.append(head);
-      card.append(el('p', 'muted', 'Posts today\'s XP rankings once per day at Eastern Time. Fully in-panel — no browser time picker.'));
+      card.append(el('p', 'muted', 'Posts today\'s XP rankings once per day at Eastern Time.'));
 
+      function fromHour24(h, m) {
+        h = ((Number(h) || 0) % 24 + 24) % 24;
+        m = Math.max(0, Math.min(59, Number(m) || 0));
+        var ampm = h >= 12 ? 'PM' : 'AM';
+        var h12 = h % 12; if (h12 === 0) h12 = 12;
+        return { h12: h12, minute: m, ampm: ampm };
+      }
+      function toHour24(h12, minute, ampm) {
+        h12 = Math.max(1, Math.min(12, parseInt(h12, 10) || 12));
+        minute = Math.max(0, Math.min(59, parseInt(minute, 10) || 0));
+        var h = h12 % 12;
+        if (String(ampm).toUpperCase() === 'PM') h += 12;
+        return { hour: h, minute: minute };
+      }
+
+      var init = fromHour24(dl.hour != null ? dl.hour : 20, dl.minute != null ? dl.minute : 0);
       const st = {
-        enabled: !!dl.enabled,
-        hour: dl.hour != null ? dl.hour : 20,
-        minute: [0, 15, 30, 45].includes(dl.minute) ? dl.minute : 0,
-        channelId: dl.channelId || '',
-        roleId: dl.roleId || '',
-        limit: dl.limit || 10,
+        enabled: !!dl.enabled, h12: init.h12, minute: init.minute, ampm: init.ampm,
+        channelId: dl.channelId || '', roleId: dl.roleId || '', limit: dl.limit || 10,
         title: dl.title || 'Daily XP Leaderboard',
-        description: dl.description || "Today's top contributors",
-        footer: dl.footer || '',
+        description: dl.description || "Today's top contributors", footer: dl.footer || '',
       };
 
       const nextP = el('p', 'lvl-auto-next');
-      function fmtHM(h, m) {
-        var h12 = ((h + 11) % 12) + 1;
-        return h12 + ':' + String(m).padStart(2, '0') + ' ' + (h >= 12 ? 'PM' : 'AM');
-      }
       function paintNext() {
         if (!st.enabled) {
           nextP.innerHTML = '<span class="tag">OFF</span> Turn on to schedule the next post.';
           return;
         }
-        try {
-          const ET = 'America/New_York';
-          const pad = function (n) { return String(n).padStart(2, '0'); };
-          const now = Date.now();
-          const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: ET, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-          function zoned(y, m, d, h, min) {
-            var target = y + '-' + pad(m) + '-' + pad(d) + ' ' + pad(h) + ':' + pad(min);
-            var lo = Date.UTC(y, m - 1, d) - 36 * 3600e3, hi = Date.UTC(y, m - 1, d) + 36 * 3600e3;
-            while (hi - lo > 500) {
-              var mid = Math.floor((lo + hi) / 2);
-              var p = Object.fromEntries(fmt.formatToParts(new Date(mid)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
-              var key = p.year + '-' + p.month + '-' + p.day + ' ' + p.hour + ':' + p.minute;
-              if (key < target) lo = mid; else hi = mid;
-            }
-            return hi;
-          }
-          var p0 = Object.fromEntries(fmt.formatToParts(new Date(now)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
-          var t = zoned(+p0.year, +p0.month, +p0.day, st.hour, st.minute);
-          if (t <= now + 2000) {
-            var noon = zoned(+p0.year, +p0.month, +p0.day, 12, 0) + 36 * 3600e3;
-            var p1 = Object.fromEntries(fmt.formatToParts(new Date(noon)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
-            t = zoned(+p1.year, +p1.month, +p1.day, st.hour, st.minute);
-          }
-          var pF = Object.fromEntries(fmt.formatToParts(new Date(t)).filter(function (x) { return x.type !== 'literal'; }).map(function (x) { return [x.type, x.value]; }));
-          var todayKey = p0.year + '-' + p0.month + '-' + p0.day;
-          var fireKey = pF.year + '-' + pF.month + '-' + pF.day;
-          nextP.innerHTML = '<span class="pill on">SCHEDULED</span> <strong>' + (fireKey === todayKey ? 'Today' : 'Tomorrow') + ' · ' + fmtHM(+pF.hour, +pF.minute) + ' ET</strong>';
-        } catch (e) {
-          nextP.textContent = 'Next: ' + fmtHM(st.hour, st.minute) + ' ET';
-        }
+        var hm = toHour24(st.h12, st.minute, st.ampm);
+        nextP.innerHTML = '<span class="pill on">SCHEDULED</span> <strong>' + st.h12 + ':' + String(st.minute).padStart(2, '0') + ' ' + st.ampm + ' ET</strong> (next fire computed on save/reload)';
       }
       onChk.addEventListener('change', function () { st.enabled = onChk.checked; paintNext(); });
       paintNext();
       card.append(nextP);
 
-      card.append(el('h3', null, 'Time (Eastern)'));
-      const hourChips = el('div', 'lvl-time-chips');
-      const HOURS = [8, 9, 10, 12, 14, 16, 18, 20, 21, 22];
-      function paintHours() {
-        hourChips.replaceChildren();
-        HOURS.forEach(function (h) {
-          var b = el('button', 'chip-toggle' + (st.hour === h ? ' on' : ''), fmtHM(h, 0).replace(':00', ''));
-          b.type = 'button';
-          b.addEventListener('click', function () { st.hour = h; paintHours(); paintNext(); });
-          hourChips.appendChild(b);
-        });
-      }
-      paintHours();
-      card.append(hourChips);
-
-      const minChips = el('div', 'lvl-time-chips');
-      function paintMins() {
-        minChips.replaceChildren();
-        [0, 15, 30, 45].forEach(function (m) {
-          var b = el('button', 'chip-toggle' + (st.minute === m ? ' on' : ''), ':' + String(m).padStart(2, '0'));
-          b.type = 'button';
-          b.addEventListener('click', function () { st.minute = m; paintMins(); paintNext(); });
-          minChips.appendChild(b);
-        });
-      }
-      paintMins();
-      card.append(minChips);
-      card.append(el('p', 'hint', 'America/New_York · EST/EDT handled automatically'));
+      card.append(el('h3', null, 'Post time (Eastern)'));
+      const timeRow = el('div', 'lvl-time-row');
+      const timeInp = document.createElement('input');
+      timeInp.type = 'text';
+      timeInp.className = 'lvl-time-input';
+      timeInp.placeholder = '8:30';
+      timeInp.value = st.h12 + ':' + String(st.minute).padStart(2, '0');
+      timeInp.setAttribute('inputmode', 'numeric');
+      const timeErr = el('span', 'hint lvl-time-err', '');
+      timeInp.addEventListener('change', function () {
+        var parts = timeInp.value.trim().split(':');
+        var h = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
+        if (!(h >= 1 && h <= 12 && m >= 0 && m <= 59)) {
+          timeErr.textContent = 'Use h:mm (e.g. 8:30)';
+          return;
+        }
+        st.h12 = h; st.minute = m; timeErr.textContent = '';
+        timeInp.value = st.h12 + ':' + String(st.minute).padStart(2, '0');
+        paintNext();
+      });
+      timeRow.append(timeInp);
+      timeRow.append(select(' ', st.ampm, [
+        { value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' },
+      ], function (v) { st.ampm = v; paintNext(); }));
+      card.append(timeRow);
+      card.append(timeErr);
+      card.append(el('p', 'hint', 'America/New_York · EST/EDT automatic'));
 
       card.append(el('h3', null, 'Channel & ping'));
       const pick = (typeof window.pickOne === 'function') ? window.pickOne
@@ -404,10 +384,16 @@
       if (pick) {
         card.append(pick('Channel', 'channel', st.channelId, function (v) { st.channelId = v || ''; }, { blank: 'Select channel…' }));
         card.append(pick('Ping role', 'role', st.roleId, function (v) { st.roleId = v || ''; }, { blank: 'No role ping' }));
-      } else {
-        card.append(el('p', 'muted', 'Hard-refresh the panel if channel/role pickers are missing.'));
       }
 
+      function payload() {
+        var hm = toHour24(st.h12, st.minute, st.ampm);
+        return {
+          enabled: st.enabled, hour: hm.hour, minute: hm.minute, timeZone: 'America/New_York',
+          channelId: st.channelId || null, roleId: st.roleId || null, limit: st.limit,
+          title: st.title, description: st.description, footer: st.footer || null,
+        };
+      }
       const actions = el('div', 'actions');
       const testBtn = el('button', 'btn small', 'Test post');
       testBtn.type = 'button';
@@ -415,38 +401,23 @@
         if (!st.channelId) { if (typeof toast === 'function') toast('Pick a channel first', 'bad'); return; }
         testBtn.disabled = true;
         try {
-          var res = await post({
-            dailyLeaderboard: {
-              enabled: st.enabled, hour: st.hour, minute: st.minute, timeZone: 'America/New_York',
-              channelId: st.channelId, roleId: st.roleId || null, limit: st.limit,
-              title: st.title, description: st.description, footer: st.footer || null,
-            },
-            testDailyLeaderboard: true,
-          });
+          var res = await post({ dailyLeaderboard: payload(), testDailyLeaderboard: true });
           if (typeof toast === 'function') toast((res && res.ok) ? 'Test post sent' : ((res && res.error) || 'Test failed'), res && res.ok ? 'good' : 'bad');
-        } catch (e) {
-          if (typeof toast === 'function') toast('Test failed', 'bad');
-        } finally { testBtn.disabled = false; }
+        } catch (e) { if (typeof toast === 'function') toast('Test failed', 'bad'); }
+        finally { testBtn.disabled = false; }
       });
       const saveBtn = el('button', 'btn', 'Save schedule');
       saveBtn.type = 'button';
       saveBtn.addEventListener('click', async function () {
         saveBtn.disabled = true;
         try {
-          var res = await post({
-            dailyLeaderboard: {
-              enabled: st.enabled, hour: st.hour, minute: st.minute, timeZone: 'America/New_York',
-              channelId: st.channelId || null, roleId: st.roleId || null, limit: st.limit,
-              title: st.title, description: st.description, footer: st.footer || null,
-            },
-          });
+          var res = await post({ dailyLeaderboard: payload() });
           if (res && res.overview) state.overview = res.overview;
           else if (res && res.levels && state.overview && state.overview.features) state.overview.features.levels = res.levels;
           if (typeof toast === 'function') toast('Schedule saved', 'good');
           paintNext();
-        } catch (e) {
-          if (typeof toast === 'function') toast('Save failed', 'bad');
-        } finally { saveBtn.disabled = false; }
+        } catch (e) { if (typeof toast === 'function') toast('Save failed', 'bad'); }
+        finally { saveBtn.disabled = false; }
       });
       actions.append(testBtn, saveBtn);
       card.append(actions);
@@ -640,10 +611,10 @@
       return o ? o.name : id;
     }
 
-    const chNo = chipPicker(L.channelOpts || [], L.noXpChannelIds, 'Add no-XP channel…', chName);
+    const chNo = chipPicker(L.channelOpts || [], L.xpChannelIds || [], 'Add XP channel…', chName);
     const roleNo = chipPicker(L.roleOpts || [], L.noXpRoleIds, 'Add no-XP role…', roleName);
     const excl = el('div', 'lvl-channel-grid');
-    excl.append(field('No-XP channels', chNo));
+    excl.append(field('XP channels', chNo));
     excl.append(field('No-XP roles', roleNo));
     cfg.append(excl);
 
@@ -675,7 +646,8 @@
         xpMax: Number(iMax.value),
         cooldownSec: Number(iCd.value),
         weekendBoost: Number(iWeekend.value) || 1,
-        noXpChannelIds: typeof chNo._ids === 'function' ? chNo._ids() : selectedValues(chNo),
+        xpChannelIds: typeof chNo._ids === 'function' ? chNo._ids() : selectedValues(chNo),
+        noXpChannelIds: L.noXpChannelIds || [],
         noXpRoleIds: typeof roleNo._ids === 'function' ? roleNo._ids() : selectedValues(roleNo),
         journalForumChannelId: iJournal.value || null,
         journalXpMin: Number(iJMin.value) || 30,
