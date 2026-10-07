@@ -3634,3 +3634,18 @@ button.primary:hover {
 .v2-sep{display:block;height:1px;background:#3a3e4a;margin:.75rem 0;width:100%}
 .composer-block.is-sep{min-height:0;padding:.15rem 0}
 .composer-block.is-sep .composer-sep-line{margin:.4rem 0}
+
+
+/* Composer: separator is a thin rule, not a second section */
+.composer-block.is-sep{
+  min-height:0;padding:.15rem 0;grid-template-columns:1fr auto;align-items:center;
+}
+.composer-sep-wrap{display:flex;align-items:center;min-height:1.25rem;width:100%}
+.composer-sep-line{height:1px;width:100%;background:#3a3e4a;margin:0}
+.composer-block.is-sep .composer-block-tools{opacity:.35;flex-direction:row}
+.composer-heading-input{font-size:1.15rem;font-weight:700;min-height:2.75rem!important}
+.composer-live-preview .v2-preview-card{
+  background:#1e1f22;border:1px solid #2a2d38;border-radius:12px;
+  padding:14px 16px;min-height:3rem;
+}
+.composer-live-preview .v2-preview-card .v2-sep{margin:.65rem 0}

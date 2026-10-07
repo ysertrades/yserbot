@@ -2649,7 +2649,9 @@ function renderComposer() {
         tools.append(up, down, rm);
 
         if (b.type === 'separator') {
-          row.append(el('div', 'composer-sep-line'), tools);
+          var sepWrap = el('div', 'composer-sep-wrap');
+          sepWrap.append(el('div', 'composer-sep-line'));
+          row.append(sepWrap, tools);
         } else if (b.type === 'media') {
           var inp = document.createElement('input');
           inp.type = 'url';
@@ -2663,9 +2665,14 @@ function renderComposer() {
         } else {
           var ta = document.createElement('textarea');
           ta.rows = b.type === 'heading' ? 2 : 4;
-          ta.placeholder = b.type === 'heading' ? 'Heading…' : 'Write your message…';
-          ta.value = b.content || '';
-          if (b.type === 'heading') ta.className = 'composer-heading-input';
+          ta.placeholder = b.type === 'heading' ? ('Heading ' + (b.level || 1) + '…') : 'Write your message…';
+          if (b.type === 'heading') {
+            ta.className = 'composer-heading-input';
+            ta.value = String(b.content || '').replace(/^#{1,3}\s*/, '');
+            b.content = ta.value; // normalize stored value
+          } else {
+            ta.value = b.content || '';
+          }
           ta.addEventListener('focus', function () { draft._active = idx; });
           // CRITICAL: typing only updates model + preview — never paintStructure
           ta.addEventListener('input', function () {
@@ -2714,19 +2721,18 @@ function renderComposer() {
       var level = parseInt(v, 10) || 1;
       var i = draft._active || 0;
       var b = draft.blocks[i];
+      // Store plain text only — markdown # is applied in preview/send, not in the box
       if (b && (b.type === 'text' || b.type === 'heading')) {
         var raw = String(b.content || '').replace(/^#{1,3}\s*/, '');
         b.type = 'heading';
         b.level = level;
-        var prefix = level === 2 ? '## ' : level === 3 ? '### ' : '# ';
-        b.content = prefix + raw;
+        b.content = raw; // never leave a lone "#"
         draft._dirty = true;
         structureSig = '';
         paintStructure(true);
         focusBlock(i);
       } else {
-        var prefix2 = level === 2 ? '## ' : level === 3 ? '### ' : '# ';
-        insertAfter({ type: 'heading', level: level, content: prefix2 });
+        insertAfter({ type: 'heading', level: level, content: '' });
       }
     });
     bar.append(headSel);
