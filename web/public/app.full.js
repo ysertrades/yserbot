@@ -2502,20 +2502,25 @@ function renderComposer() {
 
 
 
-  // ── Composer V2 CANVAS (stable: no remount on type) ──
+
+  // ── Composer V2: ONE contenteditable message canvas ──
   if (draft.format !== 'legacy') {
     draft.format = 'v2';
     if (!Array.isArray(draft.blocks) || !draft.blocks.length) {
       draft.blocks = [{ type: 'text', content: '' }];
     }
-    // Drop trailing empty text blocks except the first
-    while (draft.blocks.length > 1) {
-      var last = draft.blocks[draft.blocks.length - 1];
-      if (last && last.type === 'text' && !(last.content || '').trim()) draft.blocks.pop();
-      else break;
+    draft.blocks.forEach(function (b) {
+      if (b && b.type === 'heading') {
+        var m = String(b.content || '').match(/^(#{1,3})\s+/);
+        if (m) { b.level = m[1].length; b.content = String(b.content).slice(m[0].length); }
+        if (!b.level) b.level = 1;
+      }
+    });
+    if (!Array.isArray(draft._buttons)) {
+      var _sv = (Array.isArray(state.overview && state.overview.composer) ? state.overview.composer : [])
+        .find(function (t) { return t.name === draft.name; });
+      draft._buttons = (_sv && _sv.buttons) ? JSON.parse(JSON.stringify(_sv.buttons)) : [];
     }
-    if (draft._active == null || draft._active >= draft.blocks.length) draft._active = 0;
-    if (draft._dirty == null) draft._dirty = false;
 
     const panel = el('div', 'panel composer-canvas');
     const modeRow = el('div', 'composer-mode-row');
@@ -2524,6 +2529,7 @@ function renderComposer() {
     const classicBtn = el('button', 'btn small', 'Classic embed');
     classicBtn.type = 'button';
     classicBtn.addEventListener('click', function () {
+      syncBlocksFromDom();
       draft.format = 'legacy';
       if (!draft.embeds || !draft.embeds.length) {
         var body = (draft.blocks[0] && draft.blocks[0].content) || '';
@@ -2534,247 +2540,296 @@ function renderComposer() {
     });
     modeRow.append(v2Btn, classicBtn, el('span', 'tag on', 'ACTIVE'));
     panel.append(modeRow);
-    panel.append(textField('Name', draft.name || '', function (v) {
-      draft.name = v; draft._dirty = true; if (typeof paintSave === 'function') paintSave();
-    }));
+    panel.append(textField('Name', draft.name || '', function (v) { draft.name = v; draft._dirty = true; }));
 
-    // Single writing surface: one contenteditable-like list of blocks
-    // that does NOT rebuild on every keystroke.
-    const canvas = el('div', 'composer-canvas-body');
-    const previewHost = el('div', 'composer-live-preview');
-    let structureSig = '';
+    const canvas = el('div', 'composer-msg-canvas');
+    canvas.contentEditable = 'true';
+    canvas.setAttribute('role', 'textbox');
+    canvas.setAttribute('aria-multiline', 'true');
+    canvas.dataset.placeholder = 'Write your message…';
 
-    function blockSig() {
-      return draft.blocks.map(function (b) {
-        return (b.type || 'text') + ':' + (b.level || '');
-      }).join('|');
+    function isProtected(node) {
+      return node && node.nodeType === 1 && (
+        node.classList.contains('c-sep') ||
+        node.classList.contains('c-media') ||
+        node.classList.contains('c-btn') ||
+        node.getAttribute('contenteditable') === 'false'
+      );
     }
 
-    function paintPreviewOnly() {
-      // ONE continuous Discord-like message card
-      var card = previewHost.querySelector('.v2-preview-card');
-      if (!card) {
-        previewHost.replaceChildren();
-        card = el('div', 'v2-preview-card');
-        previewHost.appendChild(card);
+    function blocksToDom() {
+      canvas.replaceChildren();
+      if (!draft.blocks.length) {
+        canvas.appendChild(document.createElement('br'));
+        return;
       }
-      card.replaceChildren();
-      var any = false;
       draft.blocks.forEach(function (b) {
         if (!b) return;
         if (b.type === 'separator') {
-          card.appendChild(el('div', 'v2-sep'));
-          any = true;
-          return;
-        }
-        if (b.type === 'heading') {
-          var raw = String(b.content || '').replace(/^#{1,3}\s*/, '');
-          var h = el('div', 'v2-h' + (b.level || 1), raw || 'Heading');
-          if (!raw) h.classList.add('placeholder');
-          card.appendChild(h);
-          any = true;
+          var sep = el('div', 'c-sep');
+          sep.contentEditable = 'false';
+          sep.setAttribute('data-type', 'separator');
+          sep.innerHTML = '<span class="c-sep-line"></span>';
+          canvas.appendChild(sep);
           return;
         }
         if (b.type === 'media') {
-          card.appendChild(el('div', 'v2-media', b.url ? 'Image' : 'Add an image URL…'));
-          any = true;
+          var med = el('div', 'c-media');
+          med.contentEditable = 'false';
+          med.setAttribute('data-type', 'media');
+          med.setAttribute('data-url', b.url || '');
+          med.textContent = b.url ? ('🖼 ' + b.url) : '🖼 Image (set URL)';
+          canvas.appendChild(med);
           return;
         }
-        var rawT = String(b.content || '');
-        var t = el('div', 'v2-text');
-        if (!rawT) {
-          t.classList.add('placeholder');
-          t.textContent = 'Your message will appear here';
-        } else {
-          rawT.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
+        if (b.type === 'heading') {
+          var h = el('div', 'c-heading');
+          h.setAttribute('data-type', 'heading');
+          h.setAttribute('data-level', String(b.level || 1));
+          h.textContent = String(b.content || '').replace(/^#{1,3}\s*/, '');
+          if (!h.textContent) h.appendChild(document.createElement('br'));
+          canvas.appendChild(h);
+          return;
+        }
+        var p = el('div', 'c-text');
+        p.setAttribute('data-type', 'text');
+        var t = String(b.content || '');
+        if (!t) p.appendChild(document.createElement('br'));
+        else {
+          t.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
             if (/^\*\*[^*]+\*\*$/.test(part)) {
               var s = document.createElement('strong');
               s.textContent = part.slice(2, -2);
-              t.appendChild(s);
-            } else {
-              t.appendChild(document.createTextNode(part));
-            }
+              p.appendChild(s);
+            } else p.appendChild(document.createTextNode(part));
           });
         }
-        card.appendChild(t);
-        any = true;
+        canvas.appendChild(p);
       });
-      if (!any) {
-        card.appendChild(el('div', 'v2-text placeholder', 'Your message will appear here'));
+      (draft._buttons || []).forEach(function (btn, i) {
+        var bb = el('span', 'c-btn v2-btn-pill bstyle ' + String(btn.style || 'Primary').toLowerCase());
+        bb.contentEditable = 'false';
+        bb.setAttribute('data-type', 'button');
+        bb.setAttribute('data-bi', String(i));
+        bb.textContent = btn.label || 'Button';
+        bb.addEventListener('click', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          openButtonEditor(btn, i);
+        });
+        canvas.appendChild(bb);
+      });
+    }
+
+    function syncBlocksFromDom() {
+      var blocks = [];
+      Array.from(canvas.childNodes).forEach(function (node) {
+        if (node.nodeType === 3) {
+          var t = node.textContent || '';
+          if (t.trim()) blocks.push({ type: 'text', content: t });
+          return;
+        }
+        if (node.nodeType !== 1) return;
+        var typ = node.getAttribute('data-type') || '';
+        if (typ === 'separator' || node.classList.contains('c-sep')) {
+          blocks.push({ type: 'separator' }); return;
+        }
+        if (typ === 'media' || node.classList.contains('c-media')) {
+          blocks.push({ type: 'media', url: node.getAttribute('data-url') || '' }); return;
+        }
+        if (typ === 'button' || node.classList.contains('c-btn')) return;
+        if (typ === 'heading' || node.classList.contains('c-heading')) {
+          blocks.push({
+            type: 'heading',
+            level: parseInt(node.getAttribute('data-level') || '1', 10) || 1,
+            content: (node.innerText || node.textContent || '').replace(/\n$/, ''),
+          });
+          return;
+        }
+        var txt = (node.innerText || node.textContent || '').replace(/\n$/, '');
+        if (node.childNodes.length === 1 && node.firstChild && node.firstChild.tagName === 'BR') txt = '';
+        blocks.push({ type: 'text', content: txt });
+      });
+      while (blocks.length > 1) {
+        var last = blocks[blocks.length - 1];
+        if (last.type === 'text' && !(last.content || '').trim()) blocks.pop();
+        else break;
       }
+      if (!blocks.length) blocks = [{ type: 'text', content: '' }];
+      draft.blocks = blocks;
+      draft._dirty = true;
     }
 
-    function focusBlock(idx) {
-      draft._active = idx;
-      requestAnimationFrame(function () {
-        var node = canvas.querySelector('[data-bi="' + idx + '"] textarea, [data-bi="' + idx + '"] input');
-        if (node) try { node.focus(); } catch (e) {}
-      });
+    function placeCaretAfter(node) {
+      var range = document.createRange();
+      var sel = window.getSelection();
+      var next = node.nextSibling;
+      if (!next || isProtected(next)) {
+        var p = el('div', 'c-text');
+        p.setAttribute('data-type', 'text');
+        p.appendChild(document.createElement('br'));
+        if (next) canvas.insertBefore(p, next); else canvas.appendChild(p);
+        next = p;
+      }
+      try {
+        range.setStart(next, 0);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {}
+      canvas.focus();
     }
 
-    function paintStructure(force) {
-      var sig = blockSig();
-      if (!force && sig === structureSig && canvas.childNodes.length) {
-        paintPreviewOnly();
+    function insertAtCaret(elNode) {
+      canvas.focus();
+      var sel = window.getSelection();
+      if (!sel.rangeCount || !canvas.contains(sel.anchorNode)) {
+        canvas.appendChild(elNode);
+        placeCaretAfter(elNode);
+        syncBlocksFromDom();
         return;
       }
-      structureSig = sig;
-      // Preserve focus value before rebuild
-      var active = draft._active || 0;
-      canvas.replaceChildren();
-      draft.blocks.forEach(function (b, idx) {
-        var row = el('div', 'composer-block' + (b.type === 'separator' ? ' is-sep' : ''));
-        row.dataset.bi = String(idx);
-        var tools = el('div', 'composer-block-tools');
-        var up = el('button', 'btn small', '↑'); up.type = 'button'; up.disabled = idx === 0;
-        up.addEventListener('click', function () {
-          if (idx < 1) return;
-          var tmp = draft.blocks[idx - 1]; draft.blocks[idx - 1] = draft.blocks[idx]; draft.blocks[idx] = tmp;
-          draft._active = idx - 1; draft._dirty = true; structureSig = ''; paintStructure(true); focusBlock(idx - 1);
-        });
-        var down = el('button', 'btn small', '↓'); down.type = 'button'; down.disabled = idx >= draft.blocks.length - 1;
-        down.addEventListener('click', function () {
-          if (idx >= draft.blocks.length - 1) return;
-          var tmp = draft.blocks[idx + 1]; draft.blocks[idx + 1] = draft.blocks[idx]; draft.blocks[idx] = tmp;
-          draft._active = idx + 1; draft._dirty = true; structureSig = ''; paintStructure(true); focusBlock(idx + 1);
-        });
-        var rm = el('button', 'btn small danger', '×'); rm.type = 'button';
-        rm.disabled = draft.blocks.length <= 1;
-        rm.addEventListener('click', function () {
-          if (draft.blocks.length <= 1) return;
-          draft.blocks.splice(idx, 1);
-          draft._active = Math.max(0, Math.min(idx, draft.blocks.length - 1));
-          draft._dirty = true; structureSig = ''; paintStructure(true); focusBlock(draft._active);
-        });
-        tools.append(up, down, rm);
-
-        if (b.type === 'separator') {
-          var sepWrap = el('div', 'composer-sep-wrap');
-          sepWrap.append(el('div', 'composer-sep-line'));
-          row.append(sepWrap, tools);
-        } else if (b.type === 'media') {
-          var inp = document.createElement('input');
-          inp.type = 'url';
-          inp.placeholder = 'https://… image URL';
-          inp.value = b.url || '';
-          inp.addEventListener('focus', function () { draft._active = idx; });
-          inp.addEventListener('input', function () {
-            b.url = inp.value; draft._dirty = true; paintPreviewOnly();
-          });
-          row.append(inp, tools);
-        } else {
-          var ta = document.createElement('textarea');
-          ta.rows = b.type === 'heading' ? 2 : 4;
-          ta.placeholder = b.type === 'heading' ? ('Heading ' + (b.level || 1) + '…') : 'Write your message…';
-          if (b.type === 'heading') {
-            ta.className = 'composer-heading-input';
-            ta.value = String(b.content || '').replace(/^#{1,3}\s*/, '');
-            b.content = ta.value; // normalize stored value
-          } else {
-            ta.value = b.content || '';
-          }
-          ta.addEventListener('focus', function () { draft._active = idx; });
-          // CRITICAL: typing only updates model + preview — never paintStructure
-          ta.addEventListener('input', function () {
-            b.content = ta.value;
-            draft._dirty = true;
-            paintPreviewOnly();
-          });
-          row.append(ta, tools);
-        }
-        canvas.appendChild(row);
-      });
-      paintPreviewOnly();
+      var range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(elNode);
+      placeCaretAfter(elNode);
+      syncBlocksFromDom();
     }
 
-    function insertAfter(block) {
-      var i = Math.min(draft._active == null ? draft.blocks.length - 1 : draft._active, draft.blocks.length - 1);
-      draft.blocks.splice(i + 1, 0, block);
-      draft._active = i + 1;
-      draft._dirty = true;
-      structureSig = '';
-      paintStructure(true);
-      if (block.type !== 'separator') focusBlock(draft._active);
-    }
+    canvas.addEventListener('beforeinput', function (e) {
+      var sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      var n = sel.anchorNode;
+      var eln = n && n.nodeType === 1 ? n : (n && n.parentElement);
+      if (eln && isProtected(eln)) {
+        e.preventDefault();
+        placeCaretAfter(eln);
+      }
+    });
 
-    paintStructure(true);
+    var syncTimer = null;
+    canvas.addEventListener('input', function () {
+      if (syncTimer) clearTimeout(syncTimer);
+      syncTimer = setTimeout(function () { syncBlocksFromDom(); }, 120);
+    });
+
+    blocksToDom();
     panel.append(canvas);
 
-    // Toolbar — intentional inserts only (no auto empty fields)
     const bar = el('div', 'composer-toolbar');
-    function tool(label, fn, cls) {
-      var b = el('button', 'btn small' + (cls ? ' ' + cls : ''), label);
+    function tool(label, fn) {
+      var b = el('button', 'btn small', label);
       b.type = 'button';
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });
       b.addEventListener('click', fn);
       return b;
     }
     bar.append(tool('Text', function () {
-      insertAfter({ type: 'text', content: '' });
+      var p = el('div', 'c-text');
+      p.setAttribute('data-type', 'text');
+      p.appendChild(document.createElement('br'));
+      insertAtCaret(p);
     }));
-
-    // Heading levels via panel select → enhanceSelects/cselect
-    var headSel = select('Heading', '1', [
-      { value: '1', label: 'Heading 1' },
-      { value: '2', label: 'Heading 2' },
-      { value: '3', label: 'Heading 3' },
-    ], function (v) {
-      var level = parseInt(v, 10) || 1;
-      var i = draft._active || 0;
-      var b = draft.blocks[i];
-      // Store plain text only — markdown # is applied in preview/send, not in the box
-      if (b && (b.type === 'text' || b.type === 'heading')) {
-        var raw = String(b.content || '').replace(/^#{1,3}\s*/, '');
-        b.type = 'heading';
-        b.level = level;
-        b.content = raw; // never leave a lone "#"
-        draft._dirty = true;
-        structureSig = '';
-        paintStructure(true);
-        focusBlock(i);
-      } else {
-        insertAfter({ type: 'heading', level: level, content: '' });
-      }
-    });
-    bar.append(headSel);
-
-    bar.append(tool('B', function () {
-      var i = draft._active || 0;
-      var b = draft.blocks[i];
-      if (!b || (b.type !== 'text' && b.type !== 'heading')) return;
-      var ta = canvas.querySelector('[data-bi="' + i + '"] textarea');
-      if (ta && ta.selectionStart !== ta.selectionEnd) {
-        var a = ta.selectionStart, z = ta.selectionEnd;
-        var val = ta.value;
-        var next = val.slice(0, a) + '**' + val.slice(a, z) + '**' + val.slice(z);
-        ta.value = next; b.content = next;
-        draft._dirty = true; paintPreviewOnly();
-        try { ta.focus(); ta.setSelectionRange(a + 2, z + 2); } catch (e) {}
-      } else {
-        b.content = (b.content || '') + '****';
-        draft._dirty = true; structureSig = ''; paintStructure(true); focusBlock(i);
-      }
-    }, 'composer-bold'));
-
+    bar.append(tool('Heading', function () {
+      var h = el('div', 'c-heading');
+      h.setAttribute('data-type', 'heading');
+      h.setAttribute('data-level', '1');
+      h.appendChild(document.createElement('br'));
+      insertAtCaret(h);
+    }));
     bar.append(tool('Separator', function () {
-      // Separator only — does NOT add a new empty text section
-      insertAfter({ type: 'separator' });
+      var sep = el('div', 'c-sep');
+      sep.contentEditable = 'false';
+      sep.setAttribute('data-type', 'separator');
+      sep.innerHTML = '<span class="c-sep-line"></span>';
+      insertAtCaret(sep);
     }));
     bar.append(tool('Image', function () {
-      insertAfter({ type: 'media', url: '' });
+      var url = window.prompt('Image URL (https://…)', '');
+      if (url == null) return;
+      var med = el('div', 'c-media');
+      med.contentEditable = 'false';
+      med.setAttribute('data-type', 'media');
+      med.setAttribute('data-url', url || '');
+      med.textContent = url ? ('🖼 ' + url) : '🖼 Image';
+      insertAtCaret(med);
     }));
-    bar.append(tool('Button', function () {
-      if (typeof toast === 'function') toast('Save the template first, then attach buttons below.', 'ok');
-    }));
-
+    bar.append(tool('Button', function () { openButtonEditor(null); }));
     panel.append(bar);
-    panel.append(el('p', 'hint', 'Live preview · one message'));
-    panel.append(previewHost);
-    try {
-      if (typeof enhanceSelects === 'function') {
-        var pending = panel.querySelectorAll('select:not([data-cselect])');
-        if (pending.length) enhanceSelects(panel);
+
+    const btnEditorHost = el('div', 'composer-btn-editor');
+    btnEditorHost.hidden = true;
+    panel.append(btnEditorHost);
+
+    function openButtonEditor(existing, editIndex) {
+      syncBlocksFromDom();
+      btnEditorHost.hidden = false;
+      btnEditorHost.replaceChildren();
+      var st = existing ? JSON.parse(JSON.stringify(existing)) : {
+        id: 'btn_' + Date.now().toString(36),
+        label: 'Button', type: 'link', style: 'Link', url: '', roleId: '', emoji: '',
+      };
+      btnEditorHost.append(el('h3', null, existing ? 'Edit button' : 'Add button'));
+      btnEditorHost.append(textField('Label', st.label, function (v) { st.label = v; }));
+      btnEditorHost.append(select('Type', st.type || 'link', [
+        { value: 'link', label: 'Link' }, { value: 'role', label: 'Role' },
+        { value: 'ticket', label: 'Ticket' }, { value: 'custom', label: 'Custom' },
+        { value: 'embed', label: 'Embed' },
+      ], function (v) { st.type = v; if (v === 'link') st.style = 'Link'; openButtonEditor(st, editIndex); }));
+      if (st.type === 'link') {
+        btnEditorHost.append(textField('URL', st.url || '', function (v) { st.url = v; }));
+      } else if (st.type === 'role') {
+        var pick = (typeof window.pickOne === 'function') ? window.pickOne : null;
+        if (pick) btnEditorHost.append(pick('Role', 'role', st.roleId || '', function (v) { st.roleId = v || ''; }, { blank: 'Select role…' }));
+        else btnEditorHost.append(textField('Role ID', st.roleId || '', function (v) { st.roleId = v; }));
+        btnEditorHost.append(select('Style', st.style || 'Primary', [
+          { value: 'Primary', label: 'Primary' }, { value: 'Secondary', label: 'Secondary' },
+          { value: 'Success', label: 'Success' }, { value: 'Danger', label: 'Danger' },
+        ], function (v) { st.style = v; }));
+      } else {
+        btnEditorHost.append(select('Style', st.style || 'Primary', [
+          { value: 'Primary', label: 'Primary' }, { value: 'Secondary', label: 'Secondary' },
+          { value: 'Success', label: 'Success' }, { value: 'Danger', label: 'Danger' },
+        ], function (v) { st.style = v; }));
       }
-    } catch (e) {}
+      var actions = el('div', 'actions');
+      var addBtn = el('button', 'btn small', existing ? 'Update' : 'Add to message');
+      addBtn.type = 'button';
+      addBtn.addEventListener('click', function () {
+        if (!st.label || !String(st.label).trim()) { if (typeof toast === 'function') toast('Label required', 'bad'); return; }
+        if (st.type === 'link' && st.url && !/^https?:\/\//i.test(st.url)) {
+          if (typeof toast === 'function') toast('URL must start with http(s)://', 'bad'); return;
+        }
+        if (typeof editIndex === 'number') draft._buttons[editIndex] = st;
+        else { if (!draft._buttons) draft._buttons = []; draft._buttons.push(st); }
+        draft._dirty = true;
+        btnEditorHost.hidden = true;
+        blocksToDom();
+      });
+      var cancel = el('button', 'btn small', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', function () { btnEditorHost.hidden = true; });
+      actions.append(addBtn, cancel);
+      if (typeof editIndex === 'number') {
+        var del = el('button', 'btn small danger', 'Remove');
+        del.type = 'button';
+        del.addEventListener('click', function () {
+          draft._buttons.splice(editIndex, 1);
+          draft._dirty = true;
+          btnEditorHost.hidden = true;
+          blocksToDom();
+        });
+        actions.append(del);
+      }
+      btnEditorHost.append(actions);
+      try {
+        if (typeof enhanceSelects === 'function') {
+          var pending = btnEditorHost.querySelectorAll('select:not([data-cselect])');
+          if (pending.length) enhanceSelects(btnEditorHost);
+        }
+      } catch (e) {}
+    }
+
+    draft._syncFromCanvas = syncBlocksFromDom;
     parts.push(panel);
   }
 
@@ -2964,6 +3019,7 @@ function renderComposer() {
       if (bare) { toast(`Embed ${i + 1} is empty — add content or remove it.`, 'bad'); return; }
     }
     saveBtn.disabled = true;
+    if (typeof draft._syncFromCanvas === 'function') try { draft._syncFromCanvas(); } catch (e) {}
     const res = await post('template', { name: draft.name, embeds: draft.embeds, around: draft.around,
         format: draft.format || 'legacy',
         blocks: draft.blocks || [],

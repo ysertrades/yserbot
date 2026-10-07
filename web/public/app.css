@@ -3657,3 +3657,21 @@ button.primary:hover {
 .composer-seg{display:grid;grid-template-columns:1fr auto;gap:.35rem;align-items:start;padding:.2rem 0}
 .composer-seg textarea{width:100%;border:none;background:transparent;resize:vertical;min-height:2.8rem;box-shadow:none;margin:0}
 .composer-block-tools{opacity:0}.composer-seg:hover .composer-block-tools,.composer-seg:focus-within .composer-block-tools{opacity:.85}
+
+/* One continuous contenteditable message canvas */
+.composer-msg-canvas{
+  min-height:12rem;padding:14px 16px;border:1px solid var(--rule,#2a2d38);border-radius:12px;
+  background:#1e1f22;color:#dbdee1;line-height:1.55;outline:none;
+}
+.composer-msg-canvas:empty:before,.composer-msg-canvas .c-text:empty:before{opacity:.35}
+.composer-msg-canvas .c-text{margin:0 0 .35rem;min-height:1.2em}
+.composer-msg-canvas .c-heading{font-weight:800;font-size:1.2rem;margin:0 0 .4rem;min-height:1.3em}
+.composer-msg-canvas .c-sep{margin:.55rem 0;padding:.15rem 0;user-select:none}
+.composer-msg-canvas .c-sep-line{display:block;height:1px;background:#3a3e4a;width:100%}
+.composer-msg-canvas .c-media{
+  margin:.45rem 0;padding:12px;border:1px dashed #3a3e4a;border-radius:8px;
+  color:#949ba4;font-size:.85rem;user-select:none;
+}
+.composer-msg-canvas .c-btn{display:inline-block;margin:.35rem .35rem 0 0;cursor:pointer;user-select:none}
+.composer-btn-editor{margin-top:.5rem;padding:.65rem;border:1px solid var(--rule,#2a2d38);border-radius:10px}
+.composer-toolbar{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--rule,#2a2d38)}
