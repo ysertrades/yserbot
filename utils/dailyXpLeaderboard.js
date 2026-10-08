@@ -105,52 +105,226 @@ function normalizeDailyLb(raw) {
   };
 }
 
-/** Real all-time XP from stored g.users (same source as panel / commands). */
+/**
+ * XP earned on a calendar day in guild TZ (from events log).
+ * Ranking source for the automated daily post only — not lifetime totals.
+ */
 function dailyXpRows(g, { dayKey, timeZone = ET, limit = 10 } = {}) {
+  const key = dayKey || dayKeyInTz(Date.now(), timeZone);
   const n = Math.max(1, Math.min(25, Number(limit) || 10));
-  const users = g && g.users && typeof g.users === 'object' ? g.users : {};
-  return Object.entries(users)
-    .map(([id, u]) => {
-      const xp = Math.max(0, Math.floor(Number(u && u.xp) || 0));
-      const level = Math.max(0, Math.floor(Number(u && u.level) || 0));
-      return { id, xp, level };
-    })
+  const xpMap = {};
+  const log = Array.isArray(g.events) ? g.events : (g.xpEvents || []);
+  for (const e of log) {
+    if (!e || !e.userId || !e.xp) continue;
+    const ts = e.createdAt || e.at || e.ts || 0;
+    if (dayKeyInTz(ts, timeZone) !== key) continue;
+    const id = String(e.userId);
+    xpMap[id] = (xpMap[id] || 0) + Number(e.xp);
+  }
+  return Object.entries(xpMap)
+    .map(([id, xp]) => ({ id, xp: Math.max(0, Math.floor(xp)) }))
     .filter((r) => r.xp > 0)
-    .sort((a, b) => b.xp - a.xp || b.level - a.level || a.id.localeCompare(b.id))
+    .sort((a, b) => b.xp - a.xp || a.id.localeCompare(b.id))
     .slice(0, n);
 }
 
+const DIV = '✧ · · · · · · ✧';
+
+function levelBar(into, need, cells = 8) {
+  const n = Math.max(1, Number(need) || 1);
+  const i = Math.max(0, Number(into) || 0);
+  const pct = Math.max(0, Math.min(1, i / n));
+  const filled = Math.round(pct * cells);
+  return '▰'.repeat(filled) + '▱'.repeat(Math.max(0, cells - filled));
+}
+
+function levelPct(into, need) {
+  const n = Math.max(1, Number(need) || 1);
+  const i = Math.max(0, Number(into) || 0);
+  return Math.round(Math.max(0, Math.min(1, i / n)) * 100);
+}
+
+function fmtXp(n) {
+  return Number(n || 0).toLocaleString('en-US');
+}
+
+function serverIcon(guild) {
+  try {
+    return guild?.iconURL({ extension: 'png', size: 128 }) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveMentions(guild, ids) {
+  const out = new Map();
+  if (!guild || !ids?.length) return out;
+  try {
+    const fetched = await guild.members.fetch({ user: ids.slice(0, 25) });
+    for (const [id, m] of fetched) {
+      out.set(id, {
+        label: '<@' + id + '>',
+        name: m.displayName || m.user?.globalName || m.user?.username || null,
+        inGuild: true,
+      });
+    }
+  } catch { /* */ }
+  for (const id of ids) {
+    if (out.has(id)) continue;
+    try {
+      const m = await guild.members.fetch(id);
+      out.set(id, {
+        label: '<@' + id + '>',
+        name: m.displayName || m.user?.globalName || m.user?.username || null,
+        inGuild: true,
+      });
+      continue;
+    } catch { /* */ }
+    try {
+      const u = await guild.client.users.fetch(id);
+      const name = u.globalName || u.username || null;
+      out.set(id, {
+        label: name ? '**' + name + '**' : '`' + id + '`',
+        name,
+        inGuild: false,
+      });
+    } catch {
+      out.set(id, { label: '`' + id + '`', name: null, inGuild: false });
+    }
+  }
+  return out;
+}
+
+function who(resolved, id) {
+  const r = resolved.get(id);
+  if (r?.label) return r.label;
+  return '<@' + id + '>';
+}
+
+/**
+ * Same QuantLab · Ranks embed layout as /leaderboard,
+ * ranked by XP earned that calendar day (America/New_York).
+ */
 async function buildDailyLeaderboardMessage(guild, g, cfg) {
   const conf = normalizeDailyLb(cfg);
   const today = dayKeyInTz(Date.now(), ET);
-  const rows = dailyXpRows(g, { limit: conf.limit || 10 });
-  const lines = [];
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    let name = r.id;
-    try {
-      const m = await guild.members.fetch(r.id).catch(() => null);
-      if (m) name = m.displayName || m.user?.username || r.id;
-      else {
-        const u = await guild.client.users.fetch(r.id).catch(() => null);
-        if (u) name = u.username;
-      }
-    } catch { /* */ }
-    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `\`${i + 1}.\``;
-    lines.push(`${medal} **${name}** — **${r.xp}** XP`);
+  const dayRows = dailyXpRows(g, { dayKey: today, timeZone: ET, limit: conf.limit || 10 });
+
+  let BRAND_PURPLE = 0x5865F2;
+  try {
+    BRAND_PURPLE = require('./dropFormat').BRAND_PURPLE || BRAND_PURPLE;
+  } catch { /* */ }
+
+  const icon = serverIcon(guild);
+
+  if (!dayRows.length) {
+    const empty = new EmbedBuilder()
+      .setColor(BRAND_PURPLE)
+      .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+      .setTitle("Today's XP ladder")
+      .setDescription('No XP earned yet today — chat in allowed channels to climb the daily ranks.')
+      .setFooter({ text: 'QuantLab ranks · ' + today + ' ET' });
+    if (icon) empty.setThumbnail(icon);
+    empty.setTimestamp(new Date());
+    return {
+      content: conf.roleId ? `<@&${conf.roleId}>` : undefined,
+      embeds: [empty],
+      allowedMentions: conf.roleId ? { roles: [conf.roleId] } : { parse: [] },
+    };
   }
+
+  let progressFromXp = null;
+  try {
+    progressFromXp = require('./levelingEngine').progressFromXp;
+  } catch { /* */ }
+
+  const ranked = dayRows.map((r) => {
+    const u = (g.users && g.users[r.id]) || {};
+    let level = Math.max(0, Math.floor(Number(u.level) || 0));
+    let into = 0;
+    let need = 1;
+    if (typeof progressFromXp === 'function') {
+      try {
+        const prog = progressFromXp(Number(u.xp) || 0, g);
+        level = prog.level;
+        into = prog.into;
+        need = prog.need;
+      } catch { /* */ }
+    }
+    return { id: r.id, dayXp: r.xp, level, into, need };
+  });
+
+  const resolved = await resolveMentions(guild, ranked.map((r) => r.id));
+  const top = ranked.slice(0, 3);
+  const rest = ranked.slice(3, 10);
+
   const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
-    .setTitle(conf.title || 'Daily XP Leaderboard')
-    .setTimestamp(new Date());
-  if (conf.description) embed.setDescription(conf.description);
-  if (lines.length) embed.addFields({ name: `Top ${rows.length} · ${today} ET`, value: lines.join('\n').slice(0, 1024) });
-  else embed.addFields({ name: `${today} ET`, value: 'No XP on the leaderboard yet.' });
-  embed.setFooter({ text: (conf.footer || 'America/New_York').slice(0, 200) });
+    .setColor(BRAND_PURPLE)
+    .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+    .setTitle("Today's XP ladder")
+    .setDescription(DIV);
+
+  const podiumMeta = [
+    { idx: 1, label: '➁  Silver' },
+    { idx: 0, label: '➀  Gold' },
+    { idx: 2, label: '➂  Bronze' },
+  ];
+
+  for (const p of podiumMeta) {
+    const u = top[p.idx];
+    if (!u) {
+      embed.addFields({ name: '\u200b', value: '\u200b', inline: true });
+      continue;
+    }
+    const into = u.into ?? 0;
+    const need = u.need ?? 1;
+    const pct = levelPct(into, need);
+    embed.addFields({
+      name: p.label,
+      value: [
+        who(resolved, u.id),
+        '**+' + fmtXp(u.dayXp) + '** XP today',
+        'Level **' + u.level + '**',
+        '`' + levelBar(into, need, 8) + '`',
+        pct + '%',
+      ].join('\n'),
+      inline: true,
+    });
+  }
+
+  if (rest.length) {
+    const body = rest
+      .map((u, i) => {
+        const rank = String(i + 4).padStart(2, '0');
+        const into = u.into ?? 0;
+        const need = u.need ?? 1;
+        const pct = levelPct(into, need);
+        return (
+          '`' + rank + '` ' + who(resolved, u.id) +
+          '\nLv **' + u.level + '** · **+' + fmtXp(u.dayXp) +
+          '** XP today · `' + levelBar(into, need, 8) + '` ' + pct + '%'
+        );
+      })
+      .join('\n\n');
+    embed.addFields({ name: 'Ranks 4 – 10', value: body.slice(0, 1020), inline: false });
+  }
+
+  if (icon) embed.setThumbnail(icon);
+  embed.setFooter({
+    text: 'Top ' + ranked.length + ' today · progress = XP into next level · QuantLab · ' + today + ' ET',
+  });
+  embed.setTimestamp(new Date());
+
+  const mentionIds = ranked.filter((r) => resolved.get(r.id)?.inGuild).map((r) => r.id);
+
   return {
     content: conf.roleId ? `<@&${conf.roleId}>` : undefined,
     embeds: [embed],
-    allowedMentions: conf.roleId ? { roles: [conf.roleId] } : { parse: [] },
+    allowedMentions: {
+      parse: [],
+      users: mentionIds,
+      roles: conf.roleId ? [conf.roleId] : [],
+    },
   };
 }
 
