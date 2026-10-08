@@ -68,12 +68,36 @@
       o.textContent = blank;
       s.append(o);
     }
-    for (const opt of options || []) {
-      const o = document.createElement('option');
-      o.value = opt.id || opt.value;
-      o.textContent = opt.name || opt.label || o.value;
-      if (String(o.value) === String(value || '')) o.selected = true;
-      s.append(o);
+    const list = options || [];
+    const hasCat = list.some(function (opt) { return opt && opt.category; });
+    if (hasCat) {
+      const order = [];
+      const map = {};
+      list.forEach(function (opt) {
+        const g = (opt && opt.category) ? String(opt.category) : 'No category';
+        if (!map[g]) { map[g] = []; order.push(g); }
+        map[g].push(opt);
+      });
+      order.forEach(function (g) {
+        const og = document.createElement('optgroup');
+        og.label = g;
+        map[g].forEach(function (opt) {
+          const o = document.createElement('option');
+          o.value = opt.id || opt.value;
+          o.textContent = opt.name || opt.label || o.value;
+          if (String(o.value) === String(value || '')) o.selected = true;
+          og.appendChild(o);
+        });
+        s.appendChild(og);
+      });
+    } else {
+      list.forEach(function (opt) {
+        const o = document.createElement('option');
+        o.value = opt.id || opt.value;
+        o.textContent = opt.name || opt.label || o.value;
+        if (String(o.value) === String(value || '')) o.selected = true;
+        s.append(o);
+      });
     }
     return s;
   }

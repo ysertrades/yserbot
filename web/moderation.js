@@ -90,8 +90,21 @@ function read(guildId, guild) {
             if (c.isThread?.()) return false;
             try { return !!(c.isTextBased?.() || c.type === 15); } catch { return false; }
           })
-          .map(c => ({ id: c.id, name: c.name || c.id }))
-          .sort((a, b) => a.name.localeCompare(b.name));
+          .map(c => {
+            let category = 'No category';
+            try {
+              if (c.parentId) {
+                const p = guild.channels.cache.get(c.parentId);
+                if (p && p.name) category = p.name;
+              }
+            } catch { /* */ }
+            return { id: c.id, name: c.name || c.id, category };
+          })
+          .sort((a, b) => {
+            const ca = (a.category || '').localeCompare(b.category || '');
+            if (ca) return ca;
+            return (a.name || '').localeCompare(b.name || '');
+          });
       } catch (e) {
         console.warn('[mod] channels list', e.message);
         return [];

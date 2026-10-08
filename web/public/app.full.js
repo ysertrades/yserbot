@@ -2053,10 +2053,32 @@ function select(label, value, options, onChange, { blank = null } = {}) {
   l.append(el('span', null, label));
   const s = el('select');
   if (blank !== null) { const o = el('option', null, blank); o.value = ''; s.append(o); }
-  for (const opt of options) {
-    const o = el('option', null, opt.label);
-    o.value = opt.value;
-    s.append(o);
+  const list = Array.isArray(options) ? options : [];
+  const hasGroups = list.some(opt => opt && opt.group);
+  if (hasGroups) {
+    const order = [];
+    const map = Object.create(null);
+    for (const opt of list) {
+      const g = (opt && opt.group) ? String(opt.group) : 'Other';
+      if (!map[g]) { map[g] = []; order.push(g); }
+      map[g].push(opt);
+    }
+    for (const g of order) {
+      const og = document.createElement('optgroup');
+      og.label = g;
+      for (const opt of map[g]) {
+        const o = el('option', null, opt.label);
+        o.value = opt.value;
+        og.appendChild(o);
+      }
+      s.append(og);
+    }
+  } else {
+    for (const opt of list) {
+      const o = el('option', null, opt.label);
+      o.value = opt.value;
+      s.append(o);
+    }
   }
   s.value = value ?? '';
   s.addEventListener('change', () => onChange(s.value));
@@ -2074,7 +2096,13 @@ function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
   // exposed for leveling-ui and other tabs
   const items = kind === 'role' ? roleList() : channelList();
   return select(label, value || '',
-    items.map(i => ({ value: i.id, label: kind === 'role' ? i.name : `#${i.name}` })),
+    items.map(i => kind === 'role'
+      ? { value: i.id, label: i.name }
+      : {
+          value: i.id,
+          label: '#' + i.name,
+          group: i.category || i.parentName || 'No category',
+        }),
     v => onChange(v || null), { blank });
 }
 
@@ -2110,7 +2138,9 @@ function pickMany(label, kind, values, onChange) {
   const box = el('div', 'chipset');
   if (!items.length) box.append(el('span', 'muted', kind === 'role' ? 'No roles found.' : 'No channels found.'));
   for (const i of items) {
-    const b = el('button', 'chip-toggle', kind === 'role' ? i.name : `#${i.name}`);
+    const b = el('button', 'chip-toggle', kind === 'role'
+      ? i.name
+      : ('#' + i.name + (i.category ? (' · ' + i.category) : '')));
     b.type = 'button';
     if (chosen.has(i.id)) b.setAttribute('aria-pressed', 'true');
     b.addEventListener('click', () => {
@@ -8622,6 +8652,7 @@ function channelOptsFromTrading(t) {
     value: c.id,
     label: (c.kind === 'forum' ? 'Forum · ' : '#') + c.name,
     kind: c.kind || 'text',
+    group: c.category || 'No category',
   }));
 }
 

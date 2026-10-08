@@ -26,6 +26,7 @@
         value: c.id,
         label: (c.kind === 'forum' ? 'Forum · ' : '#') + c.name,
         kind: c.kind || 'text',
+        group: c.category || 'No category',
       }));
     }
     return [];

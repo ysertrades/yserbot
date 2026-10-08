@@ -102,10 +102,26 @@ function read(guildId, guild, { ownerOnly = false } = {}) {
     resolved,
     // Only text channels are ever a valid destination, so the picker never
     // offers a voice or category channel it would then reject.
-    channels: guild.channels.cache
-      .filter(c => c.isTextBased?.() && !c.isVoiceBased?.())
-      .map(c => ({ id: c.id, name: c.name }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
+    channels: (function () {
+      const list = [...guild.channels.cache.values()]
+        .filter(c => c.isTextBased?.() && !c.isVoiceBased?.())
+        .map(c => {
+          let category = null;
+          try {
+            if (c.parentId) {
+              const p = guild.channels.cache.get(c.parentId);
+              if (p) category = p.name || null;
+            }
+          } catch { /* */ }
+          return { id: c.id, name: c.name, category: category || 'No category' };
+        });
+      list.sort((a, b) => {
+        const ca = (a.category || '').localeCompare(b.category || '');
+        if (ca) return ca;
+        return a.name.localeCompare(b.name);
+      });
+      return list;
+    })(),
     roles: guild.roles.cache
       .filter(r => !r.managed && r.id !== guild.id)
       .map(r => ({ id: r.id, name: r.name }))

@@ -546,10 +546,21 @@ function panelSnapshot(guildId, guild) {
         if (ch.isThread?.()) continue;
         const isForum = ch.type === 15 || ch.type === 'GUILD_FORUM';
         if (ch.isTextBased?.() || isForum) {
-          channelOpts.push({ id: ch.id, name: ch.name, kind: isForum ? 'forum' : 'text' });
+          let category = 'No category';
+          try {
+            if (ch.parentId) {
+              const p = guild.channels.cache.get(ch.parentId);
+              if (p && p.name) category = p.name;
+            }
+          } catch { /* */ }
+          channelOpts.push({ id: ch.id, name: ch.name, kind: isForum ? 'forum' : 'text', category });
         }
       }
-      channelOpts.sort((a, b) => a.name.localeCompare(b.name));
+      channelOpts.sort((a, b) => {
+        const ca = (a.category || '').localeCompare(b.category || '');
+        if (ca) return ca;
+        return a.name.localeCompare(b.name);
+      });
     }
     if (guild?.roles?.cache) {
       for (const r of guild.roles.cache.values()) {
