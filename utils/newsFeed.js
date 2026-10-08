@@ -10,7 +10,7 @@ const { readJson, writeJson } = require('./jsonStorage');
 const { AttachmentBuilder } = require('discord.js');
 const { isValidUrl } = require('./embedBuilder');
 const messageStyle = require('./messageStyle');
-const { TOPICS, expandTopicKeywords } = require('./newsTopics');
+const { TOPICS, expandTopicKeywords, textMatchesKeywords } = require('./newsTopics');
 const { generateNewsCard } = require('./newsCardVisual');
 const { isFeatureEnabled } = require('./featureToggles');
 
@@ -38,7 +38,7 @@ const POLL_INTERVAL_MS = Math.min(
   300_000,
   Math.max(2_000, Number(process.env.NEWSFEED_POLL_MS) || 3_000),
 );
-const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
+const MAX_POST_PER_TICK = 20; // matched headlines per tick (filter runs on full window first)
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
 
 /**
@@ -589,14 +589,9 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
 // them do.
 function matchesFilter(item, settings) {
   const picked = settings.filterTopics || [];
-  // Picking nothing, or picking every topic there is, both mean "everything"
-  // — selecting all topics shouldn't behave as a narrower filter than
-  // selecting none, since keyword bundles can never cover every possible
-  // headline (e.g. a plain stock-price item with no topic keyword in it).
   if (picked.length === 0 || picked.length >= TOPICS.length) return true;
   const words = expandTopicKeywords(picked);
-  const haystack = `${item.title} ${item.body || ''}`.toLowerCase();
-  return words.some(w => haystack.includes(w));
+  return textMatchesKeywords(item.title, item.body, words);
 }
 
 // One fetch per source per tick at most, shared across every guild — and only
@@ -678,27 +673,21 @@ async function runTick(client) {
       if (!items || items.length === 0) continue;
 
       const cursor = cursorFor(settings, key);
-      let toPost;
+      let newer;
       if (!cursor) {
-        // Just enabled — establish a baseline silently instead of dumping the
-        // whole current feed window into the channel.
-        toPost = [];
+        newer = [];
       } else {
         const idx = items.findIndex(it => it.guid === cursor);
-        toPost = idx === -1 ? items.slice(0, MAX_POST_PER_TICK) : items.slice(0, idx);
+        newer = idx === -1 ? items.slice(0, 40) : items.slice(0, idx);
       }
-      if (toPost.length > MAX_POST_PER_TICK) toPost = toPost.slice(0, MAX_POST_PER_TICK);
 
-      if (toPost.length > 0) {
-        const chronological = [...toPost].reverse().filter(item => matchesFilter(item, settings));
-        // Built together, sent in order. Building is all network reads with no
-        // side effects, and doing it one headline at a time meant every
-        // picture lookup in the batch was paid end to end — the eighth
-        // headline in a burst waited for the seven in front of it to finish
-        // theirs before its own even started. Now the batch costs what its
-        // slowest single item costs.
+      if (newer.length > 0) {
+        // Filter the full window first, then cap — topic matches are not
+        // starved by unrelated headlines filling the per-tick slot.
+        const chronological = [...newer].reverse().filter(item => matchesFilter(item, settings));
+        const batch = chronological.slice(0, MAX_POST_PER_TICK);
         const cards = await Promise.all(
-          chronological.map(async (item) => {
+          batch.map(async (item) => {
             try {
               item.truthSocial = isTruthSocialItem(item);
               return await buildNewsV2(item, source, guildId);
@@ -715,12 +704,23 @@ async function runTick(client) {
             components: payload.components,
           }).catch((err) => console.warn('[NEWSFEED] send failed:', err.message));
         }
-      }
 
-      if (!settings.lastGuids) settings.lastGuids = {};
-      settings.lastGuids[key] = items[0].guid;
-      if (key === 'financialjuice') settings.lastGuid = items[0].guid; // keep the legacy field in step
-      changed = true;
+        if (!settings.lastGuids) settings.lastGuids = {};
+        if (chronological.length > batch.length && batch.length > 0) {
+          const lastPosted = batch[batch.length - 1];
+          settings.lastGuids[key] = lastPosted.guid;
+          if (key === 'financialjuice') settings.lastGuid = lastPosted.guid;
+        } else {
+          settings.lastGuids[key] = items[0].guid;
+          if (key === 'financialjuice') settings.lastGuid = items[0].guid;
+        }
+        changed = true;
+      } else if (!cursor && items[0]) {
+        if (!settings.lastGuids) settings.lastGuids = {};
+        settings.lastGuids[key] = items[0].guid;
+        if (key === 'financialjuice') settings.lastGuid = items[0].guid;
+        changed = true;
+      }
     }
   }
 
