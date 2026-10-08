@@ -118,6 +118,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       channelId: newsfeed.channelId ?? null,
       channel: channelName(newsfeed.channelId),
       topics: newsfeed.filterTopics || [],
+      topicCatalog: (() => { try { return require('../utils/newsTopics').TOPICS.map(t => ({ key: t.key, label: t.label, emoji: t.emoji })); } catch { return []; } })(),
       topicOptions: TOPICS.map(t => ({
         value: t.key,
         label: `${t.emoji} ${t.label}`,

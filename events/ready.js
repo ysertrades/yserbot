@@ -2,6 +2,7 @@ const { Events, REST, Routes, ApplicationCommandType } = require('discord.js');
 const { startScheduleRunner } = require('../utils/scheduleRunner');
   const { startEconCalRunner } = require('../utils/econCalRunner');
 const { startWhopRunner } = require('../utils/whopRunner');
+const { startNewsFeedRunner } = require('../utils/newsFeed');
 const { seedDefaultContent } = require('../utils/contentSeed');
 const { restoreGiveaways } = require('../commands/utility/giveaway');
 const botProfile = require('../web/botProfile');
@@ -114,6 +115,7 @@ module.exports = {
           startDailyLeaderboardRunner(client, leveling);
         } catch (e) { console.warn('[dailyXpLb] not started:', e.message); }
   startEconCalRunner(client);
+        startNewsFeedRunner(client);
         startWhopRunner(client);
         seedDefaultContent(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));

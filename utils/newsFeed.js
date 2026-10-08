@@ -36,7 +36,7 @@ const FEED_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
  */
 const POLL_INTERVAL_MS = Math.min(
   300_000,
-  Math.max(5_000, Number(process.env.NEWSFEED_POLL_MS) || 20_000),
+  Math.max(5_000, Number(process.env.NEWSFEED_POLL_MS) || 8_000),
 );
 const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
@@ -111,6 +111,48 @@ function extractImageFromHtml(html) {
   const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
   return m ? m[1] : null;
 }
+
+function extractAllImages(block, description) {
+  const urls = [];
+  const seen = new Set();
+  const push = (u) => {
+    if (!u || typeof u !== 'string') return;
+    let url = u.trim().replace(/&amp;/g, '&');
+    if (!/^https?:\/\//i.test(url)) return;
+    if (/\/(pixel|spacer|1x1|favicon)/i.test(url)) return;
+    if (seen.has(url)) return;
+    seen.add(url);
+    urls.push(url);
+  };
+  let em;
+  const encRe = /<enclosure\b[^>]*\/?>/gi;
+  while ((em = encRe.exec(block || '')) !== null) {
+    const tag = em[0];
+    const urlMatch = tag.match(/url="([^"]+)"/i);
+    const typeMatch = tag.match(/type="([^"]+)"/i);
+    if (!urlMatch) continue;
+    if (typeMatch && !/^image\//i.test(typeMatch[1])) continue;
+    push(urlMatch[1]);
+  }
+  const mcRe = /<media:content\b[^>]*>/gi;
+  while ((em = mcRe.exec(block || '')) !== null) {
+    const urlMatch = em[0].match(/url="([^"]+)"/i);
+    if (urlMatch) push(urlMatch[1]);
+  }
+  const imgRe = /<img[^>]+src=["']([^"']+)["']/gi;
+  while ((em = imgRe.exec(description || '')) !== null) push(em[1]);
+  const bare = (description || '').match(/https?:\/\/[^\s"'<>]+\.(?:png|jpe?g|gif|webp)(?:\?[^\s"'<>]*)?/gi);
+  if (bare) bare.forEach(push);
+  return urls;
+}
+
+function isTruthSocialItem(item) {
+  const hay = `${item.title || ''} ${item.body || ''} ${item.link || ''} ${(item.source && item.source.url) || ''}`.toLowerCase();
+  if (/truthsocial\.com|truth social/.test(hay)) return true;
+  if (/\btrump\b/.test(hay) && (/truth|@realdonaldtrump|president trump|donald trump/.test(hay))) return true;
+  return false;
+}
+
 
 // ── YouTube coverage ─────────────────────────────────────────────────────────
 // Financial Juice attaches live pressers / stream coverage as a YouTube link
@@ -240,12 +282,13 @@ function parseFeedItems(xml) {
     const pubDateRaw = extractTag(block, 'pubDate');
     const pubDate = pubDateRaw ? new Date(pubDateRaw) : new Date();
     const description = extractTag(block, 'description');
-    const imageUrl = extractEnclosureImage(block) || extractImageFromHtml(description);
+    const images = extractAllImages(block, description);
+    const imageUrl = images[0] || null;
     const video = extractYouTube(description, link, rawTitle);
     const source = video ? null : extractExternalLink(description, link);
     const rawBody = htmlToDiscordText(description);
     const body = (video || source) ? stripUrls(rawBody) : rawBody;
-    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl, body, video, source });
+    items.push({ guid, title, link, pubDate: isNaN(pubDate) ? new Date() : pubDate, imageUrl, images, body, video, source, truthSocial: false });
   }
   return items;
 }
@@ -468,41 +511,73 @@ function withBudget(promise, ms) {
  * the send rather than posting an empty card.
  */
 async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = null) {
-  const isBreaking = BREAKING_PATTERN.test(item.title);
-  const key = isBreaking ? 'news.breaking' : 'news.headline';
+  const v2 = await buildNewsV2(item, source, guildId);
+  if (!v2) return null;
+  return { embed: null, v2, attachment: null };
+}
 
-  // When the item carries a video or an outbound source, that *is* the story
-  // — the headline points straight at it; the Financial Juice article link on
-  // those is only ever a stub of the same thing.
+async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null) {
+  const {
+    IS_COMPONENTS_V2, text, separator, button, row, container,
+  } = require('./componentsV2');
+
+  const isBreaking = BREAKING_PATTERN.test(item.title || '');
+  const isTruth = item.truthSocial || isTruthSocialItem(item);
   const headlineUrl = item.video?.url || item.source?.url || item.link;
 
-  // An embed image isn't clickable in Discord, so the banner alone gives no
-  // way through to the link — this line is what makes it followable. It is a
-  // whole composed line rather than separate tokens because a "Read on {via}"
-  // written out in the catalogue would still render its link markup on the
-  // headlines that have nowhere to point.
-  const readmore = item.video ? `▶️ **[Watch on YouTube](${item.video.url})**`
-    : item.source ? `🔗 **[Read on ${item.source.host}](${item.source.url})**`
-    : '';
-  const context = item.video ? 'Live Video'
-    : item.source ? `via ${item.source.host}`
-    : 'Live Market News';
+  const imageList = [];
+  const seen = new Set();
+  for (const u of [...(item.images || []), item.imageUrl].filter(Boolean)) {
+    const url = String(u).trim();
+    if (!url || seen.has(url) || !/^https:\/\//i.test(url)) continue;
+    seen.add(url);
+    imageList.push(url);
+  }
+  const galleryUrls = imageList.slice(0, 10);
 
-  // Text-only embeds — no image or thumbnail (brand decision).
-  const embed = messageStyle.build(guildId, key, {
-    tokens: {
-      headline: item.title,
-      text: item.body && item.body !== item.title ? item.body : '',
-      url: headlineUrl || '',
-      source: source.label,
-      via: item.source?.host || '',
-      readmore, context,
-    },
+  let accent = 0x5865F2;
+  if (isBreaking) accent = 0xED4245;
+  if (isTruth) accent = 0xF0B232;
+
+  const kids = [];
+  let badge = '⚡ LIVE';
+  if (isBreaking) badge = '🚨 BREAKING';
+  if (isTruth) badge = '🦅 TRUTH SOCIAL';
+  kids.push(text(`**${badge}** · ${source.label || 'Financial Juice'}`));
+  kids.push(separator({ divider: true, spacing: 1 }));
+  kids.push(text(isTruth ? `### ${item.title}` : `## ${item.title}`));
+  if (item.body && item.body !== item.title) {
+    const body = String(item.body).slice(0, 1800).trim();
+    if (body) kids.push(text(body));
+  }
+  if (galleryUrls.length) {
+    kids.push({ type: 12, items: galleryUrls.map((url) => ({ media: { url } })) });
+  }
+  kids.push(separator({ divider: true, spacing: 1 }));
+  const buttons = [];
+  if (headlineUrl && /^https:\/\//i.test(headlineUrl)) {
+    buttons.push(button({
+      label: item.video ? 'Watch' : (isTruth ? 'Open on Truth Social' : 'Read headline'),
+      style: 5, url: headlineUrl,
+    }));
+  }
+  if (item.link && item.link !== headlineUrl && /^https:\/\//i.test(item.link)) {
+    buttons.push(button({ label: 'Financial Juice', style: 5, url: item.link }));
+  }
+  if (buttons.length) kids.push(row(...buttons.slice(0, 5)));
+  const when = item.pubDate ? new Date(item.pubDate) : new Date();
+  const ts = when.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
   });
-  if (!embed) return null;
-  try { if (typeof embed.setImage === 'function') embed.setImage(null); } catch { /* */ }
-  try { if (typeof embed.setThumbnail === 'function') embed.setThumbnail(null); } catch { /* */ }
-  return { embed, attachment: null };
+  kids.push(text(`-# ${ts} ET · via Financial Juice${isTruth ? ' · Trump / Truth Social' : ''}`));
+
+  return {
+    flags: IS_COMPONENTS_V2,
+    components: [container(kids, accent)],
+    embeds: [],
+    content: null,
+  };
 }
 
 // Picking topics via /newsfeed topics is the only filter — no picked topics
@@ -618,17 +693,23 @@ async function runTick(client) {
         // headline in a burst waited for the seven in front of it to finish
         // theirs before its own even started. Now the batch costs what its
         // slowest single item costs.
-        const embeds = await Promise.all(
-          chronological.map(item => buildNewsEmbed(item, source, guildId).catch(() => null)),
+        const cards = await Promise.all(
+          chronological.map(async (item) => {
+            try {
+              item.truthSocial = isTruthSocialItem(item);
+              return await buildNewsV2(item, source, guildId);
+            } catch (e) {
+              console.warn('[NEWSFEED] build failed:', e.message);
+              return null;
+            }
+          }),
         );
-        for (const result of embeds) {
-          // Null means this kind of headline is switched off in Appearance.
-          // The cursor still advances below, so re-enabling it starts from the
-          // headlines after this one rather than replaying the backlog.
-          if (!result || !result.embed) continue;
-          const payload = { embeds: [result.embed] };
-          if (result.attachment) payload.files = [result.attachment];
-          await channel.send(payload).catch(() => {});
+        for (const payload of cards) {
+          if (!payload || !payload.components) continue;
+          await channel.send({
+            flags: payload.flags,
+            components: payload.components,
+          }).catch((err) => console.warn('[NEWSFEED] send failed:', err.message));
         }
       }
 
@@ -643,7 +724,7 @@ async function runTick(client) {
 }
 
 // Safe to call once after the client is ready.
-function startNewsFeedRunner_DISABLED(client) {
+function startNewsFeedRunner(client) {
   // Said out loud, because the cadence is the single biggest thing standing
   // between a headline being published and it being in a channel — and
   // because it silently ran at half this for a long time without anything
@@ -655,13 +736,8 @@ function startNewsFeedRunner_DISABLED(client) {
 }
 
 module.exports = {
-  startNewsFeedRunner, runTick, parseFeedItems, buildNewsEmbed,
+  startNewsFeedRunner, runTick, parseFeedItems, buildNewsEmbed, buildNewsV2,
   SOURCES, listSources, DEFAULT_SOURCES,
 };
 
 
-/** @deprecated Financial Juice news feed removed */
-function startNewsFeedRunner() {
-  console.log('[newsFeed] retired — Financial Juice live feed is off');
-}
-module.exports.startNewsFeedRunner = startNewsFeedRunner;

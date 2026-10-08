@@ -42,6 +42,11 @@ const TOPICS = [
     key: 'geopolitics', emoji: '🌍', label: 'Geopolitics', description: 'Conflicts, sanctions & diplomacy',
     keywords: ['iran', 'israel', 'ukraine', 'russia', 'china', 'sanctions', 'houthi', 'military', 'missile', 'war'],
   },
+  {
+    key: 'trump', emoji: '🦅', label: 'Trump / Truth Social',
+    description: 'Trump posts & Truth Social items on Financial Juice',
+    keywords: ['trump', 'truth social', 'truthsocial', 'realdonaldtrump', 'president trump', 'donald trump'],
+  },
 ];
 
 function getTopic(key) {

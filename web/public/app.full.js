@@ -1754,7 +1754,56 @@ function renderWhop() {
 function renderFeedForms() {
   const d = state.overview;
 
-  // News feed removed — Financial Juice live feed retired.
+  const nfForm = $('#form-newsfeed');
+  const nfState = $('#newsfeed-state');
+  if (nfForm && d.newsfeed) {
+    const nf = {
+      enabled: !!d.newsfeed.enabled,
+      channelId: d.newsfeed.channelId || '',
+      filterTopics: (d.newsfeed.topics || []).slice(),
+      sources: (d.newsfeed.sources || []).map(s => s.key || s).filter(Boolean),
+    };
+    if (!nf.sources.length) nf.sources = ['financialjuice'];
+    if (nfState) {
+      nfState.textContent = nf.enabled ? 'LIVE' : 'OFF';
+      nfState.className = 'pill' + (nf.enabled ? ' live' : '');
+    }
+    const topicOpts = (d.newsfeed.topicCatalog || []).map(t => ({
+      value: t.key || t.value,
+      label: (t.emoji ? t.emoji + ' ' : '') + (t.label || t.key),
+    }));
+    const topics = topicOpts.length ? topicOpts : [
+      { value: 'forex', label: '🔀 Forex' },
+      { value: 'equities', label: '📈 Equities' },
+      { value: 'crypto', label: '🪙 Crypto' },
+      { value: 'commodities', label: '🛢️ Commodities' },
+      { value: 'central_banks', label: '🏦 Central banks' },
+      { value: 'geopolitics', label: '🌐 Geopolitics' },
+      { value: 'trump', label: '🦅 Trump / Truth Social' },
+    ];
+    nfForm.replaceChildren(
+      toggle('Post live headlines', nf.enabled, v => {
+        nf.enabled = v;
+        if (nfState) {
+          nfState.textContent = v ? 'LIVE' : 'OFF';
+          nfState.className = 'pill' + (v ? ' live' : '');
+        }
+      }),
+      pickOne('Channel', 'channel', nf.channelId, v => { nf.channelId = v; }, { blank: 'Pick a channel…' }),
+      el('p', 'hint', 'Polls Financial Juice about every 8 seconds. Enabling never dumps the backlog.'),
+      pickValues('Topics to include', topics, nf.filterTopics, v => { nf.filterTopics = v; },
+        { allNote: 'Nothing picked — every headline posts.' }),
+      el('p', 'hint', 'Trump / Truth Social items from Financial Juice get a gold V2 card automatically.'),
+      actions(async () => {
+        await post('newsfeed', {
+          enabled: nf.enabled,
+          channelId: nf.channelId || null,
+          filterTopics: nf.filterTopics,
+          sources: nf.sources.length ? nf.sources : ['financialjuice'],
+        });
+      }),
+    );
+  }
 
   const ec = {
     enabled: d.econcal.enabled,
@@ -6197,8 +6246,8 @@ function syncFeatureNav() {
   const gawOff  = !featureOn('giveaways');
   const tixOff  = !featureOn('tickets');
   const lvlOff  = !featureOn('leveling');
-  // Feeds holds calendar + Whop — keep the tab if either is on.
-  const feedsOff = calOff && whopOff;
+  // Feeds always available for live news + calendar + Whop
+  const feedsOff = false;
 
   hide(nav('economy'), true);
   hide(nav('feeds'), feedsOff);
@@ -6206,6 +6255,7 @@ function syncFeatureNav() {
   hide(nav('tickets'), tixOff);
   hide(nav('leveling'), lvlOff);
 
+  hide($('#newsfeed-panel'), false);
   // Calendar panels only
   hide($('#form-econcal')?.closest('.panel'), calOff);
   hide($('#release-desk'), calOff);

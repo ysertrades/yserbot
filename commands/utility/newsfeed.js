@@ -1,14 +1,13 @@
 'use strict';
-
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-
+const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require('discord.js');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('newsfeed')
-    .setDescription('(Retired) Live market news feed has been removed.'),
+    .setDescription('Live Financial Juice news — configure in Control Panel → Feeds.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   async execute(interaction) {
     await interaction.reply({
-      content: 'The Financial Juice live news feed has been removed. Use **Feeds → Economic calendar** for releases.',
+      content: 'Configure **Live market news** under Control Panel → **Feeds**. Headlines post as Components V2 cards with Financial Juice images.',
       flags: MessageFlags.Ephemeral,
     });
   },
