@@ -557,7 +557,7 @@ function paint() {
       order.forEach(function (cat) {
         list.append(el('div', 'desk-pad-cat', cat));
         groups[cat].forEach(function (c) {
-          var b = el('button', 'desk-pad-ch', '#' + c.name);
+          var b = el('button', 'desk-pad-ch', '#' + c.name + (c.category ? (' · ' + c.category) : ''));
           b.type = 'button';
           b.dataset.id = c.id;
           if (c.id === desk.channelId) b.classList.add('is-current');

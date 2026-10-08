@@ -415,8 +415,8 @@ function isEditingPanel() {
   const tag = (a.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
   if (a.isContentEditable) return true;
-  // focused inside a form / sheet field
-  if (a.closest && (a.closest('form') || a.closest('.field') || a.closest('#sheet'))) return true;
+  // focused inside a form / sheet field / composer canvas
+  if (a.closest && (a.closest('form') || a.closest('.field') || a.closest('#sheet') || a.closest('#composer-body') || a.closest('.composer-canvas'))) return true;
   return false;
 }
 
@@ -1150,7 +1150,12 @@ function renderOverview() {
   renderFeedForms();
   renderModerationForm();
   /* renderShop retired */
-  renderComposer();
+  /* Composer sticky while tab open — full rebuild kills contenteditable focus. */
+  if (root.dataset.section !== 'composer') {
+    try { renderComposer(); } catch (e) { console.warn('[panel] renderComposer', e); }
+  } else {
+    try { renderComposerIndex(); } catch (e) {}
+  }
   /* Appearance editor is sticky — only rebuilt when opening the tab or
      changing which message is selected. Rebuilding it on every overview
      refresh is what made the Appearance tab flash. */
@@ -3177,7 +3182,7 @@ function renderComposer() {
     const target = { name: draft.name, channelId: '', content: '', mention: null };
     const channels = state.overview?.settings?.channels || [];
     sendPanel.append(
-      select('Channel', '', channels.map(c => ({ value: c.id, label: `#${c.name}` })), v => { target.channelId = v; }, { blank: 'Pick a channel' }),
+      select('Channel', '', channels.map(c => ({ value: c.id, label: '#' + c.name, group: c.category || 'No category' })), v => { target.channelId = v; }, { blank: 'Pick a channel' }),
       // Between the channel and the line above the embed, because it reads in
       // the order the post is built: where it goes, who it is for, what it
       // says. It belongs to this send rather than to the template, so it
@@ -6078,7 +6083,7 @@ function renderSettings() {
     if (f.type === 'bool') {
       nodes.push(toggle(f.label, !!value, v => { draft[f.key] = v; markDirty(); }));
     } else if (f.type === 'channel') {
-      nodes.push(select(f.label, value || '', s.channels.map(c => ({ value: c.id, label: `#${c.name}` })),
+      nodes.push(select(f.label, value || '', s.channels.map(c => ({ value: c.id, label: '#' + c.name, group: c.category || 'No category' })),
         v => { draft[f.key] = v || null; markDirty(); }, { blank: 'Not set' }));
     } else if (f.type === 'role') {
       nodes.push(select(f.label, value || '', roleItems.map(r => ({ value: r.id, label: r.name })),
@@ -9090,6 +9095,7 @@ function isEditing() {
   if (!a) return false;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
   if (a.isContentEditable === true) return true;
+  if (a.closest && a.closest('#composer-body, .composer-canvas, [contenteditable="true"]')) return true;
   if (document.querySelector('select:focus, details[open] summary:focus')) return true;
   return false;
 }

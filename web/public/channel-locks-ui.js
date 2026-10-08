@@ -124,13 +124,36 @@
     blank.textContent = 'Select channel…';
     chSel.append(blank);
     const opts = channelOptions();
-    for (let i = 0; i < opts.length; i++) {
-      const c = opts[i];
-      if (!c || !c.id) continue;
-      const o = document.createElement('option');
-      o.value = String(c.id);
-      o.textContent = channelLabel(c);
-      chSel.append(o);
+    const hasCat = opts.some(function (c) { return c && c.category; });
+    if (hasCat) {
+      const order = [];
+      const map = {};
+      opts.forEach(function (c) {
+        if (!c || !c.id) return;
+        const g = c.category ? String(c.category) : 'No category';
+        if (!map[g]) { map[g] = []; order.push(g); }
+        map[g].push(c);
+      });
+      order.forEach(function (g) {
+        const og = document.createElement('optgroup');
+        og.label = g;
+        map[g].forEach(function (c) {
+          const o = document.createElement('option');
+          o.value = String(c.id);
+          o.textContent = channelLabel(c);
+          og.appendChild(o);
+        });
+        chSel.appendChild(og);
+      });
+    } else {
+      for (let i = 0; i < opts.length; i++) {
+        const c = opts[i];
+        if (!c || !c.id) continue;
+        const o = document.createElement('option');
+        o.value = String(c.id);
+        o.textContent = channelLabel(c);
+        chSel.append(o);
+      }
     }
     if (prevChannel && Array.from(chSel.options).some(function (o) { return o.value === prevChannel; })) {
       chSel.value = prevChannel;

@@ -634,7 +634,7 @@
 
     function chName(id) {
       const o = (L.channelOpts || []).find(function (c) { return String(c.id) === String(id); });
-      return o ? ('#' + o.name) : id;
+      return o ? ('#' + o.name + (o.category ? (' · ' + o.category) : '')) : id;
     }
     function roleName(id) {
       const o = (L.roleOpts || []).find(function (c) { return String(c.id) === String(id); });
