@@ -105,26 +105,25 @@ function normalizeDailyLb(raw) {
   };
 }
 
+/** Real all-time XP from stored g.users (same source as panel / commands). */
 function dailyXpRows(g, { dayKey, timeZone = ET, limit = 10 } = {}) {
-  const key = dayKey || dayKeyInTz(Date.now(), timeZone);
-  const xpMap = {};
-  const log = Array.isArray(g.events) ? g.events : (g.xpEvents || []);
-  for (const e of log) {
-    if (!e || !e.userId || !e.xp) continue;
-    const ts = e.createdAt || e.at || e.ts || 0;
-    if (dayKeyInTz(ts, timeZone) !== key) continue;
-    xpMap[e.userId] = (xpMap[e.userId] || 0) + Number(e.xp);
-  }
-  return Object.entries(xpMap)
-    .map(([id, xp]) => ({ id, xp }))
-    .sort((a, b) => b.xp - a.xp || a.id.localeCompare(b.id))
-    .slice(0, limit);
+  const n = Math.max(1, Math.min(25, Number(limit) || 10));
+  const users = g && g.users && typeof g.users === 'object' ? g.users : {};
+  return Object.entries(users)
+    .map(([id, u]) => {
+      const xp = Math.max(0, Math.floor(Number(u && u.xp) || 0));
+      const level = Math.max(0, Math.floor(Number(u && u.level) || 0));
+      return { id, xp, level };
+    })
+    .filter((r) => r.xp > 0)
+    .sort((a, b) => b.xp - a.xp || b.level - a.level || a.id.localeCompare(b.id))
+    .slice(0, n);
 }
 
 async function buildDailyLeaderboardMessage(guild, g, cfg) {
   const conf = normalizeDailyLb(cfg);
   const today = dayKeyInTz(Date.now(), ET);
-  const rows = dailyXpRows(g, { dayKey: today, timeZone: ET, limit: conf.limit });
+  const rows = dailyXpRows(g, { limit: conf.limit || 10 });
   const lines = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -146,7 +145,7 @@ async function buildDailyLeaderboardMessage(guild, g, cfg) {
     .setTimestamp(new Date());
   if (conf.description) embed.setDescription(conf.description);
   if (lines.length) embed.addFields({ name: `Top ${rows.length} · ${today} ET`, value: lines.join('\n').slice(0, 1024) });
-  else embed.addFields({ name: `${today} ET`, value: 'No XP earned yet today.' });
+  else embed.addFields({ name: `${today} ET`, value: 'No XP on the leaderboard yet.' });
   embed.setFooter({ text: (conf.footer || 'America/New_York').slice(0, 200) });
   return {
     content: conf.roleId ? `<@&${conf.roleId}>` : undefined,
