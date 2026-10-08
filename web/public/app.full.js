@@ -9421,12 +9421,13 @@ function enhanceSelects(scope) {
           setTimeout(() => { try { input.focus(); } catch (_) {} }, 20);
         }
         const paintOpts = () => {
-          listHost.querySelectorAll('.cselect-option, .cselect-empty').forEach((n) => n.remove());
+          listHost.querySelectorAll('.cselect-option, .cselect-empty, .cselect-group').forEach((n) => n.remove());
           const q = filter.trim().toLowerCase();
           let shown = 0;
-          Array.from(sel.options).forEach((opt, i) => {
+          const addOption = (opt) => {
             const text = opt.textContent || opt.value || '—';
-            if (q && !text.toLowerCase().includes(q) && !(opt.value || '').includes(q)) return;
+            if (opt.value === '' && !text) return;
+            if (q && !text.toLowerCase().includes(q) && !(opt.value || '').toLowerCase().includes(q)) return;
             const o = document.createElement('button');
             o.type = 'button';
             o.className = 'cselect-option' + (opt.selected ? ' is-selected' : '');
@@ -9436,11 +9437,32 @@ function enhanceSelects(scope) {
             o.addEventListener('click', (e) => {
               e.preventDefault(); e.stopPropagation();
               if (opt.disabled) return;
-              sel.selectedIndex = i;
+              sel.value = opt.value;
               sel.dispatchEvent(new Event('change', { bubbles: true }));
               syncLabel(); close();
             });
-            listHost.appendChild(o); shown++;
+            listHost.appendChild(o);
+            shown++;
+          };
+          // Walk children so <optgroup> category headers are preserved
+          // (Array.from(sel.options) flattens groups and hid Discord categories).
+          Array.from(sel.children).forEach((child) => {
+            if (child.tagName === 'OPTGROUP') {
+              const kids = Array.from(child.children).filter((opt) => {
+                if (opt.tagName !== 'OPTION') return false;
+                if (!q) return true;
+                const text = opt.textContent || opt.value || '';
+                return text.toLowerCase().includes(q) || (opt.value || '').toLowerCase().includes(q);
+              });
+              if (!kids.length) return;
+              const h = document.createElement('div');
+              h.className = 'cselect-group';
+              h.textContent = child.label || 'Category';
+              listHost.appendChild(h);
+              kids.forEach(addOption);
+            } else if (child.tagName === 'OPTION') {
+              addOption(child);
+            }
           });
           if (!shown) {
             const empty = document.createElement('div');
