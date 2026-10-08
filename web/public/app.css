@@ -3754,3 +3754,14 @@ body > .cselect-menu .cselect-option.is-selected{
   pointer-events:none;
   user-select:none;
 }
+
+
+/* Channel names: Discord emoji render cleanly in dropdowns */
+.cselect-value,
+.cselect-option,
+.cselect-group,
+.cselect-trigger {
+  /* cselect-emoji-fonts */
+  font-family: inherit, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+}
+.cselect-option { line-height: 1.35; }

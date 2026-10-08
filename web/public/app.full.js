@@ -1753,10 +1753,27 @@ function renderWhop() {
 
 function renderFeedForms() {
   const d = state.overview;
+  if (!d) return;
 
+  // Only rebuild when saved values change — never every live tick (no flicker).
   const nfForm = $('#form-newsfeed');
   const nfState = $('#newsfeed-state');
   if (nfForm && d.newsfeed) {
+    const nfSig = JSON.stringify({
+      e: !!d.newsfeed.enabled,
+      c: d.newsfeed.channelId || '',
+      t: d.newsfeed.topics || [],
+      n: (d.settings && d.settings.channels && d.settings.channels.length) || 0,
+    });
+    if (nfForm.dataset.sig === nfSig && nfForm.dataset.wired === '1') {
+      if (nfState) {
+        nfState.textContent = d.newsfeed.enabled ? 'LIVE' : 'OFF';
+        nfState.className = 'pill' + (d.newsfeed.enabled ? ' live' : '');
+      }
+    } else {
+    nfForm.dataset.sig = nfSig;
+    nfForm.dataset.wired = '1';
+
     const nf = {
       enabled: !!d.newsfeed.enabled,
       channelId: d.newsfeed.channelId || '',
@@ -1803,6 +1820,7 @@ function renderFeedForms() {
         });
       }),
     );
+    } // end sig rebuild
   }
 
   const ec = {
@@ -1830,7 +1848,17 @@ function renderFeedForms() {
   weeklyWrap.append(...weeklyRows);
   weeklyWrap.hidden = !wp.enabled;
 
-  $('#form-econcal').replaceChildren(
+  const ecForm = $('#form-econcal');
+  const ecSig = JSON.stringify({
+    e: ec.enabled, c: d.econcal.channelId, r: d.econcal.roleId,
+    i: ec.impactFilter, u: ec.currencyFilter, w: ec.weeklyPost,
+  });
+  if (ecForm && ecForm.dataset.sig === ecSig && ecForm.dataset.wired === '1') {
+    /* keep calendar form */
+  } else if (ecForm) {
+  ecForm.dataset.sig = ecSig;
+  ecForm.dataset.wired = '1';
+  ecForm.replaceChildren(
     toggle('Calendar running', ec.enabled, v => { ec.enabled = v; }),
     pickOne('Channel', 'channel', d.econcal.channelId, v => { ec.channelId = v; }),
     pickOne('Ping this role on reminders', 'role', d.econcal.roleId, v => { ec.roleId = v; },
@@ -1844,6 +1872,7 @@ function renderFeedForms() {
     weeklyWrap,
     actions(() => post('econcal', ec)),
   );
+  } // end ec sig
 
   renderReleaseDesk();
   renderWhop();
@@ -2146,15 +2175,24 @@ function select(label, value, options, onChange, { blank = null } = {}) {
 const channelList = () => state.overview?.settings?.channels || [];
 const roleList = () => state.overview?.settings?.roles || [];
 
+function channelDisplayName(ch) {
+  const name = (ch && (ch.name || ch.label)) ? String(ch.name || ch.label) : '';
+  const t = ch && ch.type;
+  let prefix = '#';
+  if (t === 5 || t === 'GUILD_ANNOUNCEMENT') prefix = '📢';
+  else if (t === 15 || t === 'GUILD_FORUM') prefix = '💬';
+  else if (t === 2 || t === 'GUILD_VOICE') prefix = '🔊';
+  if (name.startsWith(prefix)) return name;
+  return prefix + '\u00a0' + name;
+}
 function pickOne(label, kind, value, onChange, { blank = 'Not set' } = {}) {
-  // exposed for leveling-ui and other tabs
   const items = kind === 'role' ? roleList() : channelList();
   return select(label, value || '',
     items.map(i => kind === 'role'
       ? { value: i.id, label: i.name }
       : {
           value: i.id,
-          label: '#' + i.name,
+          label: channelDisplayName(i),
           group: i.category || i.parentName || 'No category',
         }),
     v => onChange(v || null), { blank });
@@ -6243,11 +6281,12 @@ function syncFeatureNav() {
   const casOff = !featureOn('casino');
   const calOff  = !featureOn('econ_calendar');
   const whopOff = !featureOn('whop');
+  const newsOff = !featureOn('newsfeed');
   const gawOff  = !featureOn('giveaways');
   const tixOff  = !featureOn('tickets');
   const lvlOff  = !featureOn('leveling');
-  // Feeds always available for live news + calendar + Whop
-  const feedsOff = false;
+  // Feeds visible only if at least one of news / calendar / Whop is on in Settings
+  const feedsOff = newsOff && calOff && whopOff;
 
   hide(nav('economy'), true);
   hide(nav('feeds'), feedsOff);
@@ -6255,7 +6294,7 @@ function syncFeatureNav() {
   hide(nav('tickets'), tixOff);
   hide(nav('leveling'), lvlOff);
 
-  hide($('#newsfeed-panel'), false);
+  hide($('#newsfeed-panel'), newsOff);
   // Calendar panels only
   hide($('#form-econcal')?.closest('.panel'), calOff);
   hide($('#release-desk'), calOff);
@@ -9146,6 +9185,8 @@ function isEditing() {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
   if (a.isContentEditable === true) return true;
   if (a.closest && a.closest('#composer-body, .composer-canvas, [contenteditable="true"]')) return true;
+  if (document.querySelector('.cselect[data-open="1"], .cselect-menu.is-open, .cselect-menu:not([hidden])')) return true;
+  if (a.closest && a.closest('#form-newsfeed, #form-econcal, #form-whop, #form-econpost, #newsfeed-panel, #release-desk, #whop-panel')) return true;
   if (document.querySelector('select:focus, details[open] summary:focus')) return true;
   return false;
 }

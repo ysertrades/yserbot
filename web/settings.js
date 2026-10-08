@@ -113,7 +113,7 @@ function read(guildId, guild, { ownerOnly = false } = {}) {
               if (p) category = p.name || null;
             }
           } catch { /* */ }
-          return { id: c.id, name: c.name, category: category || 'No category' };
+          return { id: c.id, name: c.name, category: category || 'No category', type: c.type };
         });
       list.sort((a, b) => {
         const ca = (a.category || '').localeCompare(b.category || '');
