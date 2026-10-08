@@ -107,7 +107,8 @@ module.exports = {
     }
 
     if (isFeatureEnabled(guildId, 'autoreply')) await handleAutoReply(message);
-    if (isFeatureEnabled(guildId, 'cards')) await handleCardDrop(message);
+    // cards retired
+    // if (isFeatureEnabled(guildId, 'cards')) await handleCardDrop(message);
   },
 };
 

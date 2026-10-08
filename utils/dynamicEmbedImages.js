@@ -14,7 +14,6 @@
  */
 
 const { AttachmentBuilder } = require('discord.js');
-const { generateEconomyShowcaseImage } = require('./economyShowcaseVisual');
 const { generateReportGuideImage } = require('./reportGuideVisual');
 const { generateNyseOpenImage, generateFuturesOpenImage } = require('./marketSessionVisual');
 const { generateRiskGuideImage } = require('./riskGuideVisual');
@@ -34,7 +33,6 @@ const { copyForDynamicKey } = require('./bannerCopy');
 // per-guild wording edited in Studio, so they get a slightly larger cache to
 // hold a few guilds' variants side by side.
 const DYNAMIC_IMAGES = {
-  economyShowcase: { filename: 'economy_showcase.png', generate: memoizeRender(generateEconomyShowcaseImage, { name: 'economyShowcase', max: 1 }) },
   reportGuide:      { filename: 'report_guide.png',     generate: memoizeRender(generateReportGuideImage,     { name: 'reportGuide',      max: 1 }) },
   nyseOpen:         { filename: 'nyse_open.png',        generate: memoizeRender(generateNyseOpenImage,        { name: 'nyseOpen',         max: 1 }) },
   futuresOpen:      { filename: 'futures_open.png',      generate: memoizeRender(generateFuturesOpenImage,     { name: 'futuresOpen',      max: 1 }) },

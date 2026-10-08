@@ -1182,7 +1182,7 @@ function renderOverview() {
   renderLinkRequests();
   renderModeration();
   renderGroupForm('#form-lottery', 'lottery');
-  renderCards();
+  /* cards retired */
   /* Drop form first — must not sit behind economy renders that can throw */
   renderGiveawayForm();
   try { renderCoins(); } catch (e) { console.warn('[panel] renderCoins', e); }
@@ -1196,7 +1196,7 @@ function renderOverview() {
   
   
   
-  try { renderLottery(); } catch (e) { console.warn('[panel] renderLottery', e); }
+  /* lottery retired */
   startTicking();
 }
 
@@ -6200,7 +6200,7 @@ function syncFeatureNav() {
   // Feeds holds calendar + Whop — keep the tab if either is on.
   const feedsOff = calOff && whopOff;
 
-  hide(nav('economy'), econOff);
+  hide(nav('economy'), true);
   hide(nav('feeds'), feedsOff);
   hide(nav('giveaways'), gawOff);
   hide(nav('tickets'), tixOff);
@@ -9133,7 +9133,6 @@ function renderLive() {
 
   const o = state.overview;
   if (_sigChanged('giveaways', o.giveaways)) renderGiveaways();
-  if (_sigChanged('lottery', o.lottery)) renderLottery();
   if (_sigChanged('mod', o.mod)) renderModeration();
   if (_sigChanged('links', o.linkRequests || o.links)) renderLinkRequests();
   if (_sigChanged('tickets', o.tickets)) renderTickets();

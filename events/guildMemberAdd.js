@@ -74,7 +74,7 @@ module.exports = {
         const isReturning = hasJoinedBefore(member.guild.id, member.id);
         recordJoin(member.guild.id, member.id);
         const welcomeOn = isFeatureEnabled(member.guild.id, 'welcome_leave');
-        const economyOn = isFeatureEnabled(member.guild.id, 'economy');
+        const economyOn = false; // economy removed
         const eligibleForBonus = !isReturning && welcomeOn && economyOn;
         if (eligibleForBonus) addCoins(member.id, WELCOME_BONUS);
 

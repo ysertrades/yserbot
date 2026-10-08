@@ -49,13 +49,15 @@ process.on('uncaughtException', (err) => {
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
-const SKIP_COMMAND_FOLDERS = new Set(['_disabled']); // restored economy/casino/jobs
+const SKIP_COMMAND_FOLDERS = new Set(['_disabled', 'economy']); // economy + casino cmds off
+const SKIP_COMMAND_FILES = new Set(['cards.js', 'cardsettings.js']); // cards retired
 for (const folder of commandFolders) {
     if (SKIP_COMMAND_FOLDERS.has(folder)) continue;
     const commandsPath = path.join(foldersPath, folder);
     if (!fs.statSync(commandsPath).isDirectory()) continue;
     const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
     for (const file of commandFiles) {
+        if (SKIP_COMMAND_FILES.has(file)) continue;
         const filePath = path.join(commandsPath, file);
         const command = require(filePath);
         if ('data' in command && 'execute' in command) {
@@ -67,7 +69,7 @@ for (const folder of commandFolders) {
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
-const SKIP_EVENT_FILES = new Set(); // casino + jobs restored
+const SKIP_EVENT_FILES = new Set(['casinoInteraction.js', 'jobsInteraction.js']);
 for (const file of eventFiles) {
     if (SKIP_EVENT_FILES.has(file)) continue;
     const filePath = path.join(eventsPath, file);
