@@ -298,21 +298,18 @@
 
 
 
-    // ═══ Daily Leaderboard Automation — exact time + AM/PM ═══
+
+    // ═══ Daily Leaderboard Automation ═══
     (function () {
       const dl = (L && L.dailyLeaderboard) || {};
-      if (L && !Array.isArray(L.xpChannelIds)) L.xpChannelIds = [];
       const card = el('div', 'panel lvl-auto-card');
       const head = el('div', 'queue-head');
       head.append(el('h2', null, 'Daily leaderboard automation'));
-      const onLbl = el('label', 'lvl-auto-toggle');
-      const onChk = document.createElement('input');
-      onChk.type = 'checkbox';
-      onChk.checked = !!dl.enabled;
-      onLbl.append(onChk, document.createTextNode(' ON'));
-      head.append(onLbl);
+      const onWrap = toggle('Automation', !!dl.enabled);
+      const onChk = onWrap._input;
+      head.append(onWrap);
       card.append(head);
-      card.append(el('p', 'muted', 'Posts today\'s XP rankings once per day at Eastern Time.'));
+      card.append(el('p', 'muted', 'Posts today\'s XP rankings once per day at Eastern Time (America/New_York).'));
 
       function fromHour24(h, m) {
         h = ((Number(h) || 0) % 24 + 24) % 24;
@@ -340,11 +337,11 @@
       const nextP = el('p', 'lvl-auto-next');
       function paintNext() {
         if (!st.enabled) {
-          nextP.innerHTML = '<span class="tag">OFF</span> Turn on to schedule the next post.';
+          nextP.innerHTML = '<span class="tag">OFF</span> Turn automation ON and save to schedule the next post.';
           return;
         }
-        var hm = toHour24(st.h12, st.minute, st.ampm);
-        nextP.innerHTML = '<span class="pill on">SCHEDULED</span> <strong>' + st.h12 + ':' + String(st.minute).padStart(2, '0') + ' ' + st.ampm + ' ET</strong> (next fire computed on save/reload)';
+        var label = st.h12 + ':' + String(st.minute).padStart(2, '0') + ' ' + st.ampm + ' ET';
+        nextP.innerHTML = '<span class="pill on">ON</span> Scheduled daily at <strong>' + label + '</strong>';
       }
       onChk.addEventListener('change', function () { st.enabled = onChk.checked; paintNext(); });
       paintNext();
@@ -352,31 +349,30 @@
 
       card.append(el('h3', null, 'Post time (Eastern)'));
       const timeRow = el('div', 'lvl-time-row');
-      const timeInp = document.createElement('input');
-      timeInp.type = 'text';
-      timeInp.className = 'lvl-time-input';
-      timeInp.placeholder = '8:30';
-      timeInp.value = st.h12 + ':' + String(st.minute).padStart(2, '0');
-      timeInp.setAttribute('inputmode', 'numeric');
-      const timeErr = el('span', 'hint lvl-time-err', '');
-      timeInp.addEventListener('change', function () {
-        var parts = timeInp.value.trim().split(':');
-        var h = parseInt(parts[0], 10), m = parseInt(parts[1], 10);
-        if (!(h >= 1 && h <= 12 && m >= 0 && m <= 59)) {
-          timeErr.textContent = 'Use h:mm (e.g. 8:30)';
-          return;
-        }
-        st.h12 = h; st.minute = m; timeErr.textContent = '';
-        timeInp.value = st.h12 + ':' + String(st.minute).padStart(2, '0');
-        paintNext();
-      });
-      timeRow.append(timeInp);
-      timeRow.append(select(' ', st.ampm, [
-        { value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' },
-      ], function (v) { st.ampm = v; paintNext(); }));
+      var hourOpts = [], minOpts = [];
+      for (var hi = 1; hi <= 12; hi++) hourOpts.push({ value: String(hi), label: String(hi) });
+      for (var mi = 0; mi < 60; mi++) minOpts.push({ value: String(mi), label: String(mi).padStart(2, '0') });
+      var ampmOpts = [{ value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' }];
+      function makeSelect(label, val, opts, onChange) {
+        if (typeof select === 'function') return select(label, String(val), opts, onChange);
+        var f = el('div', 'field');
+        f.append(el('span', null, label));
+        var s = document.createElement('select');
+        opts.forEach(function (o) {
+          var op = document.createElement('option');
+          op.value = o.value; op.textContent = o.label;
+          if (String(o.value) === String(val)) op.selected = true;
+          s.appendChild(op);
+        });
+        s.addEventListener('change', function () { onChange(s.value); });
+        f.append(s);
+        return f;
+      }
+      timeRow.append(makeSelect('Hour', st.h12, hourOpts, function (v) { st.h12 = parseInt(v, 10) || 12; paintNext(); }));
+      timeRow.append(makeSelect('Minute', st.minute, minOpts, function (v) { st.minute = parseInt(v, 10) || 0; paintNext(); }));
+      timeRow.append(makeSelect('AM/PM', st.ampm, ampmOpts, function (v) { st.ampm = v; paintNext(); }));
       card.append(timeRow);
-      card.append(timeErr);
-      card.append(el('p', 'hint', 'America/New_York · EST/EDT automatic'));
+      card.append(el('p', 'hint', 'America/New_York · posts at the start of the selected minute'));
 
       card.append(el('h3', null, 'Channel & ping'));
       const pick = (typeof window.pickOne === 'function') ? window.pickOne
@@ -389,11 +385,18 @@
       function payload() {
         var hm = toHour24(st.h12, st.minute, st.ampm);
         return {
-          enabled: st.enabled, hour: hm.hour, minute: hm.minute, timeZone: 'America/New_York',
+          enabled: !!st.enabled, hour: hm.hour, minute: hm.minute, timeZone: 'America/New_York',
           channelId: st.channelId || null, roleId: st.roleId || null, limit: st.limit,
           title: st.title, description: st.description, footer: st.footer || null,
         };
       }
+      function errMsg(e, res) {
+        if (res && (res.detail || res.error)) return res.detail || res.error;
+        if (e && e.data && (e.data.detail || e.data.error)) return e.data.detail || e.data.error;
+        if (e && e.message) return e.message;
+        return 'Request failed';
+      }
+
       const actions = el('div', 'actions');
       const testBtn = el('button', 'btn small', 'Test post');
       testBtn.type = 'button';
@@ -402,30 +405,33 @@
         testBtn.disabled = true;
         try {
           var res = await writeLeveling({ dailyLeaderboard: payload(), testDailyLeaderboard: true });
-          if (typeof toast === 'function') toast((res && res.ok) ? 'Test post sent' : ((res && res.error) || 'Test failed'), res && res.ok ? 'good' : 'bad');
-        } catch (e) { if (typeof toast === 'function') toast('Test failed', 'bad'); }
-        finally { testBtn.disabled = false; }
+          if (res && res.ok) { if (typeof toast === 'function') toast('Test post sent', 'good'); }
+          else if (typeof toast === 'function') toast(errMsg(null, res), 'bad');
+        } catch (e) {
+          if (typeof toast === 'function') toast(errMsg(e), 'bad');
+        } finally { testBtn.disabled = false; }
       });
       const saveBtn = el('button', 'btn', 'Save schedule');
       saveBtn.type = 'button';
       saveBtn.addEventListener('click', async function () {
         saveBtn.disabled = true;
         try {
+          st.enabled = !!onChk.checked;
           var res = await writeLeveling({ dailyLeaderboard: payload() });
-          if (res && res.overview) state.overview = res.overview;
-          else if (res && res.levels && state.overview && state.overview.features) state.overview.features.levels = res.levels;
+          applyResult(res);
           if (typeof toast === 'function') toast('Schedule saved', 'good');
           paintNext();
-        } catch (e) { if (typeof toast === 'function') toast('Save failed', 'bad'); }
-        finally { saveBtn.disabled = false; }
+        } catch (e) {
+          if (typeof toast === 'function') toast(errMsg(e), 'bad');
+        } finally { saveBtn.disabled = false; }
       });
       actions.append(testBtn, saveBtn);
       card.append(actions);
       root.append(card);
       try {
         if (typeof enhanceSelects === 'function') {
-          var sels = card.querySelectorAll('select:not([data-cselect])');
-          if (sels.length) enhanceSelects(card);
+          var pending = card.querySelectorAll('select:not([data-cselect])');
+          if (pending.length) enhanceSelects(card);
         }
       } catch (e) {}
     })();

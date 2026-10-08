@@ -160,9 +160,9 @@ async function postOneGuild(client, leveling, guildId, guild, opts = {}) {
   let g;
   if (typeof leveling.guildState === 'function') g = leveling.guildState(guildId).g;
   else if (typeof leveling.loadAll === 'function') g = leveling.loadAll()[guildId];
-  if (!g) return { ok: false, error: 'no_guild_state' };
+  if (!g) return { ok: false, error: 'no_guild_state', detail: 'Leveling data missing for this server.' };
   const conf = normalizeDailyLb(g.dailyLeaderboard);
-  if (!force && !conf.enabled) return { ok: false, error: 'disabled' };
+  if (!force && !conf.enabled) return { ok: false, error: 'disabled', detail: 'Automation is OFF.' };
   if (!conf.channelId) return { ok: false, error: 'no_channel', detail: 'No leaderboard channel selected.' };
   const today = dayKeyInTz(Date.now(), ET);
   if (!force && conf.lastPostedDay === today) return { ok: false, error: 'already_posted_today' };

@@ -415,15 +415,7 @@ function resetAllXp(guildId, staffId, guild) {
     u.level = levelFromXp(u.xp, g);
   }
   all[guildId] = g;
-  if (patch.dailyLeaderboard && typeof patch.dailyLeaderboard === 'object') {
-    try {
-      const { normalizeDailyLb } = require('./dailyXpLeaderboard');
-      const prev = g.dailyLeaderboard || {};
-      const next = normalizeDailyLb(Object.assign({}, prev, patch.dailyLeaderboard));
-      if (patch.dailyLeaderboard.lastPostedDay === undefined) next.lastPostedDay = prev.lastPostedDay || null;
-      g.dailyLeaderboard = next;
-    } catch (e) { console.warn('[leveling] dailyLeaderboard save', e.message); }
-  }
+  if (prev && prev.dailyLeaderboard) g.dailyLeaderboard = prev.dailyLeaderboard;
   saveAll(all);
   return panelSnapshot(guildId, guild || null);
 }
@@ -479,6 +471,18 @@ function saveConfig(guildId, patch = {}, staffId, guild) {
   if (patch.journalCooldownSec != null) g.journalCooldownSec = Math.max(0, Math.min(604800, Number(patch.journalCooldownSec) || 21600));
   if (typeof patch.journalImageOnly === 'boolean') g.journalImageOnly = patch.journalImageOnly;
   if (typeof patch.journalOwnerOnly === 'boolean') g.journalOwnerOnly = patch.journalOwnerOnly;
+  if (patch.dailyLeaderboard && typeof patch.dailyLeaderboard === 'object') {
+    try {
+      const { normalizeDailyLb } = require('./dailyXpLeaderboard');
+      const prevDl = g.dailyLeaderboard || {};
+      const next = normalizeDailyLb(Object.assign({}, prevDl, patch.dailyLeaderboard));
+      if (patch.dailyLeaderboard.lastPostedDay === undefined) next.lastPostedDay = prevDl.lastPostedDay || null;
+      g.dailyLeaderboard = next;
+      console.log('[leveling] dailyLeaderboard saved', guildId,
+        'enabled=' + !!next.enabled, 'hour=' + next.hour, 'minute=' + next.minute,
+        'channel=' + (next.channelId || 'none'));
+    } catch (e) { console.warn('[leveling] dailyLeaderboard save', e.message); }
+  }
   g.schema = SCHEMA;
   g.configVersion = (Number(g.configVersion) || 0) + 1;
   g.configUpdatedAt = Date.now();
