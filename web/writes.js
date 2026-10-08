@@ -103,6 +103,7 @@ const list = (body, key, allowed, max = 40) => {
 function channelIn(guild, id) {
   if (id === null || id === '') return { ok: true, value: null };
   if (typeof id !== 'string' || !/^\d{5,25}$/.test(id)) return { ok: false };
+  if (!guild || !guild.channels || !guild.channels.cache) return { ok: false };
   const ch = guild.channels.cache.get(id);
   if (!ch || !ch.isTextBased?.()) return { ok: false };
   return { ok: true, value: id, name: ch.name };
@@ -112,6 +113,7 @@ function channelIn(guild, id) {
 function roleIn(guild, id) {
   if (id === null || id === '') return { ok: true, value: null };
   if (typeof id !== 'string' || !/^\d{5,25}$/.test(id)) return { ok: false };
+  if (!guild || !guild.roles || !guild.roles.cache) return { ok: false };
   const role = guild.roles.cache.get(id);
   if (!role) return { ok: false };
   return { ok: true, value: id, name: role.name };
@@ -1037,7 +1039,12 @@ Object.assign(OPS, {
 async function apply(op, guildId, body, ctx) {
   const handler = OPS[op];
   if (!handler) return { error: 'unknown_operation' };
-  return handler(guildId, body, ctx);
+  try {
+    return await handler(guildId, body, ctx);
+  } catch (err) {
+    console.error('[writes]', op, err);
+    return { error: 'internal', detail: String(err && err.message || err).slice(0, 200) };
+  }
 }
 module.exports = {
   async casino(guildId, body, ctx) {

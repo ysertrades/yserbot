@@ -74,7 +74,7 @@ async function ensureMembers(guild) {
   if (Date.now() - (memberFetchedAt.get(guild.id) || 0) < MEMBER_TTL_MS) return;
   memberFetchedAt.set(guild.id, Date.now());
   try {
-    await guild.members.fetch({ time: 20_000 });
+    await guild.members.fetch({ time: 4_000 });
   } catch (err) {
     console.warn('[Panel] could not fetch the member list:', err.message);
   }
@@ -173,9 +173,9 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     featureToggles: featureToggles.read(guildId),
     tickets: tickets.read(guildId, guild),
     polls: pollsPanel.read(guildId, guild),
-    casino: casino.read(guildId),
-    economy: economyPanel.read(guildId),
-    cards: cardsPanel.read(guildId, guild),
+    casino: (function () { try { return casino.read(guildId); } catch (e) { return null; } })(),
+    economy: (function () { try { return economyPanel && economyPanel.read(guildId); } catch (e) { return null; } })(),
+    cards: (function () { try { return cardsPanel.read(guildId, guild); } catch (e) { return null; } })(),
     links: links.read(guildId, guild),
     mod: (function () { try { return moderation.read(guildId, guild); } catch (e) { console.warn('[api] mod read', e.message); return { reports: { open: [], handled: [] }, cases: [], caseTotal: 0, warned: [], filters: {}, lockedChannels: [], lockModes: [], roles: [] }; } })(),
     appearance: appearance.read(guildId),
