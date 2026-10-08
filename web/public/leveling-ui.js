@@ -377,14 +377,15 @@
       for (var hi = 1; hi <= 12; hi++) hourOpts.push({ value: String(hi), label: String(hi) });
       for (var mi = 0; mi < 60; mi++) minOpts.push({ value: String(mi), label: String(mi).padStart(2, '0') });
       var ampmOpts = [{ value: 'AM', label: 'AM' }, { value: 'PM', label: 'PM' }];
-      function makeSelect(label, val, opts, onChange) {
-        if (typeof select === 'function') return select(label, String(val), opts, onChange);
-        var f = el('div', 'field');
+      function makeTimeSelect(label, val, opts, onChange) {
+        var f = el('div', 'field lvl-time-field');
         f.append(el('span', null, label));
         var s = document.createElement('select');
+        s.className = 'lvl-input lvl-time-sel';
         opts.forEach(function (o) {
           var op = document.createElement('option');
-          op.value = o.value; op.textContent = o.label;
+          op.value = o.value;
+          op.textContent = o.label;
           if (String(o.value) === String(val)) op.selected = true;
           s.appendChild(op);
         });
@@ -392,9 +393,10 @@
         f.append(s);
         return f;
       }
-      timeRow.append(makeSelect('Hour', st.h12, hourOpts, function (v) { st.h12 = parseInt(v, 10) || 12; paintNext(); }));
-      timeRow.append(makeSelect('Minute', st.minute, minOpts, function (v) { st.minute = parseInt(v, 10) || 0; paintNext(); }));
-      timeRow.append(makeSelect('AM/PM', st.ampm, ampmOpts, function (v) { st.ampm = v; paintNext(); }));
+      timeRow.className = (timeRow.className || '') + ' lvl-time-row';
+      timeRow.append(makeTimeSelect('Hour', st.h12, hourOpts, function (v) { st.h12 = parseInt(v, 10) || 12; paintNext(); }));
+      timeRow.append(makeTimeSelect('Minute', st.minute, minOpts, function (v) { st.minute = parseInt(v, 10) || 0; paintNext(); }));
+      timeRow.append(makeTimeSelect('AM/PM', st.ampm, ampmOpts, function (v) { st.ampm = v; paintNext(); }));
       card.append(timeRow);
       card.append(el('p', 'hint', 'America/New_York · posts at the start of the selected minute'));
 
@@ -607,14 +609,38 @@
         blank.textContent = blankLabel;
         sel.append(blank);
         const taken = new Set(draft);
-        (opts || []).forEach(function (o) {
+        const available = (opts || []).filter(function (o) {
           const id = String(o.id || o.value || '');
-          if (!id || taken.has(id)) return;
-          const op = document.createElement('option');
-          op.value = id;
-          op.textContent = o.name || o.label || id;
-          sel.append(op);
+          return id && !taken.has(id);
         });
+        const hasCat = available.some(function (o) { return o && o.category; });
+        if (hasCat) {
+          const order = [];
+          const map = {};
+          available.forEach(function (o) {
+            const g = o.category ? String(o.category) : 'No category';
+            if (!map[g]) { map[g] = []; order.push(g); }
+            map[g].push(o);
+          });
+          order.forEach(function (g) {
+            const og = document.createElement('optgroup');
+            og.label = g;
+            map[g].forEach(function (o) {
+              const op = document.createElement('option');
+              op.value = String(o.id || o.value || '');
+              op.textContent = o.name || o.label || op.value;
+              og.appendChild(op);
+            });
+            sel.appendChild(og);
+          });
+        } else {
+          available.forEach(function (o) {
+            const op = document.createElement('option');
+            op.value = String(o.id || o.value || '');
+            op.textContent = o.name || o.label || op.value;
+            sel.append(op);
+          });
+        }
       }
       sel.addEventListener('change', function () {
         const v = sel.value;

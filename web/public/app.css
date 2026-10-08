@@ -3690,3 +3690,67 @@ button.primary:hover {
   user-select:none;
 }
 .cselect-menu .cselect-group + .cselect-option{margin-top:.1rem}
+
+
+/* Leveling — daily time picker */
+.lvl-time-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.75rem 1.1rem;
+  align-items:flex-end;
+  margin:.4rem 0 .85rem;
+}
+.lvl-time-field{ min-width:0; flex:0 0 auto; }
+.lvl-time-field>span{
+  display:block;
+  font-size:.68rem;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  opacity:.6;
+  margin-bottom:.28rem;
+}
+.lvl-time-field .cselect{ min-width:5rem; }
+.lvl-time-field .cselect-trigger{
+  min-width:5rem;
+  justify-content:center;
+  font-variant-numeric:tabular-nums;
+  font-weight:600;
+  font-size:.95rem;
+  letter-spacing:.04em;
+  padding:.5rem .85rem;
+  border-radius:10px;
+}
+.lvl-time-field .cselect-value{
+  text-align:center;
+  width:100%;
+  font-variant-numeric:tabular-nums;
+}
+/* Time option rows: plain centered digits (no badge look) */
+.lvl-time-field .cselect-menu .cselect-option,
+.cselect-menu .cselect-option{
+  font-variant-numeric:tabular-nums;
+}
+.lvl-time-field ~ .cselect-menu .cselect-option,
+body > .cselect-menu .cselect-option{
+  font-variant-numeric:tabular-nums;
+  font-weight:500;
+  letter-spacing:.02em;
+}
+/* Selected time option: subtle fill, not a blue number pill */
+body > .cselect-menu .cselect-option.is-selected{
+  background:rgba(88,101,242,.18);
+  color:inherit;
+  font-weight:600;
+}
+
+/* Category headers in channel menus */
+.cselect-menu .cselect-group{
+  padding:.5rem .75rem .15rem;
+  font-size:.65rem;
+  font-weight:700;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:var(--muted,#949ba4);
+  pointer-events:none;
+  user-select:none;
+}
