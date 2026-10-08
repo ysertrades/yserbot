@@ -36,7 +36,7 @@ const FEED_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
  */
 const POLL_INTERVAL_MS = Math.min(
   300_000,
-  Math.max(5_000, Number(process.env.NEWSFEED_POLL_MS) || 8_000),
+  Math.max(2_000, Number(process.env.NEWSFEED_POLL_MS) || 3_000),
 );
 const MAX_POST_PER_TICK = 8; // safety cap so a feed gap never dumps a huge backlog at once
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
@@ -310,11 +310,15 @@ async function fetchFeedItems() {
 
   if (res.status === 429) {
     const retryAfterSec = parseInt(res.headers.get('retry-after'), 10);
-    const waitMs = (Number.isFinite(retryAfterSec) ? retryAfterSec : 60) * 1000 + 2000;
+    // Prefer Retry-After; otherwise only ~12s (not a full minute).
+    const waitMs = Number.isFinite(retryAfterSec)
+      ? Math.min(120_000, Math.max(3_000, retryAfterSec * 1000 + 500))
+      : 12_000;
     blockedUntil = Date.now() + waitMs;
-    console.warn(`[NEWSFEED] Rate-limited by Financial Juice — pausing polling for ${Math.round(waitMs / 1000)}s`);
+    console.warn(`[NEWSFEED] Rate-limited by Financial Juice — pausing ${Math.round(waitMs / 1000)}s`);
     return null;
   }
+  blockedUntil = 0;
 
   if (!res.ok) throw new Error(`Financial Juice feed request failed: ${res.status}`);
   const xml = await res.text();
@@ -614,7 +618,7 @@ const sourceCache = new Map(); // key -> { items, fetchedAt }
  * Stamping the start of the request removes the drift; this margin absorbs
  * the remaining timer jitter, since setInterval is free to fire a hair early.
  */
-const POLL_SLACK_MS = 2000;
+const POLL_SLACK_MS = 400;
 
 async function getSourceItems(source) {
   const cached = sourceCache.get(source.key);
@@ -730,9 +734,32 @@ function startNewsFeedRunner(client) {
   // because it silently ran at half this for a long time without anything
   // in the log to show for it.
   console.log(`[NEWSFEED] Polling every ${POLL_INTERVAL_MS / 1000}s (set NEWSFEED_POLL_MS to change)`);
-  const tick = () => runTick(client).catch(err => console.error('[NEWSFEED RUNNER ERROR]', err));
+  let timer = null;
+  let running = false;
+  const schedule = (ms) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(tick, Math.max(500, ms));
+  };
+  const tick = async () => {
+    if (running) {
+      schedule(POLL_INTERVAL_MS);
+      return;
+    }
+    running = true;
+    const t0 = Date.now();
+    try {
+      await runTick(client);
+    } catch (err) {
+      console.error('[NEWSFEED RUNNER ERROR]', err);
+    } finally {
+      running = false;
+      const elapsed = Date.now() - t0;
+      const wait = Math.max(500, POLL_INTERVAL_MS - elapsed);
+      const blockedLeft = typeof blockedUntil === 'number' ? blockedUntil - Date.now() : 0;
+      schedule(blockedLeft > 0 ? blockedLeft : wait);
+    }
+  };
   tick();
-  setInterval(tick, POLL_INTERVAL_MS);
 }
 
 module.exports = {

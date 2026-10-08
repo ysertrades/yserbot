@@ -1807,7 +1807,7 @@ function renderFeedForms() {
         }
       }),
       pickOne('Channel', 'channel', nf.channelId, v => { nf.channelId = v; }, { blank: 'Pick a channel…' }),
-      el('p', 'hint', 'Polls Financial Juice about every 8 seconds. Enabling never dumps the backlog.'),
+      el('p', 'hint', 'Polls Financial Juice about every 3 seconds. Enabling never dumps the backlog.'),
       pickValues('Topics to include', topics, nf.filterTopics, v => { nf.filterTopics = v; },
         { allNote: 'Nothing picked — every headline posts.' }),
       el('p', 'hint', 'Trump / Truth Social items from Financial Juice get a gold V2 card automatically.'),
