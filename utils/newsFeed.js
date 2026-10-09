@@ -540,19 +540,19 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
     seen.add(url);
     imageList.push(url);
   };
+  // Only RSS-provided images are trusted without a probe.
   for (const u of [...(item.images || []), item.imageUrl].filter(Boolean)) pushImg(u);
 
-  // Prefer FJ /images/{guid}.png first (instant) before slow page scrapes.
-  if (!imageList.length && source.key === 'financialjuice' && item.guid) {
-    pushImg(`${ARTICLE_IMAGE_BASE}${encodeURIComponent(item.guid)}.png`);
-  }
+  // NEVER invent /images/{guid}.png without verifying — a 404 still reserves a
+  // media slot in Components V2 and shows the broken-image placeholder.
+  // resolvePicture → resolveArticleImage does a HEAD check and returns null on 404.
   if (!imageList.length) {
     try {
-      const resolved = await withBudget(resolvePicture(item, source), Math.min(PICTURE_BUDGET_MS, 2500));
+      const resolved = await withBudget(resolvePicture(item, source), Math.min(PICTURE_BUDGET_MS, 3000));
       pushImg(resolved);
     } catch (_) {}
   }
-  // Single primary image — clean card, no media overflow.
+  // Single primary image only when real — omit media block entirely if none.
   const galleryUrls = imageList.slice(0, 1);
 
   let accent = 0x5865F2;
