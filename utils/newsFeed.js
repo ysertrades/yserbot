@@ -595,7 +595,7 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
   const buttons = [];
   if (headlineUrl && /^https:\/\//i.test(headlineUrl)) {
     buttons.push(button({
-      label: item.video ? 'Watch' : 'Read headline',
+      label: 'Financial Juice',
       style: 5, url: fjLink || headlineUrl,
     }));
   }
