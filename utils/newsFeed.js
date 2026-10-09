@@ -360,12 +360,21 @@ function listSources() {
 // memoized on the item so multiple guilds sharing one tick only check once.
 const ARTICLE_IMAGE_BASE     = 'https://www.financialjuice.com/images/';
 const IMAGE_CHECK_TIMEOUT_MS = 4000;
+const articleImageCache = new Map();
+const ARTICLE_IMAGE_CACHE_TTL_MS = 30 * 60 * 1000;
+const ARTICLE_IMAGE_CACHE_MAX = 500;
 
 async function resolveArticleImage(item, source = SOURCES.financialjuice) {
-  if (item.imageUrl) return item.imageUrl; // already found via RSS enclosure/description <img>
-  // The probe below is a Financial-Juice-specific URL convention — running it
-  // with another source's guid would just be a guaranteed 404 per headline.
+  if (item.imageUrl) return item.imageUrl;
   if (source.key !== 'financialjuice') return null;
+  if (!item.guid) return null;
+
+  const cached = articleImageCache.get(item.guid);
+  if (cached && (Date.now() - cached.at) < ARTICLE_IMAGE_CACHE_TTL_MS) {
+    item._pictureChecked = true;
+    item._resolvedImage = cached.url;
+    return cached.url;
+  }
   if (item._pictureChecked) return item._resolvedImage;
   item._pictureChecked = true;
   item._resolvedImage = null;
@@ -374,10 +383,19 @@ async function resolveArticleImage(item, source = SOURCES.financialjuice) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), IMAGE_CHECK_TIMEOUT_MS);
     const url = `${ARTICLE_IMAGE_BASE}${encodeURIComponent(item.guid)}.png`;
-    const res = await fetch(url, { method: 'HEAD', signal: controller.signal }).finally(() => clearTimeout(timeout));
-    if (res.ok) item._resolvedImage = url;
-  } catch { /* network hiccup or no picture for this article — just skip it */ }
+    const res = await fetch(url, {
+      method: 'HEAD',
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' },
+    }).finally(() => clearTimeout(timeout));
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (res.ok && (!ct || ct.startsWith('image/'))) {
+      item._resolvedImage = url;
+    }
+  } catch { /* skip */ }
 
+  if (articleImageCache.size >= ARTICLE_IMAGE_CACHE_MAX) articleImageCache.clear();
+  articleImageCache.set(item.guid, { url: item._resolvedImage, at: Date.now() });
   return item._resolvedImage;
 }
 
@@ -485,9 +503,11 @@ async function resolveYouTubeThumb(videoId) {
 }
 
 async function resolvePicture(item, source) {
+  const fjImg = await resolveArticleImage(item, source || SOURCES.financialjuice);
+  if (fjImg) return fjImg;
   return (item.video && await resolveYouTubeThumb(item.video.id))
     || (item.source && await resolveLinkBanner(item.source.url))
-    || await resolveArticleImage(item, source);
+    || null;
 }
 
 /**
@@ -528,7 +548,8 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
 
   const isBreaking = BREAKING_PATTERN.test(item.title || '');
   const isTruth = item.truthSocial || isTruthSocialItem(item);
-  const headlineUrl = item.video?.url || item.source?.url || item.link;
+  const fjLink = (item.link && /^https:\/\//i.test(item.link)) ? item.link : null;
+  const headlineUrl = item.video?.url || fjLink || item.source?.url || null;
 
   const imageList = [];
   const seen = new Set();
@@ -540,19 +561,15 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
     seen.add(url);
     imageList.push(url);
   };
-  // Only RSS-provided images are trusted without a probe.
   for (const u of [...(item.images || []), item.imageUrl].filter(Boolean)) pushImg(u);
 
-  // NEVER invent /images/{guid}.png without verifying — a 404 still reserves a
-  // media slot in Components V2 and shows the broken-image placeholder.
-  // resolvePicture → resolveArticleImage does a HEAD check and returns null on 404.
+  // Verified images only (HEAD/cache). Never invent URLs → no broken placeholders.
   if (!imageList.length) {
     try {
-      const resolved = await withBudget(resolvePicture(item, source), Math.min(PICTURE_BUDGET_MS, 3000));
+      const resolved = await withBudget(resolvePicture(item, source), Math.min(PICTURE_BUDGET_MS, 4500));
       pushImg(resolved);
     } catch (_) {}
   }
-  // Single primary image only when real — omit media block entirely if none.
   const galleryUrls = imageList.slice(0, 1);
 
   let accent = 0x5865F2;
@@ -578,8 +595,8 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
   const buttons = [];
   if (headlineUrl && /^https:\/\//i.test(headlineUrl)) {
     buttons.push(button({
-      label: item.video ? 'Watch' : (isTruth ? 'Open on Truth Social' : 'Read headline'),
-      style: 5, url: headlineUrl,
+      label: item.video ? 'Watch' : 'Read headline',
+      style: 5, url: fjLink || headlineUrl,
     }));
   }
   if (item.link && item.link !== headlineUrl && /^https:\/\//i.test(item.link)) {
