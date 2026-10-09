@@ -1791,7 +1791,7 @@ function renderFeedForms() {
     }));
     const topics = topicOpts.length ? topicOpts : [
       { value: 'forex', label: '🔀 Forex' },
-      { value: 'equities', label: '📈 Equities' },
+      { value: 'stocks_indices', label: '📈 Stocks & Indices' },
       { value: 'crypto', label: '🪙 Crypto' },
       { value: 'commodities', label: '🛢️ Commodities' },
       { value: 'central_banks', label: '🏦 Central banks' },

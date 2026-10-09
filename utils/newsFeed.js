@@ -53,7 +53,7 @@ const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
  * news. This caps the whole chain: whatever has been found by then is used,
  * and what has not is simply left out.
  */
-const PICTURE_BUDGET_MS = 2500;
+const PICTURE_BUDGET_MS = 4500;
 
 // Financial Juice's own feed double-encodes entities in places (raw XML has
 // literally "S&amp;amp;P 500" for "S&P 500" — the HTML-escaped "&amp;" got
@@ -531,11 +531,26 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
 
   const imageList = [];
   const seen = new Set();
-  for (const u of [...(item.images || []), item.imageUrl].filter(Boolean)) {
-    const url = String(u).trim();
-    if (!url || seen.has(url) || !/^https:\/\//i.test(url)) continue;
+  const pushImg = (u) => {
+    if (!u || typeof u !== 'string') return;
+    const url = u.trim().replace(/&amp;/g, '&');
+    if (!/^https:\/\//i.test(url)) return;
+    if (seen.has(url)) return;
     seen.add(url);
     imageList.push(url);
+  };
+  for (const u of [...(item.images || []), item.imageUrl].filter(Boolean)) pushImg(u);
+
+  // FJ RSS often has empty description / no enclosure — charts live at
+  // /images/{guid}.png and on the article page. Resolve so V2 is not text-only.
+  if (!imageList.length) {
+    try {
+      const resolved = await withBudget(resolvePicture(item, source), PICTURE_BUDGET_MS);
+      pushImg(resolved);
+    } catch (_) {}
+  }
+  if (!imageList.length && source.key === 'financialjuice' && item.guid) {
+    pushImg(`${ARTICLE_IMAGE_BASE}${encodeURIComponent(item.guid)}.png`);
   }
   const galleryUrls = imageList.slice(0, 10);
 

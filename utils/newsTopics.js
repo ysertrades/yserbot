@@ -35,6 +35,7 @@ const TOPICS = [
       'earnings', 'guidance', 'stocks', 'stock', 'shares', 'equity', 'equities',
       'index', 'indices', 'imbalance', 'mag 7', 'mag7', 'magnificent', 'ipo', 'buyback',
       'dividend', 'market cap', 'sec filing', 'premarket', 'pre-market', 'after hours', 'after-hours',
+      'fear and greed', 'fear & greed', 'cnn fear', 'sentiment',
       'apple', 'aapl', 'microsoft', 'msft', 'amazon', 'amzn', 'alphabet', 'google', 'googl',
       'meta', 'tesla', 'tsla', 'nvidia', 'nvda', 'broadcom', 'avgo',
     ],
@@ -62,6 +63,7 @@ const TOPICS = [
       'unemployment', 'inflation', 'retail sales', 'jobless claims', 'ism',
       'housing starts', 'consumer confidence', 'durable goods', 'trade balance',
       'pce', 'core pce', 'jolts',
+      'fear and greed', 'fear & greed',
     ],
   },
   {
@@ -86,9 +88,19 @@ function getTopic(key) {
   return TOPICS.find(t => t.key === key) || null;
 }
 
+const TOPIC_ALIASES = {
+  equities: 'stocks_indices',
+  stocks: 'stocks_indices',
+  equity: 'stocks_indices',
+  indices: 'stocks_indices',
+  rates: 'central_banks',
+  fx: 'forex',
+};
+
 function expandTopicKeywords(topicKeys) {
   const set = new Set();
-  for (const key of topicKeys || []) {
+  for (const raw of topicKeys || []) {
+    const key = TOPIC_ALIASES[String(raw).toLowerCase()] || String(raw).toLowerCase();
     const topic = getTopic(key);
     if (!topic) continue;
     for (const kw of topic.keywords) set.add(String(kw).toLowerCase());
