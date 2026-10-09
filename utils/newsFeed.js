@@ -563,7 +563,7 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
   let badge;
   if (isBreaking) badge = '🔴 **BREAKING**';
   else if (isTruth) badge = '🟡 **TRUTH SOCIAL**';
-  else badge = '🟢 **LIVE**';
+  else badge = '⚡ **LIVE**';
   kids.push(text(`${badge} · ${source.label || 'Financial Juice'}`));
   kids.push(separator({ divider: true, spacing: 1 }));
   kids.push(text(isTruth ? `### ${item.title}` : `## ${item.title}`));
