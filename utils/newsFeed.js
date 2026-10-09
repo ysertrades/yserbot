@@ -34,9 +34,11 @@ const FEED_URL          = 'https://www.financialjuice.com/feed.ashx?xy=rss';
  * Clamped: below a few seconds is certain to be refused, and beyond a few
  * minutes this has stopped being a news feed.
  */
+// FJ rate-limits sub-~10s polls with Retry-After ≈ 60s.
+// Steady 12s is faster in practice than 3s + minute-long pauses.
 const POLL_INTERVAL_MS = Math.min(
   300_000,
-  Math.max(2_000, Number(process.env.NEWSFEED_POLL_MS) || 3_000),
+  Math.max(10_000, Number(process.env.NEWSFEED_POLL_MS) || 12_000),
 );
 const MAX_POST_PER_TICK = 20; // matched headlines per tick (filter runs on full window first)
 const BREAKING_PATTERN  = /\b(breaking|urgent)\b/i;
@@ -310,10 +312,9 @@ async function fetchFeedItems() {
 
   if (res.status === 429) {
     const retryAfterSec = parseInt(res.headers.get('retry-after'), 10);
-    // Prefer Retry-After; otherwise only ~12s (not a full minute).
     const waitMs = Number.isFinite(retryAfterSec)
-      ? Math.min(120_000, Math.max(3_000, retryAfterSec * 1000 + 500))
-      : 12_000;
+      ? Math.min(45_000, Math.max(12_000, retryAfterSec * 1000))
+      : 15_000;
     blockedUntil = Date.now() + waitMs;
     console.warn(`[NEWSFEED] Rate-limited by Financial Juice — pausing ${Math.round(waitMs / 1000)}s`);
     return null;
@@ -541,28 +542,29 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
   };
   for (const u of [...(item.images || []), item.imageUrl].filter(Boolean)) pushImg(u);
 
-  // FJ RSS often has empty description / no enclosure — charts live at
-  // /images/{guid}.png and on the article page. Resolve so V2 is not text-only.
-  if (!imageList.length) {
-    try {
-      const resolved = await withBudget(resolvePicture(item, source), PICTURE_BUDGET_MS);
-      pushImg(resolved);
-    } catch (_) {}
-  }
+  // Prefer FJ /images/{guid}.png first (instant) before slow page scrapes.
   if (!imageList.length && source.key === 'financialjuice' && item.guid) {
     pushImg(`${ARTICLE_IMAGE_BASE}${encodeURIComponent(item.guid)}.png`);
   }
-  const galleryUrls = imageList.slice(0, 10);
+  if (!imageList.length) {
+    try {
+      const resolved = await withBudget(resolvePicture(item, source), Math.min(PICTURE_BUDGET_MS, 2500));
+      pushImg(resolved);
+    } catch (_) {}
+  }
+  // Single primary image — clean card, no media overflow.
+  const galleryUrls = imageList.slice(0, 1);
 
   let accent = 0x5865F2;
   if (isBreaking) accent = 0xED4245;
   if (isTruth) accent = 0xF0B232;
 
   const kids = [];
-  let badge = '⚡ LIVE';
-  if (isBreaking) badge = '🚨 BREAKING';
-  if (isTruth) badge = '🦅 TRUTH SOCIAL';
-  kids.push(text(`**${badge}** · ${source.label || 'Financial Juice'}`));
+  let badge;
+  if (isBreaking) badge = '🔴 **BREAKING**';
+  else if (isTruth) badge = '🟡 **TRUTH SOCIAL**';
+  else badge = '🟢 **LIVE**';
+  kids.push(text(`${badge} · ${source.label || 'Financial Juice'}`));
   kids.push(separator({ divider: true, spacing: 1 }));
   kids.push(text(isTruth ? `### ${item.title}` : `## ${item.title}`));
   if (item.body && item.body !== item.title) {
@@ -628,7 +630,7 @@ const sourceCache = new Map(); // key -> { items, fetchedAt }
  * Stamping the start of the request removes the drift; this margin absorbs
  * the remaining timer jitter, since setInterval is free to fire a hair early.
  */
-const POLL_SLACK_MS = 400;
+const POLL_SLACK_MS = 1500;
 
 async function getSourceItems(source) {
   const cached = sourceCache.get(source.key);
