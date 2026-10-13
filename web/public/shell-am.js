@@ -87,3 +87,39 @@
     });
   });
 })();
+
+/* QUANT_MOBILE_NAV */
+;(function () {
+  function closeNav() {
+    var s = document.querySelector(".app-shell");
+    var b = document.getElementById("am-menu-btn");
+    var c = document.getElementById("am-nav-scrim");
+    if (s) s.classList.remove("nav-open");
+    if (b) b.setAttribute("aria-expanded", "false");
+    if (c) { c.hidden = true; c.style.display = "none"; }
+  }
+  function openNav() {
+    var s = document.querySelector(".app-shell");
+    var b = document.getElementById("am-menu-btn");
+    var c = document.getElementById("am-nav-scrim");
+    if (s) s.classList.add("nav-open");
+    if (b) b.setAttribute("aria-expanded", "true");
+    if (c) { c.hidden = false; c.style.display = "block"; }
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    var b = document.getElementById("am-menu-btn");
+    var c = document.getElementById("am-nav-scrim");
+    if (b) b.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var s = document.querySelector(".app-shell");
+      if (s && s.classList.contains("nav-open")) closeNav(); else openNav();
+    });
+    if (c) c.addEventListener("click", closeNav);
+    document.querySelectorAll("#sections button[data-goto]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (window.matchMedia("(max-width: 900px)").matches) closeNav();
+      });
+    });
+  });
+})();
