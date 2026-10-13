@@ -1,15 +1,13 @@
 (function(){
   "use strict";
-  var LOG_KEY="ql_bot_logs_v1", LOG_MAX=8, logPage=0;
+  var LOG_KEY="ql_bot_logs_v1",LOG_MAX=8,logPage=0;
   function $(id){return document.getElementById(id)}
   function loadLogs(){try{return JSON.parse(localStorage.getItem(LOG_KEY)||"[]")}catch(e){return[]}}
   function saveLogs(a){localStorage.setItem(LOG_KEY,JSON.stringify(a.slice(0,LOG_MAX)))}
-  function pushLog(msg){var a=loadLogs();a.unshift({t:Date.now(),m:String(msg||"").slice(0,400)});saveLogs(a);renderLogs()}
-  window.__botLog=pushLog;
   function renderLogs(){
-    var list=$("am-logs-list"), pageEl=$("am-logs-page"); if(!list)return;
-    var arr=loadLogs(), pages=Math.max(1,Math.ceil(arr.length/LOG_MAX)||1);
-    if(logPage>=pages)logPage=pages-1; if(logPage<0)logPage=0;
+    var list=$("am-logs-list"),pageEl=$("am-logs-page");if(!list)return;
+    var arr=loadLogs(),pages=Math.max(1,Math.ceil(arr.length/LOG_MAX)||1);
+    if(logPage>=pages)logPage=pages-1;if(logPage<0)logPage=0;
     var slice=arr.slice(logPage*LOG_MAX,logPage*LOG_MAX+LOG_MAX);
     list.replaceChildren();
     if(!slice.length){var e=document.createElement("div");e.className="am-logs-empty";e.textContent="No logs yet";list.appendChild(e)}
@@ -17,11 +15,11 @@
       var t=document.createElement("div");t.className="t";t.textContent=new Date(row.t).toLocaleString();
       var m=document.createElement("div");m.className="m";m.textContent=row.m;el.appendChild(t);el.appendChild(m);list.appendChild(el)})}
     if(pageEl)pageEl.textContent=(logPage+1)+" / "+pages;
-    var bell=$("am-bell"); if(bell)bell.classList.toggle("has-alert",arr.length>0);
+    var bell=$("am-bell");if(bell)bell.classList.toggle("has-alert",arr.length>0);
   }
   function setVal(id,text,on){var el=$(id);if(!el)return;el.textContent=text;el.classList.toggle("is-on",!!on)}
   function paintShellStatus(){
-    var me=window.state&&window.state.me, ov=window.state&&window.state.overview;
+    var me=window.state&&window.state.me,ov=window.state&&window.state.overview;
     if(me){var av=$("sidebar-avatar");if(av&&me.avatar)av.src=me.avatar;
       var un=$("sidebar-username");if(un)un.textContent=me.username||me.tag||"User";
       var badge=$("sidebar-role-badge");if(badge)badge.hidden=!me.owner}
@@ -40,15 +38,15 @@
     setVal("st-whop",whopOn?"On":"Off",whopOn);
   }
   document.addEventListener("DOMContentLoaded",function(){
-    var bell=$("am-bell"), logs=$("am-logs");
+    var bell=$("am-bell"),logs=$("am-logs");
     if(bell&&logs){
       bell.addEventListener("click",function(e){e.stopPropagation();var open=logs.classList.toggle("is-open");bell.setAttribute("aria-expanded",open?"true":"false");if(open)renderLogs()});
       document.addEventListener("click",function(e){if(!logs.contains(e.target)&&e.target!==bell&&!bell.contains(e.target)){logs.classList.remove("is-open");bell.setAttribute("aria-expanded","false")}})}
     var clearBtn=$("am-logs-clear");if(clearBtn)clearBtn.addEventListener("click",function(){saveLogs([]);logPage=0;renderLogs()});
-    var prev=$("am-logs-prev"), next=$("am-logs-next");
+    var prev=$("am-logs-prev"),next=$("am-logs-next");
     if(prev)prev.addEventListener("click",function(){logPage--;renderLogs()});
     if(next)next.addEventListener("click",function(){logPage++;renderLogs()});
-    var user=$("sidebar-user"), menu=$("sidebar-user-menu");
+    var user=$("sidebar-user"),menu=$("sidebar-user-menu");
     if(user&&menu){user.addEventListener("click",function(e){if(e.target.closest("a"))return;menu.classList.toggle("is-open")});
       document.addEventListener("click",function(e){if(!user.contains(e.target))menu.classList.remove("is-open")})}
     setInterval(paintShellStatus,2500);paintShellStatus();renderLogs();
