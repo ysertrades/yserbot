@@ -19,13 +19,15 @@
 <!-- black-translucent lets the page run under the status bar; the safe-area
      insets in the stylesheet are what keep the header clear of the notch. -->
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#15161D">
+<meta name="theme-color" content="#121212">
 
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/glass-v2.css">
 <link rel="stylesheet" href="/stability.css">
 <link rel="stylesheet" href="/leveling-podium.css">
 <link rel="stylesheet" href="/desk.css">
+<link rel="stylesheet" href="/shell-am.css">
+<script defer src="/shell-am.js"></script>
 </head>
 <body>
 
@@ -84,19 +86,38 @@
           <span class="sidebar-title">Quant bot</span>
         </div>
                         <nav class="sections sidebar-nav" id="sections" aria-label="Sections">
-          <button type="button" data-goto="overview" aria-current="true"><span class="nav-ico-wrap" style="--ico:#8B5CF6" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4V4zm10 0h6v4h-6V4zM4 14h6v6H4v-6zm10 2h6v4h-6v-4z"/></svg></span><span class="nav-label">Overview</span></button>
-          <button type="button" data-goto="composer"><span class="nav-ico-wrap" style="--ico:#6366F1" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span><span class="nav-label">Composer</span></button>
-          <button type="button" data-goto="appearance"><span class="nav-ico-wrap" style="--ico:#A78BFA" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10c0-1.5-1.2-1.5-1.2-3 0-1.7-1.3-3-3-3-.8 0-1.5.3-2 .9A5 5 0 0 0 12 2z"/></svg></span><span class="nav-label">Appearance</span></button>
-          <button type="button" data-goto="studio"><span class="nav-ico-wrap" style="--ico:#38BDF8" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><span class="nav-label">Studio</span></button>
-          <button type="button" data-goto="leveling" id="nav-leveling"><span class="nav-ico-wrap" style="--ico:#34D399" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg></span><span class="nav-label">Leveling</span></button>
-          <button type="button" data-goto="giveaways" id="nav-giveaways" hidden><span class="nav-ico-wrap" style="--ico:#F472B6" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/></svg></span><span class="nav-label">Giveaways</span></button>
-          <button type="button" data-goto="feeds" id="nav-feeds" hidden><span class="nav-ico-wrap" style="--ico:#60A5FA" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16M5 19h.01"/></svg></span><span class="nav-label">Feeds</span></button>
-          <button type="button" data-goto="automation"><span class="nav-ico-wrap" style="--ico:#F59E0B" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><span class="nav-label">Automation</span></button>
-          <button type="button" data-goto="tickets" id="nav-tickets" hidden><span class="nav-ico-wrap" style="--ico:#818CF8" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v2a2 2 0 1 1 0 4v2c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-2a2 2 0 1 1 0-4V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M13 5v14"/></svg></span><span class="nav-label">Tickets</span></button>
-          <button type="button" data-goto="moderation"><span class="nav-ico-wrap" style="--ico:#F87171" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><span class="nav-label">Moderation</span></button>
-          <button type="button" data-goto="settings"><span class="nav-ico-wrap" style="--ico:#94A3B8" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span><span class="nav-label">Settings</span></button>
-          <button type="button" data-goto="owner" id="nav-owner" hidden><span class="nav-ico-wrap" style="--ico:#FBBF24" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.1 6.3L22 9.3l-5 4.9 1.2 7L12 17.8 5.8 21.2 7 14.1 2 9.3l6.9-1L12 2z"/></svg></span><span class="nav-label">Owner</span></button>
+          <button type="button" data-goto="overview" aria-current="true"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6H4V4zm10 0h6v4h-6V4zM4 14h6v6H4v-6zm10 2h6v4h-6v-4z"/></svg></span><span class="nav-label">Overview</span></button>
+          <button type="button" data-goto="composer"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span><span class="nav-label">Composer</span></button>
+          <button type="button" data-goto="appearance"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10c0-1.5-1.2-1.5-1.2-3 0-1.7-1.3-3-3-3-.8 0-1.5.3-2 .9A5 5 0 0 0 12 2z"/></svg></span><span class="nav-label">Appearance</span></button>
+          <button type="button" data-goto="studio"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span><span class="nav-label">Studio</span></button>
+          <button type="button" data-goto="leveling" id="nav-leveling"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg></span><span class="nav-label">Leveling</span></button>
+          <button type="button" data-goto="giveaways" id="nav-giveaways" hidden><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/></svg></span><span class="nav-label">Giveaways</span></button>
+          <button type="button" data-goto="feeds" id="nav-feeds" hidden><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16M5 19h.01"/></svg></span><span class="nav-label">Feeds</span></button>
+          <button type="button" data-goto="automation"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><span class="nav-label">Automation</span></button>
+          <button type="button" data-goto="tickets" id="nav-tickets" hidden><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v2a2 2 0 1 1 0 4v2c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-2a2 2 0 1 1 0-4V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M13 5v14"/></svg></span><span class="nav-label">Tickets</span></button>
+          <button type="button" data-goto="moderation"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span><span class="nav-label">Moderation</span></button>
+          <button type="button" data-goto="settings"><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span><span class="nav-label">Settings</span></button>
+          <button type="button" data-goto="owner" id="nav-owner" hidden><span class="nav-ico-wrap" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.1 6.3L22 9.3l-5 4.9 1.2 7L12 17.8 5.8 21.2 7 14.1 2 9.3l6.9-1L12 2z"/></svg></span><span class="nav-label">Owner</span></button>
         </nav>
+
+        <div class="sidebar-status">
+          <div class="sidebar-status-label">Bot status</div>
+          <div class="sidebar-status-card">
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>Calendar</span><span class="val" id="st-calendar">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span>Whop tracker</span><span class="val" id="st-whop">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg><span>Gateway ping</span><span class="val" id="st-ping">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Uptime</span><span class="val" id="st-uptime">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Servers</span><span class="val" id="st-servers">—</span></div>
+          </div>
+          <a class="sidebar-open-server" id="open-server" href="#" target="_blank" rel="noopener">Open server</a>
+          <div class="sidebar-user" id="sidebar-user" tabindex="0">
+            <img id="sidebar-avatar" src="/Quantbot.jpg" alt="">
+            <span class="name" id="sidebar-username">—</span>
+            <span class="badge-owner" id="sidebar-role-badge" hidden>OWNER</span>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 9l6 6 6-6"/></svg>
+            <div class="sidebar-user-menu" id="sidebar-user-menu"><a href="/auth/logout">Sign out</a></div>
+          </div>
+        </div>
       </aside>
 
       <!-- Fluid main column -->
@@ -104,7 +125,21 @@
 <div class="workspace-body">
         <div class="content-toolbar">
           <h1 class="workspace-section-label" id="here">Overview</h1>
-          <div class="bar-right" id="bar-right"></div>
+          <div class="toolbar-right">
+            <label class="am-search">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input type="search" id="am-search-input" placeholder="Search..." autocomplete="off">
+              <span class="kbd">CTRL K</span>
+            </label>
+            <button type="button" class="am-icon-btn" id="am-bell" aria-label="Notifications">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span class="alert-dot"></span>
+            </button>
+            <button type="button" class="am-icon-btn" id="am-theme" aria-label="Theme">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            </button>
+            <div class="bar-right" id="bar-right"></div>
+          </div>
         </div>
 
           <div class="server" id="server">
