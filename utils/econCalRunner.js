@@ -126,12 +126,17 @@ function buildEventEmbed(key, e, guild, tokens, timeLabel) {
 }
 
 function buildReminderEmbed(e, offset, guild) {
-  return buildEventEmbed('econ.reminder', e, guild,
-    { ...eventTokens(e, guild), minutes: offset }, `IN ${offset} MIN`);
+  return {
+    v2: true,
+    payload: econEmbed.buildAlertV2Payload(guild.id, e, 'reminder', { minutes: offset }),
+  };
 }
 
 function buildReleaseEmbed(e, guild) {
-  return buildEventEmbed('econ.release', e, guild, eventTokens(e, guild), 'RELEASING NOW');
+  return {
+    v2: true,
+    payload: econEmbed.buildAlertV2Payload(guild.id, e, 'release'),
+  };
 }
 
 const MAX_EMBEDS_PER_MSG  = 9;  // Discord's real cap is 10 — leave headroom for a day-divider embed
@@ -146,75 +151,21 @@ const MAX_EVENTS_RENDERED = 30; // hard safety cap so a huge, unfiltered week ca
 // — single-day views skip it since every card already shares the same day.
 // Returns an array of ready-to-send message payloads ({ embeds, files }).
 function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
-  const words = SCOPE_WORDS[scope] || SCOPE_WORDS.week;
-  const tokens = { server: guild.name, ...words, count: events.length };
-
-  // A calendar with nothing in it is its own card, rather than the heading
-  // with a sentence bolted underneath — the two say different things and a
-  // server should be able to word them differently.
-  if (events.length === 0) {
-    const empty = messageStyle.build(guild.id, 'econ.empty', { tokens });
-    return empty ? [{ embeds: [empty], files: [] }] : [];
+  const capped = (events || []).slice(0, MAX_EVENTS_RENDERED);
+  const payloads = econEmbed.buildWeeklyV2Payloads(guild.id, capped, { scope });
+  if ((events || []).length > MAX_EVENTS_RENDERED && payloads.length) {
+    const extra = events.length - MAX_EVENTS_RENDERED;
+    const last = payloads[payloads.length - 1];
+    try {
+      const { text, separator, container } = require('./componentsV2');
+      const accent = last.components?.[0]?.accent_color;
+      last.components.push(container([
+        separator({ divider: true, spacing: 1 }),
+        text(`-# +${extra} more not shown — narrow impact/currency filters`),
+      ], accent));
+    } catch { /* */ }
   }
-
-  const headerEmbed = messageStyle.build(guild.id, 'econ.summary', { tokens });
-
-  // The event cards take the heading's colour, so recolouring the summary
-  // recolours the whole run rather than leaving the cards on a stock blue.
-  const cardColor = messageStyle.styleFor(guild.id, 'econ.summary').color;
-
-  const capped  = events.slice(0, MAX_EVENTS_RENDERED);
-  // Checked once rather than per event: with dividers switched off there is
-  // no day boundary to leave room for, so the batches stay full-sized.
-  const dividersOn = messageStyle.isOn(guild.id, 'econ.day');
-  const multiDay = dividersOn && new Set(capped.map(dayKeyOf)).size > 1;
-
-  const batches = [];
-  let curEmbeds = headerEmbed ? [headerEmbed] : [];
-  let curFiles  = [];
-  let lastDayKey = null;
-
-  function flush() {
-    if (curEmbeds.length > 0) batches.push({ embeds: curEmbeds, files: curFiles });
-    curEmbeds = [];
-    curFiles  = [];
-  }
-
-  // High / Medium → one grid embed (max 3 per row). Low stays as cards.
-  const gridEvents = [];
-  for (const e of capped) {
-    if (e.impact === 'High' || e.impact === 'Medium') gridEvents.push(e);
-  }
-  const lowEvents = capped.filter(e => e.impact !== 'High' && e.impact !== 'Medium');
-
-  if (gridEvents.length) {
-    const mode = scope === 'week' ? 'week' : 'day';
-    const grids = econEmbed.buildGridEmbeds(guild.id, gridEvents, { mode });
-    for (const g of grids) {
-      if (curEmbeds.length >= MAX_EMBEDS_PER_MSG) flush();
-      curEmbeds.push(g);
-    }
-  }
-
-  for (const e of lowEvents) {
-    if (curEmbeds.length >= MAX_EMBEDS_PER_MSG) flush();
-    const attachment = buildEventCard(e, fmtEventTime(e));
-    curFiles.push(attachment);
-    const embed = createEmbed('info', { color: cardColor, image: `attachment://${attachment.name}` });
-    embed.setTimestamp(null);
-    curEmbeds.push(embed);
-  }
-  flush();
-
-  if (events.length > MAX_EVENTS_RENDERED) {
-    const noteEmbed = createEmbed('info', {
-      description: `➕ **${events.length - MAX_EVENTS_RENDERED}** more matching events not shown — narrow the impact/currency filters to see them all.`,
-    });
-    if (batches.length === 0) batches.push({ embeds: [noteEmbed], files: [] });
-    else batches[batches.length - 1].embeds.push(noteEmbed);
-  }
-
-  return batches;
+  return payloads;
 }
 
 function currentWeekSlot(weekday, hour, minute, offsetMinutes, now) {
@@ -270,9 +221,13 @@ async function runTick(client) {
         // releases still to come rather than the ones already gone.
         const built = buildReminderEmbed(e, offset, guild);
         if (!built) continue;
-        const { embed, files } = built;
         const content = settings.roleId ? `<@&${settings.roleId}>` : undefined;
-        await channel.send({ content, embeds: [embed], files, allowedMentions: settings.roleId ? { roles: [settings.roleId] } : { parse: [] } }).catch(() => {});
+        const mentions = settings.roleId ? { roles: [settings.roleId] } : { parse: [] };
+        if (built.v2 && built.payload) {
+          await channel.send({ ...built.payload, content, allowedMentions: mentions }).catch(() => {});
+        } else if (built.embed) {
+          await channel.send({ content, embeds: [built.embed], files: built.files || [], allowedMentions: mentions }).catch(() => {});
+        }
       }
 
       const releaseKey = `${e.id}#release`;
@@ -282,7 +237,11 @@ async function runTick(client) {
         if (now - e.timestamp <= STALE_MS) {
           const built = buildReleaseEmbed(e, guild);
           if (built) {
-            await channel.send({ embeds: [built.embed], files: built.files, allowedMentions: { parse: [] } }).catch(() => {});
+            if (built.v2 && built.payload) {
+              await channel.send({ ...built.payload, allowedMentions: { parse: [] } }).catch(() => {});
+            } else if (built.embed) {
+              await channel.send({ embeds: [built.embed], files: built.files || [], allowedMentions: { parse: [] } }).catch(() => {});
+            }
           }
         }
       }

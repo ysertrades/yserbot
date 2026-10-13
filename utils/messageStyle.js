@@ -496,7 +496,7 @@ const CATALOGUE = {
     tokens: ['{event}', '{currency}', '{impact}', '{time}', '{forecast}', '{previous}'],
     defaults: {
       enabled: true, color: BRAND.sky,
-      title: '📊 Releasing Now',
+      title: '📊 Released Now',
       body: '{time}',
       footer: '{server} • Economic Calendar',
       thumbnail: false, timestamp: false,

@@ -109,7 +109,7 @@ function padFieldsToRow(fields) {
 function titleFor(mode, events, extra = {}) {
   if (mode === 'week') return 'High Impact news This week';
   if (mode === 'release') {
-    return events.length > 1 ? `🔴 Releasing now · ${events.length} prints` : '🔴 Releasing now';
+    return events.length > 1 ? `🔴 Released now · ${events.length} prints` : '🔴 Released now';
   }
   if (mode === 'reminder') {
     const m = extra.minutes != null ? extra.minutes : '?';
@@ -166,11 +166,130 @@ function buildSingleEventEmbed(guildId, e, opts = {}) {
   return embed;
 }
 
+
+function dayKeyOfTs(timestampMs) {
+  const d = toDisplay(timestampMs);
+  return d.toISOString().slice(0, 10);
+}
+function eventTextBlock(e) {
+  const flag = FLAG[e.currency] || '🏳️';
+  const when = formatWhen(e.timestamp);
+  const impact = IMPACT_DOT[e.impact] || '•';
+  const title = `${flag} **${e.currency} — ${e.title}**`.slice(0, 200);
+  const forecast = e.forecast != null && String(e.forecast).trim() !== '' ? String(e.forecast).trim() : null;
+  const previous = e.previous != null && String(e.previous).trim() !== '' ? String(e.previous).trim() : null;
+  const boxLines = [
+    forecast != null ? `Forecast: ${forecast}` : null,
+    previous != null ? `Previous: ${previous}` : null,
+  ].filter(Boolean);
+  const meta = `🕐 ${when.timeLine} · ${impact} **${String(e.impact || 'Low').toUpperCase()}**`;
+  const parts = [title, meta];
+  if (boxLines.length) parts.push(codeBox(boxLines));
+  return parts.join('\n').slice(0, 3800);
+}
+function dayLabelLine(timestampMs) {
+  const d = toDisplay(timestampMs);
+  return `-# · ${WEEKDAY[d.getUTCDay()]} · ${MONTH[d.getUTCMonth()]} ${d.getUTCDate()}`;
+}
+function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
+  const { IS_COMPONENTS_V2, text, separator, container, ACCENT_DEFAULT } = require('./componentsV2');
+  const list = Array.isArray(events) ? events.filter(Boolean) : [];
+  const accent = impactColor(guildId, list.length ? topImpact(list) : 'High') || ACCENT_DEFAULT;
+  if (!list.length) {
+    const words = scope === 'today' ? 'today' : scope === 'tomorrow' ? 'tomorrow' : 'this week';
+    return [{
+      flags: IS_COMPONENTS_V2,
+      components: [container([
+        text('-# quantlab · economic calendar'),
+        separator({ divider: true, spacing: 1 }),
+        text(`No matching releases for ${words}.`),
+      ], accent)],
+      embeds: [],
+    }];
+  }
+  const byDay = new Map();
+  const sorted = [...list].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  for (const e of sorted) {
+    const k = dayKeyOfTs(e.timestamp);
+    if (!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(e);
+  }
+  const scopeTitle =
+    scope === 'today' ? "Today's releases" :
+    scope === 'tomorrow' ? "Tomorrow's releases" :
+    'This week';
+  const payloads = [];
+  let kids = [];
+  let firstInMsg = true;
+  const flush = () => {
+    if (!kids.length) return;
+    payloads.push({ flags: IS_COMPONENTS_V2, components: [container(kids, accent)], embeds: [] });
+    kids = [];
+    firstInMsg = true;
+  };
+  const pushHeader = () => {
+    if (!firstInMsg) return;
+    kids.push(text(`-# quantlab · ${scopeTitle} · ${list.length}`));
+    kids.push(separator({ divider: true, spacing: 1 }));
+    firstInMsg = false;
+  };
+  let dayIndex = 0;
+  for (const [, dayEvents] of byDay) {
+    pushHeader();
+    if (dayIndex > 0) kids.push(separator({ divider: true, spacing: 2 }));
+    kids.push(text(dayLabelLine(dayEvents[0].timestamp)));
+    kids.push(separator({ divider: false, spacing: 1 }));
+    for (let i = 0; i < dayEvents.length; i++) {
+      if (kids.length >= 12) {
+        flush();
+        pushHeader();
+        kids.push(text(dayLabelLine(dayEvents[i].timestamp) + ' · cont.'));
+        kids.push(separator({ divider: false, spacing: 1 }));
+      }
+      kids.push(text(eventTextBlock(dayEvents[i])));
+      if (i < dayEvents.length - 1) kids.push(separator({ divider: false, spacing: 1 }));
+    }
+    dayIndex += 1;
+  }
+  flush();
+  return payloads;
+}
+function buildAlertV2Payload(guildId, e, mode, { minutes = null } = {}) {
+  const { IS_COMPONENTS_V2, text, separator, container } = require('./componentsV2');
+  const flag = FLAG[e.currency] || '🏳️';
+  const when = formatWhen(e.timestamp);
+  const impact = IMPACT_DOT[e.impact] || '•';
+  const accent = impactColor(guildId, e.impact);
+  const heading = mode === 'release'
+    ? '🔴 **Released now**'
+    : `⏰ **In ${minutes != null ? minutes : '?'}m**`;
+  const title = `${flag} **${e.currency} — ${e.title}**`.slice(0, 200);
+  const meta = `🕐 ${when.timeLine} · ${impact} **${String(e.impact || 'Low').toUpperCase()}**`;
+  const forecast = e.forecast != null && String(e.forecast).trim() !== '' ? String(e.forecast).trim() : null;
+  const previous = e.previous != null && String(e.previous).trim() !== '' ? String(e.previous).trim() : null;
+  const boxLines = [
+    forecast != null ? `Forecast: ${forecast}` : null,
+    previous != null ? `Previous: ${previous}` : null,
+  ].filter(Boolean);
+  const kids = [
+    text(heading),
+    separator({ divider: true, spacing: 1 }),
+    text(title),
+    text(meta),
+  ];
+  if (boxLines.length) kids.push(text(codeBox(boxLines)));
+  kids.push(separator({ divider: true, spacing: 1 }));
+  kids.push(text('-# quantlab · economic calendar'));
+  return { flags: IS_COMPONENTS_V2, components: [container(kids, accent)], embeds: [] };
+}
+
 module.exports = {
   impactColor,
   eventField,
   buildGridEmbeds,
   buildSingleEventEmbed,
+  buildWeeklyV2Payloads,
+  buildAlertV2Payload,
   titleFor,
   FLAG,
   IMPACT_DOT,
