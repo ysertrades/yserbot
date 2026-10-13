@@ -103,14 +103,17 @@
         <div class="sidebar-status">
           <div class="sidebar-status-label">Bot status</div>
           <div class="sidebar-status-card">
-            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>Calendar</span><span class="val" id="st-calendar">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>Econ calendar</span><span class="val" id="st-calendar">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg><span>Financial juice</span><span class="val" id="st-newsfeed">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-6"/></svg><span>Leveling</span><span class="val" id="st-leveling">—</span></div>
+            <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span>Whop tracker</span><span class="val" id="st-whop">—</span></div>
+          </div>
             <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><span>Whop tracker</span><span class="val" id="st-whop">—</span></div>
             <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg><span>Gateway ping</span><span class="val" id="st-ping">—</span></div>
             <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Uptime</span><span class="val" id="st-uptime">—</span></div>
             <div class="sidebar-status-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Servers</span><span class="val" id="st-servers">—</span></div>
           </div>
-          <a class="sidebar-open-server" id="open-server" href="#" target="_blank" rel="noopener">Open server</a>
-          <div class="sidebar-user" id="sidebar-user" tabindex="0">
+<div class="sidebar-user" id="sidebar-user" tabindex="0">
             <img id="sidebar-avatar" src="/Quantbot.jpg" alt="">
             <span class="name" id="sidebar-username">—</span>
             <span class="badge-owner" id="sidebar-role-badge" hidden>OWNER</span>
@@ -126,19 +129,21 @@
         <div class="content-toolbar">
           <h1 class="workspace-section-label" id="here">Overview</h1>
           <div class="toolbar-right">
-            <label class="am-search">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-              <input type="search" id="am-search-input" placeholder="Search..." autocomplete="off">
-              <span class="kbd">CTRL K</span>
-            </label>
-            <button type="button" class="am-icon-btn" id="am-bell" aria-label="Notifications">
+<button type="button" class="am-icon-btn" id="am-bell" aria-label="Notifications">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
               <span class="alert-dot"></span>
             </button>
-            <button type="button" class="am-icon-btn" id="am-theme" aria-label="Theme">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            </button>
-            <div class="bar-right" id="bar-right"></div>
+            <div class="am-logs" id="am-logs" role="dialog" aria-label="Bot logs">
+              <div class="am-logs-head"><h3>Bot logs</h3><button type="button" id="am-logs-clear">Clear</button></div>
+              <div class="am-logs-list" id="am-logs-list"></div>
+              <div class="am-logs-foot">
+                <button type="button" id="am-logs-prev">Prev</button>
+                <span id="am-logs-page">1 / 1</span>
+                <button type="button" id="am-logs-next">Next</button>
+              </div>
+            </div>
+
+<div class="bar-right" id="bar-right"></div>
           </div>
         </div>
 
