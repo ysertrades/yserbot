@@ -1,6 +1,7 @@
 (function () {
   "use strict";
   var LOG_KEY = "ql_bot_logs_v1", LOG_MAX = 8, logPage = 0;
+  var navWired = false;
 
   function $(id) { return document.getElementById(id); }
 
@@ -52,29 +53,34 @@
     el.classList.toggle("is-on", !!on);
   }
 
+  /** Read real feature state from overview (same sources Overview cards use). */
   function paintShellStatus() {
-    var me = window.state && window.state.me;
     var ov = window.state && window.state.overview;
-    if (me) {
-      var av = $("sidebar-avatar");
-      if (av && me.avatar) av.src = me.avatar;
-      var un = $("sidebar-username");
-      if (un) un.textContent = me.username || me.tag || "User";
-      var badge = $("sidebar-role-badge");
-      if (badge) badge.hidden = !me.owner;
+    if (!ov) return;
+
+    function groupOn(key) {
+      try {
+        var groups = (ov.featureToggles && ov.featureToggles.groups) || [];
+        var g = groups.find(function (x) { return x.key === key; });
+        return !g || g.enabled !== false;
+      } catch (e) {
+        return true;
+      }
     }
-    var sys = (ov && (ov.systems || ov.status || ov.bot)) || {};
-    var calOn = !!(sys.econCal || sys.econ_calendar || (ov && ov.econCal && ov.econCal.enabled));
-    var newsOn = !!(sys.newsfeed || sys.newsFeed || (ov && ov.newsfeed && ov.newsfeed.enabled));
-    var lvlOn = !!(sys.leveling || (ov && ov.leveling && ov.leveling.enabled !== false));
-    var whopOn = !!(sys.whop || (ov && ov.whop && ov.whop.enabled));
-    try {
-      var ft = (ov && ov.features) || (window.state && window.state.features) || {};
-      if (ft.econ_calendar != null) calOn = !!ft.econ_calendar;
-      if (ft.newsfeed != null) newsOn = !!ft.newsfeed;
-      if (ft.leveling != null) lvlOn = !!ft.leveling;
-      if (ft.whop != null) whopOn = !!ft.whop;
-    } catch (e) {}
+
+    var calOn = !!(ov.econcal && ov.econcal.enabled);
+    if (!calOn) calOn = groupOn("econ_calendar");
+
+    var newsOn = !!(ov.newsfeed && ov.newsfeed.enabled);
+    if (!newsOn) newsOn = groupOn("newsfeed");
+
+    var lvlOn = groupOn("leveling");
+    if (ov.leveling && ov.leveling.enabled === false) lvlOn = false;
+    if (ov.leveling && ov.leveling.enabled === true) lvlOn = true;
+
+    var whopOn = !!(ov.whop && ov.whop.enabled);
+    if (!whopOn) whopOn = groupOn("whop");
+
     setVal("st-calendar", calOn ? "On" : "Off", calOn);
     setVal("st-newsfeed", newsOn ? "On" : "Off", newsOn);
     setVal("st-leveling", lvlOn ? "On" : "Off", lvlOn);
@@ -113,94 +119,111 @@
     if (c) { c.hidden = false; }
   }
 
-  function bootNav() {
-    var b = document.getElementById("am-menu-btn");
-    var c = document.getElementById("am-nav-scrim");
-    if (b && !b.dataset.navWired) {
-      b.dataset.navWired = "1";
-      b.addEventListener("click", function (e) {
-        e.preventDefault();
+  function ensureSectionTitles() {
+    var map = {
+      overview: "Overview",
+      composer: "Composer",
+      appearance: "Appearance",
+      studio: "Studio",
+      leveling: "Leveling",
+      giveaways: "Giveaways",
+      feeds: "Feeds",
+      automation: "Automation",
+      tickets: "Tickets",
+      moderation: "Moderation",
+      settings: "Settings",
+      owner: "Owner"
+    };
+    var sec = "";
+    try {
+      if (window.root && window.root.dataset && window.root.dataset.section) sec = window.root.dataset.section;
+    } catch (e) {}
+    if (!sec) {
+      var cur = document.querySelector(".sidebar-nav button[aria-current=\"true\"], #sections button[aria-current=\"true\"]");
+      if (cur && cur.dataset && cur.dataset.goto) sec = cur.dataset.goto;
+    }
+    if (!sec) sec = document.documentElement.getAttribute("data-section") || "";
+    var label = map[sec] || "";
+    var here = $("here");
+    if (here && label) here.textContent = label;
+  }
+
+  function wireNav() {
+    if (navWired) return;
+    navWired = true;
+    document.querySelectorAll("#sections button[data-goto], .sidebar-nav button[data-goto]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        closeFloaters();
+        closeNav();
+        setTimeout(ensureSectionTitles, 0);
+        setTimeout(ensureSectionTitles, 50);
+      });
+    });
+    var menu = $("am-menu-btn");
+    var scrim = $("am-nav-scrim");
+    if (menu) {
+      menu.addEventListener("click", function (e) {
         e.stopPropagation();
         var s = document.querySelector(".app-shell");
         if (s && s.classList.contains("nav-open")) closeNav();
         else openNav();
       });
     }
-    if (c && !c.dataset.navWired) {
-      c.dataset.navWired = "1";
-      c.addEventListener("click", function (e) {
-        e.preventDefault();
-        closeNav();
-      });
+    if (scrim) {
+      scrim.addEventListener("click", function () { closeNav(); });
     }
-    document.querySelectorAll("#sections button[data-goto], .sidebar-nav button[data-goto]").forEach(function (btn) {
-      if (btn.dataset.navWired) return;
-      btn.dataset.navWired = "1";
-      btn.addEventListener("click", function () {
-        closeFloaters();
-        if (window.matchMedia("(max-width: 900px)").matches) closeNav();
-      });
-    });
-  }
-
-  function bootLogs() {
-    var bell = $("am-bell"), logs = $("am-logs");
+    var bell = $("am-bell");
+    var logs = $("am-logs");
+    var logsX = $("am-logs-close");
+    var logsClear = $("am-logs-clear");
+    var logsPrev = $("am-logs-prev");
+    var logsNext = $("am-logs-next");
     if (bell && logs) {
       bell.addEventListener("click", function (e) {
         e.stopPropagation();
-        var open = logs.classList.toggle("is-open");
-        bell.setAttribute("aria-expanded", open ? "true" : "false");
-        if (open) renderLogs();
-      });
-      document.addEventListener("click", function (e) {
-        if (!logs.contains(e.target) && e.target !== bell && !bell.contains(e.target)) {
-          logs.classList.remove("is-open");
-          bell.setAttribute("aria-expanded", "false");
-        }
+        logs.hidden = !logs.hidden;
+        if (!logs.hidden) renderLogs();
       });
     }
-    var clearBtn = $("am-logs-clear");
-    if (clearBtn) clearBtn.addEventListener("click", function () {
-      saveLogs([]);
-      logPage = 0;
-      renderLogs();
-    });
-    var prev = $("am-logs-prev"), next = $("am-logs-next");
-    if (prev) prev.addEventListener("click", function () { logPage--; renderLogs(); });
-    if (next) next.addEventListener("click", function () { logPage++; renderLogs(); });
+    if (logsX && logs) logsX.addEventListener("click", function () { logs.hidden = true; });
+    if (logsClear) logsClear.addEventListener("click", function () { saveLogs([]); logPage = 0; renderLogs(); });
+    if (logsPrev) logsPrev.addEventListener("click", function () { logPage--; renderLogs(); });
+    if (logsNext) logsNext.addEventListener("click", function () { logPage++; renderLogs(); });
   }
 
-  function boot() {
-    bootNav();
-    bootLogs();
-    setInterval(paintShellStatus, 2500);
-    paintShellStatus();
-    renderLogs();
+  function patchSectionNames() {
+    var here = $("here");
+    if (!here) return;
+    try {
+      var obs = new MutationObserver(function () { ensureSectionTitles(); });
+      obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-section"] });
+      var main = document.getElementById("main");
+      if (main) obs.observe(main, { attributes: true, attributeFilter: ["data-section"] });
+      document.querySelectorAll(".sidebar-nav button[data-goto]").forEach(function (b) {
+        obs.observe(b, { attributes: true, attributeFilter: ["aria-current"] });
+      });
+    } catch (e) {}
   }
 
-  window.__paintShellStatus = paintShellStatus;
-  window.__closeFloaters = closeFloaters;
-  window.__closeNav = closeNav;
-
-  /* Owner console safety: el() accepts Node children; staff always an array */
   function patchOwnerSafety() {
     try {
-      if (typeof el === "function" && !el.__amPatched) {
-        var _el = el;
-        el = function (tag, className, text) {
-          var node = document.createElement(tag);
-          if (className) node.className = className;
-          if (text !== undefined && text !== null) {
-            if (typeof text === "object" && text.nodeType) node.appendChild(text);
-            else node.textContent = text;
+      if (typeof window.el === "function" && !window.el.__amPatched) {
+        var _el = window.el;
+        window.el = function (tag, cls, text) {
+          var node = _el(tag, cls, text);
+          if (text && typeof text === "object" && text.nodeType) {
+            try {
+              if (node && node.firstChild && node.firstChild.nodeType === 3) node.replaceChildren();
+              node.appendChild(text);
+            } catch (e) {}
           }
           return node;
         };
-        el.__amPatched = true;
+        window.el.__amPatched = true;
       }
-      if (typeof renderOwnerConsole === "function" && !renderOwnerConsole.__amPatched) {
-        var _roc = renderOwnerConsole;
-        renderOwnerConsole = function () {
+      if (typeof window.renderOwnerConsole === "function" && !window.renderOwnerConsole.__amPatched) {
+        var _roc = window.renderOwnerConsole;
+        window.renderOwnerConsole = function () {
           try {
             (window.state && window.state.ownerGuilds || []).forEach(function (g) {
               if (!g.staff) g.staff = [];
@@ -208,16 +231,30 @@
           } catch (e) {}
           return _roc.apply(this, arguments);
         };
-        renderOwnerConsole.__amPatched = true;
+        window.renderOwnerConsole.__amPatched = true;
       }
     } catch (e) {}
   }
-  var _patchN = 0;
-  var _patchT = setInterval(function () {
+
+  function boot() {
+    wireNav();
+    patchSectionNames();
     patchOwnerSafety();
-    if (++_patchN > 60) clearInterval(_patchT);
-  }, 500);
-  patchOwnerSafety();
+    ensureSectionTitles();
+    paintShellStatus();
+    renderLogs();
+    setInterval(paintShellStatus, 2500);
+    setInterval(ensureSectionTitles, 1500);
+    var _patchN = 0;
+    var _patchT = setInterval(function () {
+      patchOwnerSafety();
+      if (++_patchN > 60) clearInterval(_patchT);
+    }, 500);
+  }
+
+  window.__paintShellStatus = paintShellStatus;
+  window.__closeFloaters = closeFloaters;
+  window.__ensureSectionTitles = ensureSectionTitles;
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
