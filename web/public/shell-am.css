@@ -110,6 +110,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)!important;box
 .am-logs-foot button{background:transparent;border:none;color:#7b7b7b;cursor:pointer;font-size:12px}
 
 
+
 /* ========== QUANT SHELL FIXES (presentation only) ========== */
 
 .app-shell {
