@@ -1,1 +1,29 @@
-PLACEHOLDER_WILL_REPLACE
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+:root{
+--frame:#121212;--panel:#0a0a0a;--panel-border:#1a1a1a;--header-divider:#131313;
+--surface-1:#181818;--surface-2:#1a1a1a;--border-soft:#1b1b1b;--border-strong:#202020;
+--text-primary:#e9e9e9;--text-user:#efefef;--text-secondary:#acacac;--text-muted:#838383;
+--text-dim:#646464;--icon-dim:#606060;--accent:#4785fe;--accent-hover:#3a74e8;--on-accent:#fff;
+--danger:#ff6176;--good:#3dd68c;--bg:var(--frame);--surface:#0f0f0f;--raised:var(--surface-2);
+--sunken:#0c0c0c;--panel2:var(--surface-1);--inset:#0c0c0c;--ink:var(--text-primary);
+--soft:var(--text-secondary);--muted:var(--text-muted);--rule:var(--panel-border);
+--radius:20px;--radius-sm:10px;--sidebar-w:248px;
+--shadow-card:none;
+}
+html,body{margin:0;padding:0;height:100%;background:var(--frame)!important;color:var(--text-primary);
+  font-family:Inter,system-ui,-apple-system,sans-serif!important;-webkit-font-smoothing:antialiased}
+html[data-state=panel]>body>header.bar{display:none!important}
+html[data-state=panel] body{overflow:hidden!important}
+body > .cselect-menu,.cselect-menu{z-index:200!important;pointer-events:auto!important}
+
+/* ── Shell layout ─────────────────────────────────────────────────────── */
+.app-shell{
+  display:flex!important;flex-direction:row!important;width:100%!important;
+  height:100dvh!important;background:var(--frame)!important;gap:0!important;overflow:hidden!important;
+}
+.sidebar{
+  flex:0 0 var(--sidebar-w)!important;width:var(--sidebar-w)!important;max-width:var(--sidebar-w)!important;
+  min-width:var(--sidebar-w)!important;background:var(--frame)!important;border-right:1px solid #252525!important;
+  padding:16px 12px 12px!important;display:flex!important;flex-direction:column!important;gap:8px!important;
+  overflow-y:auto!important;overflow-x:hidden!important;position:relative!important;transform:none!important;z-index:5!important;
+}
