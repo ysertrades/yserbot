@@ -45,9 +45,38 @@ function canManageMessages(channel, me) {
 
 function isDeskChannel(ch) {
   if (!ch || ch.isThread?.()) return false;
-  if (typeof ch.isTextBased === 'function' && !ch.isTextBased()) return false;
   if (ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice) return false;
+  if (ch.type === ChannelType.GuildForum) return true;
+  if (typeof ch.isTextBased === 'function' && !ch.isTextBased()) return false;
   return true;
+}
+
+function formatMentions(m) {
+  let text = String(m.content || '');
+  try {
+    if (m.mentions && m.mentions.users) {
+      for (const [id, user] of m.mentions.users) {
+        const name = user.globalName || user.username || id;
+        text = text.replace(new RegExp('<@!?' + id + '>', 'g'), '@' + name);
+      }
+    }
+    if (m.mentions && m.mentions.roles) {
+      for (const [id, role] of m.mentions.roles) {
+        const name = role.name || id;
+        text = text.replace(new RegExp('<@&' + id + '>', 'g'), '@' + name);
+      }
+    }
+    if (m.mentions && m.mentions.channels) {
+      for (const [id, ch] of m.mentions.channels) {
+        const name = ch.name || id;
+        text = text.replace(new RegExp('<#' + id + '>', 'g'), '#' + name);
+      }
+    }
+    text = text.replace(/<@!?(\d{5,25})>/g, '@user');
+    text = text.replace(/<@&(\d{5,25})>/g, '@role');
+    text = text.replace(/<#(\d{5,25})>/g, '#channel');
+  } catch {}
+  return text;
 }
 
 function serializeMessage(m) {
@@ -71,7 +100,7 @@ function serializeMessage(m) {
   } catch {}
   return {
     id: m.id,
-    content: m.content || '',
+    content: formatMentions(m),
     createdAt: m.createdTimestamp || null,
     author: author
       ? { id: author.id, name: author.username || author.globalName || 'Unknown', avatar: author.displayAvatarURL?.({ size: 64 }) || null }
