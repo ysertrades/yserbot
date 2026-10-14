@@ -1,6 +1,6 @@
 'use strict';
 (function () {
-  var N = 5;
+  var N = 11;
   var parts = new Array(N);
   var left = N;
   function go() {
@@ -18,14 +18,14 @@
       };
       document.head.appendChild(s);
     } catch (e) {
+      console.error('[desk-ui]', e);
       var el = document.getElementById('overview-desk');
       if (el) el.innerHTML = '<p class="muted" style="padding:1rem">Channel Desk decode error.</p>';
-      console.error('[desk-ui]', e);
     }
   }
   for (var i = 0; i < N; i++) {
     (function (idx) {
-      fetch('/desk-ui.p' + idx + '.txt?v=2', { credentials: 'same-origin' })
+      fetch('/desk-ui.p' + idx + '.txt?v=3', { credentials: 'same-origin' })
         .then(function (r) { if (!r.ok) throw new Error('part ' + idx); return r.text(); })
         .then(function (t) { parts[idx] = t.trim(); left--; go(); })
         .catch(function (e) {
