@@ -130,7 +130,7 @@
       setFeed('Loading messages…');
       hist(false);
     } else {
-      setFeed('Select a channel or forum to open the desk.');
+      setFeed('Select a channel or forum post to open the desk.');
     }
     setComposer();
   }
@@ -154,7 +154,7 @@
     var head = el('div', 'desk-head');
     var title = el('div', 'desk-title-block');
     title.append(el('p', 'desk-kicker', 'CHANNEL DESK'));
-    title.append(el('p', 'muted', 'Read and post as the bot in any text channel or forum.'));
+    title.append(el('p', 'muted', 'Read and post as the bot. Forum posts are listed under each forum name.'));
     head.append(title);
 
     var controls = el('div', 'desk-controls');
@@ -163,6 +163,7 @@
     chSel.id = 'desk-channel-sel';
     chSel.className = 'desk-channel-sel lvl-input';
     chSel.setAttribute('aria-label', 'Text channels');
+    chSel.setAttribute('data-cselect', 'native');
     var chPh = document.createElement('option');
     chPh.value = '';
     chPh.textContent = 'Text channels…';
@@ -175,10 +176,11 @@
     var foSel = document.createElement('select');
     foSel.id = 'desk-forum-sel';
     foSel.className = 'desk-forum-sel lvl-input';
-    foSel.setAttribute('aria-label', 'Forums');
+    foSel.setAttribute('aria-label', 'Forum posts');
+    foSel.setAttribute('data-cselect', 'native');
     var foPh = document.createElement('option');
     foPh.value = '';
-    foPh.textContent = 'Forums…';
+    foPh.textContent = 'Forum posts…';
     foSel.appendChild(foPh);
     foSel.addEventListener('change', function () {
       onPick(foSel.value || null, 'forum');
@@ -234,13 +236,13 @@
       var textCh = desk.channels.filter(function (c) { return !c.isForum; });
       var forums = desk.channels.filter(function (c) { return !!c.isForum; });
       fillSelect($('desk-channel-sel'), textCh, 'Text channels…');
-      fillSelect($('desk-forum-sel'), forums, 'Forums…');
+      fillSelect($('desk-forum-sel'), forums, 'Forum posts…');
       if (!desk.channelId) {
         setFeed((textCh.length || forums.length)
-          ? 'Select a channel or forum to open the desk.'
+          ? 'Select a channel or forum post to open the desk.'
           : 'No channels available.');
       }
-      setPill('idle', textCh.length + ' ch · ' + forums.length + ' forums');
+      setPill('idle', textCh.length + ' ch · ' + forums.length + ' posts');
     } catch (e) {
       setFeed('Network error loading channels.');
     }
