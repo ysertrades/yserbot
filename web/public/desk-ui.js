@@ -79,11 +79,6 @@
     if (input) input.disabled = !on || desk.busy;
     if (send) { send.disabled = !on || !(input && input.value.trim()); }
   }
-  function paint() {
-    var host = $('overview-desk');
-    if (!host) return;
-    /* shell already built */
-  }
   function shell() {
     var host = $('overview-desk');
     if (!host || host.dataset.deskReady) return;
@@ -142,8 +137,7 @@
   }
   async function loadCh() {
     var g = gid();
-    if (!g) { setFeed('Waiting for server…');
-      return; }
+    if (!g) { setFeed('Waiting for server…'); return; }
     try {
       var out = await deskGet('/api/guild/' + encodeURIComponent(g) + '/desk/channels');
       if (!out.res.ok) {
@@ -157,9 +151,14 @@
         var _ph = el('option', '', 'Select channel…'); _ph.value = ''; sel.append(_ph);
         var groups = {}, order = [];
         desk.channels.forEach(function (c) {
-          var cat = (c.category && String(c.category).trim()) || 'Channels';
+          var cat = c.isForum ? 'Forums' : ((c.category && String(c.category).trim()) || 'Text channels');
           if (!groups[cat]) { groups[cat] = []; order.push(cat); }
           groups[cat].push(c);
+        });
+        order.sort(function (a, b) {
+          if (a === 'Forums') return 1;
+          if (b === 'Forums') return -1;
+          return a.localeCompare(b);
         });
         order.forEach(function (cat) {
           var og = document.createElement('optgroup');
@@ -167,7 +166,7 @@
           groups[cat].forEach(function (c) {
             var o = document.createElement('option');
             o.value = c.id;
-            o.textContent = '# ' + c.name;
+            o.textContent = (c.isForum ? 'Forum: ' : '# ') + c.name;
             og.appendChild(o);
           });
           sel.appendChild(og);
@@ -187,7 +186,14 @@
     try {
       var out = await deskGet('/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(desk.channelId) + '?limit=50');
       if (!out.res.ok) {
-        if (!quiet) setFeed('Could not load messages.');
+        if (!quiet) {
+          var det = (out.data && (out.data.error || out.data.detail)) || ('HTTP ' + out.res.status);
+          setFeed('Could not load messages (' + det + ').');
+        }
+        return;
+      }
+      if (out.data && out.data.error) {
+        if (!quiet) setFeed('Could not load messages (' + out.data.error + ').');
         return;
       }
       var msgs = (out.data.messages || out.data.history || []);
@@ -258,16 +264,9 @@
     shell();
     var tries = 0;
     function retryLoad() {
-      if (gid()) {
-        loadCh();
-        return;
-      }
-      if (tries < 80) {
-        tries++;
-        setTimeout(retryLoad, 400);
-      } else {
-        setFeed('Waiting for server… open Overview after the panel finishes loading.');
-      }
+      if (gid()) { loadCh(); return; }
+      if (tries < 80) { tries++; setTimeout(retryLoad, 400); }
+      else setFeed('Waiting for server… open Overview after the panel finishes loading.');
     }
     retryLoad();
     if (desk.timer) clearInterval(desk.timer);
