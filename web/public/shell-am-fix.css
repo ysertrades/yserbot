@@ -1,0 +1,47 @@
+/* Critical panel structural fixes — loads after shell-am.css */
+.workspace{
+  margin:12px 12px 12px 0!important;
+  background:#0e0e0e!important;
+  border:1px solid #1a1a1a!important;
+  border-radius:16px!important;
+  box-shadow:none!important;
+}
+.workspace-body{
+  padding:0 20px 24px!important;
+  background:transparent!important;
+}
+.workspace-body > .section{display:none!important;min-height:0!important}
+.workspace-body > .section[data-active]{
+  display:flex!important;flex-direction:column!important;gap:1.1rem!important;
+  flex:0 0 auto!important;min-height:0!important;width:100%!important;
+  align-content:flex-start!important;
+}
+.content-toolbar{
+  background:#0e0e0e!important;
+  border-bottom:1px solid #161616!important;
+  margin:0 0 12px!important;
+}
+.workspace-section-label,.content-toolbar h1,#here{
+  font-size:16px!important;font-weight:500!important;color:#e9e9e9!important;
+  margin:0!important;display:block!important;visibility:visible!important;opacity:1!important;
+  min-height:1.2em!important;
+}
+.composer{
+  display:grid!important;grid-template-columns:minmax(180px,15.5rem) minmax(0,1fr)!important;
+  gap:1rem!important;align-items:start!important;width:100%!important;
+}
+.tpl-list,.composer-body,#composer-body,#appearance-body{min-height:0!important}
+#appearance-body,#composer-body{align-self:start!important}
+@media (max-width:52rem){.composer{grid-template-columns:1fr!important}}
+.lvl-stat-row{
+  display:flex!important;flex-wrap:wrap!important;gap:1rem 1.5rem!important;
+  align-items:center!important;justify-content:flex-start!important;width:100%!important;
+}
+.lvl-edit-meta{
+  display:flex!important;align-items:center!important;justify-content:space-between!important;
+  gap:10px!important;flex-wrap:wrap!important;width:100%!important;
+  padding-top:10px!important;border-top:1px solid #161616!important;margin-top:2px!important;
+}
+@media (max-width:900px){
+  .workspace{margin:0!important;border-radius:0!important;border:none!important}
+}
