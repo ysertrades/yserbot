@@ -171,7 +171,6 @@
           });
           sel.appendChild(og);
         });
-        try { if (typeof window.enhanceSelects === 'function') window.enhanceSelects(sel.parentNode || sel); } catch (e) {}
       }
       if (!desk.channelId) setFeed(desk.channels.length ? 'Select a channel to open the desk.' : 'No channels available.');
       setPill('idle', desk.channels.length + ' channels');
