@@ -44,9 +44,12 @@ function canManageMessages(channel, me) {
 }
 
 function isDeskChannel(ch) {
-  if (!ch || ch.isThread?.()) return false;
+  if (!ch) return false;
+  if (typeof ch.isThread === 'function' && ch.isThread()) {
+    return true;
+  }
   if (ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice) return false;
-  if (ch.type === ChannelType.GuildForum) return true;
+  if (ch.type === ChannelType.GuildForum) return false;
   if (typeof ch.isTextBased === 'function' && !ch.isTextBased()) return false;
   return true;
 }
@@ -128,10 +131,12 @@ async function resolveMe(guild) {
 async function listChannels(guild) {
   const me = await resolveMe(guild);
   const channels = [];
+
   for (const ch of guild.channels.cache.values()) {
+    if (ch.type === ChannelType.GuildForum) continue;
+    if (typeof ch.isThread === 'function' && ch.isThread()) continue;
     if (!isDeskChannel(ch)) continue;
     if (!canRead(ch, me)) continue;
-    const isForum = ch.type === ChannelType.GuildForum;
     channels.push({
       id: ch.id,
       name: ch.name,
@@ -139,9 +144,37 @@ async function listChannels(guild) {
       categoryId: ch.parentId || null,
       position: typeof ch.rawPosition === 'number' ? ch.rawPosition : (ch.position || 0),
       canSend: canSend(ch, me),
-      isForum: !!isForum,
+      isForum: false,
+      isThread: false,
     });
   }
+
+  for (const forum of guild.channels.cache.values()) {
+    if (forum.type !== ChannelType.GuildForum) continue;
+    if (!canRead(forum, me)) continue;
+    let active = null;
+    try {
+      active = await forum.threads.fetchActive();
+    } catch (err) {
+      console.warn('[desk] forum threads:', forum.name, err.message || err);
+      continue;
+    }
+    const threads = active && active.threads ? [...active.threads.values()] : [];
+    for (const th of threads) {
+      if (!canRead(th, me)) continue;
+      channels.push({
+        id: th.id,
+        name: th.name || 'post',
+        category: forum.name || 'Forum',
+        categoryId: forum.id,
+        position: th.createdTimestamp || 0,
+        canSend: canSend(th, me),
+        isForum: true,
+        isThread: true,
+      });
+    }
+  }
+
   channels.sort((a, b) => {
     if (a.isForum !== b.isForum) return a.isForum ? 1 : -1;
     const ca = (a.category || '').toLowerCase();
