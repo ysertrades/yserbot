@@ -1,11 +1,19 @@
 'use strict';
 (function () {
-  var POLL = 2800, STORE = 'yserflow.session';
+  var POLL = 2200, STORE = 'yserflow.session';
   var desk = {
     stickBottom: true,
-    channelId: null, channels: [], messages: [], paused: false, busy: false,
-    replyTo: null, forwardMsg: null, deleteMsg: null, padMode: null, timer: null, lastSig: ''
+    channelId: null,
+    channels: [],
+    messages: [],
+    paused: false,
+    busy: false,
+    timer: null,
+    histAbort: null,
+    histSeq: 0,
+    lastSig: ''
   };
+
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -46,8 +54,10 @@
       return window.__csrf || '';
     } catch (e) { return window.__csrf || ''; }
   }
-  async function deskGet(path) {
-    var r = await fetch(path, { credentials: 'same-origin', headers: hdr(false) });
+  async function deskGet(path, signal) {
+    var opts = { credentials: 'same-origin', headers: hdr(false) };
+    if (signal) opts.signal = signal;
+    var r = await fetch(path, opts);
     var data = await r.json().catch(function () { return {}; });
     return { res: r, data: data };
   }
@@ -77,41 +87,114 @@
     var send = $('desk-send');
     var on = !desk.paused && !desk.busy && desk.channelId;
     if (input) input.disabled = !on || desk.busy;
-    if (send) { send.disabled = !on || !(input && input.value.trim()); }
+    if (send) send.disabled = !on || !(input && input.value.trim());
   }
+
+  function fillSelect(sel, list, prefix) {
+    if (!sel) return;
+    sel.replaceChildren();
+    var ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = prefix || 'Select…';
+    sel.appendChild(ph);
+    var groups = {}, order = [];
+    list.forEach(function (c) {
+      var cat = (c.category && String(c.category).trim()) || 'Uncategorized';
+      if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+      groups[cat].push(c);
+    });
+    order.sort(function (a, b) { return a.localeCompare(b); });
+    order.forEach(function (cat) {
+      var og = document.createElement('optgroup');
+      og.label = cat;
+      groups[cat].sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+      groups[cat].forEach(function (c) {
+        var o = document.createElement('option');
+        o.value = c.id;
+        o.textContent = (c.isForum ? '' : '# ') + c.name;
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+  }
+
+  function onPick(id, source) {
+    desk.channelId = id || null;
+    desk.stickBottom = true;
+    desk.lastSig = '';
+    var chSel = $('desk-channel-sel');
+    var foSel = $('desk-forum-sel');
+    if (source === 'channel' && foSel) foSel.value = '';
+    if (source === 'forum' && chSel) chSel.value = '';
+    if (desk.channelId) {
+      setFeed('Loading messages…');
+      hist(false);
+    } else {
+      setFeed('Select a channel or forum to open the desk.');
+    }
+    setComposer();
+  }
+
+  function wireScroll() {
+    var f = $('desk-stream');
+    if (!f || f.dataset.scrollWired) return;
+    f.dataset.scrollWired = '1';
+    f.addEventListener('scroll', function () {
+      var dist = f.scrollHeight - f.scrollTop - f.clientHeight;
+      desk.stickBottom = dist < 48;
+    }, { passive: true });
+  }
+
   function shell() {
     var host = $('overview-desk');
     if (!host || host.dataset.deskReady) return;
     host.dataset.deskReady = '1';
     host.replaceChildren();
+
     var head = el('div', 'desk-head');
     var title = el('div', 'desk-title-block');
     title.append(el('p', 'desk-kicker', 'CHANNEL DESK'));
-    title.append(el('p', 'muted', 'Read and post as the bot in any text channel.'));
+    title.append(el('p', 'muted', 'Read and post as the bot in any text channel or forum.'));
     head.append(title);
+
     var controls = el('div', 'desk-controls');
-    var sel = document.createElement('select');
-    sel.id = 'desk-channel-sel';
-    sel.className = 'desk-channel-sel lvl-input';
-    var ph = document.createElement('option');
-    ph.value = '';
-    ph.textContent = 'Select channel…';
-    sel.appendChild(ph);
-    sel.addEventListener('change', function () {
-      desk.channelId = sel.value || null;
-      if (desk.channelId) hist(false);
-      else setFeed('Select a channel to open the desk.');
-      setComposer();
+
+    var chSel = document.createElement('select');
+    chSel.id = 'desk-channel-sel';
+    chSel.className = 'desk-channel-sel lvl-input';
+    chSel.setAttribute('aria-label', 'Text channels');
+    var chPh = document.createElement('option');
+    chPh.value = '';
+    chPh.textContent = 'Text channels…';
+    chSel.appendChild(chPh);
+    chSel.addEventListener('change', function () {
+      onPick(chSel.value || null, 'channel');
     });
-    controls.append(sel);
+    controls.append(chSel);
+
+    var foSel = document.createElement('select');
+    foSel.id = 'desk-forum-sel';
+    foSel.className = 'desk-forum-sel lvl-input';
+    foSel.setAttribute('aria-label', 'Forums');
+    var foPh = document.createElement('option');
+    foPh.value = '';
+    foPh.textContent = 'Forums…';
+    foSel.appendChild(foPh);
+    foSel.addEventListener('change', function () {
+      onPick(foSel.value || null, 'forum');
+    });
+    controls.append(foSel);
+
     var pill = el('span', 'desk-pill', '');
     pill.id = 'desk-pill';
     controls.append(pill);
     head.append(controls);
     host.append(head);
+
     var stream = el('div', 'desk-stream');
     stream.id = 'desk-stream';
     host.append(stream);
+
     var composer = el('div', 'desk-composer');
     var input = document.createElement('textarea');
     input.id = 'desk-input';
@@ -132,9 +215,12 @@
     row.append(send);
     composer.append(row);
     host.append(composer);
+
     setFeed('Loading channels…');
     setComposer();
+    wireScroll();
   }
+
   async function loadCh() {
     var g = gid();
     if (!g) { setFeed('Waiting for server…'); return; }
@@ -145,45 +231,37 @@
         return;
       }
       desk.channels = out.data.channels || [];
-      var sel = $('desk-channel-sel');
-      if (sel) {
-        sel.replaceChildren();
-        var _ph = el('option', '', 'Select channel…'); _ph.value = ''; sel.append(_ph);
-        var groups = {}, order = [];
-        desk.channels.forEach(function (c) {
-          var cat = c.isForum ? 'Forums' : ((c.category && String(c.category).trim()) || 'Text channels');
-          if (!groups[cat]) { groups[cat] = []; order.push(cat); }
-          groups[cat].push(c);
-        });
-        order.sort(function (a, b) {
-          if (a === 'Forums') return 1;
-          if (b === 'Forums') return -1;
-          return a.localeCompare(b);
-        });
-        order.forEach(function (cat) {
-          var og = document.createElement('optgroup');
-          og.label = cat;
-          groups[cat].forEach(function (c) {
-            var o = document.createElement('option');
-            o.value = c.id;
-            o.textContent = (c.isForum ? 'Forum: ' : '# ') + c.name;
-            og.appendChild(o);
-          });
-          sel.appendChild(og);
-        });
+      var textCh = desk.channels.filter(function (c) { return !c.isForum; });
+      var forums = desk.channels.filter(function (c) { return !!c.isForum; });
+      fillSelect($('desk-channel-sel'), textCh, 'Text channels…');
+      fillSelect($('desk-forum-sel'), forums, 'Forums…');
+      if (!desk.channelId) {
+        setFeed((textCh.length || forums.length)
+          ? 'Select a channel or forum to open the desk.'
+          : 'No channels available.');
       }
-      if (!desk.channelId) setFeed(desk.channels.length ? 'Select a channel to open the desk.' : 'No channels available.');
-      setPill('idle', desk.channels.length + ' channels');
+      setPill('idle', textCh.length + ' ch · ' + forums.length + ' forums');
     } catch (e) {
       setFeed('Network error loading channels.');
     }
   }
+
   async function hist(quiet) {
     if (!desk.channelId) return;
     var g = gid();
     if (!g) return;
+
+    if (desk.histAbort) {
+      try { desk.histAbort.abort(); } catch (e) {}
+    }
+    var ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    desk.histAbort = ac;
+    var seq = ++desk.histSeq;
+
     try {
-      var out = await deskGet('/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(desk.channelId) + '?limit=50');
+      var path = '/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(desk.channelId) + '?limit=40';
+      var out = await deskGet(path, ac ? ac.signal : null);
+      if (seq !== desk.histSeq) return;
       if (!out.res.ok) {
         if (!quiet) {
           var det = (out.data && (out.data.error || out.data.detail)) || ('HTTP ' + out.res.status);
@@ -196,16 +274,25 @@
         return;
       }
       var msgs = (out.data.messages || out.data.history || []);
+      var sig = msgs.length + ':' + (msgs.length ? (msgs[msgs.length - 1].id || '') : '');
+      if (quiet && sig === desk.lastSig) return;
+      desk.lastSig = sig;
       desk.messages = msgs;
       renderMsgs(msgs);
       setPill('live', 'Live');
     } catch (e) {
+      if (e && e.name === 'AbortError') return;
       if (!quiet) setFeed('Network error loading messages.');
     }
   }
+
   function renderMsgs(msgs) {
     var f = $('desk-stream');
     if (!f) return;
+    var prevTop = f.scrollTop;
+    var prevHeight = f.scrollHeight;
+    var wasStick = desk.stickBottom;
+
     f.replaceChildren();
     if (!msgs.length) {
       f.append(el('div', 'desk-empty', 'No messages yet.'));
@@ -230,14 +317,22 @@
       row.append(body);
       f.append(row);
     });
-    if (desk.stickBottom) f.scrollTop = f.scrollHeight;
+
+    if (wasStick) {
+      f.scrollTop = f.scrollHeight;
+    } else {
+      var delta = f.scrollHeight - prevHeight;
+      f.scrollTop = prevTop + Math.max(0, delta);
+    }
   }
+
   async function doSend() {
     var input = $('desk-input');
     if (!input || !desk.channelId) return;
     var text = input.value.trim();
     if (!text) return;
     desk.busy = true;
+    desk.stickBottom = true;
     setComposer();
     try {
       var out = await deskPost(desk.channelId, { content: text });
@@ -253,24 +348,27 @@
     desk.busy = false;
     setComposer();
   }
+
   function tick() {
     if (desk.paused || !desk.channelId) return;
     if (document.hidden || document.visibilityState === 'hidden') return;
     hist(true);
   }
+
   function boot() {
     if (!$('overview-desk')) return;
     shell();
     var tries = 0;
     function retryLoad() {
       if (gid()) { loadCh(); return; }
-      if (tries < 80) { tries++; setTimeout(retryLoad, 400); }
+      if (tries < 80) { tries++; setTimeout(retryLoad, 300); }
       else setFeed('Waiting for server… open Overview after the panel finishes loading.');
     }
     retryLoad();
     if (desk.timer) clearInterval(desk.timer);
     desk.timer = setInterval(tick, POLL);
   }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
