@@ -135,8 +135,8 @@ async function listChannels(guild) {
     channels.push({
       id: ch.id,
       name: ch.name,
-      category: isForum ? (ch.name || 'Forum') : (ch.parent?.name || null),
-      categoryId: isForum ? ch.id : (ch.parentId || null),
+      category: (ch.parent && ch.parent.name) || null,
+      categoryId: ch.parentId || null,
       position: typeof ch.rawPosition === 'number' ? ch.rawPosition : (ch.position || 0),
       canSend: canSend(ch, me),
       isForum: !!isForum,
