@@ -20,8 +20,8 @@ const IMPACT_DOT = {
 const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const MAX_INLINE = 3;       // Discord shows at most 3 inline fields per row
-const MAX_FIELDS = 24;      // keep under 25; multiples of 3 look clean
+const MAX_INLINE = 3;
+const MAX_FIELDS = 24;
 
 function impactColor(guildId, impact) {
   try {
@@ -55,13 +55,11 @@ function codeBox(lines) {
   return '```\n' + body + '\n```';
 }
 
-/** One event → one inline field (name + value). */
 function eventField(e) {
   const flag = FLAG[e.currency] || '🏳️';
   const when = formatWhen(e.timestamp);
   const impact = IMPACT_DOT[e.impact] || '•';
   const title = `${e.currency} — ${e.title}`;
-  // Field names max 256
   const name = `${flag} ${title}`.slice(0, 256);
 
   const forecast = e.forecast != null && String(e.forecast).trim() !== '' ? String(e.forecast).trim() : null;
@@ -92,8 +90,6 @@ function topImpact(events) {
 }
 
 function padFieldsToRow(fields) {
-  // Discord only wraps every 3 inline fields — pad leftovers so a short row
-  // doesn't stretch a single card across the full width awkwardly.
   const out = fields.slice();
   const rem = out.length % MAX_INLINE;
   if (rem === 0) return out;
@@ -103,9 +99,6 @@ function padFieldsToRow(fields) {
   return out;
 }
 
-/**
- * @param {'week'|'day'|'release'|'reminder'} mode
- */
 function titleFor(mode, events, extra = {}) {
   if (mode === 'week') return 'High Impact news This week';
   if (mode === 'release') {
@@ -117,7 +110,6 @@ function titleFor(mode, events, extra = {}) {
       ? `⏰ In ${m}m · ${events.length} releases`
       : `⏰ In ${m}m`;
   }
-  // day
   if (extra.dayLabel) return `📌 ${extra.dayLabel}`;
   if (events[0]) {
     const w = formatWhen(events[0].timestamp);
@@ -126,10 +118,6 @@ function titleFor(mode, events, extra = {}) {
   return '📌 High impact';
 }
 
-/**
- * Build one or more embeds packing events in rows of up to 3.
- * @returns {import('discord.js').EmbedBuilder[]}
- */
 function buildGridEmbeds(guildId, events, { mode = 'day', minutes = null, dayLabel = null } = {}) {
   const list = Array.isArray(events) ? events.filter(Boolean) : [];
   if (!list.length) return [];
@@ -153,7 +141,6 @@ function buildGridEmbeds(guildId, events, { mode = 'day', minutes = null, dayLab
   });
 }
 
-/** Back-compat single event */
 function buildSingleEventEmbed(guildId, e, opts = {}) {
   const embeds = buildGridEmbeds(guildId, [e], {
     mode: opts.mode || 'day',
@@ -165,7 +152,6 @@ function buildSingleEventEmbed(guildId, e, opts = {}) {
   if (opts.footer) embed.setFooter({ text: String(opts.footer) });
   return embed;
 }
-
 
 function dayKeyOfTs(timestampMs) {
   const d = toDisplay(timestampMs);
@@ -207,6 +193,8 @@ function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
       embeds: [],
     }];
   }
+
+  // Chronological by day (first day of the week first)
   const byDay = new Map();
   const sorted = [...list].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
   for (const e of sorted) {
@@ -214,13 +202,17 @@ function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
     if (!byDay.has(k)) byDay.set(k, []);
     byDay.get(k).push(e);
   }
+
   const scopeTitle =
     scope === 'today' ? "Today's releases" :
     scope === 'tomorrow' ? "Tomorrow's releases" :
     'This week';
+
+  const ROW = 3; // events per visual row, then a V2 divider line
   const payloads = [];
   let kids = [];
   let firstInMsg = true;
+
   const flush = () => {
     if (!kids.length) return;
     payloads.push({ flags: IS_COMPONENTS_V2, components: [container(kids, accent)], embeds: [] });
@@ -233,22 +225,43 @@ function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
     kids.push(separator({ divider: true, spacing: 1 }));
     firstInMsg = false;
   };
+  const ensureRoom = (need, contLabel) => {
+    if (kids.length + need <= 38) return;
+    flush();
+    pushHeader();
+    if (contLabel) {
+      kids.push(text(contLabel + ' · cont.'));
+      kids.push(separator({ divider: false, spacing: 1 }));
+    }
+  };
+
   let dayIndex = 0;
   for (const [, dayEvents] of byDay) {
     pushHeader();
-    if (dayIndex > 0) kids.push(separator({ divider: true, spacing: 1 }));
+    // Divider between days
+    if (dayIndex > 0) {
+      ensureRoom(2, null);
+      kids.push(separator({ divider: true, spacing: 1 }));
+    }
+    ensureRoom(2, null);
     kids.push(text(dayLabelLine(dayEvents[0].timestamp)));
     kids.push(separator({ divider: false, spacing: 1 }));
+
+    // Walk events in rows of 3; after each full row add a V2 separator line
     for (let i = 0; i < dayEvents.length; i++) {
-      const nextCost = 1 + (i < dayEvents.length - 1 ? 1 : 0);
-      if (kids.length + nextCost > 38) {
-        flush();
-        pushHeader();
-        kids.push(text(dayLabelLine(dayEvents[i].timestamp) + ' · cont.'));
+      ensureRoom(2, dayLabelLine(dayEvents[i].timestamp));
+      kids.push(text(eventTextBlock(dayEvents[i])));
+      const endOfRow = ((i + 1) % ROW === 0);
+      const lastInDay = (i === dayEvents.length - 1);
+      if (endOfRow && !lastInDay) {
+        // Visible divider line between rows of 3
+        ensureRoom(1, dayLabelLine(dayEvents[i].timestamp));
+        kids.push(separator({ divider: true, spacing: 1 }));
+      } else if (!lastInDay) {
+        // Soft spacing within a row (no hard line)
+        ensureRoom(1, dayLabelLine(dayEvents[i].timestamp));
         kids.push(separator({ divider: false, spacing: 1 }));
       }
-      kids.push(text(eventTextBlock(dayEvents[i])));
-      if (i < dayEvents.length - 1) kids.push(separator({ divider: false, spacing: 1 }));
     }
     dayIndex += 1;
   }

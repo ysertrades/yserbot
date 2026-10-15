@@ -9,24 +9,17 @@ const { generateEconEventCard } = require('./econEventVisual');
 const econEmbed = require('./econEmbed');
 const { isFeatureEnabled } = require('./featureToggles');
 
-const TICK_INTERVAL_MS   = 5_000;   // tight enough to hit the release post within a few seconds of the exact minute
-const REMINDER_OFFSETS   = [15]; // minutes before release
-const STALE_MS           = 5 * 60 * 1000;      // reminders/releases more than this late are skipped, not fired stale
-const WEEKLY_STALE_MS    = 6 * 60 * 60 * 1000; // weekly summary can catch up up to 6h late (a restart shouldn't eat it)
-const FIRED_KEY_TTL_MS   = 9 * 24 * 60 * 60 * 1000; // prune fired-keys older than ~9 days (past any event they could reference)
+const TICK_INTERVAL_MS   = 5_000;
+const REMINDER_OFFSETS   = [15];
+const STALE_MS           = 5 * 60 * 1000;
+const WEEKLY_STALE_MS    = 6 * 60 * 60 * 1000;
+const FIRED_KEY_TTL_MS   = 9 * 24 * 60 * 60 * 1000;
 
-/**
- * The colour a reminder and its release are drawn in, by impact.
- *
- * Editable per guild from Appearance ("Impact colours"), falling back to the
- * shipped values — which are exactly the constants this used to hold.
- */
 function impactColor(guildId, impact) {
   const palette = messageStyle.paletteFor(guildId, 'econ.impact');
   return palette[impact] || palette.Low || '#8A90A0';
 }
 
-/** What the heading and the empty line call the span being posted. */
 const SCOPE_WORDS = {
   today:    { scope: "Today's",     when: 'today' },
   tomorrow: { scope: "Tomorrow's",  when: 'tomorrow' },
@@ -36,10 +29,6 @@ const SCOPE_WORDS = {
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES   = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// The event card's time chip and day dividers display in this offset by
-// default (no label shown — it's presented as the assumed house timezone,
-// not literal UTC) rather than raw UTC, since UTC read confusingly early
-// for the audience this is built for.
 const DISPLAY_OFFSET_MIN = -4 * 60; // UTC-4
 
 function toDisplayDate(timestampMs) {
@@ -50,15 +39,9 @@ function dayKeyOf(e) {
   return toDisplayDate(e.timestamp).toISOString().slice(0, 10);
 }
 
-// A light section divider between days in a multi-day (week) view — the
-// per-event card already shows its own day/time chip, so this exists purely
-// to make a full week scroll like an organized calendar instead of a flat
-// stream of cards.
 function buildDayHeaderEmbed(e, guild) {
   const d = toDisplayDate(e.timestamp);
   const label = `${WEEKDAY_NAMES[d.getUTCDay()]}, ${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`;
-  // Null when the guild has turned dividers off — the caller then runs the
-  // days together rather than inserting a blank embed between them.
   return messageStyle.build(guild.id, 'econ.day', {
     tokens: { server: guild.name, day: label, date: String(d.getUTCDate()) },
   });
@@ -72,9 +55,6 @@ function fmtEventTime(e) {
   return `${day} ${hh}:${mm}`;
 }
 
-// One generated visual card per event — QuantLab's light "Phantom" card
-// style — so a release reads at a glance without anyone having to open
-// the image.
 function buildEventCard(e, timeLabel) {
   const safeId    = (e.id || 'evt').replace(/[^a-zA-Z0-9]/g, '').slice(0, 24);
   const imageName = `econ_${safeId}_${Date.now()}_${Math.floor(Math.random() * 1e4)}.png`;
@@ -85,26 +65,16 @@ function buildEventCard(e, timeLabel) {
   return new AttachmentBuilder(buf, { name: imageName });
 }
 
-/** Tokens shared by the reminder and the release. */
 function eventTokens(e, guild) {
   const ts = Math.floor(e.timestamp / 1000);
   return {
     server: guild.name,
     event: e.title, currency: e.currency, impact: e.impact,
-    // Discord's own timestamp markup, so the countdown stays live in the
-    // posted message rather than freezing at whatever it said when sent.
     time: `<t:${ts}:t>`, relative: `<t:${ts}:R>`,
     forecast: e.forecast || '', previous: e.previous || '',
   };
 }
 
-/**
- * Builds one card, or null when that kind is switched off.
- *
- * The embed is built before the picture, deliberately: drawing an event card
- * is 60-210 ms of blocked thread, and a guild that has turned reminders off
- * should not pay for one it is never going to send.
- */
 function buildEventEmbed(key, e, guild, tokens, timeLabel) {
   if (e.impact === 'High' || e.impact === 'Medium') {
     const mode = key === 'econ.reminder' ? 'reminder' : key === 'econ.release' ? 'release' : 'day';
@@ -139,42 +109,25 @@ function buildReleaseEmbed(e, guild) {
   };
 }
 
-const MAX_EMBEDS_PER_MSG  = 9;  // Discord's real cap is 10 — leave headroom for a day-divider embed
-const MAX_EVENTS_RENDERED = 30; // hard safety cap so a huge, unfiltered week can't spam dozens of messages
+const MAX_EMBEDS_PER_MSG  = 9;
+const MAX_EVENTS_RENDERED = 30;
 
-// Classic embed grid: 3 events per ROW (Discord inline fields), earliest day first.
-// Returns an array of ready-to-send message payloads ({ embeds }).
+// Components V2 weekly summary: earliest day first, 3 events per row,
+// visible separator line between rows. Returns message payloads.
 function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
   const capped = (events || []).slice(0, MAX_EVENTS_RENDERED);
-  const sorted = [...capped].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-  const mode = (scope === 'today' || scope === 'tomorrow') ? 'day' : 'week';
-  const dayLabel =
-    scope === 'today' ? 'Today' :
-    scope === 'tomorrow' ? 'Tomorrow' :
-    null;
-  const embeds = econEmbed.buildGridEmbeds(guild.id, sorted, { mode, dayLabel });
-  if (!embeds.length) {
-    const { EmbedBuilder } = require('discord.js');
-    const words = scope === 'today' ? 'today' : scope === 'tomorrow' ? 'tomorrow' : 'this week';
-    return [{
-      embeds: [new EmbedBuilder()
-        .setColor(0x9397EE)
-        .setTitle(scope === 'today' ? "Today's releases" : scope === 'tomorrow' ? "Tomorrow's releases" : 'High Impact news This week')
-        .setDescription(`No matching releases for ${words}.`)
-        .setFooter({ text: 'quantlab · economic calendar' })],
-    }];
-  }
-  if ((events || []).length > MAX_EVENTS_RENDERED && embeds.length) {
+  const payloads = econEmbed.buildWeeklyV2Payloads(guild.id, capped, { scope });
+  if ((events || []).length > MAX_EVENTS_RENDERED && payloads.length) {
     const extra = events.length - MAX_EVENTS_RENDERED;
+    const last = payloads[payloads.length - 1];
     try {
-      const last = embeds[embeds.length - 1];
-      last.setFooter({ text: `quantlab · economic calendar · +${extra} more not shown` });
+      const { text, separator, container } = require('./componentsV2');
+      const accent = last.components?.[0]?.accent_color;
+      last.components.push(container([
+        separator({ divider: true, spacing: 1 }),
+        text(`-# +${extra} more not shown — narrow impact/currency filters`),
+      ], accent));
     } catch { /* */ }
-  }
-  // One message when possible (≤9 embeds); grid already packs 3 per row inside each embed
-  const payloads = [];
-  for (let i = 0; i < embeds.length; i += MAX_EMBEDS_PER_MSG) {
-    payloads.push({ embeds: embeds.slice(i, i + MAX_EMBEDS_PER_MSG) });
   }
   return payloads;
 }
@@ -190,14 +143,12 @@ function currentWeekSlot(weekday, hour, minute, offsetMinutes, now) {
 async function runTick(client) {
   const config = readJson('config.json', {});
   const now = Date.now();
-  let events = null; // lazy-loaded, shared across guilds this tick
+  let events = null;
   let changed = false;
 
   for (const guildId of Object.keys(config)) {
     const settings = config[guildId]?.econCalSettings;
     if (!settings?.enabled || !settings.channelId) continue;
-    // The Settings-tab master switch — off means the scheduler stays quiet
-    // here too, not just the /econcal command.
     if (!isFeatureEnabled(guildId, 'econ_calendar')) continue;
 
     const guild = client.guilds.cache.get(guildId);
@@ -225,11 +176,8 @@ async function runTick(client) {
         if (now < target || firedSet.has(key)) continue;
         firedSet.add(key);
         guildChanged = true;
-        if (now - target > STALE_MS) continue; // too late to be useful — mark fired, don't send
+        if (now - target > STALE_MS) continue;
 
-        // Null when reminders are switched off in Appearance. Still marked
-        // fired above, so switching them back on mid-week announces the
-        // releases still to come rather than the ones already gone.
         const built = buildReminderEmbed(e, offset, guild);
         if (!built) continue;
         const content = settings.roleId ? `<@&${settings.roleId}>` : undefined;
@@ -258,7 +206,6 @@ async function runTick(client) {
       }
     }
 
-    // Weekly summary auto-post
     const wp = settings.weeklyPost;
     if (wp?.enabled) {
       const slot = currentWeekSlot(wp.weekday, wp.hour, wp.minute, wp.offsetMinutes || 0, now);
@@ -273,8 +220,6 @@ async function runTick(client) {
     }
 
     if (guildChanged) {
-      // Prune fired-keys tied to events well outside this week's window —
-      // keeps the array from growing forever across weekly cache rotations.
       const prunedKeys = [...firedSet].filter(k => {
         const [id] = k.split('#');
         const ev = events.find(e2 => e2.id === id);
