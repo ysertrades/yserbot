@@ -83,6 +83,10 @@
     s.id = "shell-am-fix-style";
     s.textContent = [
       ".sidebar{border-right:none!important;box-shadow:none!important}",
+      ".section[data-active],.section .panel,.section .grid > *,.tiles > *,.grid > *{animation:none!important}",
+      ".workspace-body .section,.workspace-body .panel,.workspace-body .card{transform:none!important;filter:none!important}",
+      ".sidebar-nav.sections>button,.sections.sidebar-nav>button,#sections button{transition:none!important}",
+      ".sidebar-nav.sections>button .nav-ico-wrap,#sections button .nav-ico-wrap{transition:none!important}",
       ".workspace{margin:10px 12px 12px 4px!important;background:#0e0e0e!important;border:1px solid #1a1a1a!important;border-radius:16px!important;box-shadow:none!important}",
       ".workspace-body{padding:0 20px 28px!important;background:transparent!important}",
       ".workspace-body > .section{display:none!important;min-height:0!important}",
