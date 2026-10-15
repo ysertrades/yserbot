@@ -105,44 +105,82 @@
     chip.append(x);
   }
 
-  function openForwardPad(m) {
-    desk.forwardMsg = m || null;
-    var pad = $('desk-fwd-pad');
-    if (!pad) return;
-    var list = $('desk-fwd-list');
-    if (list) {
-      list.replaceChildren();
-      (desk.channels || []).forEach(function (c) {
-        if (!c || !c.id) return;
-        if (String(c.id) === String(desk.channelId)) return;
-        var b = el('button', 'desk-pad-ch', (c.isForum ? '' : '# ') + (c.name || c.id));
-        b.type = 'button';
-        b.addEventListener('click', function () {
-          doForward(c.id, desk.forwardMsg);
-        });
-        list.append(b);
-      });
-      if (!list.childNodes.length) {
-        list.append(el('p', 'muted', 'No other channels available.'));
-      }
-    }
-    pad.hidden = false;
-  }
+  var padTarget = null;
 
   function closeForwardPad() {
     desk.forwardMsg = null;
+    padTarget = null;
     var pad = $('desk-fwd-pad');
     if (pad) pad.hidden = true;
+    var go = $('desk-fwd-go'); if (go) go.disabled = true;
+    var note = $('desk-fwd-note'); if (note) note.value = '';
+    var list = $('desk-fwd-list');
+    if (list) list.querySelectorAll('.desk-pad-ch').forEach(function (x) { x.classList.remove('is-on'); });
+  }
+
+  function openForwardPad(m) {
+    desk.forwardMsg = m || null;
+    padTarget = null;
+    var pad = $('desk-fwd-pad');
+    if (!pad) return;
+
+    var prev = $('desk-fwd-preview');
+    if (prev) {
+      prev.textContent = ((m.author && m.author.name) || '?') + ': ' + String(m.content || '(attachment)').slice(0, 160);
+    }
+    var note = $('desk-fwd-note');
+    if (note) note.value = '';
+
+    var list = $('desk-fwd-list');
+    if (list) {
+      list.replaceChildren();
+      var groups = {}, order = [];
+      (desk.channels || []).forEach(function (c) {
+        if (!c || !c.id) return;
+        if (c.canSend === false) return;
+        var cat = (c.category && String(c.category).trim()) || 'Channels';
+        if (!groups[cat]) { groups[cat] = []; order.push(cat); }
+        groups[cat].push(c);
+      });
+      order.forEach(function (cat) {
+        list.append(el('div', 'desk-pad-cat', cat));
+        groups[cat].forEach(function (c) {
+          var label = (c.isForum ? '' : '# ') + (c.name || c.id);
+          var b = el('button', 'desk-pad-ch', label);
+          b.type = 'button';
+          b.dataset.id = c.id;
+          if (String(c.id) === String(desk.channelId)) b.classList.add('is-current');
+          b.addEventListener('click', function () {
+            list.querySelectorAll('.desk-pad-ch').forEach(function (x) { x.classList.remove('is-on'); });
+            b.classList.add('is-on');
+            padTarget = c.id;
+            var go = $('desk-fwd-go');
+            if (go) go.disabled = !padTarget;
+          });
+          list.append(b);
+        });
+      });
+      if (!list.childNodes.length) {
+        list.append(el('p', 'muted', 'No channels available.'));
+      }
+    }
+    var go = $('desk-fwd-go'); if (go) go.disabled = true;
+    pad.hidden = false;
   }
 
   async function doForward(targetId, m) {
-    if (!targetId || !m) return;
+    if (!targetId || !m || !m.id) return;
     desk.busy = true;
     setComposer();
     try {
-      var who = (m.author && m.author.name) || 'user';
-      var text = '**Forwarded from ' + who + ':**\n' + String(m.content || '').slice(0, 1800);
-      var out = await deskPost(targetId, { content: text });
+      var noteEl = $('desk-fwd-note');
+      var note = noteEl ? String(noteEl.value || '').trim().slice(0, 2000) : '';
+      var out = await deskPost(targetId, {
+        action: 'forward',
+        messageId: m.id,
+        sourceChannelId: desk.channelId,
+        content: note
+      });
       if (!out.res.ok || out.data.error) setPill('err', 'Forward failed');
       else setPill('live', 'Forwarded');
     } catch (e) {
@@ -306,14 +344,23 @@
       + '<div class="desk-pad-card">'
       + '<div class="desk-pad-head"><span>Forward message</span>'
       + '<button type="button" class="desk-pad-x" id="desk-fwd-x" aria-label="Close">x</button></div>'
+      + '<p class="desk-pad-preview muted" id="desk-fwd-preview"></p>'
+      + '<label class="desk-pad-note-label" for="desk-fwd-note">Add a note (optional - appears with the forward)</label>'
+      + '<textarea id="desk-fwd-note" class="desk-pad-note" rows="2" placeholder="@everyone check this out..."></textarea>'
       + '<div class="desk-pad-list" id="desk-fwd-list"></div>'
       + '<div class="desk-pad-foot">'
       + '<button type="button" class="btn small" id="desk-fwd-cancel">Cancel</button>'
+      + '<button type="button" class="btn primary small" id="desk-fwd-go" disabled>Forward here</button>'
       + '</div></div>';
     host.append(pad);
     pad.addEventListener('click', function (ev) { if (ev.target === pad) closeForwardPad(); });
     var fx = $('desk-fwd-x'); if (fx) fx.addEventListener('click', closeForwardPad);
     var fc = $('desk-fwd-cancel'); if (fc) fc.addEventListener('click', closeForwardPad);
+    var fg = $('desk-fwd-go');
+    if (fg) fg.addEventListener('click', function () {
+      if (!padTarget || !desk.forwardMsg) return;
+      doForward(padTarget, desk.forwardMsg);
+    });
 
     var composer = el('div', 'desk-composer');
     var input = document.createElement('textarea');
