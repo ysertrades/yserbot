@@ -109,10 +109,12 @@
 
   function closeForwardPad() {
     desk.forwardMsg = null;
+    desk.forwardSourceChannelId = null;
     padTarget = null;
     var pad = $('desk-fwd-pad');
     if (pad) pad.hidden = true;
-    var go = $('desk-fwd-go'); if (go) go.disabled = true;
+    var go = $('desk-fwd-go');
+    if (go) { go.disabled = true; go.textContent = 'Forward here'; }
     var note = $('desk-fwd-note'); if (note) note.value = '';
     var list = $('desk-fwd-list');
     if (list) list.querySelectorAll('.desk-pad-ch').forEach(function (x) { x.classList.remove('is-on'); });
@@ -120,6 +122,7 @@
 
   function openForwardPad(m) {
     desk.forwardMsg = m || null;
+    desk.forwardSourceChannelId = desk.channelId || null;
     padTarget = null;
     var pad = $('desk-fwd-pad');
     if (!pad) return;
@@ -169,26 +172,42 @@
   }
 
   async function doForward(targetId, m) {
-    if (!targetId || !m || !m.id) return;
+    if (!targetId || !m || !m.id) {
+      setPill('err', 'Pick a channel');
+      return;
+    }
+    var sourceId = desk.forwardSourceChannelId || desk.channelId;
+    if (!sourceId) {
+      setPill('err', 'No source channel');
+      return;
+    }
     desk.busy = true;
     setComposer();
+    var go = $('desk-fwd-go');
+    if (go) { go.disabled = true; go.textContent = 'Forwarding...'; }
     try {
       var noteEl = $('desk-fwd-note');
       var note = noteEl ? String(noteEl.value || '').trim().slice(0, 2000) : '';
       var out = await deskPost(targetId, {
         action: 'forward',
-        messageId: m.id,
-        sourceChannelId: desk.channelId,
+        messageId: String(m.id),
+        sourceChannelId: String(sourceId),
         content: note
       });
-      if (!out.res.ok || out.data.error) setPill('err', 'Forward failed');
-      else setPill('live', 'Forwarded');
+      if (!out.res.ok || out.data.error) {
+        var det = (out.data && (out.data.detail || out.data.error)) || ('HTTP ' + out.res.status);
+        setPill('err', 'Forward failed: ' + String(det).slice(0, 80));
+        if (go) { go.disabled = !padTarget; go.textContent = 'Forward here'; }
+      } else {
+        setPill('live', 'Forwarded');
+        closeForwardPad();
+      }
     } catch (e) {
       setPill('err', 'Forward error');
+      if (go) { go.disabled = !padTarget; go.textContent = 'Forward here'; }
     }
     desk.busy = false;
     setComposer();
-    closeForwardPad();
   }
 
   function setFeed(text) {
@@ -554,14 +573,15 @@
       var body = { content: text };
       if (desk.replyTo) body.replyTo = desk.replyTo;
       var out = await deskPost(desk.channelId, body);
-      if (out.res.ok) {
+      if (out.res.ok && !out.data.error) {
         input.value = '';
         desk.replyTo = null;
         desk.replyName = '';
         paintReplyChip();
         await hist(true);
       } else {
-        setPill('err', 'Send failed');
+        var det = (out.data && (out.data.detail || out.data.error)) || ('HTTP ' + out.res.status);
+        setPill('err', 'Send failed: ' + String(det).slice(0, 80));
       }
     } catch (e) {
       setPill('err', 'Send error');
