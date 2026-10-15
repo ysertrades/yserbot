@@ -142,28 +142,39 @@ function buildReleaseEmbed(e, guild) {
 const MAX_EMBEDS_PER_MSG  = 9;  // Discord's real cap is 10 — leave headroom for a day-divider embed
 const MAX_EVENTS_RENDERED = 30; // hard safety cap so a huge, unfiltered week can't spam dozens of messages
 
-// One visual card per event (no click-to-open needed), batched into
-// Discord-message-sized groups — `title`/`emptyText` let callers reuse this
-// for a single-day ("Today"/"Tomorrow") summary too. When the event list
-// spans more than one calendar day (the "This Week" / scheduled weekly
-// post), a day-divider embed is inserted at each day boundary so the whole
-// week reads like an organized calendar instead of a flat stream of cards
-// — single-day views skip it since every card already shares the same day.
-// Returns an array of ready-to-send message payloads ({ embeds, files }).
+// Classic embed grid: 3 events per ROW (Discord inline fields), earliest day first.
+// Returns an array of ready-to-send message payloads ({ embeds }).
 function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
   const capped = (events || []).slice(0, MAX_EVENTS_RENDERED);
-  const payloads = econEmbed.buildWeeklyV2Payloads(guild.id, capped, { scope });
-  if ((events || []).length > MAX_EVENTS_RENDERED && payloads.length) {
+  const sorted = [...capped].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  const mode = (scope === 'today' || scope === 'tomorrow') ? 'day' : 'week';
+  const dayLabel =
+    scope === 'today' ? 'Today' :
+    scope === 'tomorrow' ? 'Tomorrow' :
+    null;
+  const embeds = econEmbed.buildGridEmbeds(guild.id, sorted, { mode, dayLabel });
+  if (!embeds.length) {
+    const { EmbedBuilder } = require('discord.js');
+    const words = scope === 'today' ? 'today' : scope === 'tomorrow' ? 'tomorrow' : 'this week';
+    return [{
+      embeds: [new EmbedBuilder()
+        .setColor(0x9397EE)
+        .setTitle(scope === 'today' ? "Today's releases" : scope === 'tomorrow' ? "Tomorrow's releases" : 'High Impact news This week')
+        .setDescription(`No matching releases for ${words}.`)
+        .setFooter({ text: 'quantlab · economic calendar' })],
+    }];
+  }
+  if ((events || []).length > MAX_EVENTS_RENDERED && embeds.length) {
     const extra = events.length - MAX_EVENTS_RENDERED;
-    const last = payloads[payloads.length - 1];
     try {
-      const { text, separator, container } = require('./componentsV2');
-      const accent = last.components?.[0]?.accent_color;
-      last.components.push(container([
-        separator({ divider: true, spacing: 1 }),
-        text(`-# +${extra} more not shown — narrow impact/currency filters`),
-      ], accent));
+      const last = embeds[embeds.length - 1];
+      last.setFooter({ text: `quantlab · economic calendar · +${extra} more not shown` });
     } catch { /* */ }
+  }
+  // One message when possible (≤9 embeds); grid already packs 3 per row inside each embed
+  const payloads = [];
+  for (let i = 0; i < embeds.length; i += MAX_EMBEDS_PER_MSG) {
+    payloads.push({ embeds: embeds.slice(i, i + MAX_EMBEDS_PER_MSG) });
   }
   return payloads;
 }
