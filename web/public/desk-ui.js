@@ -82,6 +82,17 @@
     f.replaceChildren();
     f.append(el('div', 'desk-empty', text || ''));
   }
+  function syncCselectLabel(sel) {
+    if (!sel) return;
+    try {
+      var wrap = sel.closest('.cselect');
+      if (!wrap) return;
+      var val = wrap.querySelector('.cselect-value');
+      if (!val) return;
+      var opt = sel.options[sel.selectedIndex];
+      val.textContent = opt ? (opt.textContent || opt.value || '—') : '—';
+    } catch (e) {}
+  }
   function setComposer() {
     var input = $('desk-input');
     var send = $('desk-send');
@@ -124,8 +135,16 @@
     desk.lastSig = '';
     var chSel = $('desk-channel-sel');
     var foSel = $('desk-forum-sel');
-    if (source === 'channel' && foSel) foSel.value = '';
-    if (source === 'forum' && chSel) chSel.value = '';
+    if (source === 'channel' && foSel) {
+      foSel.value = '';
+      syncCselectLabel(foSel);
+    }
+    if (source === 'forum' && chSel) {
+      chSel.value = '';
+      syncCselectLabel(chSel);
+    }
+    if (source === 'channel' && chSel) syncCselectLabel(chSel);
+    if (source === 'forum' && foSel) syncCselectLabel(foSel);
     if (desk.channelId) {
       setFeed('Loading messages…');
       hist(false);
@@ -163,7 +182,6 @@
     chSel.id = 'desk-channel-sel';
     chSel.className = 'desk-channel-sel lvl-input';
     chSel.setAttribute('aria-label', 'Text channels');
-    chSel.setAttribute('data-cselect', 'native');
     var chPh = document.createElement('option');
     chPh.value = '';
     chPh.textContent = 'Text channels…';
@@ -177,7 +195,6 @@
     foSel.id = 'desk-forum-sel';
     foSel.className = 'desk-forum-sel lvl-input';
     foSel.setAttribute('aria-label', 'Forum posts');
-    foSel.setAttribute('data-cselect', 'native');
     var foPh = document.createElement('option');
     foPh.value = '';
     foPh.textContent = 'Forum posts…';
@@ -221,6 +238,11 @@
     setFeed('Loading channels…');
     setComposer();
     wireScroll();
+    try {
+      if (typeof window.enhanceSelects === 'function') {
+        window.enhanceSelects(host);
+      }
+    } catch (e) {}
   }
 
   async function loadCh() {
@@ -237,6 +259,13 @@
       var forums = desk.channels.filter(function (c) { return !!c.isForum; });
       fillSelect($('desk-channel-sel'), textCh, 'Text channels…');
       fillSelect($('desk-forum-sel'), forums, 'Forum posts…');
+      try {
+        if (typeof window.enhanceSelects === 'function') {
+          window.enhanceSelects($('overview-desk') || document);
+        }
+      } catch (e) {}
+      syncCselectLabel($('desk-channel-sel'));
+      syncCselectLabel($('desk-forum-sel'));
       if (!desk.channelId) {
         setFeed((textCh.length || forums.length)
           ? 'Select a channel or forum post to open the desk.'
