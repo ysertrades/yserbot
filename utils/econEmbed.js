@@ -72,9 +72,9 @@ function eventField(e) {
   ].filter(Boolean);
 
   const parts = [
-    `📅 ${when.dateLine}`,
+    `📅 ${when.dayName}, ${when.dateLine}`,
     `🕐 ${when.timeLine}`,
-    `${impact} **${String(e.impact || 'Low').toUpperCase()}** impact`,
+    `${impact} **${String(e.impact || 'Low').toUpperCase()}**`,
   ];
   if (boxLines.length) parts.push(codeBox(boxLines));
 
@@ -240,8 +240,6 @@ function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
     kids.push(text(dayLabelLine(dayEvents[0].timestamp)));
     kids.push(separator({ divider: false, spacing: 1 }));
     for (let i = 0; i < dayEvents.length; i++) {
-      // Keep the whole week in ONE message when possible (container ≤ 40 kids).
-      // Only split if we would exceed Discord's hard nested-component limit.
       const nextCost = 1 + (i < dayEvents.length - 1 ? 1 : 0);
       if (kids.length + nextCost > 38) {
         flush();
