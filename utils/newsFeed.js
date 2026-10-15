@@ -1,42 +1,30 @@
 'use strict';
 
-// Polls Financial Juice's public RSS feed (financialjuice.com/feed.ashx) for
-// real-time market-moving headlines and relays new ones into each guild's
-// configured news channel as they're published. No API key / paid tier
-// needed — it's a free, public feed that updates within seconds of a
-// headline going out.
-
 const { readJson, writeJson } = require('./jsonStorage');
 const { TOPICS, expandTopicKeywords, textMatchesKeywords } = require('./newsTopics');
 const { isFeatureEnabled } = require('./featureToggles');
-// NOTE: do not top-level require newsCardVisual / embedBuilder / messageStyle —
-// they are unused on the Components V2 path. A missing or circular dep there
-// used to make this module load as {} and blow up ready.js with
-// "startNewsFeedRunner is not a function".
 
 const FEED_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const POLL_INTERVAL_MS = Math.min(300_000, Math.max(10_000, Number(process.env.NEWSFEED_POLL_MS) || 10_000));
 const MAX_POST_PER_TICK = 20;
 const BREAKING_PATTERN = /\b(breaking|urgent)\b/i;
 const DATA_PRINT_PATTERN = /\b(actual|forecast|previous|mom|yoy|y\/y|m\/m|cpi|ppi|nfp|nonfarm|gdp|retail sales|jobless|claims|pmi|ism|fomc|rate decision)\b/i;
+const PICTURE_BUDGET_MS = 1200;
+
 function isDataPrintHeadline(item) {
   const title = (item && item.title) ? String(item.title) : '';
   return DATA_PRINT_PATTERN.test(title);
 }
-const PICTURE_BUDGET_MS = 1200;
 
 function decodeEntities(str) {
   let prev = str;
   for (let i = 0; i < 5; i++) {
     const next = prev
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
-      .replace(/&#39;/g, "'")
+      .replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '"')
+      .replace(/'/g, "'").replace(/&#39;/g, "'")
       .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
       .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-      .replace(/&amp;/g, '&');
+      .replace(/&/g, '&');
     if (next === prev) break;
     prev = next;
   }
@@ -67,7 +55,7 @@ function extractAllImages(block, description) {
   const seen = new Set();
   const push = (u) => {
     if (!u || typeof u !== 'string') return;
-    const url = u.trim().replace(/&amp;/g, '&');
+    const url = u.trim().replace(/&/g, '&');
     if (!/^https?:\/\//i.test(url) || seen.has(url)) return;
     seen.add(url);
     out.push(url);
@@ -76,14 +64,6 @@ function extractAllImages(block, description) {
   if (enc) push(enc);
   const fromHtml = extractImageFromHtml(description || '');
   if (fromHtml) push(fromHtml);
-  const encRe = /<enclosure\b[^>]*\/?>/gi;
-  let em;
-  while ((em = encRe.exec(block))) {
-    const urlMatch = em[0].match(/\burl=["']([^"']+)["']/i);
-    const typeMatch = em[0].match(/\btype=["']([^"']+)["']/i);
-    if (typeMatch && !/^image\//i.test(typeMatch[1])) continue;
-    if (urlMatch) push(decodeEntities(urlMatch[1]));
-  }
   return out;
 }
 function extractVideo(block, description) {
@@ -122,9 +102,7 @@ function parseFeedItems(xml) {
     const pubRaw = extractTag(block, 'pubDate');
     const pubDate = pubRaw ? new Date(pubRaw) : new Date();
     const description = extractTag(block, 'description');
-    const body = description
-      ? description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-      : '';
+    const body = description ? description.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
     const images = extractAllImages(block, description);
     const imageUrl = images[0] || null;
     const video = extractVideo(block, description);
@@ -140,33 +118,28 @@ async function fetchFeedItems() {
   const res = await fetch(FEED_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' } });
   if (res.status === 429) {
     const retryAfterSec = parseInt(res.headers.get('retry-after'), 10);
-    const waitMs = Number.isFinite(retryAfterSec)
-      ? Math.min(45_000, Math.max(12_000, retryAfterSec * 1000))
-      : 15_000;
+    const waitMs = Number.isFinite(retryAfterSec) ? Math.min(45_000, Math.max(12_000, retryAfterSec * 1000)) : 15_000;
     blockedUntil = Date.now() + waitMs;
     console.warn(`[NEWSFEED] Rate-limited by Financial Juice — pausing ${Math.round(waitMs / 1000)}s`);
     return null;
   }
   blockedUntil = 0;
   if (!res.ok) throw new Error(`Financial Juice feed request failed: ${res.status}`);
-  const xml = await res.text();
-  return parseFeedItems(xml);
+  return parseFeedItems(await res.text());
 }
 
 const SOURCES = {
   financialjuice: {
     key: 'financialjuice',
     label: 'Financial Juice',
-    blurb: 'Real-time market-moving headlines, seconds after they break',
+    blurb: 'Real-time market-moving headlines',
     emoji: '⚡',
     pollMs: POLL_INTERVAL_MS,
     fetch: fetchFeedItems,
   },
 };
 const DEFAULT_SOURCES = ['financialjuice'];
-function listSources() {
-  return Object.values(SOURCES);
-}
+function listSources() { return Object.values(SOURCES); }
 
 const ARTICLE_IMAGE_BASE = 'https://www.financialjuice.com/images/';
 const IMAGE_CHECK_TIMEOUT_MS = 4000;
@@ -176,8 +149,7 @@ const ARTICLE_IMAGE_CACHE_MAX = 500;
 
 async function resolveArticleImage(item, source = SOURCES.financialjuice) {
   if (item.imageUrl) return item.imageUrl;
-  if (source.key !== 'financialjuice') return null;
-  if (!item.guid) return null;
+  if (source.key !== 'financialjuice' || !item.guid) return null;
   const cached = articleImageCache.get(item.guid);
   if (cached && (Date.now() - cached.at) < ARTICLE_IMAGE_CACHE_TTL_MS) {
     item._pictureChecked = true;
@@ -192,14 +164,11 @@ async function resolveArticleImage(item, source = SOURCES.financialjuice) {
     const timeout = setTimeout(() => controller.abort(), IMAGE_CHECK_TIMEOUT_MS);
     const url = `${ARTICLE_IMAGE_BASE}${encodeURIComponent(item.guid)}.png`;
     const res = await fetch(url, {
-      method: 'HEAD',
-      signal: controller.signal,
+      method: 'HEAD', signal: controller.signal,
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' },
     }).finally(() => clearTimeout(timeout));
     const ct = (res.headers.get('content-type') || '').toLowerCase();
-    if (res.ok && (!ct || ct.startsWith('image/'))) {
-      item._resolvedImage = url;
-    }
+    if (res.ok && (!ct || ct.startsWith('image/'))) item._resolvedImage = url;
   } catch { /* skip */ }
   if (articleImageCache.size >= ARTICLE_IMAGE_CACHE_MAX) articleImageCache.clear();
   articleImageCache.set(item.guid, { url: item._resolvedImage, at: Date.now() });
@@ -208,4 +177,305 @@ async function resolveArticleImage(item, source = SOURCES.financialjuice) {
 
 const ogImageCache = new Map();
 const OG_CACHE_MAX = 500;
-const OG_MAX_BYTES =  Troubled truncation here intentionally not - see artifacts
+const OG_MAX_BYTES = 65536;
+const OG_TIMEOUT_MS = 5000;
+const OG_META_RE = /<meta[^>]+(?:property|name)=["'](og:image(?::secure_url|:url)?|twitter:image(?::src)?)["'][^>]*>/gi;
+
+function parseOgImage(html, baseUrl) {
+  OG_META_RE.lastIndex = 0;
+  let m;
+  while ((m = OG_META_RE.exec(html))) {
+    const tag = m[0];
+    const content = tag.match(/\bcontent=["']([^"']+)["']/i);
+    if (!content) continue;
+    try {
+      return new URL(content[1].trim(), baseUrl).href;
+    } catch (_) {}
+  }
+  return null;
+}
+
+async function resolveLinkBanner(pageUrl) {
+  if (!pageUrl || !/^https:\/\//i.test(pageUrl)) return null;
+  if (ogImageCache.has(pageUrl)) return ogImageCache.get(pageUrl);
+  let image = null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), OG_TIMEOUT_MS);
+    const res = await fetch(pageUrl, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)', Accept: 'text/html' },
+      redirect: 'follow',
+    }).catch(err => { throw err; });
+    try {
+      if (res.ok && /text\/html|application\/xhtml/i.test(res.headers.get('content-type') || '')) {
+        let html = '';
+        for await (const chunk of res.body) {
+          html += Buffer.from(chunk).toString('utf8');
+          if (html.length >= OG_MAX_BYTES || /<\/head>/i.test(html)) break;
+        }
+        image = parseOgImage(html, res.url || pageUrl);
+      }
+    } finally {
+      clearTimeout(timeout);
+      controller.abort();
+    }
+  } catch { /* no banner */ }
+  if (ogImageCache.size >= OG_CACHE_MAX) ogImageCache.clear();
+  ogImageCache.set(pageUrl, image);
+  return image;
+}
+
+const YT_THUMB_TIMEOUT_MS = 4000;
+const YT_THUMB_CACHE_MAX = 500;
+const ytThumbCache = new Map();
+async function headOk(url) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), YT_THUMB_TIMEOUT_MS);
+    const res = await fetch(url, { method: 'HEAD', signal: controller.signal }).finally(() => clearTimeout(timeout));
+    return res.ok;
+  } catch { return false; }
+}
+async function resolveYouTubeThumb(videoId) {
+  if (ytThumbCache.has(videoId)) return ytThumbCache.get(videoId);
+  let chosen = null;
+  for (const size of ['maxresdefault', 'hqdefault']) {
+    const url = `https://i.ytimg.com/vi/${videoId}/${size}.jpg`;
+    if (await headOk(url)) { chosen = url; break; }
+  }
+  if (ytThumbCache.size >= YT_THUMB_CACHE_MAX) ytThumbCache.clear();
+  ytThumbCache.set(videoId, chosen);
+  return chosen;
+}
+
+async function resolvePicture(item, source) {
+  const fjImg = await resolveArticleImage(item, source || SOURCES.financialjuice);
+  if (fjImg) return fjImg;
+  return (item.video && await resolveYouTubeThumb(item.video.id))
+    || (item.source && await resolveLinkBanner(item.source.url))
+    || null;
+}
+
+function withBudget(promise, ms) {
+  let timer;
+  const capped = new Promise(resolve => {
+    timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise.catch(() => null), capped]).finally(() => clearTimeout(timer));
+}
+
+function isTruthSocialItem(item) {
+  return !!(item && (item.truthSocial || /truth\s*social/i.test(item.title || '') || /truthsocial\.com/i.test(item.link || '')));
+}
+
+async function buildNewsEmbed(item, source = SOURCES.financialjuice, guildId = null) {
+  const v2 = await buildNewsV2(item, source, guildId);
+  if (!v2) return null;
+  return { embed: null, v2, attachment: null };
+}
+
+async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null) {
+  const { IS_COMPONENTS_V2, text, separator, button, row, container } = require('./componentsV2');
+  const isBreaking = BREAKING_PATTERN.test(item.title || '');
+  const isTruth = item.truthSocial || isTruthSocialItem(item);
+  const fjLink = (item.link && /^https:\/\//i.test(item.link)) ? item.link : null;
+  const headlineUrl = item.video?.url || fjLink || item.source?.url || null;
+
+  const imageList = [];
+  const seen = new Set();
+  const pushImg = (u) => {
+    if (!u || typeof u !== 'string') return;
+    const url = u.trim().replace(/&/g, '&');
+    if (!/^https:\/\//i.test(url) || seen.has(url)) return;
+    seen.add(url);
+    imageList.push(url);
+  };
+  for (const u of [...(item.images || []), item.imageUrl].filter(Boolean)) pushImg(u);
+  if (!imageList.length) {
+    try {
+      const resolved = await withBudget(resolvePicture(item, source), Math.min(PICTURE_BUDGET_MS, 1200));
+      pushImg(resolved);
+    } catch (_) {}
+  }
+  const galleryUrls = imageList.slice(0, 1);
+
+  let accent = 0x5865F2;
+  if (isBreaking) accent = 0xED4245;
+  if (isTruth) accent = 0xF0B232;
+
+  const kids = [];
+  let badge;
+  if (isBreaking) badge = '🔴 **BREAKING**';
+  else if (isTruth) badge = '🟡 **TRUTH SOCIAL**';
+  else badge = '⚡ **LIVE**';
+  kids.push(text(`${badge} · ${source.label || 'Financial Juice'}`));
+  kids.push(separator({ divider: true, spacing: 1 }));
+  kids.push(text(isTruth ? `### ${item.title}` : `## ${item.title}`));
+  if (item.body && item.body !== item.title) {
+    const body = String(item.body).slice(0, 1800).trim();
+    if (body) kids.push(text(body));
+  }
+  if (galleryUrls.length) {
+    kids.push({ type: 12, items: galleryUrls.map((url) => ({ media: { url } })) });
+  }
+  kids.push(separator({ divider: true, spacing: 1 }));
+  const buttons = [];
+  if (headlineUrl && /^https:\/\//i.test(headlineUrl)) {
+    buttons.push(button({ label: 'Financial Juice', style: 5, url: fjLink || headlineUrl }));
+  }
+  if (item.link && item.link !== headlineUrl && /^https:\/\//i.test(item.link)) {
+    buttons.push(button({ label: 'Financial Juice', style: 5, url: item.link }));
+  }
+  if (buttons.length) kids.push(row(...buttons.slice(0, 5)));
+  const when = item.pubDate ? new Date(item.pubDate) : new Date();
+  const ts = when.toLocaleString('en-US', {
+    timeZone: 'America/New_York', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+  kids.push(text(`-# ${ts} ET · via Financial Juice${isTruth ? ' · Trump / Truth Social' : ''}`));
+  return { flags: IS_COMPONENTS_V2, components: [container(kids, accent)] };
+}
+
+const sourceCache = new Map();
+const POLL_SLACK_MS = 1500;
+
+async function getSourceItems(source) {
+  const cached = sourceCache.get(source.key);
+  if (cached && Date.now() - cached.fetchedAt < source.pollMs - POLL_SLACK_MS) return cached.items;
+  const startedAt = Date.now();
+  try {
+    const items = await source.fetch();
+    if (items) sourceCache.set(source.key, { items, fetchedAt: startedAt });
+    return items;
+  } catch (err) {
+    console.error(`[NEWSFEED] ${source.key} fetch failed:`, err.message);
+    return cached ? cached.items : null;
+  }
+}
+
+function cursorFor(settings, key) {
+  if (settings.lastGuids && settings.lastGuids[key]) return settings.lastGuids[key];
+  if (key === 'financialjuice' && settings.lastGuid) return settings.lastGuid;
+  return null;
+}
+
+function topicAllows(item, settings) {
+  const picked = Array.isArray(settings.topics) ? settings.topics : [];
+  if (picked.length === 0 || picked.length >= TOPICS.length) return true;
+  const words = expandTopicKeywords(picked);
+  return textMatchesKeywords(item.title, item.body, words);
+}
+
+function sourcesFor(settings) {
+  const picked = Array.isArray(settings.sources) ? settings.sources : DEFAULT_SOURCES;
+  return picked.filter(k => SOURCES[k]);
+}
+
+async function runTick(client) {
+  const config = readJson('config.json', {});
+  let changed = false;
+  for (const guildId of Object.keys(config)) {
+    if (!isFeatureEnabled(guildId, 'newsfeed')) continue;
+    const settings = config[guildId]?.newsFeedSettings;
+    if (!settings || !settings.channelId) continue;
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) continue;
+    const channel = guild.channels.cache.get(settings.channelId);
+    if (!channel || !channel.isTextBased?.()) continue;
+
+    for (const key of sourcesFor(settings)) {
+      const source = SOURCES[key];
+      const items = await getSourceItems(source);
+      if (!items || items.length === 0) continue;
+
+      const cursor = cursorFor(settings, key);
+      let newer;
+      if (!cursor) {
+        newer = [];
+      } else {
+        const idx = items.findIndex(it => it.guid === cursor);
+        newer = idx < 0 ? items.slice(0, 5) : items.slice(0, idx);
+      }
+
+      const matched = newer.filter(it => topicAllows(it, settings));
+      const chronological = matched.slice().reverse();
+      if (chronological.length === 0) {
+        if (!cursor && items[0]) {
+          if (!settings.lastGuids) settings.lastGuids = {};
+          settings.lastGuids[key] = items[0].guid;
+          if (key === 'financialjuice') settings.lastGuid = items[0].guid;
+          changed = true;
+        }
+        continue;
+      }
+
+      const batch = chronological.slice(0, MAX_POST_PER_TICK);
+      const cards = await Promise.all(
+        batch.map(async (item) => {
+          try {
+            return await buildNewsV2(item, source, guildId);
+          } catch (err) {
+            console.warn('[NEWSFEED] build failed:', err.message);
+            return null;
+          }
+        }),
+      );
+      for (const payload of cards) {
+        if (!payload || !payload.components) continue;
+        await channel.send({
+          flags: payload.flags,
+          components: payload.components,
+        }).catch((err) => console.warn('[NEWSFEED] send failed:', err.message));
+      }
+
+      if (!settings.lastGuids) settings.lastGuids = {};
+      if (chronological.length > batch.length && batch.length > 0) {
+        const lastPosted = batch[batch.length - 1];
+        settings.lastGuids[key] = lastPosted.guid;
+        if (key === 'financialjuice') settings.lastGuid = lastPosted.guid;
+      } else {
+        settings.lastGuids[key] = items[0].guid;
+        if (key === 'financialjuice') settings.lastGuid = items[0].guid;
+      }
+      changed = true;
+    }
+  }
+  if (changed) writeJson('config.json', config);
+}
+
+function startNewsFeedRunner(client) {
+  console.log(`[NEWSFEED] Polling every ${POLL_INTERVAL_MS / 1000}s (set NEWSFEED_POLL_MS to change)`);
+  let timer = null;
+  let running = false;
+  const schedule = (ms) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(tick, Math.max(500, ms));
+  };
+  const tick = async () => {
+    if (running) {
+      schedule(POLL_INTERVAL_MS);
+      return;
+    }
+    running = true;
+    const t0 = Date.now();
+    try {
+      await runTick(client);
+    } catch (err) {
+      console.error('[NEWSFEED RUNNER ERROR]', err);
+    } finally {
+      running = false;
+      const elapsed = Date.now() - t0;
+      const wait = Math.max(500, POLL_INTERVAL_MS - elapsed);
+      const blockedLeft = typeof blockedUntil === 'number' ? blockedUntil - Date.now() : 0;
+      schedule(blockedLeft > 0 ? blockedLeft : wait);
+    }
+  };
+  tick();
+}
+
+module.exports = {
+  startNewsFeedRunner, runTick, parseFeedItems, buildNewsEmbed, buildNewsV2,
+  SOURCES, listSources, DEFAULT_SOURCES,
+};
