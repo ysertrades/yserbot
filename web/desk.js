@@ -274,18 +274,30 @@ async function forwardMessage(guild, targetChannelId, body = {}) {
   if (!canSend(targetCh, me)) return { error: 'no_permission' };
   try {
     const m = await sourceCh.messages.fetch(String(messageId));
-    const refType = (MessageReferenceType && MessageReferenceType.Forward) || 1;
-    const payload = {
-      messageReference: {
-        messageId: m.id,
-        channelId: sourceCh.id,
-        guildId: guild.id,
-        type: refType,
-      },
-    };
-    const noteText = String(note || '').trim();
-    if (noteText) payload.content = noteText.slice(0, 500);
-    const sent = await targetCh.send(payload);
+    let sent = null;
+    // Prefer native Message#forward (discord.js >= 14.18) — true Discord forward
+    if (typeof m.forward === 'function') {
+      sent = await m.forward(targetCh);
+    } else {
+      const refType = (MessageReferenceType && MessageReferenceType.Forward) || 1;
+      sent = await targetCh.send({
+        messageReference: {
+          messageId: m.id,
+          channelId: sourceCh.id,
+          guildId: guild.id,
+          type: refType,
+        },
+      });
+    }
+    // Optional note is a separate message after the forward (Discord UI style)
+    const noteText = String(note || '').trim().slice(0, 500);
+    if (noteText) {
+      try {
+        await targetCh.send({ content: noteText, reply: { messageReference: sent.id, failIfNotExists: false } });
+      } catch (noteErr) {
+        console.warn('[desk] forward note failed:', noteErr.message || noteErr);
+      }
+    }
     return { ok: true, message: serializeMessage(sent) };
   } catch (err) {
     console.warn('[desk] forward failed:', err.message || err);
@@ -311,13 +323,24 @@ async function sendAsBot(guild, channelId, body = {}) {
     : null;
   const payload = { content: text.slice(0, 2000) };
   if (replyTo) {
+    // discord.js v14 accepts either reply.messageReference or top-level messageReference
     payload.reply = { messageReference: replyTo, failIfNotExists: false };
+    payload.messageReference = { messageId: replyTo, failIfNotExists: false };
   }
   try {
     const msg = await ch.send(payload);
     return { ok: true, message: serializeMessage(msg) };
   } catch (err) {
     console.warn('[desk] send failed:', err.message || err);
+    // Retry without reply if the referenced message is gone
+    if (replyTo) {
+      try {
+        const msg = await ch.send({ content: text.slice(0, 2000) });
+        return { ok: true, message: serializeMessage(msg), warning: 'reply_target_missing' };
+      } catch (err2) {
+        return { error: 'send_failed', detail: String(err2.message || err2).slice(0, 140) };
+      }
+    }
     return { error: 'send_failed', detail: String(err.message || err).slice(0, 140) };
   }
 }
