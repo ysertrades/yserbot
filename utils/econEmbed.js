@@ -236,11 +236,14 @@ function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
   let dayIndex = 0;
   for (const [, dayEvents] of byDay) {
     pushHeader();
-    if (dayIndex > 0) kids.push(separator({ divider: true, spacing: 2 }));
+    if (dayIndex > 0) kids.push(separator({ divider: true, spacing: 1 }));
     kids.push(text(dayLabelLine(dayEvents[0].timestamp)));
     kids.push(separator({ divider: false, spacing: 1 }));
     for (let i = 0; i < dayEvents.length; i++) {
-      if (kids.length >= 12) {
+      // Keep the whole week in ONE message when possible (container ≤ 40 kids).
+      // Only split if we would exceed Discord's hard nested-component limit.
+      const nextCost = 1 + (i < dayEvents.length - 1 ? 1 : 0);
+      if (kids.length + nextCost > 38) {
         flush();
         pushHeader();
         kids.push(text(dayLabelLine(dayEvents[i].timestamp) + ' · cont.'));
