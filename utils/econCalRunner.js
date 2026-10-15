@@ -112,22 +112,37 @@ function buildReleaseEmbed(e, guild) {
 const MAX_EMBEDS_PER_MSG  = 9;
 const MAX_EVENTS_RENDERED = 30;
 
-// Components V2 weekly summary: earliest day first, 3 events per row,
-// visible separator line between rows. Returns message payloads.
+// Classic embed grid: 3 events per horizontal ROW (Discord inline fields),
+// sorted earliest day first — matches the "This Week's Economic Calendar" layout.
 function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
   const capped = (events || []).slice(0, MAX_EVENTS_RENDERED);
-  const payloads = econEmbed.buildWeeklyV2Payloads(guild.id, capped, { scope });
-  if ((events || []).length > MAX_EVENTS_RENDERED && payloads.length) {
+  const sorted = [...capped].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  const mode = (scope === 'today' || scope === 'tomorrow') ? 'day' : 'week';
+  const dayLabel =
+    scope === 'today' ? 'Today' :
+    scope === 'tomorrow' ? 'Tomorrow' :
+    null;
+  const embeds = econEmbed.buildGridEmbeds(guild.id, sorted, { mode, dayLabel });
+  if (!embeds.length) {
+    const { EmbedBuilder } = require('discord.js');
+    const words = scope === 'today' ? 'today' : scope === 'tomorrow' ? 'tomorrow' : 'this week';
+    return [{
+      embeds: [new EmbedBuilder()
+        .setColor(0x9397EE)
+        .setTitle(scope === 'today' ? "Today's releases" : scope === 'tomorrow' ? "Tomorrow's releases" : 'High Impact news This week')
+        .setDescription(`No matching releases for ${words}.`)
+        .setFooter({ text: 'quantlab · economic calendar' })],
+    }];
+  }
+  if ((events || []).length > MAX_EVENTS_RENDERED && embeds.length) {
     const extra = events.length - MAX_EVENTS_RENDERED;
-    const last = payloads[payloads.length - 1];
     try {
-      const { text, separator, container } = require('./componentsV2');
-      const accent = last.components?.[0]?.accent_color;
-      last.components.push(container([
-        separator({ divider: true, spacing: 1 }),
-        text(`-# +${extra} more not shown — narrow impact/currency filters`),
-      ], accent));
+      embeds[embeds.length - 1].setFooter({ text: `quantlab · economic calendar · +${extra} more not shown` });
     } catch { /* */ }
+  }
+  const payloads = [];
+  for (let i = 0; i < embeds.length; i += MAX_EMBEDS_PER_MSG) {
+    payloads.push({ embeds: embeds.slice(i, i + MAX_EMBEDS_PER_MSG) });
   }
   return payloads;
 }
