@@ -1,6 +1,6 @@
 /* Channel Desk */
-.desk-panel{margin-top:1.25rem;display:flex;flex-direction:column;min-height:320px;max-height:min(70vh,640px);overflow:hidden;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--rule,#2a2d38));background:color-mix(in srgb,var(--panel,#15161d) 92%,#0b0d11);position:relative}
-.desk-head{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.65rem 1rem;padding:.85rem 1rem;border-bottom:1px solid var(--rule,#2a2d38);overflow:visible;position:relative;z-index:5}
+.desk-panel{margin-top:1.25rem;display:flex;flex-direction:column;min-height:320px;max-height:min(70vh,640px);overflow:hidden;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--rule,#2a2d38));background:color-mix(in srgb,var(--panel,#15161d) 92%,#0b0d11);position:relative;opacity:1;transition:opacity .2s ease}
+.desk-head{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.65rem 1rem;padding:.85rem 1rem;border-bottom:1px solid var(--rule,#2a2d38);overflow:visible;position:sticky;top:0;z-index:6;background:color-mix(in srgb,var(--panel,#15161d) 96%,#0b0d11);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .desk-title-block{flex:1 1 auto;min-width:0}
 .desk-kicker{margin:0;font-size:.72rem;font-weight:700;letter-spacing:.12em;color:var(--muted,#9aa3b5)}
 .desk-title-block .muted{margin:.2rem 0 0;font-size:.8rem}
@@ -112,3 +112,13 @@ select.desk-forum-sel{
 .desk-ref-muted{color:var(--muted,#9aa3b5);font-style:italic}
 .desk-row.is-reply{border-left:2px solid rgba(59,130,246,.35);padding-left:.4rem}
 .desk-row.is-fwd{border-left:2px solid rgba(139,92,246,.4);padding-left:.4rem}
+
+/* Launch stability — no flicker, soft enter */
+.desk-controls{min-height:2.4rem}
+.desk-pill{display:inline-flex;align-items:center;font-size:.72rem;font-weight:600;letter-spacing:.04em;color:var(--muted,#9aa3b5);padding:.2rem .45rem;border-radius:999px;border:1px solid color-mix(in srgb,var(--rule,#2a2d38) 80%,transparent);white-space:nowrap}
+.desk-pill.live{color:#86efac;border-color:rgba(134,239,172,.28)}
+.desk-pill.err{color:#fca5a5;border-color:rgba(252,165,165,.28)}
+.desk-stream.desk-fade{animation:deskFadeIn .28s ease both}
+@keyframes deskFadeIn{from{opacity:.35;transform:translateY(4px)}to{opacity:1;transform:none}}
+.desk-panel.desk-ready .desk-controls{opacity:1}
+.desk-empty{animation:deskFadeIn .25s ease both}
