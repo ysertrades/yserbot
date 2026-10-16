@@ -497,7 +497,10 @@
       return;
     }
     msgs.forEach(function (m) {
-      var row = el('div', 'desk-row' + (m.author && m.author.bot ? ' is-bot' : ''));
+      var rowCls = 'desk-row' + (m.author && m.author.bot ? ' is-bot' : '')
+        + (m.refKind === 'forward' || m.forwardSnapshot ? ' is-fwd' : '')
+        + (m.refKind === 'reply' || m.repliedTo ? ' is-reply' : '');
+      var row = el('div', rowCls);
       var av = el('div', 'desk-avatar desk-avatar-ph', ((m.author && m.author.name) || '?').slice(0, 1).toUpperCase());
       if (m.author && m.author.avatar) {
         var img = document.createElement('img');
@@ -513,7 +516,43 @@
       var meta = el('div', 'desk-meta');
       meta.append(el('span', 'desk-author', (m.author && m.author.name) || 'Unknown'));
       if (m.author && m.author.bot) meta.append(el('span', 'desk-app', 'APP'));
+      if (m.refKind === 'forward' || m.forwardSnapshot) {
+        var fwdBadge = el('span', 'desk-badge desk-badge-fwd', 'Forwarded');
+        meta.append(fwdBadge);
+      } else if (m.refKind === 'reply' || m.repliedTo) {
+        var repBadge = el('span', 'desk-badge desk-badge-reply', 'Reply');
+        meta.append(repBadge);
+      }
       body.append(meta);
+
+      // Reply context bar
+      if (m.repliedTo || (m.refKind === 'reply' && m.reference)) {
+        var rbar = el('div', 'desk-ref desk-ref-reply');
+        var rWho = (m.repliedTo && m.repliedTo.author && m.repliedTo.author.name)
+          || 'someone';
+        var rTxt = (m.repliedTo && m.repliedTo.content) || '';
+        var rTop = el('div', 'desk-ref-top');
+        rTop.append(el('span', 'desk-ref-label', 'Replying to'));
+        rTop.append(el('strong', 'desk-ref-author', rWho));
+        rbar.append(rTop);
+        if (rTxt) rbar.append(el('div', 'desk-ref-snippet', rTxt));
+        body.append(rbar);
+      }
+
+      // Forward snapshot card
+      if (m.forwardSnapshot || m.refKind === 'forward') {
+        var fbar = el('div', 'desk-ref desk-ref-fwd');
+        var fTop = el('div', 'desk-ref-top');
+        fTop.append(el('span', 'desk-ref-label', 'Forwarded message'));
+        var fWho = (m.forwardSnapshot && m.forwardSnapshot.author && m.forwardSnapshot.author.name) || '';
+        if (fWho) fTop.append(el('strong', 'desk-ref-author', fWho));
+        fbar.append(fTop);
+        var fTxt = (m.forwardSnapshot && m.forwardSnapshot.content) || '';
+        if (fTxt) fbar.append(el('div', 'desk-ref-snippet', fTxt));
+        else if (!m.content) fbar.append(el('div', 'desk-ref-snippet desk-ref-muted', '(original message)'));
+        body.append(fbar);
+      }
+
       if (m.content) body.append(el('div', 'desk-text', m.content));
 
       var actions = el('div', 'desk-actions');
