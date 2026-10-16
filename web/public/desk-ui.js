@@ -303,7 +303,15 @@
 
   function shell() {
     var host = $('overview-desk');
-    if (!host || host.dataset.deskReady) return;
+    if (!host) return;
+
+    // Hydrate existing static shell if present (avoids first-paint flash / layout jump)
+    var existing = host.querySelector('.desk-head') && $('desk-channel-sel') && $('desk-stream');
+    if (host.dataset.deskReady === '1' && existing) {
+      wireShellHandlers(host);
+      return;
+    }
+    if (host.dataset.deskReady === '1') return;
     host.dataset.deskReady = '1';
     host.replaceChildren();
 
@@ -323,9 +331,6 @@
     chPh.value = '';
     chPh.textContent = 'Text channels...';
     chSel.appendChild(chPh);
-    chSel.addEventListener('change', function () {
-      onPick(chSel.value || null, 'channel');
-    });
     controls.append(chSel);
 
     var foSel = document.createElement('select');
@@ -336,12 +341,9 @@
     foPh.value = '';
     foPh.textContent = 'Forum posts...';
     foSel.appendChild(foPh);
-    foSel.addEventListener('change', function () {
-      onPick(foSel.value || null, 'forum');
-    });
     controls.append(foSel);
 
-    var pill = el('span', 'desk-pill', '');
+    var pill = el('span', 'desk-pill desk-pill-idle', '-');
     pill.id = 'desk-pill';
     controls.append(pill);
     head.append(controls);
@@ -372,14 +374,6 @@
       + '<button type="button" class="btn primary small" id="desk-fwd-go" disabled>Forward here</button>'
       + '</div></div>';
     host.append(pad);
-    pad.addEventListener('click', function (ev) { if (ev.target === pad) closeForwardPad(); });
-    var fx = $('desk-fwd-x'); if (fx) fx.addEventListener('click', closeForwardPad);
-    var fc = $('desk-fwd-cancel'); if (fc) fc.addEventListener('click', closeForwardPad);
-    var fg = $('desk-fwd-go');
-    if (fg) fg.addEventListener('click', function () {
-      if (!padTarget || !desk.forwardMsg) return;
-      doForward(padTarget, desk.forwardMsg);
-    });
 
     var composer = el('div', 'desk-composer');
     var input = document.createElement('textarea');
@@ -387,100 +381,111 @@
     input.className = 'desk-input';
     input.rows = 2;
     input.placeholder = 'Message as the bot...';
-    input.addEventListener('input', setComposer);
-    input.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); doSend(); }
-    });
     composer.append(input);
     var row = el('div', 'desk-composer-row');
     var send = el('button', 'btn primary small desk-send', 'Send');
     send.type = 'button';
     send.id = 'desk-send';
     send.disabled = true;
-    send.addEventListener('click', doSend);
     row.append(send);
     composer.append(row);
     host.append(composer);
 
-    setFeed('Loading channels...');
+    setFeed('Select a channel when ready...');
     setComposer();
     wireScroll();
-    try {
-      if (typeof window.enhanceSelects === 'function') {
-        window.enhanceSelects(host);
-      }
-    } catch (e) {}
+    wireShellHandlers(host);
+    // Single enhance pass after structure is stable
+    requestAnimationFrame(function () {
+      try {
+        if (typeof window.enhanceSelects === 'function') window.enhanceSelects(host);
+      } catch (e) {}
+      host.classList.add('desk-ready');
+    });
+  }
+
+  function wireShellHandlers(host) {
+    if (host.dataset.deskWired === '1') return;
+    host.dataset.deskWired = '1';
+    var chSel = $('desk-channel-sel');
+    var foSel = $('desk-forum-sel');
+    if (chSel && !chSel.dataset.wired) {
+      chSel.dataset.wired = '1';
+      chSel.addEventListener('change', function () { onPick(chSel.value || null, 'channel'); });
+    }
+    if (foSel && !foSel.dataset.wired) {
+      foSel.dataset.wired = '1';
+      foSel.addEventListener('change', function () { onPick(foSel.value || null, 'forum'); });
+    }
+    var pad = $('desk-fwd-pad');
+    if (pad && !pad.dataset.wired) {
+      pad.dataset.wired = '1';
+      pad.addEventListener('click', function (ev) { if (ev.target === pad) closeForwardPad(); });
+      var fx = $('desk-fwd-x'); if (fx) fx.addEventListener('click', closeForwardPad);
+      var fc = $('desk-fwd-cancel'); if (fc) fc.addEventListener('click', closeForwardPad);
+      var fg = $('desk-fwd-go');
+      if (fg) fg.addEventListener('click', function () {
+        if (!padTarget || !desk.forwardMsg) return;
+        doForward(padTarget, desk.forwardMsg);
+      });
+    }
+    var input = $('desk-input');
+    if (input && !input.dataset.wired) {
+      input.dataset.wired = '1';
+      input.addEventListener('input', setComposer);
+      input.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); doSend(); }
+      });
+    }
+    var send = $('desk-send');
+    if (send && !send.dataset.wired) {
+      send.dataset.wired = '1';
+      send.addEventListener('click', doSend);
+    }
+    wireScroll();
   }
 
   async function loadCh() {
     var g = gid();
-    if (!g) { setFeed('Waiting for server...'); return; }
+    if (!g) { setFeed('Connecting...'); return false; }
     try {
       var out = await deskGet('/api/guild/' + encodeURIComponent(g) + '/desk/channels');
       if (!out.res.ok) {
         setFeed(out.res.status === 401 ? 'Sign in again to load channels.' : 'Could not load channels.');
-        return;
+        return false;
       }
       desk.channels = out.data.channels || [];
       var textCh = desk.channels.filter(function (c) { return !c.isForum; });
       var forums = desk.channels.filter(function (c) { return !!c.isForum; });
       fillSelect($('desk-channel-sel'), textCh, 'Text channels...');
       fillSelect($('desk-forum-sel'), forums, 'Forum posts...');
+      // Re-sync labels only - do not re-run enhanceSelects (that rebuilds triggers and causes flicker)
       try {
-        if (typeof window.enhanceSelects === 'function') {
-          window.enhanceSelects($('overview-desk') || document);
+        syncCselectLabel($('desk-channel-sel'));
+        syncCselectLabel($('desk-forum-sel'));
+        // If enhance never ran (slow path), run once
+        var host = $('overview-desk');
+        if (host && !host.classList.contains('desk-ready') && typeof window.enhanceSelects === 'function') {
+          window.enhanceSelects(host);
+          host.classList.add('desk-ready');
         }
       } catch (e) {}
-      syncCselectLabel($('desk-channel-sel'));
-      syncCselectLabel($('desk-forum-sel'));
       if (!desk.channelId) {
         setFeed((textCh.length || forums.length)
           ? 'Select a channel or forum post to open the desk.'
           : 'No channels available.');
       }
       setPill('idle', textCh.length + ' ch | ' + forums.length + ' posts');
+      var stream = $('desk-stream');
+      if (stream) {
+        stream.classList.remove('desk-fade');
+        void stream.offsetWidth;
+        stream.classList.add('desk-fade');
+      }
+      return true;
     } catch (e) {
       setFeed('Network error loading channels.');
-    }
-  }
-
-  async function hist(quiet) {
-    if (!desk.channelId) return;
-    var g = gid();
-    if (!g) return;
-
-    if (desk.histAbort) {
-      try { desk.histAbort.abort(); } catch (e) {}
-    }
-    var ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    desk.histAbort = ac;
-    var seq = ++desk.histSeq;
-
-    try {
-      var path = '/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(desk.channelId) + '?limit=40';
-      var out = await deskGet(path, ac ? ac.signal : null);
-      if (seq !== desk.histSeq) return;
-      if (!out.res.ok) {
-        if (!quiet) {
-          var det = (out.data && (out.data.error || out.data.detail)) || ('HTTP ' + out.res.status);
-          setFeed('Could not load messages (' + det + ').');
-        }
-        return;
-      }
-      if (out.data && out.data.error) {
-        if (!quiet) setFeed('Could not load messages (' + out.data.error + ').');
-        return;
-      }
-      var msgs = (out.data.messages || out.data.history || []);
-      var sig = msgs.length + ':' + (msgs.length ? (msgs[msgs.length - 1].id || '') : '');
-      if (quiet && sig === desk.lastSig) return;
-      desk.lastSig = sig;
-      desk.messages = msgs;
-      renderMsgs(msgs);
-      setPill('live', 'Live');
-    } catch (e) {
-      if (e && e.name === 'AbortError') return;
-      if (!quiet) setFeed('Network error loading messages.');
+      return false;
     }
   }
 
@@ -517,19 +522,15 @@
       meta.append(el('span', 'desk-author', (m.author && m.author.name) || 'Unknown'));
       if (m.author && m.author.bot) meta.append(el('span', 'desk-app', 'APP'));
       if (m.refKind === 'forward' || m.forwardSnapshot) {
-        var fwdBadge = el('span', 'desk-badge desk-badge-fwd', 'Forwarded');
-        meta.append(fwdBadge);
+        meta.append(el('span', 'desk-badge desk-badge-fwd', 'Forwarded'));
       } else if (m.refKind === 'reply' || m.repliedTo) {
-        var repBadge = el('span', 'desk-badge desk-badge-reply', 'Reply');
-        meta.append(repBadge);
+        meta.append(el('span', 'desk-badge desk-badge-reply', 'Reply'));
       }
       body.append(meta);
 
-      // Reply context bar
       if (m.repliedTo || (m.refKind === 'reply' && m.reference)) {
         var rbar = el('div', 'desk-ref desk-ref-reply');
-        var rWho = (m.repliedTo && m.repliedTo.author && m.repliedTo.author.name)
-          || 'someone';
+        var rWho = (m.repliedTo && m.repliedTo.author && m.repliedTo.author.name) || 'someone';
         var rTxt = (m.repliedTo && m.repliedTo.content) || '';
         var rTop = el('div', 'desk-ref-top');
         rTop.append(el('span', 'desk-ref-label', 'Replying to'));
@@ -539,7 +540,6 @@
         body.append(rbar);
       }
 
-      // Forward snapshot card
       if (m.forwardSnapshot || m.refKind === 'forward') {
         var fbar = el('div', 'desk-ref desk-ref-fwd');
         var fTop = el('div', 'desk-ref-top');
@@ -629,6 +629,52 @@
     setComposer();
   }
 
+  async function hist(quiet) {
+    if (!desk.channelId) return;
+    var g = gid();
+    if (!g) return;
+
+    if (desk.histAbort) {
+      try { desk.histAbort.abort(); } catch (e) {}
+    }
+    var ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    desk.histAbort = ac;
+    var seq = ++desk.histSeq;
+
+    try {
+      var path = '/api/guild/' + encodeURIComponent(g) + '/desk/' + encodeURIComponent(desk.channelId) + '?limit=40';
+      var out = await deskGet(path, ac ? ac.signal : null);
+      if (seq !== desk.histSeq) return;
+      if (!out.res.ok) {
+        if (!quiet) {
+          var det = (out.data && (out.data.error || out.data.detail)) || ('HTTP ' + out.res.status);
+          setFeed('Could not load messages (' + det + ').');
+        }
+        return;
+      }
+      if (out.data && out.data.error) {
+        if (!quiet) setFeed('Could not load messages (' + out.data.error + ').');
+        return;
+      }
+      var msgs = (out.data.messages || out.data.history || []);
+      var sig = msgs.length + ':' + (msgs.length ? (msgs[msgs.length - 1].id || '') : '');
+      if (quiet && sig === desk.lastSig) return;
+      desk.lastSig = sig;
+      desk.messages = msgs;
+      renderMsgs(msgs);
+      setPill('live', 'Live');
+      var stream = $('desk-stream');
+      if (stream && !quiet) {
+        stream.classList.remove('desk-fade');
+        void stream.offsetWidth;
+        stream.classList.add('desk-fade');
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      if (!quiet) setFeed('Network error loading messages.');
+    }
+  }
+
   function tick() {
     if (desk.paused || !desk.channelId) return;
     if (document.hidden || document.visibilityState === 'hidden') return;
@@ -638,13 +684,24 @@
   function boot() {
     if (!$('overview-desk')) return;
     shell();
-    var tries = 0;
-    function retryLoad() {
-      if (gid()) { loadCh(); return; }
-      if (tries < 80) { tries++; setTimeout(retryLoad, 300); }
-      else setFeed('Waiting for server... open Overview after the panel finishes loading.');
+    // Fast path: guild already known
+    if (gid()) {
+      loadCh();
+    } else {
+      var tries = 0;
+      function retryLoad() {
+        if (gid()) { loadCh(); return; }
+        if (tries < 40) { tries++; setTimeout(retryLoad, 150); }
+        else setFeed('Waiting for server...');
+      }
+      retryLoad();
+      try {
+        window.addEventListener('yser:guild-ready', function onReady() {
+          window.removeEventListener('yser:guild-ready', onReady);
+          loadCh();
+        });
+      } catch (e) {}
     }
-    retryLoad();
     if (desk.timer) clearInterval(desk.timer);
     desk.timer = setInterval(tick, POLL);
   }
