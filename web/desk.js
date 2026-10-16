@@ -101,14 +101,90 @@ function serializeMessage(m) {
       }
     }
   } catch {}
+
+  // Reply / forward context for the desk UI
+  let refKind = null; // 'reply' | 'forward'
+  let reference = null;
+  try {
+    const r = m.reference || null;
+    const refType = r && (r.type === 1 || r.type === 'FORWARD' || String(r.type).toLowerCase() === 'forward')
+      ? 'forward'
+      : (r && (r.messageId || r.message_id) ? 'reply' : null);
+    // MessageType.Reply === 19 in discord.js
+    const isReplyType = m.type === 19 || m.type === 'REPLY' || String(m.type).toLowerCase() === 'reply';
+    const isForwardType = m.type === 46 || m.type === 'FORWARD' || String(m.type).toLowerCase() === 'forward'
+      || (m.flags && (typeof m.flags.has === 'function' ? false : false));
+    if (refType === 'forward' || isForwardType) refKind = 'forward';
+    else if (refType === 'reply' || isReplyType || m.referencedMessage) refKind = 'reply';
+
+    if (r && (r.messageId || r.message_id || r.channelId || r.channel_id)) {
+      reference = {
+        messageId: String(r.messageId || r.message_id || ''),
+        channelId: String(r.channelId || r.channel_id || ''),
+        guildId: r.guildId || r.guild_id ? String(r.guildId || r.guild_id) : null,
+        type: refKind || 'reply',
+      };
+    }
+  } catch {}
+
+  let repliedTo = null;
+  try {
+    const rm = m.referencedMessage || null;
+    if (rm) {
+      const ra = rm.author;
+      repliedTo = {
+        id: rm.id,
+        content: formatMentions(rm).slice(0, 280),
+        author: ra
+          ? { id: ra.id, name: ra.username || ra.globalName || 'Unknown', avatar: ra.displayAvatarURL?.({ size: 32 }) || null }
+          : { id: '', name: 'Unknown', avatar: null },
+      };
+    }
+  } catch {}
+
+  // Forward snapshots (Discord API message_snapshots / djs messageSnapshots)
+  let forwardSnapshot = null;
+  try {
+    let snap = null;
+    if (m.messageSnapshots && m.messageSnapshots.size) {
+      snap = m.messageSnapshots.first();
+    } else if (Array.isArray(m.messageSnapshots) && m.messageSnapshots.length) {
+      snap = m.messageSnapshots[0];
+    } else if (m.message_snapshots && m.message_snapshots.length) {
+      snap = m.message_snapshots[0];
+    }
+    if (snap) {
+      const sm = snap.message || snap;
+      const sa = sm.author || (snap.author) || null;
+      const sc = String(sm.content || '').slice(0, 400);
+      forwardSnapshot = {
+        content: sc,
+        author: sa
+          ? { id: sa.id || '', name: sa.username || sa.globalName || sa.name || 'Unknown' }
+          : { id: '', name: 'Unknown' },
+        timestamp: sm.timestamp || sm.createdTimestamp || null,
+      };
+      if (!refKind) refKind = 'forward';
+    }
+  } catch {}
+
   return {
     id: m.id,
     content: formatMentions(m),
     createdAt: m.createdTimestamp || null,
     author: author
-      ? { id: author.id, name: author.username || author.globalName || 'Unknown', avatar: author.displayAvatarURL?.({ size: 64 }) || null }
-      : { id: '', name: 'Unknown', avatar: null },
+      ? {
+          id: author.id,
+          name: author.username || author.globalName || 'Unknown',
+          avatar: author.displayAvatarURL?.({ size: 64 }) || null,
+          bot: !!(author.bot),
+        }
+      : { id: '', name: 'Unknown', avatar: null, bot: false },
     attachments,
+    refKind: refKind,
+    reference: reference,
+    repliedTo: repliedTo,
+    forwardSnapshot: forwardSnapshot,
   };
 }
 
