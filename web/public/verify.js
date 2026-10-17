@@ -82,35 +82,62 @@
   }
 
   /* ── particles + confetti on one canvas ─────────────────────────────────── */
-  var fx = $('fx'), ctx = fx.getContext('2d'), dots = [], bits = [], raf = 0;
+  /*
+   * Smooth on any phone: motion is per second, not per frame (so 60 Hz and
+   * 120 Hz screens move the same), the canvas is capped at 1.5x density
+   * (a 3x phone otherwise draws four times the pixels for dots nobody can
+   * tell apart), each dot is a pre-drawn sprite stamped with drawImage
+   * instead of a path filled every frame, and nothing runs while hidden.
+   */
+  var fx = $('fx'), ctx = fx.getContext('2d', { alpha: true }), dots = [], bits = [], raf = 0, last = 0;
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function size() { fx.width = innerWidth * devicePixelRatio; fx.height = innerHeight * devicePixelRatio; }
+  var DPR = Math.min(1.5, window.devicePixelRatio || 1);
+  var sprite = document.createElement('canvas');
+  (function () {
+    var s = 16; sprite.width = sprite.height = s;
+    var g = sprite.getContext('2d'), grad = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+    grad.addColorStop(0, 'rgba(170,182,255,1)'); grad.addColorStop(.45, 'rgba(154,167,255,.55)'); grad.addColorStop(1, 'rgba(154,167,255,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, s, s);
+  })();
+  var resizeT = 0;
+  function size() { fx.width = Math.round(innerWidth * DPR); fx.height = Math.round(innerHeight * DPR); }
   size();
-  addEventListener('resize', size);
-  for (var i = 0; i < 46; i++) dots.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + .4, v: Math.random() * .00025 + .00008, a: Math.random() * .5 + .15 });
-  function frame() {
-    var w = fx.width, h = fx.height, d = devicePixelRatio;
+  addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(size, 120); });
+  var COUNT = innerWidth < 500 ? 32 : 46;
+  for (var i = 0; i < COUNT; i++) dots.push({ x: Math.random(), y: Math.random(), r: Math.random() * 2.2 + 1.4, v: Math.random() * .016 + .006, sway: Math.random() * 6.283, a: Math.random() * .45 + .2 });
+  function frame(now) {
+    var dt = last ? Math.min(.05, (now - last) / 1000) : .016;
+    last = now;
+    var w = fx.width, h = fx.height;
     ctx.clearRect(0, 0, w, h);
     for (var k = 0; k < dots.length; k++) {
       var p = dots[k];
-      p.y -= p.v; if (p.y < -0.02) { p.y = 1.02; p.x = Math.random(); }
-      ctx.globalAlpha = p.a; ctx.fillStyle = '#9aa7ff';
-      ctx.beginPath(); ctx.arc(p.x * w, p.y * h, p.r * d, 0, 6.283); ctx.fill();
+      p.y -= p.v * dt; p.sway += dt * .6;
+      if (p.y < -0.03) { p.y = 1.03; p.x = Math.random(); }
+      var size2 = p.r * 2 * DPR * 2.2;
+      ctx.globalAlpha = p.a;
+      ctx.drawImage(sprite, p.x * w + Math.sin(p.sway) * 6 * DPR - size2 / 2, p.y * h - size2 / 2, size2, size2);
     }
+    var f = dt * 60;
     for (var j = bits.length - 1; j >= 0; j--) {
       var b = bits[j];
-      b.vy += .18 * d; b.x += b.vx; b.y += b.vy; b.rot += b.vr; b.life -= 1;
-      if (b.life <= 0) { bits.splice(j, 1); continue; }
-      ctx.save(); ctx.globalAlpha = Math.min(1, b.life / 40); ctx.translate(b.x, b.y); ctx.rotate(b.rot);
-      ctx.fillStyle = b.c; ctx.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2); ctx.restore();
+      b.vy += .18 * DPR * f; b.x += b.vx * f; b.y += b.vy * f; b.rot += b.vr * f; b.life -= f;
+      if (b.life <= 0 || b.y > h + 40) { bits.splice(j, 1); continue; }
+      ctx.globalAlpha = Math.min(1, b.life / 40);
+      ctx.setTransform(Math.cos(b.rot), Math.sin(b.rot), -Math.sin(b.rot), Math.cos(b.rot), b.x, b.y);
+      ctx.fillStyle = b.c; ctx.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2);
     }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     raf = requestAnimationFrame(frame);
   }
-  if (!reduce) raf = requestAnimationFrame(frame);
+  function startFx() { if (!reduce && !raf) { last = 0; raf = requestAnimationFrame(frame); } }
+  function stopFx() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
+  document.addEventListener('visibilitychange', function () { if (document.hidden) stopFx(); else startFx(); });
+  startFx();
   function confetti() {
     if (reduce) return;
-    var r = shield.getBoundingClientRect(), d = devicePixelRatio;
+    var r = shield.getBoundingClientRect(), d = DPR;
     var cx = (r.left + r.width / 2) * d, cy = (r.top + r.height / 2) * d;
     var colors = ['#22c55e', '#8b9cff', '#f5c451', '#ec4899', '#06b6d4', '#ffffff'];
     for (var n = 0; n < 140; n++) {
