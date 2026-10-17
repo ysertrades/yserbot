@@ -3499,21 +3499,14 @@ button.primary {
 .prize-image-name{font-size:.78rem;color:rgba(255,255,255,.5)}
 
 
-/* Sidebar: no permanent stroke on mouse click; keep ring for keyboard only */
-.sidebar-nav button:focus { outline: none; box-shadow: none; }
-.sidebar-nav button:focus:not(:focus-visible) { outline: none; box-shadow: none; }
-.sidebar-nav button:focus-visible {
-  outline: 2px solid rgba(139, 92, 246, 0.7);
-  outline-offset: 2px;
-}
-
-/* Sidebar: no stroke on mouse click; ring only for keyboard */
+/* Sidebar focus ring: only while the keyboard is moving focus (html[data-kbd],
+ * set in app.full.js), and drawn inset — the nav scrolls, so a ring outside
+ * the button was clipped to a stray purple stroke along its bottom edge. */
 .sidebar-nav button:focus,
-.sections button:focus { outline: none; box-shadow: none; }
-.sidebar-nav button:focus-visible,
-.sections button:focus-visible {
+.sidebar-nav button:focus-visible { outline: none; box-shadow: none; }
+html[data-kbd] .sidebar-nav button:focus-visible {
   outline: 2px solid rgba(139, 92, 246, 0.65);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 

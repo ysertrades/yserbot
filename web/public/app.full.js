@@ -5114,11 +5114,18 @@ function buildLiveDropCard(x, { phase }) {
     if (emptyDrop) {
       d.append(el('p', 'hint', 'Ended with no entries — restart to run it again.'));
     } else {
-      d.append(el('p', 'hint', `Waiting for prize message → Send to winner${(x.winnersList?.length > 1 || x.winners > 1) ? 's' : ''}`));
-      if (x.winnersList?.length) {
+      const sentTo = x.prizeSentTo || {};
+      const list = x.winnersList || [];
+      const done = list.filter(win => sentTo[String(win.id)]?.ok).length;
+      d.append(el('p', 'hint', list.length > 1
+        ? `${done} of ${list.length} prizes delivered → open to send the rest`
+        : 'Waiting for prize message → Send to winner'));
+      if (list.length) {
         const w = el('div', 'drop-winners');
-        for (const win of x.winnersList) {
-          const chip = el('span', 'winner-chip', win.name || win.id || 'Winner');
+        for (const win of list) {
+          const sent = !!sentTo[String(win.id)]?.ok;
+          const chip = el('span', 'winner-chip' + (sent ? ' is-sent' : ''), win.name || win.id || 'Winner');
+          if (sent) chip.title = 'Prize delivered';
           w.append(chip);
         }
         d.append(w);
@@ -5324,25 +5331,8 @@ function openEndedGiveaway(x) {
   ];
   if (x.endedAt) body.push(sheetRow('Ended', new Date(x.endedAt).toLocaleString()));
 
-  const winners = Array.isArray(x.winnersList) ? x.winnersList : [];
-  if (winners.length) {
-    const podium = el('div', 'win-podium');
-    podium.append(el('div', 'win-podium-label',
-      winners.length === 1 ? 'Selected winner' : `${winners.length} selected winners`));
-    const list = el('div', 'win-podium-list');
-    winners.forEach((w, i) => {
-      const name = String(w.name || '').trim();
-      const id = String(w.id || '');
-      const display = name && name !== id ? `@${name}` : (id ? `@${id}` : 'Unknown');
-      const chip = el('div', 'win-chip');
-      chip.append(el('span', 'win-chip-rank', String(i + 1)));
-      chip.append(el('span', 'win-chip-name', display));
-      if (name && name !== id && id) chip.append(el('span', 'win-chip-meta', id.slice(-4)));
-      list.append(chip);
-    });
-    podium.append(list);
-    body.push(podium);
-  } else {
+  // Winners are listed in the delivery queue below, with their prize state.
+  if (!(Array.isArray(x.winnersList) && x.winnersList.length)) {
     body.push(el('p', 'hint', 'No winner on record for this giveaway yet.'));
   }
 
@@ -5354,6 +5344,10 @@ function openEndedGiveaway(x) {
     let prizeImageName = '';
     let codeVal = '';
     let customVal = '';
+
+    // The delivery queue sits above the editor; it is filled further down.
+    const queueSlot = el('div', 'prize-queue-slot');
+    body.push(queueSlot);
 
     body.push(el('p', 'hint', 'Pick how the prize is delivered. Code templates put the code in `backticks` in the DM.'));
 
@@ -5476,104 +5470,115 @@ function openEndedGiveaway(x) {
     };
 
 
+    /* Delivery queue: every winner is their own send. Pick a winner, write
+     * their prize, send — they get a "Delivered" stamp and the next one who
+     * is still waiting comes up. Nobody waits on anybody else's code, and a
+     * winner whose DMs were closed can be retried on their own. */
     const winners = Array.isArray(x.winnersList) ? x.winnersList : [];
-    const multi = winners.length > 1;
-    const prizeByWinner = {};
-    winners.forEach((w, i) => { prizeByWinner[String(w.id || i)] = { code: '', custom: '' }; });
-    let activeWinnerKey = winners[0] ? String(winners[0].id || 0) : '0';
-
-    const winnerTabs = el('div', 'prize-winner-tabs');
-    const syncWinnerTabs = () => {
-      winnerTabs.replaceChildren();
-      if (!multi) return;
-      winners.forEach((w, i) => {
-        const key = String(w.id || i);
-        const name = (w.name || w.id || ('Winner ' + (i + 1)));
-        const label = name.startsWith('@') ? name : '@' + name;
-        const b = el('button', 'prize-winner-tab' + (key === activeWinnerKey ? ' on' : ''), label);
-        b.type = 'button';
-        b.addEventListener('click', () => {
-          // stash current fields
-          const prev = prizeByWinner[activeWinnerKey] || { code: '', custom: '' };
-          prev.code = codeVal;
-          prev.custom = customVal;
-          prizeByWinner[activeWinnerKey] = prev;
-          activeWinnerKey = key;
-          const next = prizeByWinner[key] || { code: '', custom: '' };
-          codeVal = next.code || '';
-          customVal = next.custom || '';
-          codeInput.value = codeVal;
-          customInput.value = customVal;
-          syncWinnerTabs();
-        });
-        winnerTabs.append(b);
-      });
+    const keyOf = (w, i) => String(w.id || i);
+    const sentTo = Object.assign({}, x.prizeSentTo || {});
+    const drafts = {};
+    const isSent = key => !!sentTo[key]?.ok;
+    const firstPending = () => winners.findIndex((w, i) => !isSent(keyOf(w, i)));
+    let active = Math.max(0, firstPending());
+    const handle = (w, i) => {
+      const name = String(w.name || w.id || ('Winner ' + (i + 1)));
+      return name.startsWith('@') ? name : '@' + name;
     };
-    if (multi) {
-      body.push(el('p', 'hint', 'Set a prize message per winner, then send.'));
-      body.push(winnerTabs);
-      syncWinnerTabs();
-    }
+    const stash = () => { if (winners.length) drafts[keyOf(winners[active], active)] = { code: codeVal, custom: customVal }; };
+    const load = () => {
+      const d = drafts[keyOf(winners[active] || {}, active)] || { code: '', custom: '' };
+      codeVal = d.code; customVal = d.custom;
+      codeInput.value = codeVal; customInput.value = customVal;
+    };
 
-    const sendLabel = multi ? 'Send to winners' : 'Send to winner';
-    const sendPrize = el('button', 'btn primary small', sendLabel);
+    const queue = el('div', 'prize-queue');
+    const meter = el('div', 'pq-meter');
+    const meterFill = el('i');
+    const meterText = el('span');
+    meter.append(el('span', 'pq-meter-bar', '')); meter.firstChild.append(meterFill); meter.append(meterText);
+    const rows = el('div', 'pq-rows');
+    queue.append(meter, rows);
+    queueSlot.append(queue);
 
+    const sendPrize = el('button', 'btn primary small pq-send');
     sendPrize.type = 'button';
+    const sendLabel = () => {
+      if (!winners.length) return 'Send to winner';
+      const w = winners[active];
+      return (isSent(keyOf(w, active)) ? 'Send again to ' : 'Send to ') + handle(w, active);
+    };
+
+    const paintQueue = (justSentKey = null) => {
+      const done = winners.filter((w, i) => isSent(keyOf(w, i))).length;
+      meterFill.style.width = winners.length ? `${(done / winners.length) * 100}%` : '0%';
+      meterText.textContent = winners.length ? `${done} of ${winners.length} delivered` : 'No winner on record';
+      queue.classList.toggle('is-done', !!winners.length && done === winners.length);
+      rows.replaceChildren(...winners.map((w, i) => {
+        const key = keyOf(w, i);
+        const rec = sentTo[key];
+        const row = el('button', 'pq-row' + (i === active ? ' on' : '') + (rec?.ok ? ' is-sent' : '') + (rec && !rec.ok ? ' is-failed' : ''));
+        row.type = 'button';
+        row.append(el('span', 'pq-rank', String(i + 1)), el('span', 'pq-name', handle(w, i)));
+        if (rec?.ok) {
+          const stamp = el('span', 'pq-stamp' + (key === justSentKey ? ' is-new' : ''));
+          stamp.append(el('b', null, 'Delivered'), el('small', null, new Date(rec.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
+          row.append(stamp);
+        } else if (rec) {
+          row.append(el('span', 'pq-state bad', 'DMs closed · retry'));
+        } else {
+          row.append(el('span', 'pq-state', i === active ? 'Writing…' : 'Waiting'));
+        }
+        row.addEventListener('click', () => { if (i === active) return; stash(); active = i; load(); paintQueue(); });
+        return row;
+      }));
+      sendPrize.textContent = sendLabel();
+    };
+    paintQueue();
+
     sendPrize.addEventListener('click', async () => {
-      if (multi) {
-        const prev = prizeByWinner[activeWinnerKey] || { code: '', custom: '' };
-        prev.code = codeVal;
-        prev.custom = customVal;
-        prizeByWinner[activeWinnerKey] = prev;
+      const w = winners[active] || { id: null };
+      const key = keyOf(w, active);
+      const text = buildMessage();
+      if (!text) {
+        toast((mode === 'code' || mode === 'giftcard') ? `Enter the code for ${handle(w, active)} first.` : `Write a prize message for ${handle(w, active)} first.`, 'bad');
+        return;
       }
       sendPrize.disabled = true;
       sendPrize.textContent = 'Sending…';
       try {
-        let sent = 0, total = 0;
-        const list = multi ? winners : (winners.length ? winners : [{ id: null }]);
-        for (let i = 0; i < list.length; i++) {
-          const w = list[i];
-          const key = String(w.id || i);
-          if (multi) {
-            const bag = prizeByWinner[key] || {};
-            codeVal = bag.code || '';
-            customVal = bag.custom || '';
-          }
-          const text = buildMessage();
-          if (!text) {
-            toast(multi ? ('Missing prize text for ' + (w.name || w.id || 'a winner')) : ((mode === 'code' || mode === 'giftcard') ? 'Enter the code first.' : 'Write a prize message first.'), 'bad');
-            sendPrize.disabled = false;
-            sendPrize.textContent = sendLabel;
-            return;
-          }
-          const payload = { shortId: x.shortId, text };
-          if (w.id) payload.winnerId = String(w.id);
-          if (prizeImageData) payload.imageData = prizeImageData;
-          const out = await post('giveawaysendprize', payload);
-          total += 1;
-          if (out && out.ok !== false) sent += (out.sent != null ? out.sent : 1);
-        }
-        toast(multi ? ('Prize DMs sent (' + sent + '/' + total + ').') : (sent ? 'Prize DM sent.' : 'Prize DM sent.'), 'good');
-        sendPrize.textContent = 'Sent';
-        // Leave Live immediately → Recent drops (soft animation)
-        try {
-          const g = state.overview && state.overview.giveaways;
-          const id = String(x.shortId || '').toLowerCase();
-          if (g && id) {
-            const hit = (g.ended || []).find((e) => String(e.shortId || '').toLowerCase() === id);
-            if (hit) hit.prizeDmSent = true;
-          }
-          document.querySelectorAll('[data-gaw-id="' + CSS.escape(String(x.shortId || '').toLowerCase()) + '"]').forEach((n) => {
-            if (typeof leaveNode === 'function') leaveNode(n);
-            else { n.classList.add('is-leaving'); setTimeout(() => n.remove(), 220); }
-          });
-          closeSheet();
-          if (typeof renderGiveaways === 'function') renderGiveaways();
-          if (typeof softRefreshOverview === 'function') softRefreshOverview();
-        } catch (_) {}
-      } catch (e) {
+        const payload = { shortId: x.shortId, text };
+        if (w.id) payload.winnerId = String(w.id);
+        if (prizeImageData) payload.imageData = prizeImageData;
+        const out = await post('giveawaysendprize', payload, { quiet: true });
+        if (!out || out.ok === false || out.error) return;
+        if (out.prizeSentTo) Object.assign(sentTo, out.prizeSentTo);
+        else sentTo[key] = { at: Date.now(), ok: !!out.sent };
+        x.prizeSentTo = Object.assign({}, sentTo);
+        const ok = isSent(key);
+        toast(ok ? `Prize delivered to ${handle(w, active)}.` : `${handle(w, active)} has DMs closed — nothing was delivered.`, ok ? 'good' : 'bad');
+        if (ok) { delete drafts[key]; const next = firstPending(); if (next >= 0) { active = next; load(); } }
+        paintQueue(ok ? key : null);
+        if (!out.done) return;
+        // Everyone has their prize: the drop leaves Live for Recent drops.
+        const g = state.overview && state.overview.giveaways;
+        const id = String(x.shortId || '').toLowerCase();
+        const hit = g && id ? (g.ended || []).find(e => String(e.shortId || '').toLowerCase() === id) : null;
+        if (hit) { hit.prizeDmSent = true; hit.prizeSentTo = x.prizeSentTo; }
+        setTimeout(() => {
+          try {
+            document.querySelectorAll('[data-gaw-id="' + CSS.escape(id) + '"]').forEach((n) => {
+              if (typeof leaveNode === 'function') leaveNode(n);
+              else { n.classList.add('is-leaving'); setTimeout(() => n.remove(), 220); }
+            });
+            closeSheet();
+            if (typeof renderGiveaways === 'function') renderGiveaways();
+            if (typeof softRefreshOverview === 'function') softRefreshOverview();
+          } catch (_) {}
+        }, 900);
+      } finally {
         sendPrize.disabled = false;
-        sendPrize.textContent = sendLabel;
+        if (sendPrize.textContent === 'Sending…') sendPrize.textContent = sendLabel();
       }
     });
     body.push(sendPrize);
@@ -9050,56 +9055,175 @@ function openLinkRequest(r) {
 
 /* ── tickets ───────────────────────────────────────────────────────────── */
 
+/* Ticket age, told by colour: fresh, waiting, overdue, stale. The bar fills
+ * over three days — past that a ticket is as stale as it gets. */
+const TIX_AGE_FULL_H = 72;
+function ticketAge(createdAt) {
+  const h = createdAt ? Math.max(0, (Date.now() - createdAt) / 3.6e6) : 0;
+  const tone = h < 6 ? 'fresh' : h < 24 ? 'waiting' : h < TIX_AGE_FULL_H ? 'overdue' : 'stale';
+  const word = { fresh: 'Fresh', waiting: 'Waiting', overdue: 'Overdue', stale: 'Stale' }[tone];
+  return { h, tone, word, fill: Math.min(100, Math.max(4, (h / TIX_AGE_FULL_H) * 100)) };
+}
+
+function shortAge(createdAt) {
+  if (!createdAt) return '—';
+  const m = Math.max(0, Math.round((Date.now() - createdAt) / 60000));
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
+}
+
+function nudgeWord(min) {
+  const n = Number(min) || 0;
+  if (!n) return 'Off';
+  if (n % 1440 === 0) return `${n / 1440}d`;
+  if (n % 60 === 0) return `${n / 60}h`;
+  return `${n}m`;
+}
+
+function renderTicketHero(t) {
+  const hero = $('#tix-hero');
+  if (!hero) return;
+  const open = t.open || [];
+  const oldest = open.reduce((a, tk) => (tk.createdAt && (!a || tk.createdAt < a) ? tk.createdAt : a), null);
+  const roles = (t.supportRoles || []).length;
+  const nudge = Number(t.values?.inactivityTime) || 0;
+  const age = ticketAge(oldest);
+  const stats = [
+    ['open', String(open.length), open.length === 1 ? 'Open ticket' : 'Open tickets', open.length ? 'live' : 'idle'],
+    ['oldest', oldest ? shortAge(oldest) : '—', 'Oldest waiting', oldest ? age.tone : 'idle'],
+    ['roles', String(roles), roles === 1 ? 'Support role' : 'Support roles', roles ? 'good' : 'warn'],
+    ['nudge', nudgeWord(nudge), 'Quiet-ticket nudge', nudge ? 'good' : 'idle'],
+  ];
+  // Built once, then patched: the overview ticks every few seconds and a
+  // rebuilt strip is a strip that blinks.
+  if (!hero.dataset.built) {
+    hero.dataset.built = '1';
+    hero.replaceChildren(...stats.map(([k]) => {
+      const s = el('div', 'tix-stat');
+      s.dataset.k = k;
+      s.append(el('b', 'n', '—'), el('span', 'l', ''));
+      return s;
+    }));
+  }
+  for (const [k, n, l, tone] of stats) {
+    const s = hero.querySelector(`[data-k="${k}"]`);
+    if (!s) continue;
+    s.dataset.tone = tone;
+    if (s.firstChild.textContent !== n) s.firstChild.textContent = n;
+    if (s.lastChild.textContent !== l) s.lastChild.textContent = l;
+  }
+  if (!roles) hero.querySelector('[data-k="roles"] .l').textContent = 'No support role yet';
+}
+
+function buildTicketCard(tk) {
+  const age = ticketAge(tk.createdAt);
+  const d = el('div', 'tix-card');
+  d.dataset.tone = age.tone;
+  d.dataset.id = tk.id;
+  const who = tk.ownerName || (tk.ownerTag ? tk.ownerTag.replace(/^@/, '') : '') || '';
+  const av = el('span', 'tix-av', (who || tk.name.replace(/^ticket-/, '') || '#').slice(0, 1).toUpperCase());
+  const main = el('div', 'tix-main');
+  main.append(el('b', 'tix-name', `#${tk.name}`));
+  const sub = el('span', 'tix-sub');
+  if (tk.ownerId) {
+    const m = el('span', 'tix-mention', `@${who || tk.ownerId}`);
+    m.title = tk.ownerId;
+    sub.append(m, document.createTextNode(' · '));
+  }
+  sub.append(document.createTextNode(tk.createdAt ? `opened ${relativeTime(tk.createdAt)}` : 'open'));
+  main.append(sub);
+
+  const meter = el('div', 'tix-age');
+  meter.title = `${age.word} · open for ${shortAge(tk.createdAt)}`;
+  const bar = el('span', 'tix-age-bar');
+  const fill = el('i');
+  fill.style.width = `${age.fill}%`;
+  bar.append(fill);
+  meter.append(el('span', 'tix-age-word', age.word), bar);
+
+  const act = el('div', 'tix-act');
+  const go = el('a', 'btn small', 'Open');
+  go.href = `https://discord.com/channels/${encodeURIComponent(state.guildId || '')}/${encodeURIComponent(tk.id)}`;
+  go.target = '_blank';
+  go.rel = 'noopener';
+  go.title = 'Open this ticket in Discord';
+  const copy = el('button', 'btn small ghost', 'Copy ID');
+  copy.type = 'button';
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(String(tk.id)); toast('Channel ID copied.', 'ok'); }
+    catch { toast(String(tk.id), 'ok'); }
+  });
+  const close = el('button', 'btn small danger', 'Close');
+  close.type = 'button';
+  close.addEventListener('click', () => openTicketSheet(tk));
+  act.append(go, copy, close);
+
+  d.append(av, main, meter, act);
+  return d;
+}
+
 function renderTickets() {
   const t = state.overview?.tickets;
   if (!t) return;
 
-  /* -- the open list ---------------------------------------------------- */
+  renderTicketHero(t);
+  const pill = $('#tix-open-pill');
+  if (pill) {
+    const n = t.open.length;
+    pill.textContent = n ? `${n} open` : 'All clear';
+    pill.className = 'pill ' + (n ? 'live' : 'on');
+  }
+
+  /* -- the open list ----------------------------------------------------
+     Sort and search live in state so a live tick keeps them; the list only
+     rebuilds when what it would show changed. */
   const wrap = $('#ticket-open');
-  if (!t.open.length) {
-    wrap.replaceChildren(el('p', 'muted', 'No tickets are open right now.'));
-  } else {
-    wrap.replaceChildren(...t.open.map(tk => {
-      const d = el('div', 'gaw ticket-open-card');
-      const top = el('div', 'gaw-top');
-      top.append(el('span', 'kind prize', 'OPEN'), el('span', 'nm', `#${tk.name}`));
-      d.append(top);
+  const tools = $('#tix-tools');
+  const sort = state.tixSort || 'oldest';
+  const q = String(state.tixQuery || '').trim().toLowerCase();
+  if (tools && !tools.dataset.built) {
+    tools.dataset.built = '1';
+    const seg = el('div', 'tix-seg');
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', 'Sort tickets');
+    for (const [id, label] of [['oldest', 'Longest waiting'], ['newest', 'Newest']]) {
+      const b = el('button', 'chip-toggle', label);
+      b.type = 'button';
+      b.dataset.sort = id;
+      b.addEventListener('click', () => { state.tixSort = id; renderTickets(); });
+      seg.append(b);
+    }
+    const search = el('input', 'tix-search');
+    search.type = 'search';
+    search.placeholder = 'Find a ticket or member…';
+    search.value = state.tixQuery || '';
+    search.addEventListener('input', () => { state.tixQuery = search.value; renderTickets(); });
+    tools.append(seg, search);
+  }
+  if (tools) {
+    for (const b of tools.querySelectorAll('[data-sort]')) b.setAttribute('aria-pressed', String(b.dataset.sort === sort));
+    tools.hidden = t.open.length < 2;
+    const s = tools.querySelector('.tix-search');
+    if (s) s.hidden = t.open.length < 6;
+  }
 
-      const bits = [];
-      if (tk.createdAt) bits.push(`opened ${relativeTime(tk.createdAt)}`);
-      d.append(el('p', 'hint', bits.join(' · ') || 'open'));
-
-      if (tk.ownerId) {
-        const line = el('div', 'row');
-        const who = tk.ownerTag || tk.ownerName || 'Member';
-        const v = el('span', 'v ticket-opener', who);
-        v.title = tk.ownerId;
-        line.append(el('span', 'k', 'Opened by'), v);
-        d.append(line);
-      }
-
-      const act = el('div', 'actions');
-      const copy = el('button', 'btn small', 'Copy ID');
-      copy.type = 'button';
-      copy.title = 'Copy channel ID';
-      copy.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(String(tk.id));
-          toast('Channel ID copied.', 'ok');
-        } catch {
-          toast(String(tk.id), 'ok');
-        }
-      });
-      const detail = el('button', 'btn small', 'Details');
-      detail.type = 'button';
-      detail.addEventListener('click', () => openTicketSheet(tk));
-      const close = el('button', 'btn small danger', 'Close');
-      close.type = 'button';
-      close.addEventListener('click', () => openTicketSheet(tk));
-      act.append(copy, detail, close);
-      d.append(act);
-      return d;
-    }));
+  let list = t.open.slice();
+  if (q) list = list.filter(tk => `${tk.name} ${tk.ownerName || ''} ${tk.ownerTag || ''} ${tk.ownerId || ''}`.toLowerCase().includes(q));
+  list.sort((a, b) => sort === 'newest' ? (b.createdAt || 0) - (a.createdAt || 0) : (a.createdAt || 0) - (b.createdAt || 0));
+  // The age bars move with the clock, so the minute is part of what is shown.
+  const listSig = JSON.stringify([list.map(tk => [tk.id, tk.name, tk.ownerName, ticketAge(tk.createdAt).tone]), sort, q, Math.floor(Date.now() / 60000)]);
+  if (wrap.dataset.sig !== listSig) {
+    wrap.dataset.sig = listSig;
+    if (!t.open.length) {
+      const empty = el('div', 'tix-empty');
+      empty.append(el('span', 'tix-empty-ic', '✓'), el('b', null, 'Inbox zero'), el('span', 'hint', 'No tickets are open. New ones show up here the moment a member opens one.'));
+      wrap.replaceChildren(empty);
+    } else if (!list.length) {
+      wrap.replaceChildren(el('p', 'muted', 'No open ticket matches that search.'));
+    } else {
+      wrap.replaceChildren(...list.map(buildTicketCard));
+    }
   }
 
   /* -- settings: support roles (multi) — same list as Settings role chips */
@@ -9113,6 +9237,55 @@ function renderTickets() {
     // Do not rebuild while the user is interacting, or when nothing changed.
     if (rolesForm.dataset.dirty !== '1' && rolesForm.dataset.sig !== rolesSig) {
       rolesForm.dataset.sig = rolesSig;
+
+      // Nudge: presets for the usual answers, a minutes box for the rest,
+      // and one sentence that says what will actually happen.
+      const PRESETS = [[0, 'Off'], [30, '30m'], [60, '1h'], [180, '3h'], [720, '12h'], [1440, '1 day']];
+      const nudge = el('div', 'field tix-nudge');
+      nudge.append(el('span', null, 'Nudge a quiet ticket'));
+      const chips = el('div', 'chipset tix-nudge-chips');
+      const custom = el('input', 'tix-nudge-min');
+      custom.type = 'number';
+      custom.min = '0';
+      custom.max = '10080';
+      custom.inputMode = 'numeric';
+      custom.placeholder = 'minutes';
+      custom.setAttribute('aria-label', 'Nudge after, in minutes');
+      const say = el('p', 'hint tix-nudge-say');
+      const paintNudge = () => {
+        const n = draft.inactivityTime;
+        const isPreset = PRESETS.some(([v]) => v === n);
+        for (const b of chips.querySelectorAll('[data-min]')) {
+          const v = b.dataset.min === 'custom' ? null : Number(b.dataset.min);
+          b.setAttribute('aria-pressed', String(v === null ? !isPreset : v === n));
+        }
+        custom.hidden = isPreset;
+        if (!isPreset && document.activeElement !== custom) custom.value = String(n);
+        say.textContent = n
+          ? `After ${nudgeWord(n)} with nobody writing, the bot posts “still need help?” with a Still here button. It never closes the ticket.`
+          : 'Off — quiet tickets stay quiet. Nothing is posted and nothing closes.';
+      };
+      const setNudge = n => { draft.inactivityTime = Math.max(0, Math.min(10080, Math.floor(Number(n) || 0))); rolesForm.dataset.dirty = '1'; paintNudge(); };
+      for (const [v, label] of PRESETS) {
+        const b = el('button', 'chip-toggle', label);
+        b.type = 'button';
+        b.dataset.min = String(v);
+        b.addEventListener('click', () => setNudge(v));
+        chips.append(b);
+      }
+      const other = el('button', 'chip-toggle', 'Custom');
+      other.type = 'button';
+      other.dataset.min = 'custom';
+      other.addEventListener('click', () => {
+        custom.hidden = false;
+        for (const b of chips.querySelectorAll('[data-min]')) b.setAttribute('aria-pressed', String(b === other));
+        custom.focus();
+      });
+      chips.append(other, custom);
+      custom.addEventListener('input', () => setNudge(custom.value));
+      nudge.append(chips, say);
+      paintNudge();
+
       rolesForm.replaceChildren(
         pickManyRoles(
           'Support roles',
@@ -9120,12 +9293,8 @@ function renderTickets() {
           draft.supportRoleIds,
           ids => { draft.supportRoleIds = ids; rolesForm.dataset.dirty = '1'; },
         ),
-        el('p', 'hint', 'Members with any of these roles can see and answer tickets. Pick one or more.'),
-        textField('Nudge a quiet ticket after (minutes)', String(draft.inactivityTime || 0), v => {
-          draft.inactivityTime = Math.max(0, Math.floor(Number(v) || 0));
-          rolesForm.dataset.dirty = '1';
-        }, { placeholder: '0 = off' }),
-        el('p', 'hint', 'Posts a "still need help?" message with a Still here button when nobody has written for this long. 0 turns it off. It never closes the ticket.'),
+        el('p', 'hint', 'Members with any of these roles can see and answer every ticket.'),
+        nudge,
         actions(async () => {
           const out = await post('tickets', draft);
           if (out) rolesForm.dataset.dirty = '0';
@@ -9135,6 +9304,8 @@ function renderTickets() {
       try { enhanceSelects(rolesForm); } catch (_) {}
     }
   }
+
+  renderTicketPreview(t);
 
   /* -- post the panel -----------------------------------------------------
      Build once. Live overview ticks used to replaceChildren this form every
@@ -9153,6 +9324,48 @@ function renderTickets() {
     );
     try { enhanceSelects(postForm); } catch (_) {}
   }
+}
+
+/* What members will see, drawn from the saved topics and placeholder. The
+ * wording itself is edited on Appearance, so this links there rather than
+ * offering a second editor that could disagree with the first. */
+function renderTicketPreview(t) {
+  const box = $('#tix-preview');
+  if (!box) return;
+  const topics = Array.isArray(t.panelTopics) && t.panelTopics.length ? t.panelTopics : null;
+  const placeholder = t.panelPlaceholder || 'Select a topic to open a ticket';
+  const sig = JSON.stringify([topics, placeholder]);
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+
+  const botName = document.querySelector('.sidebar-brand .brand-name')?.textContent?.trim() || 'Bot';
+  const logo = document.querySelector('.sidebar-brand img')?.getAttribute('src') || '';
+  const msg = el('div', 'tix-pv-msg');
+  const av = el('span', 'tix-pv-av');
+  if (logo) { const img = el('img'); img.src = logo; img.alt = ''; av.append(img); }
+  const head = el('div', 'tix-pv-head');
+  head.append(el('b', null, botName), el('span', 'desk-app', 'APP'));
+  const card = el('div', 'tix-pv-card');
+  card.append(el('b', 'tix-pv-title', '🎫 Need a hand?'), el('span', 'tix-pv-text', 'Pick a topic and a private channel opens with the team.'));
+  const sel = el('div', 'tix-pv-select');
+  sel.append(el('span', null, placeholder), el('span', 'tix-pv-caret', '⌄'));
+  card.append(sel);
+  const list = el('div', 'tix-pv-topics');
+  if (topics) {
+    for (const tp of topics.slice(0, 8)) list.append(el('span', 'tix-pv-topic', `${tp.emoji ? tp.emoji + ' ' : ''}${tp.label}`));
+    if (topics.length > 8) list.append(el('span', 'tix-pv-topic more', `+${topics.length - 8}`));
+  } else {
+    list.append(el('span', 'tix-pv-topic more', 'Default topics'));
+  }
+  card.append(list);
+  const body = el('div', 'tix-pv-body');
+  body.append(head, card);
+  msg.append(av, body);
+
+  const edit = el('button', 'btn small ghost tix-pv-edit', 'Edit wording & topics');
+  edit.type = 'button';
+  edit.addEventListener('click', () => { try { showSection('appearance'); } catch (_) {} });
+  box.replaceChildren(el('span', 'tix-pv-label', 'Preview'), msg, edit);
 }
 
 /** Closing deletes the channel, so it asks in the sheet rather than inline. */
@@ -9706,10 +9919,44 @@ function renderOwnerConsole() {
   notice.append(el('b', null, 'Operator notice'), el('span', 'hint', 'Posts to each picked server’s mod log — staff only, never members.'));
   const picked = new Set(state.ownerNoticeTo || []);
   const chipsBox = el('div', 'chipset owner-notice-to');
+  // What the notice will actually hit, spelled out above the text box. The
+  // chips used to mark a pick only with `.on`, which nothing outside a form
+  // styles, so a picked server looked exactly like one that was not.
+  const targets = el('div', 'notice-targets');
+  targets.setAttribute('aria-live', 'polite');
+  let sendNotice = null;
+  const togglePick = id => {
+    if (picked.has(id)) picked.delete(id); else picked.add(id);
+    state.ownerNoticeTo = [...picked];
+    paintChips();
+  };
+  const paintTargets = () => {
+    const allPicked = guilds.length > 0 && picked.size === guilds.length;
+    const list = guilds.filter(g => picked.has(g.id));
+    const pills = [];
+    if (!list.length) {
+      pills.push(el('span', 'nt-empty', 'No server picked yet'));
+    } else if (allPicked) {
+      pills.push(el('span', 'nt-pill is-all', `All ${guilds.length} servers`));
+    } else {
+      for (const g of list) {
+        const p = el('button', 'nt-pill');
+        p.type = 'button';
+        p.title = `Remove ${g.name}`;
+        p.append(el('span', 'nt-name', g.name), el('span', 'nt-x', '×'));
+        p.addEventListener('click', () => togglePick(g.id));
+        pills.push(p);
+      }
+    }
+    targets.replaceChildren(el('span', 'nt-label', 'Sending to'), ...pills);
+    if (sendNotice) sendNotice.textContent = list.length ? `Send to ${list.length} server${list.length === 1 ? '' : 's'}` : 'Send notice';
+  };
   const paintChips = () => {
     chipsBox.replaceChildren();
-    const all = el('button', 'chip-toggle' + (picked.size === guilds.length ? ' on' : ''), 'All servers');
+    const allPicked = guilds.length > 0 && picked.size === guilds.length;
+    const all = el('button', 'chip-toggle', 'All servers');
     all.type = 'button';
+    all.setAttribute('aria-pressed', String(allPicked));
     all.addEventListener('click', () => {
       if (picked.size === guilds.length) picked.clear(); else guilds.forEach(g => picked.add(g.id));
       state.ownerNoticeTo = [...picked];
@@ -9717,17 +9964,14 @@ function renderOwnerConsole() {
     });
     chipsBox.append(all);
     for (const g of guilds) {
-      const c = el('button', 'chip-toggle' + (picked.has(g.id) ? ' on' : ''), g.name);
+      const c = el('button', 'chip-toggle', g.name);
       c.type = 'button';
-      c.addEventListener('click', () => {
-        if (picked.has(g.id)) picked.delete(g.id); else picked.add(g.id);
-        state.ownerNoticeTo = [...picked];
-        paintChips();
-      });
+      c.setAttribute('aria-pressed', String(picked.has(g.id)));
+      c.addEventListener('click', () => togglePick(g.id));
       chipsBox.append(c);
     }
+    paintTargets();
   };
-  paintChips();
   const noticeText = el('textarea');
   noticeText.rows = 3;
   noticeText.maxLength = 1800;
@@ -9735,8 +9979,9 @@ function renderOwnerConsole() {
   noticeText.value = state.ownerNoticeDraft || '';
   noticeText.addEventListener('input', () => { state.ownerNoticeDraft = noticeText.value; });
   const nAct = el('div', 'actions');
-  const sendNotice = el('button', 'btn primary small', 'Send notice');
+  sendNotice = el('button', 'btn primary small', 'Send notice');
   sendNotice.type = 'button';
+  paintChips();
   sendNotice.addEventListener('click', async () => {
     const text = noticeText.value.trim();
     if (!text) { toast('Write the notice first.', 'bad'); return; }
@@ -9755,7 +10000,7 @@ function renderOwnerConsole() {
     toast(`Sent to ${out.sent} server${out.sent === 1 ? '' : 's'}${out.skipped?.length ? ` · ${out.skipped.length} skipped (no mod log)` : ''}.`, 'good');
   });
   nAct.append(sendNotice);
-  notice.append(chipsBox, noticeText, nAct);
+  notice.append(chipsBox, targets, noticeText, nAct);
   tools.append(maint, notice);
   nodes.push(tools);
 
@@ -11090,6 +11335,23 @@ window.addEventListener('pageshow', (e) => {
  * there is no second list anywhere that has to be kept in step.
  */
 
+
+/* ── Input modality: focus rings only while someone is tabbing ────────────
+ * The browser's own :focus-visible guess is not enough for the sidebar. It
+ * turns on for a button that was clicked as soon as *any* key is pressed with
+ * it focused (a screenshot shortcut, Ctrl+S, Escape on a sheet) and for focus
+ * the panel moves back by script after a sheet or confirm closes. Either way
+ * the last tab clicked grew a purple ring the user never asked for.
+ * html[data-kbd] is set only by keys that move focus and cleared by any
+ * pointer, so the ring follows real keyboard navigation and nothing else. */
+(function trackInputModality() {
+  const NAV_KEYS = new Set(['Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+  const html = document.documentElement;
+  document.addEventListener('keydown', e => {
+    if (NAV_KEYS.has(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) html.dataset.kbd = '1';
+  }, true);
+  document.addEventListener('pointerdown', () => { delete html.dataset.kbd; }, true);
+})();
 
 /* ── ?debugShift=1: log every layout shift with what moved ────────────────
  * The shaking bugs in this panel have all been the same shape — something

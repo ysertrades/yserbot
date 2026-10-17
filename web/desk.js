@@ -261,6 +261,72 @@ async function listChannels(guild) {
   return { channels };
 }
 
+/**
+ * Who a reply answers and whose message a forward carries.
+ *
+ * Neither comes with a fetched message: discord.js keeps the replied-to
+ * message in the channel cache rather than on the reply, and Discord leaves
+ * the author out of forward snapshots entirely. Both used to fall through to
+ * "someone". The original is looked up (cache first, then a capped number of
+ * fetches) and named the way Discord shows it — @display name.
+ */
+const MAX_REF_FETCHES = 12;
+async function resolveRefAuthors(guild, ch, messages) {
+  const memo = new Map();
+  let fetches = 0;
+  const lookup = async (channelId, messageId) => {
+    const key = `${channelId}:${messageId}`;
+    if (memo.has(key)) return memo.get(key);
+    let msg = null;
+    try {
+      // Only this server's channels: a forward from another server stays
+      // anonymous here, the same as it is in Discord.
+      const where = channelId === ch.id ? ch : (guild.channels.cache.get(channelId) || null);
+      msg = where?.messages?.cache?.get(messageId) || null;
+      if (!msg && where?.messages && fetches < MAX_REF_FETCHES) {
+        fetches += 1;
+        msg = await where.messages.fetch(messageId).catch(() => null);
+      }
+    } catch { msg = null; }
+    memo.set(key, msg);
+    return msg;
+  };
+  const who = async (user) => {
+    if (!user) return null;
+    let name = user.globalName || user.username || null;
+    try {
+      const member = guild.members.cache.get(user.id) || null;
+      if (member?.displayName) name = member.displayName;
+    } catch { /* not a member any more */ }
+    return { id: user.id, name: name || 'Unknown', mention: `@${name || user.id}`, avatar: user.displayAvatarURL?.({ size: 32 }) || null };
+  };
+  for (const m of messages) {
+    const ref = m.reference;
+    if (!ref || !/^\d{5,25}$/.test(ref.messageId || '') || !/^\d{5,25}$/.test(ref.channelId || '')) continue;
+    const isFwd = m.refKind === 'forward';
+    const needs = isFwd ? !m.forwardSnapshot?.author?.id : !m.repliedTo?.author?.id;
+    if (!needs) continue;
+    const orig = await lookup(ref.channelId, ref.messageId);
+    if (!orig) continue;
+    const author = await who(orig.author);
+    if (!author) continue;
+    if (isFwd) {
+      m.forwardSnapshot = { ...(m.forwardSnapshot || { content: formatMentions(orig).slice(0, 400), timestamp: orig.createdTimestamp || null }), author };
+    } else {
+      m.repliedTo = { id: orig.id, content: (m.repliedTo?.content || formatMentions(orig)).slice(0, 280), author };
+    }
+  }
+  // Authors the bot already had get the same @display-name form.
+  for (const m of messages) {
+    for (const a of [m.repliedTo?.author, m.forwardSnapshot?.author]) {
+      if (!a || a.mention || !a.id) continue;
+      const member = guild.members.cache.get(a.id);
+      const name = member?.displayName || a.name;
+      a.name = name; a.mention = `@${name}`;
+    }
+  }
+}
+
 async function history(guild, channelId, opts = {}) {
   if (!guild) return { error: 'no_guild' };
   if (!/^\d{5,25}$/.test(String(channelId || ''))) return { error: 'bad_channel' };
@@ -282,6 +348,7 @@ async function history(guild, channelId, opts = {}) {
   const messages = [...col.values()]
     .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
     .map(serializeMessage);
+  await resolveRefAuthors(guild, ch, messages);
   return {
     channelId: ch.id,
     channelName: ch.name,
