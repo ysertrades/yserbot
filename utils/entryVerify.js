@@ -37,7 +37,26 @@ function store() {
   const s = readJson(FILE, {});
   if (!s.settings) s.settings = {};
   if (!s.users) s.users = {};
+  // Per giveaway: who passed the check for that drop. Verifying is done for
+  // every drop, not once for all of them (users holds the latest signals
+  // each account was matched on).
+  if (!s.drops) s.drops = {};
   return s;
+}
+
+const MAX_DROPS_PER_GUILD = 200;
+
+function markDrop(s, guildId, messageId, userId) {
+  if (!messageId) return;
+  const g = s.drops[guildId] || (s.drops[guildId] = {});
+  const d = g[messageId] || (g[messageId] = { at: Date.now(), users: [] });
+  if (!d.users.includes(String(userId))) d.users.push(String(userId));
+  // Oldest drops go first once a server has many.
+  const ids = Object.keys(g);
+  if (ids.length > MAX_DROPS_PER_GUILD) {
+    ids.sort((a, b) => (g[a].at || 0) - (g[b].at || 0));
+    for (const id of ids.slice(0, ids.length - MAX_DROPS_PER_GUILD)) delete g[id];
+  }
 }
 
 /* ── settings ───────────────────────────────────────────────────────────── */
@@ -102,7 +121,7 @@ function usableIp(ip) {
  * Records a verification and decides it.
  * @returns {{ status: 'verified'|'flagged', reason?: string, matchedWith?: string[], notes: string[] }}
  */
-function record(guildId, userId, { ip, device, fingerprint, userAgent }) {
+function record(guildId, userId, { ip, device, fingerprint, userAgent, messageId = null }) {
   const s = store();
   const users = s.users[guildId] || (s.users[guildId] = {});
   const mine = {
@@ -149,15 +168,24 @@ function record(guildId, userId, { ip, device, fingerprint, userAgent }) {
     ua: String(userAgent || '').slice(0, 120),
     at: Date.now(),
   };
+  if (users[userId].status === 'verified') markDrop(s, guildId, messageId, userId);
   writeJson(FILE, s);
   return { status: users[userId].status, reason, matchedWith, notes };
 }
 
-/** 'verified' | 'flagged' | 'none' */
-function statusOf(guildId, userId) {
-  const u = store().users[guildId]?.[userId];
+/**
+ * 'verified' | 'flagged' | 'none'.
+ * With a messageId (a giveaway), verified means verified *for that drop*:
+ * every giveaway asks again. An account held for matching another stays held
+ * everywhere until staff approve it.
+ */
+function statusOf(guildId, userId, messageId = null) {
+  const s = store();
+  const u = s.users[guildId]?.[userId];
   if (!u) return 'none';
-  return u.status === 'verified' ? 'verified' : 'flagged';
+  if (u.status !== 'verified') return 'flagged';
+  if (!messageId) return 'verified';
+  return (s.drops[guildId]?.[messageId]?.users || []).includes(String(userId)) ? 'verified' : 'none';
 }
 
 function entryOf(guildId, userId) {
@@ -196,10 +224,13 @@ function summary(guildId, guild = null) {
 /** Forget a member who left — their signals should not outlive them. */
 function forget(guildId, userId) {
   const s = store();
-  if (s.users[guildId]?.[userId]) {
-    delete s.users[guildId][userId];
-    writeJson(FILE, s);
+  let changed = false;
+  if (s.users[guildId]?.[userId]) { delete s.users[guildId][userId]; changed = true; }
+  for (const d of Object.values(s.drops[guildId] || {})) {
+    const i = (d.users || []).indexOf(String(userId));
+    if (i >= 0) { d.users.splice(i, 1); changed = true; }
   }
+  if (changed) writeJson(FILE, s);
 }
 
 module.exports = {
