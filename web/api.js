@@ -6,7 +6,7 @@
  * Read-only endpoints for the control panel.
  *
  * Everything here goes through the same helpers the slash commands use
- * (modConfig, economyManager, jsonStorage), never through Mongo directly.
+ * (modConfig, jsonStorage), never through Mongo directly.
  * That matters more than it looks: storage is an in-memory cache warmed once
  * at boot, so reading around those helpers would eventually hand back
  * something the bot itself doesn't believe.
@@ -15,8 +15,6 @@
 const { ChannelType } = require('discord.js');
 const auth = require('./auth');
 const { readJson } = require('../utils/jsonStorage');
-const { getLeaderboard } = require('../utils/economyManager');
-const { isFeatureEnabled } = require('../utils/featureToggles');
 const {
   getAutoModSettings, getModLogSettings, getNewsFeedSettings, getEconCalSettings,
   getModLogChannel, PANEL_LOG_CATEGORIES: LOG_CATEGORIES, getPanelLogSettings: panelLogSettings,
@@ -33,14 +31,11 @@ const features = require('./features');
 const featureToggles = require('./featureToggles');
 const tickets = require('./tickets');
 const pollsPanel = require('./polls');
-let economyPanel; try { economyPanel = require('./economy'); } catch { economyPanel = null; };
 const links = require('./links');
 const moderation = require('./moderation');
 const appearance = require('./appearance');
 const whopPanel = require('./whop');
-const cardsPanel = require('./cards');
 const botProfile = require('./botProfile');
-const casino = require('./casino');
 
 function me(session, client) {
   const owner = auth.isOwner(session.uid);
@@ -97,8 +92,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
 
   const channelName = id => (id && guild.channels.cache.get(id)?.name) || null;
 
-  const shop     = readJson('shop.json', {})[guildId]?.items || {};
-  const embeds   = readJson('embeds.json', {})[guildId] || {};
+  const embeds  = readJson('embeds.json', {})[guildId] || {};
   const casesRaw = readJson('cases.json', {})[guildId] || [];
   const casesList = Array.isArray(casesRaw) ? casesRaw : Object.values(casesRaw || {});
   const known    = listSources();
@@ -173,9 +167,6 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     featureToggles: featureToggles.read(guildId),
     tickets: tickets.read(guildId, guild),
     polls: pollsPanel.read(guildId, guild),
-    casino: (function () { try { return casino.read(guildId); } catch (e) { return null; } })(),
-    economy: (function () { try { return economyPanel && economyPanel.read(guildId); } catch (e) { return null; } })(),
-    cards: (function () { try { return cardsPanel.read(guildId, guild); } catch (e) { return null; } })(),
     links: links.read(guildId, guild),
     mod: (function () { try { return moderation.read(guildId, guild); } catch (e) { console.warn('[api] mod read', e.message); return { reports: { open: [], handled: [] }, cases: [], caseTotal: 0, warned: [], filters: {}, lockedChannels: [], lockModes: [], roles: [] }; } })(),
     appearance: appearance.read(guildId),
@@ -190,36 +181,11 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     composer: await composer.list(guildId, guild),
     composerMeta: composer.meta(),
     counts: {
-      shopItems: Object.keys(shop).length,
       embedTemplates: Object.keys(embeds).length,
       moderationCases: casesList.filter(c => c && !(c.type === 'warn' && c.clearedAt)).length,
       activeGiveaways: giveawayState.active.length,
     },
   };
-}
-
-async function leaderboard(client, limit = 10, guildId = null) {
-  if (guildId && !isFeatureEnabled(guildId, 'economy')) {
-    return { scope: 'global', entries: [], economyOff: true };
-  }
-
-  const candidates = getLeaderboard(limit * 3);
-  const rows = [];
-
-  for (const entry of candidates) {
-    if (rows.length >= limit) break;
-    const user = client.users.cache.get(entry.userId)
-      ?? await client.users.fetch(entry.userId).catch(() => null);
-    if (!user || user.bot) continue;
-    rows.push({
-      id: user.id,
-      name: user.globalName || user.username,
-      avatar: user.displayAvatarURL({ size: 64 }),
-      balance: entry.balance,
-    });
-  }
-
-  return { scope: 'global', entries: rows };
 }
 
 function health(client) {
@@ -238,4 +204,4 @@ function health(client) {
   };
 }
 
-module.exports = { me, guildOverview, leaderboard, health, ensureMembers };
+module.exports = { me, guildOverview, health, ensureMembers };

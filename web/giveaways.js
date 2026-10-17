@@ -3,15 +3,13 @@
 /**
  * web/giveaways.js
  *
- * Both giveaway systems in one place — prize giveaways (/giveaway) and coins
- * giveaways (/coinsgiveaway). They're separate commands with separate storage
- * because they pay out differently, but from a control panel they're one list
- * of things that are running and one list of things that finished.
+ * Prize giveaways (/giveaway) from the panel: what is running and what
+ * finished. (Coins giveaways went with the economy.)
  *
- * Ending and rerolling call the commands' own functions rather than
- * reimplementing them. Drawing winners involves weighted pools, bonus roles,
- * DMs and coin payouts; a second copy of that logic would drift, and the
- * failure mode is paying the wrong people.
+ * Ending and rerolling call the command's own functions rather than
+ * reimplementing them. Drawing winners involves weighted pools, bonus roles
+ * and DMs; a second copy of that logic would drift, and the failure mode is
+ * picking the wrong people.
  */
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
@@ -22,11 +20,10 @@ const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
 const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const giveawayCmd = () => require('../commands/utility/giveaway.js');
-const coinsCmd = () => require('../commands/economy/coinsgiveaway.js');
 
 const PRIZE_ACTIVE = 'giveaways_active.json';
 const PRIZE_ENDED = 'giveaways_ended.json';
-const COINS_ACTIVE = 'coinsgiveaways_active.json';
+// Left by the removed coins giveaways. Not read; Clear history empties it.
 const COINS_ENDED = 'coinsgiveaways_ended.json';
 
 const entrantCount = (map, messageId, stored) => {
@@ -39,9 +36,7 @@ const entrantCount = (map, messageId, stored) => {
 
 function list(guildId, guild) {
   const prizeActive = readJson(PRIZE_ACTIVE, {});
-  const coinsActive = readJson(COINS_ACTIVE, {});
   const prizeEnded = readJson(PRIZE_ENDED, {})[guildId] || {};
-  const coinsEnded = readJson(COINS_ENDED, {})[guildId] || {};
 
   const nameOf = (id) => {
     const mid = String(id || '');
@@ -71,17 +66,6 @@ function list(guildId, guild) {
       dropId: d.dropId || null,
     });
   }
-  for (const [messageId, d] of Object.entries(coinsActive)) {
-    if (d.guildId !== guildId) continue;
-    active.push({
-      kind: 'coins', messageId, channelId: d.channelId,
-      title: `${Number(d.amount || 0).toLocaleString()} coins`,
-      amount: d.amount ?? 0, winners: d.winnersCount ?? 1,
-      endsAt: d.endTime ?? d.endsAt ?? null, hostId: d.hostId ?? null,
-      startedAt: d.createdAt ?? null,
-      entrants: entrantCount(global.coinsGiveawayEntrants, messageId, d.entrants),
-    });
-  }
   active.sort((a, b) => (a.endsAt || 0) - (b.endsAt || 0));
 
   const ended = [
@@ -102,12 +86,6 @@ function list(guildId, guild) {
       minAccountAgeDays: d.minAccountAgeDays || 0,
       winnersList: winnersOf(d.currentWinners),
     })),
-    ...Object.entries(coinsEnded).map(([shortId, d]) => ({
-      kind: 'coins', shortId, title: `${Number(d.amount || 0).toLocaleString()} coins`,
-      winners: d.winnersCount ?? 1, entrants: (d.entrants || []).length,
-      endedAt: d.endedAt ?? d.createdAt ?? null,
-      winnersList: winnersOf(d.currentWinners),
-    })),
   ].sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0)).slice(0, 25);
 
   return { active, ended };
@@ -117,10 +95,10 @@ function list(guildId, guild) {
 
 async function endNow(guildId, body, { guild }) {
   const messageId = String(body.messageId || '');
-  const kind = body.kind === 'coins' ? 'coins' : 'prize';
+  const kind = 'prize';
   if (!/^\d{5,25}$/.test(messageId)) return { error: 'bad_message' };
 
-  const store = readJson(kind === 'coins' ? COINS_ACTIVE : PRIZE_ACTIVE, {});
+  const store = readJson(PRIZE_ACTIVE, {});
   const meta = store[messageId];
   if (!meta || meta.guildId !== guildId) return { error: 'unknown_giveaway' };
 
@@ -132,8 +110,7 @@ async function endNow(guildId, body, { guild }) {
   catch { return { error: 'message_deleted' }; }
 
   try {
-    if (kind === 'coins') await coinsCmd().endCoinsGiveaway(message, meta);
-    else await giveawayCmd().endGiveaway(message, meta);
+    await giveawayCmd().endGiveaway(message, meta);
   } catch (err) {
     console.error('[Panel] ending a giveaway failed:', err.message);
     return { error: 'end_failed', detail: err.message.slice(0, 140) };
@@ -144,12 +121,10 @@ async function endNow(guildId, body, { guild }) {
 async function reroll(guildId, body, { guild }) {
   const shortId = String(body.shortId || '').trim().toLowerCase();
   if (!shortId || !/^[\w-]{1,40}$/.test(shortId)) return { error: 'bad_id' };
-  const kind = body.kind === 'coins' ? 'coins' : 'prize';
+  const kind = 'prize';
 
   try {
-    const result = kind === 'coins'
-      ? await coinsCmd().performReroll(guild, shortId)
-      : await giveawayCmd().performReroll(guild, shortId);
+    const result = await giveawayCmd().performReroll(guild, shortId);
     if (result?.error) return { error: 'reroll_failed', detail: result.error };
     return { ok: true, shortId, kind };
   } catch (err) {
@@ -161,9 +136,9 @@ async function reroll(guildId, body, { guild }) {
 async function remove(guildId, body, ctx = {}) {
   const shortId = String(body.shortId || '').trim().toLowerCase();
   if (!shortId || !/^[\w-]{1,40}$/.test(shortId)) return { error: 'bad_id' };
-  const kind = body.kind === 'coins' ? 'coins' : 'prize';
+  const kind = 'prize';
 
-  const file = kind === 'coins' ? COINS_ENDED : PRIZE_ENDED;
+  const file = PRIZE_ENDED;
   const all = readJson(file, {});
   const entry = all[guildId]?.[shortId];
   if (!entry) return { error: 'unknown_giveaway' };
@@ -188,7 +163,7 @@ async function remove(guildId, body, ctx = {}) {
   if (Object.keys(all[guildId]).length === 0) delete all[guildId];
   writeJson(file, all);
 
-  const title = kind === 'coins' ? `${Number(entry.amount || 0).toLocaleString()} coins` : (entry.prize || 'Giveaway');
+  const title = entry.prize || 'Giveaway';
   return { ok: true, shortId, kind, title };
 }
 
@@ -206,23 +181,15 @@ function clearHistory(guildId) {
 }
 
 async function create(guildId, body, { guild, session, client }) {
-  // Prize unless coins is asked for by name — and coins is refused while the
-  // economy is switched off (index.js skips commands/economy). It used to be
-  // the default, which posted giveaways whose Enter button had no handler
-  // and which were never restored, so never ended, after a restart.
+  // Coins giveaways were removed with the economy; a stale request for one
+  // gets a clear answer instead of becoming a prize giveaway with no prize.
   if (body.kind === 'coins') {
-    return { error: 'coins_disabled', detail: 'Coins giveaways need the economy, which is turned off on this bot.' };
+    return { error: 'coins_removed', detail: 'Coins giveaways were removed along with the economy.' };
   }
   const kind = 'prize';
 
-  let amount = 0, prize = '';
-  if (kind === 'coins') {
-    amount = Number(body.amount);
-    if (!Number.isInteger(amount) || amount < 1 || amount > 100_000_000) return { error: 'bad_amount' };
-  } else {
-    prize = String(body.prize || '').trim().slice(0, 200);
-    if (!prize) return { error: 'bad_prize' };
-  }
+  const prize = String(body.prize || '').trim().slice(0, 200);
+  if (!prize) return { error: 'bad_prize' };
 
   const winners = Number(body.winners);
   if (!Number.isInteger(winners) || winners < 1 || winners > 50) return { error: 'bad_winners' };
@@ -250,7 +217,7 @@ async function create(guildId, body, { guild, session, client }) {
   }
 
   let imageUrl = null;
-  if (kind === 'prize') {
+  {
     const raw = String(body.imageUrl || 'dynamic:prizeGiveawayBanner').trim()
       || 'dynamic:prizeGiveawayBanner';
     if (raw.startsWith('dynamic:')) {
@@ -291,16 +258,14 @@ async function create(guildId, body, { guild, session, client }) {
   }
 
   try {
-    const out = kind === 'coins'
-      ? await coinsCmd().postGiveaway(guild, hostId, { ...shared, amount })
-      : await giveawayCmd().postGiveaway(guild, hostId,
-          guild.members.cache.get(hostId)?.user?.displayAvatarURL?.({ size: 128 })
-            || client?.user?.displayAvatarURL?.() || null,
-          { ...shared, prize, imageUrl });
+    const out = await giveawayCmd().postGiveaway(guild, hostId,
+      guild.members.cache.get(hostId)?.user?.displayAvatarURL?.({ size: 128 })
+        || client?.user?.displayAvatarURL?.() || null,
+      { ...shared, prize, imageUrl });
 
     return {
       ok: true, kind, messageId: out.message.id, channelName: channel.name,
-      label: kind === 'coins' ? `${amount.toLocaleString()} coins` : prize,
+      label: prize,
       winners, endsAt: out.endTime,
     };
   } catch (err) {

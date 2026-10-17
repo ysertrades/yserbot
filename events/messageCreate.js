@@ -3,14 +3,10 @@
 const { Events, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createServerEmbed } = require('../utils/embedBuilder');
-const { pickRandomCard, buildDropEmbed, buildClaimedEmbed, getCardConfig } = require('../utils/cardsManager');
 const { isOn } = require('../utils/messageStyle');
 const { isFeatureEnabled } = require('../utils/featureToggles');
 const { equip } = require('../utils/badgeManager');
 const { BADGE_DEFS } = require('../utils/badges');
-
-if (!global.cardDrops)         global.cardDrops         = new Map();
-if (!global.cardMessageCounts) global.cardMessageCounts = new Map();
 
 const cooldowns = new Map();
 
@@ -107,40 +103,8 @@ module.exports = {
     }
 
     if (isFeatureEnabled(guildId, 'autoreply')) await handleAutoReply(message);
-    // cards retired
-    // if (isFeatureEnabled(guildId, 'cards')) await handleCardDrop(message);
   },
 };
-
-async function handleCardDrop(message) {
-  const guildId = message.guild.id;
-  const cfg = getCardConfig(guildId);
-  if (!cfg || !cfg.enabled) return;
-  const channelId = message.channel.id;
-  if (Array.isArray(cfg.channels) && cfg.channels.length && !cfg.channels.includes(channelId)) return;
-  if (Array.isArray(cfg.denyChannels) && cfg.denyChannels.includes(channelId)) return;
-
-  const key = `${guildId}:${channelId}`;
-  const count = (global.cardMessageCounts.get(key) || 0) + 1;
-  global.cardMessageCounts.set(key, count);
-  const every = Math.max(1, Number(cfg.everyN) || 50);
-  if (count % every !== 0) return;
-
-  const card = pickRandomCard(guildId);
-  if (!card) return;
-  const dropId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  global.cardDrops.set(dropId, { guildId, card, claimedBy: null, at: Date.now() });
-
-  const embed = buildDropEmbed(message.guild, card);
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`cardclaim:${dropId}`).setLabel('Claim').setStyle(ButtonStyle.Success)
-  );
-  try {
-    await message.channel.send({ embeds: [embed], components: [row] });
-  } catch (err) {
-    console.error('[CARD DROP]', err);
-  }
-}
 
 async function handleAutoReply(message) {
   // Auto-replies answer everybody. This used to return for anyone who was not

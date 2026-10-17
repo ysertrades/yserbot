@@ -7,20 +7,13 @@ const { readJson } = require('../../utils/jsonStorage');
 // All JSON files that store data keyed by guildId
 const GUILD_FILES = [
   'config.json',
-  'economy.json',
   'levels.json',
-  'bank.json',
-  'shop.json',
-  'casino-settings.json',
   'cases.json',
   'autoreplies.json',
   'buttons.json',
   'embeds.json',
   'schedules.json',
-  'cards_config.json',
-  'wheel_limits.json',
   'giveaways_ended.json',
-  'active_effects.json',
   'member_history.json',
   // locked_channels.json is intentionally excluded: it's a live snapshot of
   // actual Discord channel permission overwrites, not portable bot state —

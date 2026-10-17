@@ -1,5 +1,4 @@
 'use strict';
-const casinoPanel = require('./casino');
 
 /**
  * web/writes.js
@@ -41,8 +40,6 @@ const tickets = require('./tickets');
 const pollsPanel = require('./polls');
 const links = require('./links');
 const moderationPanel = require('./moderation');
-const economyPanel = require('./economy');
-const cardsPanel = require('./cards');
 const appearance = require('./appearance');
 const whopPanel = require('./whop');
 
@@ -378,37 +375,6 @@ const OPS = {
     return { ok: true };
   },
 
-  /* -- shop -------------------------------------------------------------- */
-  async shop(guildId, body, { client, session }) {
-    const id = str(body, 'id', 60);
-    if (!id) return { error: 'bad_item' };
-
-    const all = readJson('shop.json', {});
-    const items = all[guildId]?.items;
-    if (!items || !items[id]) return { error: 'unknown_item' };
-
-    const item = items[id];
-    const notes = [];
-
-    const name = str(body, 'name', 80);
-    if (name && name !== item.name) { notes.push(`renamed to "${name}"`); item.name = name; }
-
-    const description = str(body, 'description', 200);
-    if (description && description !== item.description) { notes.push('description updated'); item.description = description; }
-
-    if ('price' in body) {
-      const price = Number(body.price);
-      if (!Number.isInteger(price) || price < 0 || price > 1e9) return { error: 'bad_price' };
-      if (price !== item.price) { notes.push(`price ${item.price} → ${price}`); item.price = price; }
-    }
-
-    if (notes.length === 0) return { unchanged: true };
-    all[guildId].items = items;
-    writeJson('shop.json', all);
-    await announce(client, guildId, session, `🛒 **Shop** — \`${id}\`: ${notes.join('; ')}`, 'shop');
-    return { ok: true };
-  },
-
 };
 
 /* ─── composer, giveaways, settings ──────────────────────────────────────── */
@@ -467,11 +433,6 @@ Object.assign(OPS, {
       console.error('[writes.giveawaystart]', err);
       return { error: 'launch_failed', detail: err.message || String(err) };
     }
-  },
-  async lotteryclear(guildId, body, ctx) {
-    const r = features.clearLottery(guildId);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🎫 Cleared today's lottery pool (${r.cleared} entrant${r.cleared === 1 ? '' : 's'})`, 'giveaways');
-    return r;
   },
   async giveawayparticipants(guildId, body, ctx) {
     return require('./giveaways').participants(guildId, body, ctx);
@@ -802,40 +763,6 @@ Object.assign(OPS, {
     return { ok: true, template: key, copy: saved };
   },
 
-  /* -- economy ----------------------------------------------------------- */
-  async economy(guildId, body, ctx) {
-    const r = economyPanel.saveActivity(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🪙 **${r.label}** — ${r.changed.join('; ')}`, 'features');
-    return r;
-  },
-  async economyjobs(guildId, body, ctx) {
-    const r = economyPanel.saveJobs(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🏢 **Jobs** — ${r.changed.join('; ')}`, 'features');
-    return r;
-  },
-  async economyglobal(guildId, body, ctx) {
-    const r = economyPanel.saveGlobal(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `📈 **Economy** — ${r.changed.join('; ')}`, 'features');
-    return r;
-  },
-
-  /* -- trading cards ------------------------------------------------------ */
-  async carddrops(guildId, body, ctx) {
-    const r = cardsPanel.saveDrops(guildId, body, ctx.guild);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🃏 **Card drops** — ${r.changed.join('; ')}`, 'features');
-    return r;
-  },
-  async cardrarity(guildId, body, ctx) {
-    const r = cardsPanel.saveRarities(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🃏 **Card odds** — ${r.changed.join(', ')} changed`, 'features');
-    return r;
-  },
-  async cardlist(guildId, body, ctx) {
-    const r = cardsPanel.saveCards(guildId, body);
-    if (r.ok) await announce(ctx.client, guildId, ctx.session, `🃏 **Cards** — ${r.changed.join(', ')}`, 'features');
-    return r;
-  },
-
   /* -- verification ------------------------------------------------------ */
   //
   // Posting the panel from here rather than only from /verify setup: the
@@ -915,17 +842,6 @@ Object.assign(OPS, {
       announce(ctx.client, guildId, ctx.session, r.removed
         ? `💬 Auto-reply \`${r.removed}\` removed`
         : `💬 Auto-reply \`${r.key}\` ${r.isNew ? 'added' : 'updated'}`, 'automation');
-    }
-    return r;
-  },
-  async coins(guildId, body, ctx) {
-    const r = features.adjustCoins(guildId, body, ctx.guild);
-    if (r.ok) {
-      // Coin movements are the one thing worth logging in full detail — the
-      // before and after make an unintended change obvious at a glance.
-      await announce(ctx.client, guildId, ctx.session, r.count
-        ? `🪙 **${r.mode === 'give' ? 'Gave' : 'Took'} ${r.amount.toLocaleString()}** coins ${r.mode === 'give' ? 'to' : 'from'} **${r.count}** members`
-        : `🪙 <@${r.userId}> — ${r.mode} ${r.amount.toLocaleString()} · ${r.before.toLocaleString()} → **${r.after.toLocaleString()}**`);
     }
     return r;
   },
@@ -1044,12 +960,6 @@ Object.assign(OPS, {
       return { error: 'upload_failed', detail: String(err.message || err).slice(0, 120) };
     }
   },
-
-  // Lived on module.exports only, so apply() — which looks ops up in OPS —
-  // answered every casino save with unknown_operation.
-  async casino(guildId, body, _ctx) {
-    return casinoPanel.save(guildId, body);
-  },
 });
 
 async function apply(op, guildId, body, ctx) {
@@ -1062,4 +972,4 @@ async function apply(op, guildId, body, ctx) {
     return { error: 'internal', detail: String(err && err.message || err).slice(0, 200) };
   }
 }
-module.exports = { casino: OPS.casino, apply, OPS };
+module.exports = { apply, OPS };

@@ -50,9 +50,6 @@ module.exports = {
       try {
         require('../commands/utility/giveaway.js').purgeByMessageId?.(message.id, guildId);
       } catch {}
-      try {
-        require('../commands/economy/coinsgiveaway.js').purgeByMessageId?.(message.id, guildId);
-      } catch {}
     }
 
     if (!message.guild || message.partial) return; // can't read content of an uncached (partial) message

@@ -15,7 +15,6 @@ const ADMIN_CATALOGUE = [
   ['automod',        'Toggle bad-word & link-approval auto-mod filters'],
   ['autoreply',      'Set automatic keyword replies'],
   ['button',         'Create & manage button link panels'],
-  ['cardsettings',   'Set how many messages between card drops (server-wide)'],
   ['cmd',            'Set which roles can use mod/admin commands'],
   ['config',         'Server-wide settings (prefix, channels, roles…)'],
   ['econcal',        'Economic calendar with release reminders'],
@@ -29,7 +28,6 @@ const ADMIN_CATALOGUE = [
 ];
 
 const COMMUNITY_CMDS = [
-  ['cards',      'Collect, view & sell trading cards that drop in chat'],
   ['leaderboard','Server XP leaderboard'],
   ['poll',       'Create a vote poll'],
   ['rank',       'View your XP rank card'],
@@ -37,8 +35,6 @@ const COMMUNITY_CMDS = [
   ['ticket',     'Open a support ticket'],
   ['userinfo',   'View info about a member'],
 ];
-
-const ECONOMY_CMDS = [];
 
 
 const FUTURES_CMDS = [
@@ -122,7 +118,6 @@ module.exports = {
 
     if (canUseAdmin) fields.push(...categoryFields('⚙️ Admin & Setup', enabledOnly(ADMIN_CATALOGUE)));
     fields.push(...categoryFields('🎉 Community', enabledOnly(COMMUNITY_CMDS)));
-    fields.push(...categoryFields('💰 Economy',   enabledOnly(ECONOMY_CMDS)));
     fields.push(...categoryFields('📈 Futures',   enabledOnly(FUTURES_CMDS)));
     fields.push(...categoryFields('ℹ️ General',   enabledOnly(GENERAL_CMDS)));
     if (canUseMod) fields.push(...categoryFields('🛡️ Moderation', enabledOnly(MOD_CATALOGUE)));

@@ -107,15 +107,14 @@ module.exports = {
       },
     );
 
-    if (isFeatureEnabled(interaction.guild.id, 'economy')) {
-      const labels = badgeLabels(user.id, interaction.guild.id);
-      if (labels.length) {
-        embed.addFields({
-          name: 'Badges',
-          value: labels.map((l) => '`' + l + '`').join('  '),
-          inline: false,
-        });
-      }
+    // Was gated on the old 'economy' feature, which no longer exists.
+    const labels = badgeLabels(user.id, interaction.guild.id);
+    if (labels.length) {
+      embed.addFields({
+        name: 'Badges',
+        value: labels.map((l) => '`' + l + '`').join('  '),
+        inline: false,
+      });
     }
 
     return interaction.reply({ embeds: [embed] });

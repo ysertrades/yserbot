@@ -1,2 +1,0 @@
-'use strict';
-/** Quantlab HQ Leveling — PART A start of live ladder file */

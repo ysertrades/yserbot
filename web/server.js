@@ -411,10 +411,6 @@ async function route(req, res, client) {
       return json(res, 200, { url: `${auth.config().baseUrl}/?t=${token}` });
     }
 
-    if (p === '/api/leaderboard') {
-      return json(res, 200, await api.leaderboard(client, 10, url.searchParams.get('g')));
-    }
-
     /* -- the owner console --------------------------------------------------
      * Everything under here is gated a second time, on top of the ordinary
      * session check above: holding a session proves who you are, not that

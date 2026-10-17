@@ -23,7 +23,6 @@ module.exports = {
       if (ids.length) forgetPosts(guildId, ids);
       for (const id of ids) {
         try { require('../commands/utility/giveaway.js').purgeByMessageId?.(id, guildId); } catch {}
-        try { require('../commands/economy/coinsgiveaway.js').purgeByMessageId?.(id, guildId); } catch {}
       }
     } catch { /* the sweep on the next panel read will catch whatever this missed */ }
   },

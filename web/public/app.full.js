@@ -41,12 +41,7 @@ const WRITE_ERRORS = {
   bad_price:       'Price must be a whole number.',
   bad_choice:      'Pick a valid option from the list.',
   bad_number:      'That number is outside the range this setting allows.',
-  bad_weight:      'A rarity weight has to be between 0 and 1000.',
-  bad_rarity:      'Could not read the rarity table.',
-  bad_cards:       'Could not read the card list.',
-  no_weight:       'Give at least one rarity a weight above zero, or nothing could drop.',
-  no_cards:        'Leave at least one card switched on.',
-  bad_color:       'Colour needs to be a 6-digit hex code.',
+  bad_color:      'Colour needs to be a 6-digit hex code.',
   bad_csrf:        'Your session expired. Reload the page.',
   forbidden:       'You cannot change that server.',
   bad_username:    'Bot name must be 2–32 characters.',
@@ -77,7 +72,6 @@ const WRITE_ERRORS = {
   bad_titleUrl:    'The title link must start with https.',
   bad_authorUrl:   'The author link must start with https.',
   unknown_template: 'That template no longer exists.',
-  unknown_activity: 'That is not something the economy knows about.',
   unknown_group:   'That settings group no longer exists.',
 };
 
@@ -310,7 +304,6 @@ async function post(op, body, { quiet = false, readOnly = false } = {}) {
       econpost:             'Calendar post sent to the channel.',
       econcal:              'Calendar settings saved.',
       warnsettings:         'Warning settings saved.',
-      economyglobal:        'Economy dials updated.',
     };
     let msg = SUCCESS[op];
     if (!msg && op.startsWith('bot-profile')) msg = 'Profile saved.';
@@ -1206,9 +1199,7 @@ function renderOverview() {
   safeRender('polls', renderPolls);
   safeRender('linkRequests', renderLinkRequests);
   safeRender('moderation', renderModeration);
-  safeRender('lottery', () => renderGroupForm('#form-lottery', 'lottery'));
   safeRender('giveawayForm', () => renderGiveawayForm());
-  safeRender('coins', renderCoins);
   safeRender('schedules', renderSchedules);
   safeRender('autoreplies', renderAutoreplies);
   safeRender('levels', renderLevels);
@@ -1216,24 +1207,6 @@ function renderOverview() {
   safeRender('levelBadges', renderLevelBadges);
   safeRender('levelsReset', renderLevelsReset);
   startTicking();
-}
-
-function renderBoard(data) {
-  const panel = $('#panel-leaderboard');
-  // Economy off for the selected server: the card disappears entirely
-  // rather than sitting there empty or explaining itself — an admin who
-  // turned coins off doesn't need a panel telling them so a second time.
-  if (panel) panel.style.display = data.economyOff ? 'none' : '';
-
-  const list = $('#board');
-  if (!data.entries.length) { list.replaceChildren(el('li', 'muted', 'No balances yet.')); return; }
-  list.replaceChildren(...data.entries.map((e, i) => {
-    const li = el('li');
-    li.append(el('span', 'rank', `${i + 1}`));
-    if (e.avatar) { const img = el('img'); img.src = e.avatar; img.alt = ''; li.append(img); }
-    li.append(el('span', 'name', e.name), el('span', 'bal', num(e.balance)));
-    return li;
-  }));
 }
 
 function renderHealth(h) {
@@ -2119,32 +2092,6 @@ function renderModerationForm() {
   );
 }
 
-function renderShop() {
-  const list = $('#shop-list');
-  const items = state.overview.shop || [];
-  if (!items.length) { list.replaceChildren(el('p', 'muted', 'No shop items yet.')); return; }
-
-  list.replaceChildren(...items.map(item => {
-    const draft = { id: item.id, name: item.name, description: item.description, price: item.price };
-    const d = el('details', 'item');
-    const s = el('summary');
-    s.append(
-      el('span', 'emoji', item.emoji || '📦'),
-      el('span', 'nm', item.name),
-      el('span', 'pr', num(item.price)),
-    );
-    const body = el('div', 'body');
-    body.append(
-      textField('Name', item.name, v => { draft.name = v; }),
-      textField('Description', item.description, v => { draft.description = v; }),
-      textField('Price', String(item.price), v => { draft.price = Number(v); }),
-      actions(() => post('shop', draft)),
-    );
-    d.append(s, body);
-    return d;
-  }));
-}
-
 /* ── composer ──────────────────────────────────────────────────────────────
    Embeds and buttons in one editor. They are two files on disk and two
    commands in Discord, but a message is both, so it is edited as both. */
@@ -2352,7 +2299,6 @@ function dynamicImageLabel(keyOrDynamic) {
   const names = {
     prizeGiveawayBanner: 'Prize banner',
     tradingViewBanner: 'TradingView',
-    economyShowcase: 'Economy showcase',
     reportGuide: 'Report guide',
     nyseOpen: 'NYSE open',
     futuresOpen: 'Futures open',
@@ -3943,7 +3889,7 @@ function renderGiveaways() {
     d.type = 'button';
     const top = el('div', 'gaw-top');
     top.append(
-      el('span', 'kind prize', x.kind === 'coins' ? 'COINS' : 'PRIZE'),
+      el('span', 'kind prize', 'PRIZE'),
       el('span', 'nm', x.title || 'Drop'),
       el('span', 'idtag', x.shortId ? `QL-${x.shortId}` : ''),
     );
@@ -4212,7 +4158,7 @@ function openRestartGiveaway(x) {
 
 function openEndedGiveaway(x) {
   const body = [
-    sheetRow('Kind', x.kind === 'coins' ? 'Coins giveaway' : 'Prize giveaway'),
+    sheetRow('Kind', 'Prize giveaway'),
     sheetRow('Prize', x.title || 'Giveaway'),
     sheetRow('Entered', num(x.entrants)),
     sheetRow('Winners', String(x.winners)),
@@ -5790,32 +5736,6 @@ function renderAppearance() {
 
 /* ── start a giveaway ──────────────────────────────────────────────────── */
 
-let gawPreviewTimer = null;
-
-// Bounded on purpose. An unbounded retry would keep the page requesting
-// forever whenever the render pacer stayed busy, and a preview is cosmetic —
-// it is not worth a permanent poll.
-const PREVIEW_RETRIES = 4;
-
-function refreshGawPreview(draft, attempt = 0) {
-  clearTimeout(gawPreviewTimer);
-  gawPreviewTimer = setTimeout(async () => {
-    try {
-      const res = await fetch(`/api/preview/giveaway?amount=${draft.amount}&winners=${draft.winners}`,
-        { credentials: 'same-origin', headers: authHeaders() });
-      if (res.status === 429) {
-        if (attempt < PREVIEW_RETRIES) gawPreviewTimer = setTimeout(() => refreshGawPreview(draft, attempt + 1), 320);
-        return;
-      }
-      if (!res.ok) return;
-      const img = $('#gaw-preview');
-      const previous = img.src;
-      img.src = URL.createObjectURL(await res.blob());
-      if (previous.startsWith('blob:')) URL.revokeObjectURL(previous);
-    } catch { /* preview is cosmetic; a failure must not block launching */ }
-  }, 320);
-}
-
 function renderGiveawayForm(opts = {}) {
   const form = $('#form-gaw');
   if (!form) return;
@@ -6018,192 +5938,6 @@ function renderGiveawayForm(opts = {}) {
 
 }
 
-/* ── lottery ───────────────────────────────────────────────────────────── */
-
-function renderLottery() {
-  const wrap = $('#lottery-live');
-  if (!wrap) return; /* lottery panel removed with economy */
-  const l = state.overview?.features?.lottery;
-  if (!l) { wrap.replaceChildren(); return; }
-
-  const nodes = [
-    row('Tickets in the pot', num(l.totalTickets)),
-    row('Players today', num(l.participants)),
-    row('Prize', `${num(l.reward)} coins`),
-  ];
-
-  if (l.open && l.nextDrawAt) {
-    // The draw is daily, so the bar runs from the previous one. Without that
-    // it filled from whenever the page happened to be opened.
-    const c = countdownEl(l.nextDrawAt, l.lastDrawAt || l.nextDrawAt - 86400000);
-    const line = el('div', 'row');
-    line.append(el('span', 'k', 'Next draw'), c.node);
-    nodes.push(line, c.bar);
-  } else if (!l.open) {
-    // No countdown when there is nothing to count down to, and a plain
-    // statement of what that means for the coins already in the pot. A
-    // paused lottery holding tickets is real money frozen, and the person
-    // who paused it is the only one who can unfreeze it.
-    const why = l.closedReason === 'economy_off'
-      ? 'The economy is switched off for this server, so the lottery is closed too. Turn it back on in Settings to reopen it.'
-      : l.closedReason === 'paused'
-        ? 'Paused — no draw will run, and tickets are not on sale.'
-        : 'No results channel set, so no draw can run. Tickets are not on sale.';
-    const note = el('p', 'hint bad', l.totalTickets
-      ? `${why} ${num(l.totalTickets)} ticket${l.totalTickets === 1 ? '' : 's'} are held in the pot and stay there until it runs again.`
-      : why);
-    nodes.push(note);
-  }
-
-  if (l.top.length) {
-    nodes.push(el('h2', null, 'Most tickets'));
-    const board = el('ol', 'board');
-    board.append(...l.top.map((t, i) => {
-      const li = el('li');
-      li.append(
-        el('span', 'rank', `${i + 1}`),
-        el('span', 'name', t.name || 'left the server'),
-        el('span', 'bal', `${num(t.tickets)}`),
-      );
-      return li;
-    }));
-    nodes.push(board);
-  } else {
-    nodes.push(el('p', 'muted', 'Nobody has bought a ticket today.'));
-  }
-
-  const act = el('div', 'actions');
-  const clear = el('button', 'btn small danger', 'Void today\'s pool');
-  clear.type = 'button';
-  clear.title = 'Clears entries without paying anyone. Drawing stays on its schedule.';
-  clear.addEventListener('click', async () => {
-    if (!await askConfirm({
-      title: "Clear today's lottery?",
-      message: 'Every entry is discarded. Nobody is paid out and no tickets are refunded.',
-      confirmLabel: 'Clear the pool', danger: true,
-    })) return;
-    await post('lotteryclear', {});
-  });
-  act.append(clear);
-  nodes.push(act);
-
-  wrap.replaceChildren(...nodes);
-}
-
-/* ── economy ───────────────────────────────────────────────────────────────
-   Eight activity cards, a jobs board and the two dials above them. The cards
-   are built from the field descriptions the server sends rather than written
-   out here, so adding a setting to utils/economySettings.js puts it on screen
-   without touching this file. */
-
-const HOUR_LABEL = h => `${String(h).padStart(2, '0')}:00`;
-
-function econField(f, value, onChange) {
-  if (f.type === 'bool') return toggle(f.label, !!value, onChange);
-  if (f.type === 'duration') return durationField(f.label, value ?? '', onChange);
-  const range = f.min != null ? ` (${f.min}–${num(f.max)})` : '';
-  return textField(`${f.label}${range}`, value == null ? '' : String(value), v => onChange(Number(v)));
-}
-
-
-
-/* ── trading cards ─────────────────────────────────────────────────────── */
-
-const RARITY_TINT = {
-  common: '#9E9E9E', uncommon: '#43A047', rare: '#1E88E5',
-  epic: '#8E24AA', legendary: '#FFD700', mythic: '#FF1744',
-};
-
-function renderCards() {
-  const c = state.overview?.cards;
-  if (!c) return;
-
-  /* -- how often they drop ---------------------------------------------- */
-  const drops = { ...c.values };
-  $('#cards-count').textContent = `${c.totals.enabled}/${c.totals.catalogue} dropping`;
-  $('#cards-count').hidden = false;
-
-  $('#form-cards').replaceChildren(
-    ...c.fields.flatMap(f => [
-      textField(`${f.label} (${f.min}–${f.max})`, drops[f.key], v => { drops[f.key] = Number(v); }),
-      el('p', 'hint', f.hint),
-    ]),
-    pickOne('Drop channel', 'channel', drops.channelId, v => { drops.channelId = v; }, { blank: 'Anywhere members talk' }),
-    el('p', 'hint', 'Left blank, a card can drop in any channel that reaches the count.'),
-    actions(() => post('carddrops', drops)),
-  );
-
-  /* -- the odds and the payouts ------------------------------------------ */
-  const rarity = Object.fromEntries(c.rarities.map(r => [r.key, { weight: r.weight, price: r.price }]));
-  const oddsNote = el('p', 'hint', '');
-  const syncOdds = () => {
-    const total = Object.values(rarity).reduce((s, r) => s + (Number(r.weight) || 0), 0);
-    oddsNote.textContent = total > 0
-      ? c.rarities.map(r => `${r.label} ${Math.round(((Number(rarity[r.key].weight) || 0) / total) * 1000) / 10}%`).join('  ·  ')
-      : 'Every tier is at zero, so nothing could drop — give at least one a weight.';
-    oddsNote.className = `hint${total > 0 ? '' : ' bad'}`;
-  };
-
-  $('#form-card-rarity').replaceChildren(
-    ...c.rarities.map(r => {
-      const row = el('div', 'subfield');
-      const head = el('span', 'k', `${r.emoji} ${r.label} · ${r.cards} card${r.cards === 1 ? '' : 's'}`);
-      head.style.borderLeft = `3px solid ${RARITY_TINT[r.key] || 'var(--rule)'}`;
-      head.style.paddingLeft = '0.5rem';
-      row.append(
-        head,
-        textField('Weight', r.weight, v => { rarity[r.key].weight = Number(v); syncOdds(); }),
-        textField('Sells for (coins)', r.price, v => { rarity[r.key].price = Number(v); }),
-      );
-      return row;
-    }),
-    oddsNote,
-    actions(() => post('cardrarity', { rarity })),
-  );
-  syncOdds();
-
-  /* -- the catalogue ------------------------------------------------------ */
-  $('#cards-collected').textContent = `${c.totals.collected.toLocaleString()} held by ${c.totals.collectors}`;
-  $('#cards-collected').hidden = false;
-
-  const picked = Object.fromEntries(c.cards.map(x => [x.id, x.enabled]));
-  const listNote = el('p', 'hint', '');
-  const syncList = () => {
-    const on = Object.values(picked).filter(Boolean).length;
-    listNote.textContent = on === 0
-      ? 'At least one card has to stay on, or there would be nothing to drop.'
-      : `${on} of ${c.cards.length} dropping.`;
-    listNote.className = `hint${on === 0 ? ' bad' : ''}`;
-  };
-
-  // Grouped by tier, in the order they get rarer — a flat list of sixty-odd
-  // switches is a wall, and the tier is the thing you are usually filtering by.
-  const list = $('#card-list');
-  list.replaceChildren(...c.rarities.map(r => {
-    const group = el('details', 'item');
-    const sum = el('summary');
-    const badge = el('span', 'bstyle secondary', r.label);
-    badge.style.borderLeft = `3px solid ${RARITY_TINT[r.key] || 'var(--rule)'}`;
-    const mine = c.cards.filter(x => x.rarity === r.key);
-    sum.append(
-      badge,
-      el('span', 'nm', `${mine.length} cards`),
-      el('span', 'pr', `${mine.reduce((s, x) => s + x.held, 0).toLocaleString()} held`),
-    );
-    const body = el('div', 'body');
-    body.append(...mine.map(x => toggle(
-      `${x.emoji} ${x.name} — ${x.desc}${x.held ? `  ·  ${x.held} held` : ''}`,
-      x.enabled,
-      v => { picked[x.id] = v; syncList(); },
-    )));
-    group.append(sum, body);
-    return group;
-  }));
-
-  $('#form-card-list').replaceChildren(listNote, actions(() => post('cardlist', { cards: picked })));
-  syncList();
-}
-
 /* ── verification ──────────────────────────────────────────────────────── */
 
 function renderVerifyPanel() {
@@ -6360,9 +6094,7 @@ function syncFeatureNav() {
   const nav = (name) =>
     document.getElementById('nav-' + name) || document.querySelector('[data-goto="' + name + '"]');
 
-  const econOff = !featureOn('economy');
-  const casOff = !featureOn('casino');
-  const calOff  = !featureOn('econ_calendar');
+  const calOff = !featureOn('econ_calendar');
   const whopOff = !featureOn('whop');
   const newsOff = !featureOn('newsfeed');
   const gawOff  = !featureOn('giveaways');
@@ -6371,7 +6103,6 @@ function syncFeatureNav() {
   // Feeds visible only if at least one of news / calendar / Whop is on in Settings
   const feedsOff = newsOff && calOff && whopOff;
 
-  hide(nav('economy'), true);
   hide(nav('feeds'), feedsOff);
   hide(nav('giveaways'), gawOff);
   hide(nav('tickets'), tixOff);
@@ -6385,8 +6116,7 @@ function syncFeatureNav() {
   hide($('#whop-panel'), whopOff);
 
   const sec = root?.dataset?.section;
-  if ((sec === 'economy' && econOff)
-      || (sec === 'feeds' && feedsOff) || (sec === 'giveaways' && gawOff)
+  if ((sec === 'feeds' && feedsOff) || (sec === 'giveaways' && gawOff)
       || (sec === 'tickets' && tixOff)
       || (sec === 'leveling' && lvlOff)) {
     if (typeof showSection === 'function') showSection('overview');
@@ -8511,45 +8241,6 @@ function renderGroupForm(target, groupName) {
   form.replaceChildren(...nodes);
 }
 
-function renderCoins() {
-  const form = $('#form-coins');
-  if (!form) return; /* economy UI removed — do not block the rest of the panel */
-  const draft = { mode: 'give', amount: 0, userId: null, everyone: false };
-
-  const summary = el('p', 'hint', 'Pick someone, or apply to everyone.');
-  const memberField = pickMember('Member', null, v => { draft.userId = v; });
-
-  const everyone = toggle('Apply to every member', false, v => {
-    draft.everyone = v;
-    memberField.style.display = v ? 'none' : '';
-    summary.textContent = v
-      ? 'This will change the balance of every non-bot member. Set is unavailable in bulk.'
-      : 'Pick someone, or apply to everyone.';
-  });
-
-  form.replaceChildren(
-    select('What to do', 'give', [
-      { value: 'give', label: 'Give coins' },
-      { value: 'take', label: 'Take coins' },
-      { value: 'set', label: 'Set balance to' },
-    ], v => { draft.mode = v; }),
-    textField('Amount', '0', v => { draft.amount = Number(v); }),
-    memberField,
-    everyone,
-    summary,
-    actions(async () => {
-      if (!draft.everyone && !draft.userId) { toast('Pick a member first.', 'bad'); return; }
-      const who = draft.everyone ? 'every member' : 'that member';
-      if (!await askConfirm({
-        title: 'Change balances?',
-        message: `${draft.mode === 'set' ? 'Set to' : draft.mode === 'give' ? 'Give' : 'Take'} ${num(draft.amount)} coins — ${who}. Coin changes are always written to your mod log.`,
-        confirmLabel: 'Do it', danger: draft.mode !== 'give',
-      })) return;
-      await post('coins', draft);
-    }),
-  );
-}
-
 /* ── automation ────────────────────────────────────────────────────────── */
 
 function templateOptions() {
@@ -9856,7 +9547,6 @@ async function selectGuild(id) {
     if (board) board.replaceChildren();
   }
   await refreshOverview();
-  refreshLeaderboard();
 }
 
 /* ── keeping the panel filled ──────────────────────────────────────────────
@@ -10081,17 +9771,7 @@ async function main() {
  * overview is, so the whole screen recovers together rather than in pieces.
  */
 function refreshSidecars() {
-  refreshLeaderboard();
   get('/api/health').then(renderHealth).catch(() => {});
-}
-
-/** Re-fetched on every guild switch, not just on load — the answer depends
- * on the selected guild's economy setting, so a stale one from the last
- * server would be wrong here in a way it never was before that toggle
- * existed. */
-function refreshLeaderboard() {
-  const q = state.guildId ? `?g=${state.guildId}` : '';
-  get(`/api/leaderboard${q}`).then(renderBoard).catch(() => {});
 }
 
 // Never sign somebody out over a bug. Before /api/me answers, a failure really
