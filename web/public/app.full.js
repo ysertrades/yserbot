@@ -2446,7 +2446,79 @@ function renderModerationForm() {
       actions(() => post('moderation', { modLog })),
     );
   }
+  try { renderEntryVerify(); } catch (e) { console.warn('[panel] entry verify', e); }
   renderModDeck();
+}
+
+/**
+ * Giveaway entry check: the on/off switch, how many are verified, and every
+ * account held because its device matched another — approve, keep, or reset.
+ */
+function renderEntryVerify() {
+  const host = $('#ev-body');
+  const d = state.overview?.entryVerify;
+  if (!host || !d) return;
+  const sig = JSON.stringify(d);
+  if (host.dataset.sig === sig) return;
+  host.dataset.sig = sig;
+  const pill = $('#ev-state');
+  if (pill) { pill.textContent = d.enabled ? 'ON' : 'OFF'; pill.className = 'pill ' + (d.enabled ? 'on' : 'off'); }
+
+  const top = el('div', 'ev-top');
+  const sw = el('button', 'mod-shield' + (d.enabled ? ' on' : ''));
+  sw.type = 'button';
+  const swText = el('span', 'mod-shield-text');
+  swText.append(el('b', null, 'Verify before entering'), el('span', null, 'One person, one entry'));
+  sw.append(el('span', 'mod-shield-ic', '🛡️'), swText, el('span', 'mod-shield-state', d.enabled ? 'ON' : 'OFF'));
+  sw.addEventListener('click', async () => {
+    sw.disabled = true;
+    const out = await post('entryverify', { enabled: !d.enabled }, { quiet: true });
+    sw.disabled = false;
+    if (out) { d.enabled = !d.enabled; host.dataset.sig = ''; renderEntryVerify(); toast(`Entry check ${d.enabled ? 'on' : 'off'}.`, 'good'); }
+  });
+  const stats = el('div', 'ev-stats');
+  const stat = (n, l, tone) => { const s = el('div', `mod-tile${n ? ` tone-${tone}` : ''}`); s.append(el('span', 'n', num(n)), el('span', 'l', l)); return s; };
+  stats.append(stat(d.verified, 'Verified', 'info'), stat(d.flagged.length, 'On hold', 'bad'));
+  top.append(sw, stats);
+
+  const list = el('div', 'rows ev-list');
+  if (!d.flagged.length) {
+    list.append(el('p', 'mod-empty', 'Nobody on hold'));
+  } else {
+    for (const f of d.flagged) {
+      const r = el('div', 'gaw ev-row');
+      const head = el('div', 'gaw-top');
+      head.append(el('span', 'kind sev-warn', 'HELD'), el('span', 'nm', f.name || f.userId));
+      r.append(head);
+      const matched = (f.matchedWith || []).map(m => m.name || m.userId).join(', ');
+      r.append(el('p', 'hint', `${f.reason || 'matched another account'}${matched ? ` · ${matched}` : ''}${f.at ? ` · ${relativeTime(f.at)}` : ''}`));
+      const acts = el('div', 'actions');
+      const mk = (label, cls, decision, msg) => {
+        const b = el('button', `btn small ${cls}`, label);
+        b.type = 'button';
+        b.addEventListener('click', async () => {
+          b.disabled = true;
+          const out = await post('entryverify', { userId: f.userId, decision }, { quiet: true });
+          b.disabled = false;
+          if (!out) return;
+          toast(msg, 'good');
+          // The held list is part of the overview; read it fresh.
+          try {
+            const fresh = await get(`/api/guild/${state.guildId}`);
+            if (fresh?.entryVerify && state.overview) { state.overview.entryVerify = fresh.entryVerify; renderEntryVerify(); }
+          } catch (_) {}
+        });
+        return b;
+      };
+      acts.append(
+        mk('Approve', 'primary', 'verified', 'Approved — they can enter now.'),
+        mk('Reset', '', null, 'Reset — they verify again next time.'),
+      );
+      r.append(acts);
+      list.append(r);
+    }
+  }
+  host.replaceChildren(top, list);
 }
 
 /**

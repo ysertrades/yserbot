@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#07080c">
+<title>Verify — one person, one entry</title>
+<link rel="icon" href="/logo-64.jpg" type="image/jpeg">
+<link rel="stylesheet" href="/verify.css">
+</head>
+<body data-state="loading">
+  <!-- Aurora + particles behind everything. -->
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+  <canvas class="fx" id="fx" aria-hidden="true"></canvas>
+  <div class="grid-bg" aria-hidden="true"></div>
+
+  <main class="stage">
+    <section class="card" id="card">
+      <header class="head">
+        <div class="marks">
+          <img class="mark brand" id="brand-logo" src="/logo-128.jpg" alt="">
+          <span class="link-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <img class="mark server" id="server-icon" alt="" hidden>
+          <span class="mark server ph" id="server-ph" aria-hidden="true">?</span>
+        </div>
+        <p class="kicker"><span id="brand-name">QuantLab</span> · entry check</p>
+        <h1 id="title">One person, one entry</h1>
+        <p class="sub" id="sub">Hold the shield for a second — that's it.</p>
+        <p class="prize" id="prize" hidden><span>🎁</span><b id="prize-name"></b></p>
+      </header>
+
+      <!-- The shield: press and hold to fill the ring. -->
+      <div class="shield-zone">
+        <button class="shield" id="shield" type="button" aria-label="Press and hold to verify" disabled>
+          <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="ring-track" cx="60" cy="60" r="54"/>
+            <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="54"/>
+          </svg>
+          <svg class="glyph" viewBox="0 0 64 64" aria-hidden="true">
+            <path class="g-shield" d="M32 6l20 8v14c0 13-8.6 23-20 28C20.6 51 12 41 12 28V14l20-8z"/>
+            <path class="g-print" d="M24 30c0-4.4 3.6-8 8-8s8 3.6 8 8M27 34c0-2.8 2.2-5 5-5s5 2.2 5 5v3M32 33v8M22 36c0 4 1 6 2 8M42 36c0 4-1 6-2 8"/>
+            <path class="g-check" d="M22 32l7 7 13-14"/>
+            <path class="g-lock" d="M25 31v-4a7 7 0 0 1 14 0v4M23 31h18v12H23z"/>
+          </svg>
+          <span class="pulse" aria-hidden="true"></span>
+        </button>
+        <p class="hold-hint" id="hold-hint">Press &amp; hold</p>
+      </div>
+
+      <!-- What the check does, ticking off one at a time. -->
+      <ol class="steps" id="steps" aria-live="polite">
+        <li data-step="1"><span class="dot"></span><span>Securing your connection</span></li>
+        <li data-step="2"><span class="dot"></span><span>Reading this device</span></li>
+        <li data-step="3"><span class="dot"></span><span>Checking for duplicate accounts</span></li>
+      </ol>
+
+      <div class="result" id="result" hidden>
+        <a class="btn-return" id="return" href="https://discord.com/app">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l-5 7 5 7M3 12h13a5 5 0 0 1 5 5v2"/></svg>
+          <span>Return to Discord</span>
+        </a>
+        <p class="next" id="next">Then tap <b>Finish verification</b> on the giveaway.</p>
+      </div>
+
+      <footer class="foot">
+        <span class="lock">🔒</span>
+        <span>We check this device and connection against other accounts in this server, stored only as one-way hashes. No sign-in, nothing installed.</span>
+        <a href="/privacy" target="_blank" rel="noopener">Privacy</a>
+      </footer>
+    </section>
+  </main>
+
+  <script src="/verify.js"></script>
+</body>
+</html>

@@ -523,6 +523,27 @@ Object.assign(OPS, {
     return r;
   },
 
+  /**
+   * Giveaway entry check: { enabled } switches it, { userId, decision }
+   * approves ('verified'), blocks ('flagged') or forgets (null) one member.
+   */
+  async entryverify(guildId, body, ctx) {
+    const ev = require('../utils/entryVerify');
+    if ('enabled' in (body || {})) {
+      const on = ev.setEnabled(guildId, !!body.enabled);
+      announce(ctx.client, guildId, ctx.session, `🛡️ **Giveaway entry check** ${on ? 'on' : 'off'}`, 'moderation').catch(() => {});
+      return { ok: true, changed: [on ? 'entry check on' : 'entry check off'] };
+    }
+    const userId = String(body?.userId || '');
+    if (!/^\d{5,25}$/.test(userId)) return { error: 'bad_user' };
+    const decision = body.decision === 'verified' ? 'verified' : body.decision === 'flagged' ? 'flagged' : null;
+    const r = ev.setOverride(guildId, userId, decision);
+    if (r.error) return r;
+    announce(ctx.client, guildId, ctx.session,
+      `🛡️ **Entry check** <@${userId}> ${decision === 'verified' ? 'approved' : decision === 'flagged' ? 'kept on hold' : 'reset — they verify again next time'}`, 'moderation').catch(() => {});
+    return { ok: true, changed: ['entry check updated'] };
+  },
+
   /** Settings → Brand: the name, caption, colour and logo on this server's cards. */
   async brand(guildId, body, ctx) {
     const r = require('../utils/brand').setBrand(guildId, body || {});

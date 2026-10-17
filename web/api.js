@@ -185,6 +185,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       const b = require('../utils/brand').getBrand(guildId);
       return { name: b.name, caption: b.caption, accent: b.accent, logoUrl: b.logoUrl, watermark: b.watermark, isDefault: !b.version };
     })(),
+    entryVerify: (function () { try { return require('../utils/entryVerify').summary(guildId, guild); } catch { return null; } })(),
     whop: whopPanel.read(guildId, guild),
     botProfile: session ? botProfile.read(guildId, client, session) : null,
     panelLog: {

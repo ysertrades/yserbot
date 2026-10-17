@@ -349,42 +349,55 @@ module.exports = {
             flags: EPHEMERAL_FLAG,
           }).catch(() => {});
         }
-        if (id === 'giveaway_enter') {
+        // Giveaway entry, in one place for both doors in: the Enter button on
+        // the drop, and "Finish verification" on the private check card.
+        // Returns the private line to show, and does the entering.
+        const giveawayEnterFor = async (msgId) => {
           if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
-          let entrants = global.giveawayEntrants.get(interaction.message.id);
+          let entrants = global.giveawayEntrants.get(msgId);
 
           // Not in memory — bot may have restarted during a long giveaway.
           // Check persisted active-giveaway state before declaring it ended.
           if (!entrants) {
             const giveawayCmd = client.commands.get('giveaway');
-            const saved = giveawayCmd?.getActiveGiveaway?.(interaction.message.id);
+            const saved = giveawayCmd?.getActiveGiveaway?.(msgId);
             if (saved && saved.endTime > Date.now()) {
               if (!global.giveawayMeta) global.giveawayMeta = new Map();
               entrants = new Set(saved.entrants || []);
-              global.giveawayEntrants.set(interaction.message.id, entrants);
-              global.giveawayMeta.set(interaction.message.id, {
+              global.giveawayEntrants.set(msgId, entrants);
+              global.giveawayMeta.set(msgId, {
                 prize: saved.prize, winners: saved.winnersCount, imageUrl: saved.imageUrl,
                 hostId: saved.hostId, endTime: saved.endTime, guildId: saved.guildId,
                 requiredRoleId: saved.requiredRoleId || null, bonusRoleId: saved.bonusRoleId || null,
                 minAccountAgeDays: saved.minAccountAgeDays || 0,
                 requirementLines: saved.requirementLines || [],
                 dropId: saved.dropId || null,
+                channelId: saved.channelId || null,
               });
             }
           }
 
-          if (!entrants) return interaction.reply({ content: 'This giveaway has ended.', flags: EPHEMERAL_FLAG });
-          if (entrants.has(interaction.user.id)) return interaction.reply({ content: "You've already entered!", flags: EPHEMERAL_FLAG });
+          if (!entrants) return { done: true, text: 'This giveaway has ended.' };
+          if (entrants.has(interaction.user.id)) return { done: true, text: "You've already entered!" };
 
-          const gawMeta = global.giveawayMeta?.get(interaction.message.id);
+          const gawMeta = global.giveawayMeta?.get(msgId);
           if (gawMeta?.requiredRoleId && !interaction.member.roles.cache.has(gawMeta.requiredRoleId)) {
-            return await interaction.reply({ content: `❌ You need the <@&${gawMeta.requiredRoleId}> role to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+            return { done: true, text: `❌ You need the <@&${gawMeta.requiredRoleId}> role to enter this giveaway.` };
           }
           if (gawMeta?.minAccountAgeDays > 0) {
             const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86400000;
             if (ageDays < gawMeta.minAccountAgeDays) {
-              return await interaction.reply({ content: `❌ Your account must be at least **${gawMeta.minAccountAgeDays} days** old to enter this giveaway.`, flags: EPHEMERAL_FLAG });
+              return { done: true, text: `❌ Your account must be at least **${gawMeta.minAccountAgeDays} days** old to enter this giveaway.` };
             }
+          }
+
+          // The alt check (utils/entryVerify.js). A member already verified in
+          // this server goes straight in; everyone else gets the check card.
+          const ev = require('../utils/entryVerify');
+          if (ev.isEnabled(interaction.guildId)) {
+            const st = ev.statusOf(interaction.guildId, interaction.user.id);
+            if (st === 'flagged') return { done: true, held: true, meta: gawMeta };
+            if (st !== 'verified') return { done: false, needsVerify: true, meta: gawMeta };
           }
 
           entrants.add(interaction.user.id);
@@ -393,9 +406,9 @@ module.exports = {
             const ids = [...entrants];
             const analysis = anti.evaluateEntrant(interaction.guild, ids, interaction.user.id);
             if (analysis.suspicious) {
-              const meta = global.giveawayMeta?.get(interaction.message.id);
+              const meta = global.giveawayMeta?.get(msgId);
               anti.reportSuspicious(interaction.guild, {
-                messageId: interaction.message.id,
+                messageId: msgId,
                 dropId: meta?.dropId,
                 prize: meta?.prize,
                 userId: interaction.user.id,
@@ -408,17 +421,42 @@ module.exports = {
 
           // Persist first, then refresh the V2 card (same path as panel remove).
           // This keeps Entries live on first enter AND after remove → re-enter.
-          client.commands.get('giveaway')?.persistGiveawayEntry?.(interaction.message.id, entrants);
+          client.commands.get('giveaway')?.persistGiveawayEntry?.(msgId, entrants);
           try {
             await client.commands.get('giveaway')?.refreshLiveGiveawayMessage?.(
               interaction.guild,
-              interaction.message.id,
+              msgId,
               entrants.size,
             );
           } catch (err) {
             console.warn('[GIVEAWAY] enter refresh:', err.message);
           }
-          return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
+          return { done: true, entered: true, text: '🎟️ You\'ve entered the giveaway! Good luck!', meta: gawMeta };
+        };
+
+        if (id === 'giveaway_enter') {
+          const out = await giveawayEnterFor(interaction.message.id);
+          const vc = require('../utils/entryVerifyCard');
+          if (out.needsVerify) {
+            return interaction.reply(vc.checkCard(interaction, interaction.message.id, interaction.channelId, out.meta));
+          }
+          if (out.held) return interaction.reply(vc.heldCard(interaction, out.meta));
+          if (out.entered) return interaction.reply(vc.enteredCard(interaction, out.meta, interaction.message.id));
+          return interaction.reply({ content: out.text, flags: EPHEMERAL_FLAG });
+        }
+
+        // "Finish verification" on the private check card: enters the member
+        // if the page verified them, and says why not if it did not.
+        if (id.startsWith('gaw_vdone:')) {
+          const msgId = id.split(':')[1];
+          const vc = require('../utils/entryVerifyCard');
+          const out = await giveawayEnterFor(msgId);
+          if (out.needsVerify) {
+            return interaction.update(vc.forUpdate(vc.checkCard(interaction, msgId, out.meta?.channelId || interaction.channelId, out.meta, { notYet: true }))).catch(() => {});
+          }
+          if (out.held) return interaction.update(vc.forUpdate(vc.heldCard(interaction, out.meta))).catch(() => {});
+          if (out.entered) return interaction.update(vc.forUpdate(vc.enteredCard(interaction, out.meta, msgId))).catch(() => {});
+          return interaction.update(vc.forUpdate(vc.noteCard(out.text))).catch(() => {});
         }
 
         // Giveaway — Check my entry (private plain text, entry number only)

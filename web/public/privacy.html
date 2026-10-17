@@ -26,7 +26,7 @@
   <section>
     <div class="eyebrow"><span class="n">01</span> The short version</div>
     <h2>Identifiers and counters, <span class="serif">not</span> conversations</h2>
-    <p>QuantLab stores Discord IDs and the numbers attached to them — your level and the warnings against you. It does not keep a copy of your conversations, it never asks for an email or a password, and it does not sell or share anything with advertisers.</p>
+    <p>QuantLab stores Discord IDs and the numbers attached to them — your level and the warnings against you — plus, where a server uses the giveaway entry check, one-way hashes that tell two accounts apart (section 02). It does not keep a copy of your conversations, it never asks for an email or a password, and it does not sell or share anything with advertisers.</p>
     <div class="note blue">
       <p class="tight">The bot reads messages in order to award XP, run auto-replies and apply the word filter. Reading is not the same as keeping: message text is examined as it arrives and discarded. The exceptions are named in <strong>section 03</strong>, and there are only three.</p>
     </div>
@@ -42,6 +42,7 @@
       <div class="row"><dt>Levelling</dt><dd>XP, level, a count of messages that earned XP, and the timestamp of the last one — the count only, never the messages.</dd></div>
       <div class="row"><dt>Moderation records</dt><dd>Warnings, kicks, bans, timeouts and reports: who, by whom, when, and the reason a moderator typed.</dd></div>
       <div class="row"><dt>Giveaways</dt><dd>Who entered which giveaway, and who won.</dd></div>
+      <div class="row"><dt>Giveaway entry check</dt><dd>If a server uses it, the verification page records three one-way hashes per member: of a random ID kept in your browser, of your browser's characteristics (screen, timezone, graphics), and of the internet address the page was opened from. The raw values are never stored and cannot be read back; the hashes are keyed per server, so they mean nothing anywhere else. They exist only to tell whether two accounts in the same server are the same person, and are deleted when you leave that server.</dd></div>
       <div class="row"><dt>Server configuration</dt><dd>Everything an administrator sets — embed templates, scheduled posts, auto-replies, feeds, message wording and colours.</dd></div>
       <div class="row"><dt>Panel session</dt><dd>Your user ID, display name, avatar reference, and the list of server IDs you can manage. Held in a signed token in your browser.</dd></div>
     </dl>
