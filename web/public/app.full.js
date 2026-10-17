@@ -847,28 +847,56 @@ function renderMembersRoster(filter = null) {
   const allMembers = state.overview?.features?.members || [];
   const q = (filter != null ? String(filter) : (search?.value || '')).trim().toLowerCase();
 
-  // All / Staff / New this week — chips over the list, counted live.
+  // Lenses over the list, each counted live. "Fresh accounts" is the one the
+  // others could not answer: Discord accounts made in the last 30 days, which
+  // is where alts and raid accounts come from.
   const WEEK = 7 * 86400000;
+  const MONTH = 30 * 86400000;
   const isNew = m => m.joinedAt && Date.now() - Number(m.joinedAt) < WEEK;
+  const isFresh = m => m.accountCreatedAt && Date.now() - Number(m.accountCreatedAt) < MONTH;
   const isStaff = m => m.isOwner || m.isAdmin;
-  const mode = state.memberFilter || 'all';
+  const LENSES = [
+    { k: 'all',   label: 'Everyone',       hint: 'Every member the bot can see',          test: () => true },
+    { k: 'staff', label: 'Staff',          hint: 'Owner and admins',                      test: isStaff },
+    { k: 'new',   label: 'New this week',  hint: 'Joined the server in the last 7 days',  test: isNew },
+    { k: 'fresh', label: 'Fresh accounts', hint: 'Discord account younger than 30 days',  test: isFresh },
+  ];
+  let mode = state.memberFilter || 'all';
+  if (!LENSES.some(l => l.k === mode)) mode = 'all';
   const filterHost = document.getElementById('members-filter');
   if (filterHost) {
-    const counts = { all: allMembers.length, staff: allMembers.filter(isStaff).length, new: allMembers.filter(isNew).length };
-    const fsig = `${mode}|${counts.all}|${counts.staff}|${counts.new}`;
-    if (filterHost.dataset.sig !== fsig) {
-      filterHost.dataset.sig = fsig;
-      filterHost.replaceChildren(...[['all', 'All'], ['staff', 'Staff'], ['new', 'New this week']].map(([k, label]) => {
-        const b = el('button', 'chip-toggle' + (mode === k ? ' on' : ''), label);
+    const counts = Object.fromEntries(LENSES.map(l => [l.k, allMembers.filter(l.test).length]));
+    // Built once, patched after: the counts tick with the live stream and a
+    // rebuilt row of pills is a row that blinks.
+    if (!filterHost.dataset.built) {
+      filterHost.dataset.built = '1';
+      filterHost.classList.add('member-lenses');
+      filterHost.setAttribute('role', 'tablist');
+      filterHost.setAttribute('aria-label', 'Filter members');
+      filterHost.replaceChildren(...LENSES.map(l => {
+        const b = el('button', 'lens');
         b.type = 'button';
-        b.setAttribute('aria-pressed', String(mode === k));
-        if (counts[k]) b.append(el('span', 'chip-n', String(counts[k])));
-        b.addEventListener('click', () => { state.memberFilter = k; renderMembersRoster(); });
+        b.dataset.lens = l.k;
+        b.setAttribute('role', 'tab');
+        b.title = l.hint;
+        b.append(el('span', 'lens-glyph'), el('span', 'lens-label', l.label), el('span', 'lens-n', '0'));
+        b.addEventListener('click', () => { state.memberFilter = l.k; renderMembersRoster(); });
         return b;
       }));
     }
+    for (const b of filterHost.querySelectorAll('.lens')) {
+      const k = b.dataset.lens;
+      const on = k === mode;
+      b.setAttribute('aria-selected', String(on));
+      b.classList.toggle('on', on);
+      b.classList.toggle('is-zero', !counts[k]);
+      const n = b.querySelector('.lens-n');
+      const text = String(counts[k] || 0);
+      if (n.textContent !== text) n.textContent = text;
+    }
   }
-  const members = mode === 'staff' ? allMembers.filter(isStaff) : mode === 'new' ? allMembers.filter(isNew) : allMembers;
+  const lens = LENSES.find(l => l.k === mode);
+  const members = mode === 'all' ? allMembers : allMembers.filter(lens.test);
 
   let shown;
   if (!q) {
@@ -898,9 +926,14 @@ function renderMembersRoster(filter = null) {
   _rosterPainted.sig = sig;
 
   if (!members.length) {
-    host.replaceChildren(el('div', 'muted members-empty', allMembers.length
-      ? (mode === 'new' ? 'Nobody joined in the last 7 days.' : 'No staff found.')
-      : 'No members loaded yet \u2014 refresh in a moment.'));
+    const empty = el('div', 'members-empty');
+    empty.append(el('span', 'members-empty-ic'), el('b', null, allMembers.length
+      ? ({ new: 'Nobody joined this week', fresh: 'No fresh accounts', staff: 'No staff found' }[mode] || 'Nobody here')
+      : 'No members loaded yet'));
+    empty.append(el('span', 'hint', allMembers.length
+      ? ({ new: 'Members who join in the next 7 days land here.', fresh: 'Every member here has a Discord account older than 30 days.', staff: 'Owner and admins show up here.' }[mode] || '')
+      : 'Refresh in a moment.'));
+    host.replaceChildren(empty);
     return;
   }
   if (!shown.length) {
@@ -908,48 +941,75 @@ function renderMembersRoster(filter = null) {
     return;
   }
 
+  const ago = ts => {
+    const d = Math.floor((Date.now() - Number(ts)) / 86400000);
+    if (!Number.isFinite(d) || d < 0) return '';
+    if (d < 1) return 'today';
+    if (d < 30) return `${d}d`;
+    if (d < 365) return `${Math.floor(d / 30)}mo`;
+    return `${Math.floor(d / 365)}y`;
+  };
+
   const list = el('div', 'members-list');
-  for (const [idx, m] of shown.entries()) {
-    const row = el('div', 'member-row' + (m.isOwner ? ' is-owner' : m.isAdmin ? ' is-admin' : ''));
+  for (const m of shown) {
     // No entrance: the roster redraws on every search keystroke, and routine
     // updates get no motion.
-    void idx;
+    const row = el('button', 'member-row' + (m.isOwner ? ' is-owner' : m.isAdmin ? ' is-admin' : ''));
+    row.type = 'button';
     if (isNew(m)) row.classList.add('is-new');
-    const av = el('div', 'member-av');
+    if (isFresh(m)) row.classList.add('is-fresh');
+    // The avatar ring takes the colour of their highest coloured role, the
+    // way Discord colours a name.
+    const top = (m.roles || []).find(r => r.color);
+    if (top) row.style.setProperty('--member-c', top.color);
+
+    const av = el('span', 'member-av');
     if (m.avatar) {
       const img = el('img');
       img.src = m.avatar;
       img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
       av.append(img);
     } else {
       av.append(el('span', null, (m.name || '?').slice(0, 1).toUpperCase()));
     }
+    if (m.isOwner || m.isAdmin) av.append(el('span', 'member-crest', m.isOwner ? '\u265b' : '\u2726'));
     row.append(av);
 
-    const info = el('div', 'member-info');
-    const nameLine = el('div', 'member-name');
-    nameLine.append(document.createTextNode(m.displayName || m.name || m.id));
+    const info = el('span', 'member-info');
+    const nameLine = el('span', 'member-name');
+    nameLine.append(el('span', 'member-nm', m.displayName || m.name || m.id));
     const rank = memberRankLabel(m);
-    if (rank) nameLine.append(el('span', 'member-rank', rank));
-    info.append(nameLine);
-    if (m.username) info.append(el('div', 'member-user', '@' + m.username));
-
-    const roleRow = el('div', 'member-roles');
-    const roles = (m.roles || []).slice(0, 5);
-    for (const r of roles) roleRow.append(rolePill(r));
-    if ((m.roles || []).length > 5) {
-      roleRow.append(el('span', 'role-pill more', '+' + String((m.roles.length) - 5)));
+    if (rank) nameLine.append(el('span', 'member-badge ' + (m.isOwner ? 'owner' : 'admin'), rank));
+    if (isNew(m)) nameLine.append(el('span', 'member-badge new', 'New'));
+    if (isFresh(m)) {
+      const f = el('span', 'member-badge fresh', `Account ${ago(m.accountCreatedAt)}`);
+      f.title = 'Discord account made less than 30 days ago';
+      nameLine.append(f);
     }
-    if (roles.length) info.append(roleRow);
+    info.append(nameLine);
+    if (m.username) info.append(el('span', 'member-user', '@' + m.username));
+
+    const roles = (m.roles || []).slice(0, 4);
+    if (roles.length) {
+      const roleRow = el('span', 'member-roles');
+      for (const r of roles) roleRow.append(rolePill(r));
+      if ((m.roles || []).length > 4) roleRow.append(el('span', 'role-pill more', '+' + String(m.roles.length - 4)));
+      info.append(roleRow);
+    }
     row.append(info);
 
-    const check = el('button', 'btn small member-check', 'Check');
-    check.type = 'button';
-    check.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openMemberPad(m);
-    });
-    row.append(check);
+    const side = el('span', 'member-side');
+    if (m.joinedAt) {
+      const j = el('span', 'member-joined');
+      j.append(el('small', null, 'Joined'), el('b', null, ago(m.joinedAt)));
+      j.title = formatJoinedLine(m.joinedAt) || '';
+      side.append(j);
+    }
+    side.append(el('span', 'member-go', '\u203a'));
+    row.append(side);
+    row.addEventListener('click', () => openMemberPad(m));
     list.append(row);
   }
   host.replaceChildren(list);
