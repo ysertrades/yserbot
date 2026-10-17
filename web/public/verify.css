@@ -54,7 +54,7 @@ h1 { margin: 6px 0 4px; font-size: 24px; line-height: 1.2; letter-spacing: -.01e
   -webkit-tap-highlight-color: transparent; touch-action: none; user-select: none; -webkit-user-select: none;
   transition: transform .25s var(--ease), box-shadow .4s; }
 .shield:disabled { cursor: default; }
-.shield:not(:disabled):hover { box-shadow: 0 0 34px rgba(139,156,255,.3); }
+@media (hover: hover) { .shield:not(:disabled):hover { box-shadow: 0 0 34px rgba(139,156,255,.3); } }
 .shield.holding { transform: scale(.94); }
 .shield:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 6px; }
 .ring { position: absolute; inset: 0; transform: rotate(-90deg); }
@@ -115,9 +115,9 @@ body[data-state="error"] .ring-fill { stroke: var(--warn); }
 @keyframes rise-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
 .btn-return { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 14px 18px; border-radius: 16px; text-decoration: none; color: #fff; font-weight: 700; font-size: 15px;
   background: linear-gradient(135deg, #5865F2, #4d5cff 50%, #7c3aed);
-  box-shadow: 0 10px 30px rgba(88,101,242,.45), inset 0 1px 0 rgba(255,255,255,.25); transition: transform .2s var(--ease), box-shadow .2s; }
-.btn-return:hover { transform: translateY(-1px); box-shadow: 0 14px 36px rgba(88,101,242,.6), inset 0 1px 0 rgba(255,255,255,.25); }
-.btn-return:active { transform: scale(.98); }
+  box-shadow: 0 10px 30px rgba(88,101,242,.45), inset 0 1px 0 rgba(255,255,255,.25); transition-property: scale, translate, box-shadow; transition-duration: 150ms; transition-timing-function: ease-out; -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) { .btn-return:hover { transform: translateY(-1px); box-shadow: 0 14px 36px rgba(88,101,242,.6), inset 0 1px 0 rgba(255,255,255,.25); } }
+.btn-return:active { scale: 0.96; }
 .btn-return svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 @keyframes sheen { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 .next { margin: 0; font-size: 13px; color: var(--soft); }
@@ -133,8 +133,22 @@ body[data-state="error"] .ring-fill { stroke: var(--warn); }
   .shield { width: 148px; height: 148px; }
   .glyph { inset: 30px; width: calc(100% - 60px); height: calc(100% - 60px); }
 }
+/* Reduced motion: movement, scale and blur go; an opacity fade stays. */
+@keyframes fade-only { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  *, *::before, *::after { animation-iteration-count: 1 !important; }
+  .card, .result, .mark, .steps li.ok .dot { animation: fade-only 300ms ease-out both !important; }
+  .shield, .shield *, .pulse, .link-dots i, .steps li.run .dot { animation: none !important; }
+  .shield.holding { transform: none; }
   .fx { display: none; }
 }
 .steps li.bad { color: #ff8a8d; opacity: 1; }
+
+/* The shield and the return button are the page's two pressables. */
+.shield { -webkit-tap-highlight-color: transparent; }
+.mark.server:not(.ph) { outline: 1px solid oklch(1 0 0 / 0.1); outline-offset: -1px; }
+.card { overscroll-behavior: contain; }
+@media (prefers-reduced-motion: reduce) {
+  /* The checkmark and lock still appear, just without drawing on. */
+  body[data-state="verified"] .g-check, body[data-state="flagged"] .g-lock { stroke-dashoffset: 0; }
+}

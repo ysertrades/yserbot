@@ -38,7 +38,7 @@ body > .cselect-menu,.cselect-menu{z-index:200!important;pointer-events:auto!imp
   border-radius:10px!important;color:#acacac!important;font-size:14px!important;font-weight:500!important;
   cursor:pointer!important;transition:none!important;
 }
-.sidebar-nav.sections>button:hover{background:#161616!important;color:#acacac!important}
+@media (hover: hover) { .sidebar-nav.sections>button:hover {background:#161616!important;color:#acacac!important} }
 .sidebar-nav.sections>button[aria-current=true]{background:var(--surface-2)!important;color:var(--text-primary)!important}
 
 .sidebar-nav .nav-ico-wrap,
@@ -106,7 +106,7 @@ nav.sections .nav-ico-wrap,
   color:#acacac;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
   position:relative;
 }
-.am-icon-btn:hover{background:#141414;color:#e9e9e9}
+@media (hover: hover) { .am-icon-btn:hover {background:#141414;color:#e9e9e9} }
 .am-icon-btn .alert-dot{
   display:none;position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;
   background:var(--danger);box-shadow:0 0 0 2px #0a0a0a;
@@ -123,9 +123,9 @@ nav.sections .nav-ico-wrap,
   border:1px solid #1a1a1a!important;
   border-radius:20px!important;
 }
-.panel:hover,.card:hover,.tiles .tile:hover,.gaw:hover{
+@media (hover: hover) { .panel:hover, .card:hover, .tiles .tile:hover, .gaw:hover {
   border-color:#2a2a2a!important;transform:none!important;box-shadow:none!important;
-}
+} }
 .board > .btn,.actions > .btn,.board > button{box-shadow:none!important;border-radius:10px!important}
 
 .workspace-body .grid{gap:1rem!important;align-items:stretch!important}
@@ -146,7 +146,7 @@ nav.sections .nav-ico-wrap,
   border-radius:10px!important;
 }
 .btn.primary{background:var(--accent)!important;color:var(--on-accent)!important;border-color:transparent!important}
-.btn.primary:hover:not(:disabled){background:var(--accent-hover)!important}
+@media (hover: hover) { .btn.primary:hover:not(:disabled) {background:var(--accent-hover)!important} }
 
 .lvl-stat-row{
   display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;
@@ -278,7 +278,7 @@ html, .workspace-body, .desk-stream, #tpl-index, .appear-list, .cselect-menu, .m
 /* ── Sidebar icons: duotone — a soft fill under clean lines, lit in the
    accent when the tab is open ─────────────────────────────────────────── */
 .sidebar-nav.sections .nav-ico .duo { opacity: .14; transition: opacity .25s ease; }
-.sidebar-nav.sections > button:hover .nav-ico .duo { opacity: .24; }
+@media (hover: hover) { .sidebar-nav.sections > button:hover .nav-ico .duo { opacity: .24; } }
 .sidebar-nav.sections > button[aria-current=true] .nav-ico { color: var(--accent-2, #4d5cff); }
 .sidebar-nav.sections > button[aria-current=true] .nav-ico .duo { opacity: .3; }
 .sidebar-nav.sections .nav-ico { transition: color .25s ease, transform .25s cubic-bezier(.3,.7,.2,1); }
@@ -293,3 +293,100 @@ html, .workspace-body, .desk-stream, #tpl-index, .appear-list, .cselect-menu, .m
 .sidebar-status-row .val.is-off { color: #646464; }
 @keyframes st-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #22c55e) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
 @media (prefers-reduced-motion: reduce) { .sidebar-status-row .val.is-on::before { animation: none; } }
+/* ══ better-ui polish layer ═══════════════════════════════════════════════
+   Loaded last on purpose. Values are the skill's exact ones. */
+
+/* Press: scale to 0.96 over 150ms ease-out, never while disabled. Written
+   with the `scale` property so the older `transform: none !important`
+   anti-shake rules (which target `transform`) cannot cancel it. */
+.btn, .chip-toggle, .chip, .seg-opt, .feat-card, .mod-shield, .mod-tile, .feed-power,
+.tile[data-goto], .ov-quick-btn, .sched-pause, .set-nav-chip, .pick-q, .tpl-entry,
+.gaw.tappable, .social-strip, .composer-tab, .sidebar-nav.sections > button, .guilds button {
+  /* !important to beat the older anti-shake lists, which pin the property
+     list with !important and would leave the press without its 150ms. */
+  transition-property: scale, background-color, border-color, color, opacity, box-shadow !important;
+  transition-duration: 150ms !important;
+  transition-timing-function: ease-out !important;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:not(:disabled):active, .chip-toggle:not(:disabled):active, .chip:not(:disabled):active,
+.seg-opt:not(:disabled):active, .feat-card:not(:disabled):active, .mod-shield:not(:disabled):active,
+.mod-tile:not(:disabled):active, .feed-power:not(:disabled):active, .tile[data-goto]:active,
+.ov-quick-btn:not(:disabled):active, .sched-pause:not(:disabled):active, .set-nav-chip:not(:disabled):active,
+.pick-q:not(:disabled):active, .tpl-entry:not(:disabled):active, .gaw.tappable:active, .social-strip:active,
+.composer-tab:not(:disabled):active, .sidebar-nav.sections > button:not(:disabled):active, .guilds button:not(:disabled):active {
+  scale: 0.96;
+}
+/* The old per-element press transforms (0.94–0.995) are retired. */
+.btn:active, .chip:active, .tpl-entry:active, .chip-toggle:active, .guilds button:active,
+.gaw.tappable:active, .social-strip:active, .sidebar-nav.sections > button:active .nav-ico { transform: none !important; }
+
+/* Tab switch: high-frequency, so a 150ms opacity fade and nothing else. */
+@keyframes bu-fade { from { opacity: 0; } }
+html[data-entered] body .section.sec-enter > * { animation: bu-fade 150ms ease-out both !important; animation-delay: 0ms !important; }
+.sidebar-nav.sections .sec-ink { display: none !important; }
+.sidebar-nav.sections.has-ink > button[aria-current=true] { background: var(--surface-2) !important; }
+
+/* First load: the one staged entrance, 100ms apart — opacity, 4px blur and
+   12px of rise over 300ms ease-out. Opacity only under reduced motion. */
+html.first-enter .section[data-active] > * { animation: bu-fade 300ms ease-out both; }
+@keyframes bu-enter { from { opacity: 0; translate: 0 12px; filter: blur(4px); } }
+@media (prefers-reduced-motion: no-preference) {
+  html.first-enter .section[data-active] > * { animation-name: bu-enter; }
+}
+html.first-enter .section[data-active] > :nth-child(2) { animation-delay: 100ms; }
+html.first-enter .section[data-active] > :nth-child(3) { animation-delay: 200ms; }
+html.first-enter .section[data-active] > :nth-child(4) { animation-delay: 300ms; }
+html.first-enter .section[data-active] > :nth-child(n+5) { animation-delay: 400ms; }
+
+/* Sheet rows: same entrance values, staggered 100ms; opacity only when
+   motion is reduced. */
+.sheet-body > * { animation: bu-fade 300ms ease-out both; }
+@media (prefers-reduced-motion: no-preference) { .sheet-body > * { animation-name: bu-enter; } }
+.sheet-body > *:nth-child(1) { animation-delay: 0ms; }
+.sheet-body > *:nth-child(2) { animation-delay: 100ms; }
+.sheet-body > *:nth-child(3) { animation-delay: 200ms; }
+.sheet-body > *:nth-child(n+4) { animation-delay: 300ms; }
+
+/* Routine redraws get no motion. */
+.member-row { animation: none !important; }
+
+/* Every movement / scale / blur animation is gated; under reduced motion it
+   becomes a plain opacity cross-fade instead of vanishing. */
+@media (prefers-reduced-motion: reduce) {
+  .feat-card, .mod-shield, .mod-tile, .whop-stat, .owner-stat, .gaw-step, .whop-track, .whop-group,
+  .desk-row.is-arriving, .whop-inline, .reply-test-out p, .desk-jump, .brand-real-img.pop,
+  .gaw-card.gaw-launched, html.booted #main {
+    animation: bu-fade 150ms ease-out both !important;
+  }
+  .desk-row.is-arriving .desk-body, .desk-live-dot, .sidebar-status-row .val.is-on::before { animation: none !important; }
+  .btn:not(:disabled):active, .chip-toggle:not(:disabled):active, .tile[data-goto]:active { scale: 1; }
+}
+
+/* Overlays keep their scroll to themselves. */
+.sheet, .sheet-body, .cselect-menu, .cselect-list, .img-source-menu, .desk-pad-card, .desk-pad-list,
+.confirm-card, .composer-preview-pane, .owner-notice-to, .desk-stream { overscroll-behavior: contain; }
+
+/* Content images: a 1px outline just inside the edge, pure white at 10%
+   (the panel is dark). Logos and transparent artwork are left alone. */
+.member-av img, .member-pad-av img, img.desk-avatar, .dmsg-av, .whop-thumb img, .lvl-podium-av img,
+.brand-real-img, .gaw-card-img, .style-preview img.big, .dmsg img.big, .composer-msg-canvas .c-media-img,
+.owner-guild summary img, .owner-bot img {
+  outline: 1px solid oklch(1 0 0 / 0.1);
+  outline-offset: -1px;
+}
+
+/* Icon strokes follow the label beside them: the sidebar's 14px/500 labels
+   take 2px rendered; the 13px/400 status rows take 1.5px. Non-scaling so a
+   24-grid icon drawn at 18px keeps the rendered width. */
+.sidebar-nav .nav-ico-wrap svg.nav-ico { stroke-width: 2 !important; }
+.sidebar-nav .nav-ico :is(path, rect, circle) { vector-effect: non-scaling-stroke; }
+.sidebar-nav .nav-ico :is(path, rect, circle).duo { vector-effect: none; }
+.sidebar-status-row svg { stroke-width: 1.5 !important; }
+.sidebar-status-row svg :is(path, rect, circle) { vector-effect: non-scaling-stroke; }
+
+/* Concentric corners where a surface wraps pills with an even inset:
+   outer = inner + padding. */
+.set-nav { border-radius: calc(1rem + 0.45rem); }
+.composer-tabs { border-radius: calc(9px + 0.25rem); }
+.word-chips { border-radius: calc(1rem + 0.5rem); }
