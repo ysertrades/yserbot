@@ -50,10 +50,9 @@
   async function ensureCsrf() {
     try {
       if (window.__csrf) return window.__csrf;
+      // The panel's own state carries the token. There is no /api/csrf
+      // route, so the fetch that used to sit here only ever 404'd.
       if (window.state && window.state.csrf) { window.__csrf = window.state.csrf; return window.__csrf; }
-      var r = await fetch('/api/csrf', { credentials: 'same-origin', headers: hdr(false) });
-      var j = await r.json().catch(function () { return {}; });
-      if (j && j.csrf) window.__csrf = j.csrf;
       return window.__csrf || '';
     } catch (e) { return window.__csrf || ''; }
   }
@@ -455,6 +454,7 @@
         return false;
       }
       desk.channels = out.data.channels || [];
+      desk.loadedGuild = g;
       var textCh = desk.channels.filter(function (c) { return !c.isForum; });
       var forums = desk.channels.filter(function (c) { return !!c.isForum; });
       fillSelect($('desk-channel-sel'), textCh, 'Text channels...');
@@ -676,6 +676,21 @@
   }
 
   function tick() {
+    // Switching server in the panel changes the guild under the desk. Its
+    // channel list used to stay on the first server, so a send went to a
+    // channel id the new server does not have.
+    var g = gid();
+    if (g && g !== desk.loadedGuild && !desk.loadingGuild) {
+      if (desk.loadedGuild) {
+        desk.channelId = null;
+        desk.lastSig = '';
+        var stream = $('desk-stream');
+        if (stream) stream.replaceChildren();
+      }
+      desk.loadingGuild = true;
+      loadCh().finally(function () { desk.loadingGuild = false; });
+      return;
+    }
     if (desk.paused || !desk.channelId) return;
     if (document.hidden || document.visibilityState === 'hidden') return;
     hist(true);
@@ -684,23 +699,15 @@
   function boot() {
     if (!$('overview-desk')) return;
     shell();
-    // Fast path: guild already known
+    // Fast path: guild already known. Otherwise tick() picks it up as soon as
+    // the panel has one. The old fallback gave up after 6s and waited for a
+    // 'yser:guild-ready' event nothing ever fires, so a slow sign-in left the
+    // desk stuck on "Waiting for server..." until a reload.
     if (gid()) {
-      loadCh();
+      desk.loadingGuild = true;
+      loadCh().finally(function () { desk.loadingGuild = false; });
     } else {
-      var tries = 0;
-      function retryLoad() {
-        if (gid()) { loadCh(); return; }
-        if (tries < 40) { tries++; setTimeout(retryLoad, 150); }
-        else setFeed('Waiting for server...');
-      }
-      retryLoad();
-      try {
-        window.addEventListener('yser:guild-ready', function onReady() {
-          window.removeEventListener('yser:guild-ready', onReady);
-          loadCh();
-        });
-      } catch (e) {}
+      setFeed('Connecting...');
     }
     if (desk.timer) clearInterval(desk.timer);
     desk.timer = setInterval(tick, POLL);

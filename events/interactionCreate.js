@@ -843,10 +843,10 @@ module.exports = {
             await interaction.reply({ content: btnConfig.message || '✅', flags: EPHEMERAL_FLAG });
             success = true;
           } else if (btnConfig.type === 'embed') {
-            const { buildEmbedPayload } = require('../commands/utility/embed');
+            const { buildEmbedPayload, toMessageOptions } = require('../commands/utility/embed');
             const payload = buildEmbedPayload(interaction.guild, btnConfig.responseEmbedName || btnConfig.embedName, { user: interaction.user, channel: interaction.channel });
             if (!payload) { await interaction.reply({ content: '❌ Embed template not found.', flags: EPHEMERAL_FLAG }); }
-            else { await interaction.reply({ embeds: payload.embeds, files: payload.files, components: payload.components.length ? payload.components : undefined, flags: EPHEMERAL_FLAG }); success = true; }
+            else { await interaction.reply(toMessageOptions(payload, { ephemeral: true })); success = true; }
           } else if (btnConfig.type === 'ticket') {
             // The panel and /button have offered this type all along; nothing
             // here knew what to do with it, so every ticket button told the

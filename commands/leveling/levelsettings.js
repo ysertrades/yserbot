@@ -103,8 +103,10 @@ module.exports = {
     }
 
     if (sub === 'resetall') {
-      levelingEngine.resetAllXp(guildId, interaction.user.id);
-      return interaction.reply({ content: 'All member XP wiped. Leaderboard starts fresh.', ephemeral: true });
+      // resetAllXp resets settings and keeps XP — the opposite of what this
+      // subcommand says it does.
+      const r = levelingEngine.wipeAllXp(guildId, interaction.user.id);
+      return interaction.reply({ content: `All member XP wiped (${r.cleared} members). Leaderboard starts fresh.`, ephemeral: true });
     }
 
     return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });

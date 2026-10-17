@@ -28,7 +28,8 @@ async function issueWarning(guild, moderator, targetUser, member, reason) {
   let autoPunish = null;
   const config       = readJson('config.json', {});
   const warnSettings = config[guild.id]?.warnSettings;
-  if (member && warnSettings?.threshold && warnCount >= warnSettings.threshold) {
+  // 'none' (older Settings saves wrote it) means count only, never punish.
+  if (member && warnSettings?.threshold && warnSettings.action !== 'none' && warnCount >= warnSettings.threshold) {
     const action = warnSettings.action || 'kick';
     try {
       if (action === 'kick') {

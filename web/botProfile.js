@@ -143,9 +143,10 @@ function read(guildId, client, session) {
 
   return {
     isOwner: owner,
-    allowGuildNickname: true,
-    // Anyone with panel access to this server can set the nickname + server image.
-    canEditNickname: true,
+    allowGuildNickname: flags().allowGuildNickname,
+    // The owner console's switch decides this for everyone but the owner.
+    // It used to read true regardless, so turning the switch off did nothing.
+    canEditNickname: owner || flags().allowGuildNickname,
     canEditServerImage: true,
     canEditGlobal: owner,
     canEditPresence: owner,

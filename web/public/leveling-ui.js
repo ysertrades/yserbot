@@ -575,8 +575,10 @@
     const iWeekend = num(L.weekendBoost != null ? L.weekendBoost : 1, { min: 1, max: 5, step: 0.1 });
     rateGrid.append(field('Weekend boost', iWeekend, '1 = off'));
     cfg.append(rateGrid);
-    cfg.append(el('h2', null, 'Exclusions'));
-    cfg.append(el('p', 'hint', 'Pick from the list — each choice appears as a chip you can remove anytime.'));
+    // The channel list is an allow-list, not an exclusion: picking a channel
+    // stops XP everywhere else. Under "Exclusions" it read as the reverse.
+    cfg.append(el('h2', null, 'Where XP counts'));
+    cfg.append(el('p', 'hint', 'Leave "Only these channels" empty to earn XP in every channel. Add channels to earn XP there and nowhere else. Members with a no-XP role never earn XP.'));
 
     function chipPicker(opts, selectedIds, blankLabel, nameOf) {
       const wrap = el('div', 'lvl-chip-picker');
@@ -670,7 +672,7 @@
     const chNo = chipPicker(L.channelOpts || [], L.xpChannelIds || [], 'Add XP channel…', chName);
     const roleNo = chipPicker(L.roleOpts || [], L.noXpRoleIds, 'Add no-XP role…', roleName);
     const excl = el('div', 'lvl-channel-grid');
-    excl.append(field('XP channels', chNo));
+    excl.append(field('Only these channels (empty = all)', chNo));
     excl.append(field('No-XP roles', roleNo));
     cfg.append(excl);
 

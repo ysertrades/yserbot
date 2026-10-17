@@ -152,8 +152,6 @@ function save(guildId, body, guild) {
     }
   }
 
-  if (!changed.length) return { unchanged: true };
-  
   if ('panelTopics' in body) {
     const raw = body.panelTopics;
     if (!Array.isArray(raw)) return { error: 'bad_topics' };
@@ -169,8 +167,10 @@ function save(guildId, body, guild) {
       cleaned.push(row);
     }
     if (cleaned.length < 1) return { error: 'need_topics' };
-    next.panelTopics = cleaned;
-    changed.push('panel topics');
+    if (JSON.stringify(cleaned) !== JSON.stringify(current.panelTopics || null)) {
+      next.panelTopics = cleaned;
+      changed.push('panel topics');
+    }
   }
   if ('panelPlaceholder' in body && typeof body.panelPlaceholder === 'string') {
     const ph = body.panelPlaceholder.trim().slice(0, 150);
@@ -179,6 +179,11 @@ function save(guildId, body, guild) {
       changed.push('panel placeholder');
     }
   }
+
+  // Checked only after every field has had its say. It used to sit above the
+  // topics and placeholder, so a save that changed only those two returned
+  // "nothing to change" and they were never written.
+  if (!changed.length) return { unchanged: true };
 
   config[guildId].ticketSettings = next;
   writeJson('config.json', config);

@@ -354,7 +354,7 @@ async function participants(guildId, body, { guild }) {
       for (const b of bonusList) {
         if (m.roles.cache.has(b.id)) entries += (b.extra || 1);
       }
-      entries = Math.min(3, Math.max(1, entries));
+      entries = Math.min(11, Math.max(1, entries));
     }
     rows.push({
       id,
@@ -474,6 +474,7 @@ async function restartEmpty(guildId, body, { guild, client, session }) {
       guildId,
       requiredRoleId: body.requiredRoleId || rec.requiredRoleId || null,
       bonusRoleId: body.bonusRoleId || rec.bonusRoleId || null,
+      bonusRoles: Array.isArray(body.bonusRoles) ? body.bonusRoles : (rec.bonusRoles || null),
       minAccountAgeDays: Number(body.minAccountAgeDays) || rec.minAccountAgeDays || 0,
     },
   );

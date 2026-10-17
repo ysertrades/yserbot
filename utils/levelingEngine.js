@@ -657,6 +657,25 @@ function resetUser(guildId, userId) {
   return { ok: true };
 }
 
+/**
+ * Clears every member's XP and level, keeping the settings. The opposite of
+ * resetAllXp, which keeps XP and resets settings — /levelsettings resetall
+ * promised this but called that.
+ */
+function wipeAllXp(guildId, staffId) {
+  const { all, g } = guildState(guildId);
+  const cleared = Object.keys(g.users || {}).length;
+  g.users = {};
+  // The per-member event feed goes too: it would name XP nobody has any more.
+  g.events = [];
+  if (g.dailyLeaderboard) delete g.dailyLeaderboard;
+  g.wipedAt = Date.now();
+  g.wipedBy = staffId || null;
+  all[guildId] = g;
+  saveAll(all);
+  return { ok: true, cleared };
+}
+
 function setUserLevel(guildId, userId, level) {
   const { all, g } = guildState(guildId);
   const target = Math.max(0, Math.min(500, Math.floor(Number(level) || 0)));
@@ -698,7 +717,7 @@ async function syncAllRolesOnStartup(client) {
 module.exports = {
   loadAll, saveAll, guildState,
   handleMessage, processMessage: handleMessage, handleThreadCreate,
-  panelSnapshot, saveConfig, manualXp, resetAllXp,
+  panelSnapshot, saveConfig, manualXp, resetAllXp, wipeAllXp,
   getUserRank, getLeaderboard, resetUser, setUserLevel,
   syncAllRolesOnStartup, syncRoles,
   xpToNext, totalXpForLevel, levelFromXp, progressFromXp, SCHEMA,

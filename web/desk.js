@@ -324,7 +324,21 @@ async function purgeMessages(guild, channelId, body = {}) {
   const me = await resolveMe(guild);
   if (!canManageMessages(ch, me)) return { error: 'cannot_manage' };
   const amount = Math.min(100, Math.max(1, Number(body.amount) || 10));
+  // "Purge this user" used to fall through to a plain purge and delete the
+  // last N messages from everybody.
+  const userId = String(body.action || '').toLowerCase() === 'purgeuser' ? String(body.userId || '') : '';
+  if (String(body.action || '').toLowerCase() === 'purgeuser' && !/^\d{5,25}$/.test(userId)) {
+    return { error: 'bad_user' };
+  }
   try {
+    if (userId) {
+      // Look back over the last 100 and take up to `amount` of theirs.
+      const recent = await ch.messages.fetch({ limit: 100 });
+      const theirs = [...recent.filter(m => m.author?.id === userId).values()].slice(0, amount);
+      if (!theirs.length) return { ok: true, deleted: 0 };
+      const deleted = await ch.bulkDelete(theirs, true);
+      return { ok: true, deleted: deleted.size };
+    }
     const deleted = await ch.bulkDelete(amount, true);
     return { ok: true, deleted: deleted.size };
   } catch (err) {
@@ -369,7 +383,11 @@ async function forwardMessage(guild, targetChannelId, body = {}) {
     const noteText = String(note || '').trim().slice(0, 500);
     if (noteText) {
       try {
-        await targetCh.send({ content: noteText, reply: { messageReference: sent.id, failIfNotExists: false } });
+        await targetCh.send({
+          content: noteText,
+          reply: { messageReference: sent.id, failIfNotExists: false },
+          allowedMentions: { parse: ['users', 'roles'] },
+        });
       } catch (noteErr) {
         console.warn('[desk] forward note failed:', noteErr.message || noteErr);
       }
@@ -397,7 +415,10 @@ async function sendAsBot(guild, channelId, body = {}) {
   const replyTo = body.replyTo && /^\d{5,25}$/.test(String(body.replyTo))
     ? String(body.replyTo)
     : null;
-  const payload = { content: text.slice(0, 2000) };
+  // Users and roles can be pinged from the desk, @everyone/@here cannot — a
+  // stray "@everyone" typed into the panel used to ping the whole server.
+  const allowedMentions = { parse: ['users', 'roles'], repliedUser: true };
+  const payload = { content: text.slice(0, 2000), allowedMentions };
   if (replyTo) {
     // discord.js v14 accepts either reply.messageReference or top-level messageReference
     payload.reply = { messageReference: replyTo, failIfNotExists: false };
@@ -411,7 +432,7 @@ async function sendAsBot(guild, channelId, body = {}) {
     // Retry without reply if the referenced message is gone
     if (replyTo) {
       try {
-        const msg = await ch.send({ content: text.slice(0, 2000) });
+        const msg = await ch.send({ content: text.slice(0, 2000), allowedMentions });
         return { ok: true, message: serializeMessage(msg), warning: 'reply_target_missing' };
       } catch (err2) {
         return { error: 'send_failed', detail: String(err2.message || err2).slice(0, 140) };

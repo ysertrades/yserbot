@@ -390,6 +390,14 @@ module.exports = {
       const payload = buildEmbedPayload(interaction.guild, name, { user: interaction.user, channel: interaction.channel });
       if (!payload)
         return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Not Found', description: `Template **${name}** not found.` }, interaction.guild)] });
+      if (payload.v2) {
+        const opts = toMessageOptions(payload, { content: `👁️ Preview of **${name}** — only you can see this.`, ephemeral: true });
+        opts.components = [...opts.components, {
+          type: 1,
+          components: [{ type: 2, style: ButtonStyle.Success, label: '📤 Send Here', custom_id: `embed_previewsend:${name}` }],
+        }];
+        return interaction.reply(opts);
+      }
       const rows = [...(payload.components || [])];
       if (rows.length < 5) {
         rows.push(new ActionRowBuilder().addComponents(
@@ -449,7 +457,7 @@ module.exports = {
         }
       }
 
-      await channel.send({ content, embeds: payload.embeds, files: payload.files, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions: mentionOpts });
+      await channel.send(toMessageOptions(payload, { content, allowedMentions: mentionOpts || { parse: [] } }));
       await interaction.reply({ embeds: [createServerEmbed('success', { title: '📤 Sent', description: `Embed **${name}** sent to ${channel}.` }, interaction.guild)] });
       tempDelete(interaction);
     }
@@ -458,10 +466,27 @@ module.exports = {
 
 // ── Build payload for sending ──────────────────────────────────────────────────
 
+function isV2Template(raw) {
+  return !!raw && (raw.format === 'v2' || (Array.isArray(raw.blocks) && raw.blocks.length > 0));
+}
+
 function buildEmbedPayload(guild, name, ctx = {}) {
   const all      = readTemplates(guild.id);
   const raw      = all[guild.id]?.[name];
   if (!raw) return null;
+
+  // Components V2 templates store their content as blocks, not embeds. This
+  // used to build an empty embed list for them, so every path that sends a
+  // template — schedules, auto-replies, "show a message" buttons, /embed
+  // send — posted nothing (or failed) for a V2 message.
+  if (isV2Template(raw)) {
+    const composer = require('../../web/composer');
+    const buttons = Object.values(readJson('buttons.json', {})[guild.id] || {}).filter(b => b.embedName === name);
+    const built = composer.buildV2PayloadFromTemplate(composer.normalize(raw), buttons);
+    if (!built || built.error) return null;
+    return { v2: true, flags: built.flags, components: built.components, embeds: [], files: [] };
+  }
+
   const template = normalizeTemplate(raw);
   const fullCtx  = { guild, ...ctx };
   const builtEmbeds = template.embeds.map(e => buildEmbedFromData(e, { ctx: fullCtx }));
@@ -503,7 +528,45 @@ function buildEmbedPayload(guild, name, ctx = {}) {
   };
 }
 
+/**
+ * Turns a built template into the options for channel.send / reply / edit.
+ *
+ * Classic templates are embeds + action rows; Components V2 templates are a
+ * container and must not carry `content` or `embeds` at all, so a mention line
+ * goes in as the first text block of the container instead.
+ *
+ * @param {object} payload   from buildEmbedPayload
+ * @param {object} [opts]    content, allowedMentions, ephemeral
+ */
+function toMessageOptions(payload, { content, allowedMentions, ephemeral = false } = {}) {
+  if (payload.v2) {
+    let components = payload.components;
+    if (content) {
+      components = JSON.parse(JSON.stringify(components));
+      const line = { type: 10, content: String(content).slice(0, 4000) };
+      const box = components.find(c => c && c.type === 17);
+      if (box) box.components.unshift(line);
+      else components.unshift(line);
+    }
+    return {
+      flags: payload.flags | (ephemeral ? MessageFlags.Ephemeral : 0),
+      components,
+      ...(allowedMentions ? { allowedMentions } : {}),
+    };
+  }
+  return {
+    content: content || undefined,
+    embeds: payload.embeds,
+    files: payload.files,
+    components: payload.components.length ? payload.components : undefined,
+    ...(allowedMentions ? { allowedMentions } : {}),
+    ...(ephemeral ? { flags: MessageFlags.Ephemeral } : {}),
+  };
+}
+
 module.exports.buildEmbedPayload = buildEmbedPayload;
+module.exports.toMessageOptions = toMessageOptions;
+module.exports.isV2Template = isV2Template;
 
 /**
  * The same treatment, for text that is not part of an embed.
@@ -611,7 +674,12 @@ module.exports.handleEmbedButton = async function(interaction) {
     const name    = id.slice('embed_previewsend:'.length);
     const payload = buildEmbedPayload(interaction.guild, name, { user: interaction.user, channel: interaction.channel });
     if (!payload) return interaction.update({ content: '❌ Template no longer exists.', embeds: [], components: [] });
-    await interaction.channel.send({ embeds: payload.embeds, files: payload.files, components: payload.components.length ? payload.components : undefined });
+    await interaction.channel.send(toMessageOptions(payload, { allowedMentions: { parse: [] } }));
+    // An ephemeral V2 preview cannot be edited back into plain text, so it is
+    // answered with a separate private note instead.
+    if (payload.v2 || interaction.message?.flags?.has?.(MessageFlags.IsComponentsV2)) {
+      return interaction.reply({ content: `✅ Sent **${name}** to this channel.`, flags: MessageFlags.Ephemeral });
+    }
     return interaction.update({ content: `✅ Sent **${name}** to this channel.`, embeds: [], components: [] });
   }
 

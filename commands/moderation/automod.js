@@ -221,7 +221,9 @@ async function handleBadWordViolation(message, client) {
     .setTimestamp());
 
   if (autoPunish) {
-    await channel.send({ content: `🤖 ${author} was automatically **${autoPunish.action}ed** after reaching **${autoPunish.threshold}** warnings.` }).catch(() => {});
+    // "${action}ed" read "baned" and "muteed".
+    const done = { kick: 'kicked', ban: 'banned', mute: 'muted' }[autoPunish.action] || autoPunish.action;
+    await channel.send({ content: `🤖 ${author} was automatically **${done}** after reaching **${autoPunish.threshold}** warnings.` }).catch(() => {});
   }
 }
 

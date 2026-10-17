@@ -30,6 +30,15 @@ async function checkSchedules(client) {
             const schedule = guildSchedules[id];
             if (schedule.time > now) continue;
 
+            // A paused schedule keeps its clock: it rolls on to its next
+            // occurrence without posting, so resuming it does not fire a
+            // backlog. A paused one-off is kept as it is until resumed.
+            if (schedule.enabled === false) {
+                const skipTo = computeNextRun(schedule.time, schedule.frequency, now, schedule.offsetMinutes || 0);
+                if (skipTo) { schedule.time = skipTo; changed = true; }
+                continue;
+            }
+
             changed = true;
             const result = await fireSchedule(guild, schedule).catch(err => {
                 console.error(`[SCHEDULE ${id}] failed to send:`, err);
@@ -70,7 +79,7 @@ async function fireSchedule(guild, schedule) {
     }
 
     // Required lazily to avoid a require cycle at module-load time.
-    const { buildEmbedPayload } = require('../commands/utility/embed');
+    const { buildEmbedPayload, toMessageOptions } = require('../commands/utility/embed');
     const payload = buildEmbedPayload(guild, schedule.embedName, { channel });
     if (!payload) {
         return { ok: false, reason: 'template-missing' };
@@ -78,7 +87,7 @@ async function fireSchedule(guild, schedule) {
 
     const { text: content, allowedMentions } = mentionSend(schedule.mention);
 
-    await channel.send({ content: content ?? undefined, embeds: payload.embeds, files: payload.files, components: payload.components.length > 0 ? payload.components : undefined, allowedMentions });
+    await channel.send(toMessageOptions(payload, { content, allowedMentions }));
     return { ok: true };
 }
 

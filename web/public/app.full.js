@@ -268,7 +268,10 @@ async function sendDropPrize(shortId, text) {
   if (res?.ok) toast(`Prize DM sent (${res.sent}/${res.total}).`, 'good');
 }
 
-async function post(op, body, { quiet = false } = {}) {
+// `readOnly` is for ops that only fetch (the participants sheet polls one
+// every few seconds). Their answer must not replace the overview: doing so
+// re-rendered the whole panel on every poll, which is what made it flicker.
+async function post(op, body, { quiet = false, readOnly = false } = {}) {
   let res;
   try {
     res = await fetch(`/api/guild/${state.guildId}/${op}`, {
@@ -292,6 +295,7 @@ async function post(op, body, { quiet = false } = {}) {
     console.warn('[Panel write failed]', op, res.status, data);
     return null;
   }
+  if (readOnly) return data;
   if (data.unchanged) { if (!quiet) toast('Nothing to change.'); return data; }
   if (!quiet) {
     const SUCCESS = {
@@ -1137,29 +1141,37 @@ function renderOverviewCards() {
 
 }
 
+/**
+ * Runs one section's renderer and keeps going if it throws.
+ *
+ * Every section used to run in one unguarded sequence, so a single renderer
+ * that threw (renderPolls, after the Polls section left the page) silently
+ * stopped every section after it from drawing — and the exception escaped into
+ * refreshOverview, which mistook it for a network failure.
+ */
+function safeRender(name, fn) {
+  try { fn(); } catch (e) { console.warn(`[panel] ${name} failed to render`, e); }
+}
+
 function renderOverview() {
   if (!state.overview) return;
-  renderOverviewCards();
-  bindMembersSearch();
-  renderMembersRoster();
-  try { syncFeatureNav(); } catch {}
+  safeRender('overviewCards', renderOverviewCards);
+  safeRender('membersSearch', bindMembersSearch);
+  safeRender('membersRoster', () => renderMembersRoster());
+  safeRender('featureNav', syncFeatureNav);
   if (isEditing() || sheetIsOpen()) {
     liveMissed = true;
     return;
   }
-  renderFeedForms();
-  renderModerationForm();
-  /* renderShop retired */
+  safeRender('feedForms', renderFeedForms);
+  safeRender('moderationForm', renderModerationForm);
   /* Composer sticky while tab open — full rebuild kills contenteditable focus. */
-  if (root.dataset.section !== 'composer') {
-    try { renderComposer(); } catch (e) { console.warn('[panel] renderComposer', e); }
-  } else {
-    try { renderComposerIndex(); } catch (e) {}
-  }
+  if (root.dataset.section !== 'composer') safeRender('composer', renderComposer);
+  else safeRender('composerIndex', renderComposerIndex);
   /* Appearance editor is sticky — only rebuilt when opening the tab or
      changing which message is selected. Rebuilding it on every overview
      refresh is what made the Appearance tab flash. */
-  if (root.dataset.section !== 'appearance') renderAppearance();
+  if (root.dataset.section !== 'appearance') safeRender('appearance', renderAppearance);
   else {
     const count = document.getElementById('appearance-count');
     const data = state.overview?.appearance;
@@ -1168,35 +1180,25 @@ function renderOverview() {
       count.classList.toggle('on', data.changedCount > 0);
     }
   }
-  /* Social removed from panel */
-  renderGiveaways();
-  renderSettings();
-  renderFeatureToggles();
-  try { syncFeatureNav(); } catch {}
-  try { syncFeatureNav(); } catch (e) { console.warn('[panel] syncFeatureNav', e); }
-  renderBotProfile();
-  renderPanelLog();
-  renderLegalLinks();
-  renderTickets();
-  renderPolls();
-  renderLinkRequests();
-  renderModeration();
-  renderGroupForm('#form-lottery', 'lottery');
-  /* cards retired */
-  /* Drop form first — must not sit behind economy renders that can throw */
-  renderGiveawayForm();
-  try { renderCoins(); } catch (e) { console.warn('[panel] renderCoins', e); }
-  try { renderSchedules(); } catch (e) { console.warn('[panel] renderSchedules', e); }
-  try { renderAutoreplies(); } catch (e) { console.warn('[panel] renderAutoreplies', e); }
-  renderLevels();
-  renderLevelRoles();
-  renderLevelBadges();
-  renderLevelsReset();
-  
-  
-  
-  
-  /* lottery retired */
+  safeRender('giveaways', renderGiveaways);
+  safeRender('settings', renderSettings);
+  safeRender('featureToggles', renderFeatureToggles);
+  safeRender('botProfile', renderBotProfile);
+  safeRender('panelLog', renderPanelLog);
+  safeRender('legalLinks', renderLegalLinks);
+  safeRender('tickets', renderTickets);
+  safeRender('polls', renderPolls);
+  safeRender('linkRequests', renderLinkRequests);
+  safeRender('moderation', renderModeration);
+  safeRender('lottery', () => renderGroupForm('#form-lottery', 'lottery'));
+  safeRender('giveawayForm', () => renderGiveawayForm());
+  safeRender('coins', renderCoins);
+  safeRender('schedules', renderSchedules);
+  safeRender('autoreplies', renderAutoreplies);
+  safeRender('levels', renderLevels);
+  safeRender('levelRoles', renderLevelRoles);
+  safeRender('levelBadges', renderLevelBadges);
+  safeRender('levelsReset', renderLevelsReset);
   startTicking();
 }
 
@@ -2544,6 +2546,44 @@ function renderComposerIndex() {
   }));
 }
 
+/**
+ * Writes the buttons drawn on the Components V2 canvas.
+ *
+ * They live on the draft as `_buttons` until the template itself is saved,
+ * because a button can only attach to a template that exists. Each one is
+ * saved against the template by `embedName` — the field the server keys on —
+ * and any button that was on the saved template but has been removed from the
+ * canvas is deleted, so what is stored is what was on screen.
+ *
+ * @returns {Promise<number>} how many failed, for the caller to report
+ */
+async function saveCanvasButtons(draft, templateName) {
+  if (!Array.isArray(draft._buttons)) return 0;
+  const saved = (state.overview?.composer || []).find(t => t.name === templateName)?.buttons || [];
+  const keep = new Set(draft._buttons.map(b => b.id));
+  let failed = 0;
+  for (const b of draft._buttons) {
+    const out = await post('button', {
+      embedName: templateName,
+      id: b.id,
+      label: b.label || '',
+      type: b.type || 'custom',
+      style: b.type === 'link' ? 'Link' : (b.style && b.style !== 'Link' ? b.style : 'Primary'),
+      url: b.url || '',
+      roleId: b.roleId || '',
+      emoji: b.emoji || '',
+      responseEmbedName: b.responseEmbedName || '',
+    }, { quiet: true });
+    if (!out) failed++;
+  }
+  for (const b of saved) {
+    if (keep.has(b.id)) continue;
+    const out = await post('buttondelete', { id: b.id }, { quiet: true });
+    if (!out) failed++;
+  }
+  return failed;
+}
+
 function newDraft(name = '') {
   return {
     name,
@@ -2896,9 +2936,18 @@ function renderComposer() {
         { value: 'link', label: 'Link' }, { value: 'role', label: 'Role' },
         { value: 'ticket', label: 'Ticket' }, { value: 'custom', label: 'Custom' },
         { value: 'embed', label: 'Embed' },
-      ], function (v) { st.type = v; if (v === 'link') st.style = 'Link'; openButtonEditor(st, editIndex); }));
+      ], function (v) {
+        st.type = v;
+        // Discord only accepts the Link style on link buttons and refuses it
+        // everywhere else, so the style follows the type.
+        if (v === 'link') st.style = 'Link';
+        else if (st.style === 'Link') st.style = 'Primary';
+        openButtonEditor(st, editIndex);
+      }));
       if (st.type === 'link') {
         btnEditorHost.append(textField('URL', st.url || '', function (v) { st.url = v; }));
+      } else if (st.type === 'embed') {
+        btnEditorHost.append(templatePick(st.responseEmbedName || '', function (v) { st.responseEmbedName = v; }));
       } else if (st.type === 'role') {
         var pick = (typeof window.pickOne === 'function') ? window.pickOne : null;
         if (pick) btnEditorHost.append(pick('Role', 'role', st.roleId || '', function (v) { st.roleId = v || ''; }, { blank: 'Select role…' }));
@@ -2918,9 +2967,11 @@ function renderComposer() {
       addBtn.type = 'button';
       addBtn.addEventListener('click', function () {
         if (!st.label || !String(st.label).trim()) { if (typeof toast === 'function') toast('Label required', 'bad'); return; }
-        if (st.type === 'link' && st.url && !/^https?:\/\//i.test(st.url)) {
-          if (typeof toast === 'function') toast('URL must start with http(s)://', 'bad'); return;
+        if (st.type === 'link' && !/^https?:\/\//i.test(st.url || '')) {
+          if (typeof toast === 'function') toast('Link buttons need a URL starting with http(s)://', 'bad'); return;
         }
+        if (st.type === 'role' && !st.roleId) { toast('Pick the role this button gives.', 'bad'); return; }
+        if (st.type === 'embed' && !st.responseEmbedName) { toast('Pick which message it shows privately.', 'bad'); return; }
         if (typeof editIndex === 'number') draft._buttons[editIndex] = st;
         else { if (!draft._buttons) draft._buttons = []; draft._buttons.push(st); }
         draft._dirty = true;
@@ -3146,16 +3197,9 @@ function renderComposer() {
         format: draft.format || 'legacy',
         blocks: draft.blocks || [],
         buttonsOutside: !!draft.buttonsOutside});
-    if (res?.ok && Array.isArray(draft._buttons) && draft._buttons.length) {
-      for (const b of draft._buttons) {
-        try {
-          await post('button', {
-            templateName: draft.name, name: draft.name, id: b.id, label: b.label,
-            type: b.type || 'custom', style: b.style || 'Primary',
-            url: b.url || '', roleId: b.roleId || '', emoji: b.emoji || '',
-          }, { quiet: true });
-        } catch (e) {}
-      }
+    if (res?.ok && draft.format === 'v2') {
+      const failed = await saveCanvasButtons(draft, draft.name);
+      if (failed) toast(`${failed} button${failed === 1 ? '' : 's'} could not be saved.`, 'bad');
     }
     saveBtn.disabled = false;
     if (res?.ok) { state.tplName = draft.name; state.draft = null; renderComposer(); }
@@ -3318,6 +3362,9 @@ function renderComposer() {
     let saving = false;
     saveBtn.addEventListener('click', async function () {
       if (saving) return;
+      // The canvas syncs to the draft on a short debounce; flush it so the
+      // last few keystrokes before pressing Save are not lost.
+      if (typeof draft._syncFromCanvas === 'function') { try { draft._syncFromCanvas(); } catch (e) {} }
       const name = (draft.name || '').trim();
       if (!name) { toast('Name this template first.', 'bad'); return; }
       if (draft.format === 'v2') {
@@ -3337,7 +3384,9 @@ function renderComposer() {
           around: draft.format === 'v2' ? null : (draft.around || null),
         });
         if (res && (res.ok || res.name)) {
-          toast('Template saved', 'good');
+          const failed = draft.format === 'v2' ? await saveCanvasButtons(draft, name) : 0;
+          if (failed) toast(`Template saved, but ${failed} button${failed === 1 ? '' : 's'} could not be saved.`, 'bad');
+          else toast('Template saved', 'good');
           state.draft = null; state.tplName = name;
           state.overview = await get('/api/guild/' + state.guildId);
           renderComposer();
@@ -3549,7 +3598,7 @@ async function openGiveawayParticipants(messageId, meta = {}) {
       openSheet(sheetTitle, [el('div', 'roster-loading', 'Pulling entrants…')], []);
     }
 
-    const res = await post('giveawayparticipants', { messageId });
+    const res = await post('giveawayparticipants', { messageId }, { quiet: true, readOnly: true });
     // Sheet closed or switched to another drop
     if (roster.messageId !== messageId) return;
     if (!res?.ok) {
@@ -4251,6 +4300,8 @@ function openEndedGiveaway(x) {
     const buildMessage = () => {
       const dropRef = x.shortId ? `QL-${x.shortId}` : '—';
       if (mode === 'giftcard') {
+        // Without this an empty box sent a winner a DM with a blank code.
+        if (!codeVal) return null;
         return (
           `🎁 Your quantlab gift card is ready!\n\n`
           + `**Drop:** \`${dropRef}\`\n`
@@ -6613,7 +6664,7 @@ function renderBotProfile() {
       const file = fileInput.files && fileInput.files[0];
       if (!file) return;
       try {
-        const img = await loadImageFromFile(file);
+        const img = await loadImageElement(file);
         studioHost.style.display = '';
         openAvatarStudio(studioHost, img, file.name, (dataUrl) => {
           imgDraft.url = '';
@@ -7864,6 +7915,9 @@ function pollResult(p) {
 function renderPolls() {
   const data = state.overview?.polls;
   if (!data) return;
+  // The Polls section was removed from the page; without its elements there
+  // is nothing to draw, and touching them would throw.
+  if (!$('#poll-count') || !$('#poll-open') || !$('#form-poll')) return;
 
   const count = $('#poll-count');
   count.textContent = String(data.open.length);
@@ -8367,6 +8421,7 @@ function renderLegalLinks() {
 function renderGroupForm(target, groupName) {
   const g = state.overview?.features?.groups?.[groupName];
   const form = $(target);
+  if (!form) return;
   if (!g) { form.replaceChildren(el('p', 'muted', 'Not available.')); return; }
 
   const draft = { group: groupName };
@@ -8495,18 +8550,29 @@ function renderSchedules() {
     nodes.push(empty);
   }
 
+  // s.time is the absolute next-run timestamp, not a clock time. Showing it
+  // raw put a 13-digit number in the Time box, and saving sent that number
+  // back, which parseScheduleTime rejects — so every edit failed "bad time".
+  const clockOf = ts => {
+    if (!ts) return '';
+    const d = new Date(Number(ts));
+    if (Number.isNaN(d.getTime())) return '';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
   for (const s of items) {
     const draft = {
       id: s.id,
       embedName: s.embedName,
       channelId: s.channelId,
       frequency: s.frequency,
-      time: s.time || '',
+      time: clockOf(s.time),
       dayOfWeek: s.dayOfWeek,
       date: s.date || '',
       mention: s.mention || null,
       enabled: s.enabled !== false,
     };
+    let timeEdited = false;
     const d = el('details', 'item');
     const sum = el('summary');
     const on = s.enabled !== false;
@@ -8518,8 +8584,8 @@ function renderSchedules() {
     const meta = el('p', 'hint');
     meta.textContent = [
       s.channelName ? `#${s.channelName}` : (s.channelId ? `channel ${s.channelId}` : 'no channel'),
-      s.nextRun ? `next ${fmtTime(s.nextRun)}` : null,
-      s.time ? `at ${s.time}` : null,
+      // There is no nextRun field; the stored time is the next run.
+      s.time ? (on ? `next ${fmtTime(s.time)}` : `paused · was due ${fmtTime(s.time)}`) : null,
     ].filter(Boolean).join(' · ');
     sum.append(meta);
 
@@ -8538,7 +8604,7 @@ function renderSchedules() {
       pickOne('Channel', 'channel', draft.channelId, v => { draft.channelId = v; }, { blank: 'Pick a channel' }),
       select('How often', draft.frequency, freqOptions(), v => { draft.frequency = v; syncCadence(v); }),
       dayPick,
-      textField('Time', draft.time, v => { draft.time = v; }, { placeholder: '09:30' }),
+      textField('Time', draft.time, v => { draft.time = v; timeEdited = true; }, { placeholder: '09:30' }),
       datePick,
       mentionPicker('Ping with the post', draft.mention, v => { draft.mention = v; }),
       toggle('Schedule enabled', on, v => { draft.enabled = v; }),
@@ -8547,7 +8613,13 @@ function renderSchedules() {
     const act = el('div', 'actions');
     const save = el('button', 'btn primary small', 'Save schedule');
     save.type = 'button';
-    save.addEventListener('click', () => post('schedule', { ...draft, offsetMinutes: tzOffset() }));
+    save.addEventListener('click', () => {
+      // Only a time somebody actually changed is sent. Re-sending the
+      // prefilled one would re-resolve it and could shift the next run.
+      const payload = { ...draft, offsetMinutes: tzOffset() };
+      if (!timeEdited || !String(draft.time).trim()) delete payload.time;
+      return post('schedule', payload);
+    });
     const del = el('button', 'btn small danger', 'Delete');
     del.type = 'button';
     del.addEventListener('click', async () => {
@@ -8821,6 +8893,7 @@ function shortDuration(ms) {
 function renderLevelRoles() {
   const lv = state.overview?.features?.levels;
   const list = $('#levelroles');
+  if (!list) return;
   const nodes = [];
 
   if (!lv?.roles?.length) nodes.push(el('p', 'muted', 'No level rewards set.'));
@@ -9001,7 +9074,9 @@ function renderStudioFields() {
  * other three blank.
  */
 function savedCopyFor(key) {
-  const saved = state.overview?.banners?.[key] || {};
+  // The overview carries this as `bannerCopy` (web/api.js); reading
+  // `banners` found nothing, so Studio always reopened on the defaults.
+  const saved = state.overview?.bannerCopy?.[key] || {};
   const tpl = state.templates.find(t => t.key === key);
   return { ...(tpl?.defaults || {}), ...saved };
 }
@@ -9058,7 +9133,7 @@ async function initStudio() {
       }
       const out = await post('banner', { template: state.tpl.key, copy });
       if (out && state.overview) {
-        state.overview.banners = { ...(state.overview.banners || {}), [state.tpl.key]: out.copy || {} };
+        state.overview.bannerCopy = { ...(state.overview.bannerCopy || {}), [state.tpl.key]: out.copy || {} };
       }
     } finally {
       btn.textContent = previous;
@@ -9733,24 +9808,9 @@ async function refreshOverview() {
     root.classList.remove('overview-failed');
   }
 
+  let data;
   try {
-    const data = await get(`/api/guild/${forGuild}`);
-    // An answer for a server you have since switched away from is not an
-    // answer to the question currently on screen.
-    if (forGuild !== state.guildId) return;
-    state.overview = data;
-    overviewTries = 0;
-    root.classList.remove('overview-loading', 'overview-failed');
-    renderOverview();
-    // Force visible state — recovers from interrupted CSS entrances on iOS.
-    revealOverviewChrome();
-    // Whatever else was blank when this was blank gets another go too.
-    if (blank) refreshSidecars();
-    // Banner wording is per guild, so Studio has to re-read it rather than keep
-    // showing the previous server's copy.
-    if (state.tpl) selectTemplate(state.tpl.key);
-    // And the stream follows whichever server is being looked at.
-    startLive();
+    data = await get(`/api/guild/${forGuild}`);
   } catch (err) {
     if (forGuild !== state.guildId) return;
     // A 401 is the session, not the server, and retrying it forever would be
@@ -9765,7 +9825,30 @@ async function refreshOverview() {
     // slow enough that a server which is genuinely down is not hammered.
     const wait = Math.min(15000, 1000 * 2 ** (overviewTries - 1));
     overviewRetry = setTimeout(refreshOverview, wait);
+    return;
   }
+
+  // An answer for a server you have since switched away from is not an
+  // answer to the question currently on screen.
+  if (forGuild !== state.guildId) return;
+  state.overview = data;
+  overviewTries = 0;
+  root.classList.remove('overview-loading', 'overview-failed');
+
+  // Drawing is kept outside the fetch's try/catch on purpose. A renderer that
+  // throws is a bug in this page, not a failed request — treating it as one
+  // marked the panel "retrying…" and re-fetched it forever, and the live
+  // stream below never started.
+  safeRender('overview', renderOverview);
+  // Force visible state — recovers from interrupted CSS entrances on iOS.
+  safeRender('reveal', revealOverviewChrome);
+  // Whatever else was blank when this was blank gets another go too.
+  if (blank) safeRender('sidecars', refreshSidecars);
+  // Banner wording is per guild, so Studio has to re-read it rather than keep
+  // showing the previous server's copy.
+  if (state.tpl) safeRender('studio', () => selectTemplate(state.tpl.key));
+  // And the stream follows whichever server is being looked at.
+  startLive();
 }
 
 /** After paint, pin opacity so a cancelled animation cannot leave cards invisible. */

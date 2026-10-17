@@ -1,5 +1,5 @@
-const casinoPanel = require('./casino');
 'use strict';
+const casinoPanel = require('./casino');
 
 /**
  * web/writes.js
@@ -861,7 +861,7 @@ Object.assign(OPS, {
     return r;
   },
   async levels(guildId, body, ctx) {
-    return module.exports.leveling(guildId, body, ctx);
+    return OPS.leveling(guildId, body, ctx);
   },
   async levelrole(guildId, body, ctx) {
     return { error: 'Leveling has been removed.' };
@@ -875,8 +875,11 @@ Object.assign(OPS, {
       if (typeof leveling.resetAllXp !== 'function') {
         return { error: 'leveling_unavailable', detail: 'Reset not supported on this build' };
       }
+      const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId) || null;
       const snap = leveling.resetAllXp(guildId, ctx.session?.uid, guild);
-      return { ok: true, levels: snap, changed: ['XP leaderboard reset'] };
+      // resetAllXp puts the settings back to defaults and keeps every
+      // member's XP, so say that rather than "leaderboard reset".
+      return { ok: true, levels: snap, changed: ['Leveling settings reset to defaults'] };
     } catch (err) {
       console.error('[writes.resetlevels]', err);
       return { error: 'leveling_save_failed', detail: err.message || String(err) };
@@ -937,7 +940,12 @@ Object.assign(OPS, {
   },
   'bot-profile-nick': async (guildId, body, ctx) => {
     const botProfile = require('./botProfile');
-    // Panel session already proves this user may manage this guild.
+    const auth = require('./auth');
+    // The panel session proves this user may manage the guild; the owner's
+    // allowGuildNickname switch decides whether that is enough.
+    if (!auth.isOwner(ctx.session.uid) && !botProfile.flags().allowGuildNickname) {
+      return { error: 'forbidden' };
+    }
     return botProfile.applyNickname(guildId, body?.nickname, ctx.client);
   },
   'bot-profile-server-image': async (guildId, body, ctx) => {
@@ -968,9 +976,10 @@ Object.assign(OPS, {
         }
         if (!ch) return { error: 'no_upload_channel' };
         const file = new AttachmentBuilder(buf, { name: `server_brand_${guildId}.png` });
+        // The message is kept on purpose: deleting it lets Discord expire the
+        // attachment, and the saved URL then stops loading a while later.
         const msg = await ch.send({ files: [file] });
         url = msg.attachments.first()?.url || null;
-        await msg.delete().catch(() => {});
         if (!url) return { error: 'bad_image' };
       } catch (err) {
         console.warn('[Panel] server image upload:', err.message);
@@ -1023,9 +1032,9 @@ Object.assign(OPS, {
     try {
       const { AttachmentBuilder } = require('discord.js');
       const file = new AttachmentBuilder(buf, { name: `panel_upload.${ext === 'jpeg' ? 'jpg' : ext}` });
+      // Kept, not deleted — see bot-profile-server-image above.
       const msg = await ch.send({ files: [file] });
       const url = msg.attachments.first()?.url;
-      await msg.delete().catch(() => {});
       if (!url) return { error: 'upload_failed' };
       return { ok: true, url };
     } catch (err) {
@@ -1034,6 +1043,11 @@ Object.assign(OPS, {
     }
   },
 
+  // Lived on module.exports only, so apply() — which looks ops up in OPS —
+  // answered every casino save with unknown_operation.
+  async casino(guildId, body, _ctx) {
+    return casinoPanel.save(guildId, body);
+  },
 });
 
 async function apply(op, guildId, body, ctx) {
@@ -1046,9 +1060,4 @@ async function apply(op, guildId, body, ctx) {
     return { error: 'internal', detail: String(err && err.message || err).slice(0, 200) };
   }
 }
-module.exports = {
-  async casino(guildId, body, ctx) {
-    const r = casinoPanel.save(guildId, body);
-    return r;
-  },
- apply, OPS };
+module.exports = { casino: OPS.casino, apply, OPS };
