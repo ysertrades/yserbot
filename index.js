@@ -52,8 +52,8 @@ process.on('uncaughtException', (err) => {
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);
 
-const SKIP_COMMAND_FOLDERS = new Set(['_disabled', 'economy']); // economy + casino cmds off
-const SKIP_COMMAND_FILES = new Set(['cards.js', 'cardsettings.js']); // cards retired
+// Shared with deploy-commands.js so the two cannot drift apart again.
+const { SKIP_COMMAND_FOLDERS, SKIP_COMMAND_FILES } = require('./utils/commandSkips');
 for (const folder of commandFolders) {
     if (SKIP_COMMAND_FOLDERS.has(folder)) continue;
     const commandsPath = path.join(foldersPath, folder);

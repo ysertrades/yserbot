@@ -657,6 +657,8 @@ Object.assign(OPS, {
           staffId: ctx.session?.uid,
         });
         if (r?.error) return r;
+        // Rank role now, not on their next message.
+        if (typeof leveling.applyRankRole === 'function') await leveling.applyRankRole(guild, String(body.userId));
         const snap = typeof leveling.panelSnapshot === 'function'
           ? leveling.panelSnapshot(guildId, guild) : null;
         return { ok: true, ...r, levels: snap, changed: ['Manual XP'] };

@@ -15,11 +15,20 @@ module.exports = {
   async execute(interaction) {
     const user   = interaction.options.getUser('user');
     const reason = interaction.options.getString('reason') || 'No reason provided';
-    const member = interaction.guild.members.cache.get(user.id);
+    // The interaction carries the member; the cache alone missed anyone the
+    // bot had not seen recently, so they could not be unmuted.
+    const member = interaction.options.getMember('user')
+      || await interaction.guild.members.fetch(user.id).catch(() => null);
 
     if (!member) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'User not found.' }, interaction.guild)] });
 
-    await member.timeout(null, reason);
+    // A refused timeout (role order, missing permission) used to throw out of
+    // the command unanswered — "The application did not respond".
+    try {
+      await member.timeout(null, reason);
+    } catch (err) {
+      return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Could not remove the timeout. Check my permissions and role order.' }, interaction.guild)] });
+    }
     await dmUser(user, 'unmute', interaction.guild, reason, {});
     await sendModLog(interaction.guild, 'unmute', user, interaction.user, reason, {});
 

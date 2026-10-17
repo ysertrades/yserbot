@@ -80,6 +80,8 @@ module.exports = {
       if (r.error) {
         return interaction.reply({ content: `Could not adjust XP (\`${r.error}\`).`, ephemeral: true });
       }
+      // Rank role now, not on their next message.
+      levelingEngine.applyRankRole(interaction.guild, user.id).catch(() => {});
       return interaction.reply({
         content: `${sub === 'addxp' ? 'Added' : 'Removed'} **${amount}** XP ${sub === 'addxp' ? 'to' : 'from'} <@${user.id}> → Lv **${r.level}** · **${r.xp.toLocaleString()}** total.`,
         ephemeral: true,
@@ -90,6 +92,7 @@ module.exports = {
       const user = interaction.options.getUser('user', true);
       const level = interaction.options.getInteger('level', true);
       const r = levelingEngine.setUserLevel(guildId, user.id, level);
+      levelingEngine.applyRankRole(interaction.guild, user.id).catch(() => {});
       return interaction.reply({
         content: `Set <@${user.id}> to level **${r.level}** (${r.xp.toLocaleString()} XP).`,
         ephemeral: true,

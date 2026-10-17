@@ -38,7 +38,14 @@ function getCmdSetup(guildId) {
 // When roles are configured, hide affected commands from everyone except those
 // roles and server administrators. When roles are cleared, reset to defaults.
 
+// Visibility only: the bot itself refuses these commands to anyone without a
+// configured role (checkCmdPermission in interactionCreate). Discord accepts
+// permission edits only from a user OAuth token — see permissionsRest in
+// utils/commandVisibility.js — so without COMMAND_PERMS_BEARER this skips the
+// call that was always refused.
 async function syncGuildCommandPerms(interaction, isAdmin, roles) {
+  const permRest = require('../../utils/commandVisibility').permissionsRest();
+  if (!permRest) return false;
   try {
     const rest    = new REST({ version: '10' }).setToken(process.env.TOKEN);
     const appId   = interaction.client.application.id;
@@ -67,7 +74,7 @@ async function syncGuildCommandPerms(interaction, isAdmin, roles) {
         ];
       }
 
-      await rest.put(
+      await permRest.put(
         Routes.applicationCommandPermissions(appId, guildId, cmdId),
         { body: { permissions } },
       );
@@ -128,7 +135,7 @@ module.exports = {
 
       const syncNote = (modOk && adminOk)
         ? '\n✅ Discord command visibility reset to defaults.'
-        : '\n⚠️ Could not update Discord visibility — permissions were cleared in bot config.';
+        : '\nThe bot enforces this itself. To also change who *sees* the commands, use **Server Settings → Integrations**.';
 
       return interaction.editReply({
         embeds: [createServerEmbed('success', { title: '🔄 Reset', description: `All command permission roles cleared.${syncNote}` }, interaction.guild)],
@@ -155,7 +162,7 @@ module.exports = {
 
     const syncNote = synced
       ? `\n✅ Discord command visibility updated — ${list.length === 0 ? 'commands restored to default visibility' : `only <@&${role.id}> and other configured roles will see the commands`}.`
-      : '\n⚠️ Could not update Discord command visibility automatically. Go to **Server Settings → Integrations → QuantLab** to set it manually.';
+      : '\nThe bot already refuses these commands to anyone without a configured role. To also hide them from the slash menu, use **Server Settings → Integrations → QuantLab**.';
 
     const category = isAdmin ? 'admin' : 'moderation';
     return interaction.editReply({

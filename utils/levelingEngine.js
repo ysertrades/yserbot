@@ -676,6 +676,27 @@ function wipeAllXp(guildId, staffId) {
   return { ok: true, cleared };
 }
 
+/**
+ * Gives a member the rank role for their stored level, right now.
+ *
+ * Roles were only synced from a chat message, so XP added or a level set by
+ * hand (panel or /levelsettings) left the member on their old rank until
+ * they next talked. Failures (left the server, role order) are swallowed:
+ * the XP change itself already succeeded.
+ */
+async function applyRankRole(guild, userId) {
+  try {
+    if (!guild?.members) return;
+    const { g } = guildState(guild.id);
+    const u = g.users?.[userId];
+    if (!u) return;
+    const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+    if (member) await syncRoles(member, u.level, g.roleRewards);
+  } catch (err) {
+    console.warn('[leveling] applyRankRole:', err.message);
+  }
+}
+
 function setUserLevel(guildId, userId, level) {
   const { all, g } = guildState(guildId);
   const target = Math.max(0, Math.min(500, Math.floor(Number(level) || 0)));
@@ -718,7 +739,7 @@ module.exports = {
   loadAll, saveAll, guildState,
   handleMessage, processMessage: handleMessage, handleThreadCreate,
   panelSnapshot, saveConfig, manualXp, resetAllXp, wipeAllXp,
-  getUserRank, getLeaderboard, resetUser, setUserLevel,
+  getUserRank, getLeaderboard, resetUser, setUserLevel, applyRankRole,
   syncAllRolesOnStartup, syncRoles,
   xpToNext, totalXpForLevel, levelFromXp, progressFromXp, SCHEMA,
   DEFAULT_ROLE_REWARDS, DEFAULT_CHANNEL_UNLOCKS,
