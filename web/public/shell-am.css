@@ -250,7 +250,7 @@ nav.sections .nav-ico-wrap,
 /* ── Tab motion + sliding nav highlight (after every other sheet) ──────────
    .sec-enter is added by showSection on a real tab switch and removed once
    played, so live repaints can never replay it (the old shake). */
-@keyframes sec-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes sec-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 html[data-entered] body .section.sec-enter > * { animation: sec-in .42s cubic-bezier(.2,.8,.2,1) both !important; }
 html[data-entered] body .section.sec-enter > :nth-child(2) { animation-delay: 40ms !important; }
 html[data-entered] body .section.sec-enter > :nth-child(3) { animation-delay: 80ms !important; }
@@ -264,4 +264,32 @@ html[data-entered] body .section.sec-enter > :nth-child(n+6) { animation-delay: 
 @media (prefers-reduced-motion: reduce) {
   html[data-entered] body .section.sec-enter > * { animation: none !important; }
   .sidebar-nav.sections .sec-ink { transition: none; }
+}@media (max-width: 900px) {
+  .sidebar-nav.sections .sec-ink { display: none !important; }
+  .sidebar-nav.sections.has-ink > button[aria-current=true] { background: var(--surface-2) !important; }
 }
+
+/* Scrollbars that never come and go: the space is kept whether or not the
+   page is long enough to scroll, so switching to a short tab no longer shifts
+   everything sideways (the shake), and live repaints cannot toggle it. */
+html, .workspace-body, .desk-stream, #tpl-index, .appear-list, .cselect-menu, .members-roster, .agenda { scrollbar-gutter: stable; }
+.workspace-body { overflow-anchor: auto; }
+
+/* ── Sidebar icons: duotone — a soft fill under clean lines, lit in the
+   accent when the tab is open ─────────────────────────────────────────── */
+.sidebar-nav.sections .nav-ico .duo { opacity: .14; transition: opacity .25s ease; }
+.sidebar-nav.sections > button:hover .nav-ico .duo { opacity: .24; }
+.sidebar-nav.sections > button[aria-current=true] .nav-ico { color: var(--accent-2, #4d5cff); }
+.sidebar-nav.sections > button[aria-current=true] .nav-ico .duo { opacity: .3; }
+.sidebar-nav.sections .nav-ico { transition: color .25s ease, transform .25s cubic-bezier(.3,.7,.2,1); }
+.sidebar-nav.sections > button:active .nav-ico { transform: scale(.9); }
+
+/* ── Live bot status ─────────────────────────────────────────────────────── */
+.sidebar-status-row .val { display: inline-flex; align-items: center; gap: 6px; transition: color .3s; }
+.sidebar-status-row .val::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; }
+.sidebar-status-row .val.is-on { color: var(--good, #22c55e); }
+.sidebar-status-row .val.is-on::before { opacity: 1; animation: st-live 2.4s ease-out infinite; }
+.sidebar-status-row .val.is-warn { color: var(--warn, #f59e0b); }
+.sidebar-status-row .val.is-off { color: #646464; }
+@keyframes st-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good, #22c55e) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
+@media (prefers-reduced-motion: reduce) { .sidebar-status-row .val.is-on::before { animation: none; } }

@@ -683,7 +683,24 @@ async function updatePost(guildId, body, { guild, client }) {
   // with an unreadable 400.
   if (payload.v2) {
     if (!message.flags?.has?.(payload.flags)) {
-      return { error: 'update_failed', detail: 'This post was sent as a classic embed. Send the V2 message again instead of updating it.' };
+      // Discord fixes the V2 flag when a message is created, so a classic post
+      // can never be edited into a V2 one. Instead of refusing, the template
+      // goes up as a fresh V2 post in the same channel and the old one (and
+      // its second message, if any) is removed — one press, same result.
+      let fresh;
+      try {
+        fresh = await channel.send({ flags: payload.flags, components: payload.components, allowedMentions: { parse: [] } });
+      } catch (err) {
+        console.error('[Panel] V2 repost failed:', err.message);
+        return { error: 'update_failed', detail: err.message.slice(0, 140) };
+      }
+      try { await message.delete(); } catch { /* already gone or no permission — the new one is up */ }
+      if (known?.belowId) {
+        try { await (await channel.messages.fetch(known.belowId)).delete(); } catch { /* fine */ }
+      }
+      panelPosts.forget(guildId, [messageId]);
+      rememberPost(guildId, fresh.id, { channelId, templateName, sentAt: Date.now(), content: null, belowId: null });
+      return { ok: true, messageId: fresh.id, templateName, replaced: true };
     }
     try {
       await message.edit({ components: payload.components, allowedMentions: { parse: [] } });
