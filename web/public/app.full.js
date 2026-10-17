@@ -9469,6 +9469,9 @@ async function ownerWrite(method, path, body) {
 }
 
 async function loadOwnerConsole() {
+  // What is already known is on screen at once; the fetch below only
+  // repaints if the answer differs (see the signature in renderOwnerConsole).
+  if (state.ownerGuilds) { try { renderOwnerConsole(); } catch (_) {} }
   try {
     const [data, flags] = await Promise.all([
       get('/api/owner/guilds'),
@@ -9488,33 +9491,59 @@ async function loadOwnerConsole() {
    they are not looking at. */
 let ownerVitalsTimer = null;
 
+/*
+ * Built once, then patched. The strip used to be thrown away and rebuilt on
+ * every paint: first as five placeholder tiles with no bot row, then — a
+ * request later — as a bot row plus six tiles, so the whole console jumped
+ * down as it opened, and again every 15s when the numbers refreshed. Now the
+ * skeleton has the same shape as the filled strip (bot row included), and a
+ * refresh only rewrites the text that changed.
+ */
+const OWNER_STATS = [
+  ['guilds', 'Servers'], ['members', 'Members'], ['ping', 'Ping'],
+  ['memory', 'Memory'], ['uptime', 'Uptime'], ['branded', 'Custom brands'],
+];
+
 function paintOwnerVitals(host) {
-  const v = state.ownerVitals;
   if (!host) return;
-  const stat = (n, l, tone = '') => {
-    const t = el('div', `owner-stat ${tone}`);
-    t.append(el('span', 'n', n), el('span', 'l', l));
-    return t;
-  };
-  if (!v) {
-    host.replaceChildren(...['Servers', 'Members', 'Ping', 'Memory', 'Uptime'].map(l => stat('—', l, 'ph')));
-    return;
+  if (!host.dataset.built) {
+    host.dataset.built = '1';
+    const head = el('div', 'owner-bot');
+    const av = el('img');
+    av.alt = '';
+    av.hidden = true;
+    const who = el('div');
+    who.append(el('b', 'owner-bot-name', '—'), el('span', 'hint owner-bot-meta', 'Loading the bot’s vitals…'));
+    head.append(av, who);
+    host.append(head, ...OWNER_STATS.map(([k, l]) => {
+      const t = el('div', 'owner-stat ph');
+      t.dataset.k = k;
+      t.append(el('span', 'n', '—'), el('span', 'l', l));
+      return t;
+    }));
   }
+  const v = state.ownerVitals;
+  if (!v) return;
+  const setText = (node, text) => { if (node && node.textContent !== text) node.textContent = text; };
+  const set = (k, n, l, tone = '') => {
+    const t = host.querySelector(`[data-k="${k}"]`);
+    if (!t) return;
+    const cls = `owner-stat ${tone}`.trim();
+    if (t.className !== cls) t.className = cls;
+    setText(t.querySelector('.n'), n);
+    if (l) setText(t.querySelector('.l'), l);
+  };
+  const av = host.querySelector('.owner-bot img');
+  if (v.botAvatar && av.getAttribute('src') !== v.botAvatar) { av.src = v.botAvatar; av.hidden = false; }
+  setText(host.querySelector('.owner-bot-name'), v.botName || 'Bot');
+  setText(host.querySelector('.owner-bot-meta'), `Node ${v.node} · up since ${new Date(v.startedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`);
   const ping = Number(v.ping) || 0;
-  const head = el('div', 'owner-bot');
-  if (v.botAvatar) { const i = el('img'); i.src = v.botAvatar; i.alt = ''; head.append(i); }
-  const who = el('div');
-  who.append(el('b', null, v.botName || 'Bot'), el('span', 'hint', `Node ${v.node} · up since ${new Date(v.startedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`));
-  head.append(who);
-  host.replaceChildren(
-    head,
-    stat(num(v.guilds), 'Servers'),
-    stat(num(v.members), 'Members'),
-    stat(ping > 0 ? `${ping} ms` : '—', 'Ping', ping <= 0 ? '' : ping < 150 ? 'good' : ping < 400 ? 'warn' : 'bad'),
-    stat(`${v.memoryMb} MB`, `Memory · heap ${v.heapMb} MB`, v.memoryMb > 1600 ? 'warn' : ''),
-    stat(duration(v.uptimeMs), 'Uptime'),
-    stat(num(v.branded), 'Custom brands'),
-  );
+  set('guilds', num(v.guilds));
+  set('members', num(v.members));
+  set('ping', ping > 0 ? `${ping} ms` : '—', null, ping <= 0 ? '' : ping < 150 ? 'good' : ping < 400 ? 'warn' : 'bad');
+  set('memory', `${v.memoryMb} MB`, `Memory · heap ${v.heapMb} MB`, v.memoryMb > 1600 ? 'warn' : '');
+  set('uptime', duration(v.uptimeMs));
+  set('branded', num(v.branded));
 }
 
 async function refreshOwnerVitals() {
@@ -9608,6 +9637,9 @@ async function loadOwnerPicker(guildId, picker, placeholder, grantBtn, signOutAn
       return o;
     }));
     picker.disabled = false;
+    // The custom dropdown was built while this said "Loading members…";
+    // its label follows the native select on change.
+    picker.dispatchEvent(new Event('change'));
     grantBtn.disabled = false;
     signOutAnyBtn.disabled = false;
   } catch (err) {
@@ -9621,14 +9653,29 @@ function renderOwnerConsole() {
   const guilds = state.ownerGuilds || [];
   if (!guilds.length) { list.replaceChildren(el('p', 'muted', 'The bot is not in any server.')); return; }
 
+  // Opening the tab re-asks the server every time (another admin may have
+  // changed a grant meanwhile). When the answer is what is already on screen,
+  // nothing is rebuilt — that rebuild, ~200ms after the tab appeared, was the
+  // flash. Anything that changes what the console shows is in the key.
+  const sig = JSON.stringify([guilds, state.botProfileFlags || null, state.ownerSort || 'name']);
+  if (list.dataset.sig === sig && list.childElementCount) {
+    startOwnerVitals();
+    return;
+  }
+  list.dataset.sig = sig;
+
   const flags = state.botProfileFlags || { allowGuildNickname: false };
   const openIds = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.guildId));
 
   const nodes = [];
 
   // ── Vitals: the whole bot at a glance, refreshed while you look ───────
-  const vitalsHost = el('div', 'owner-vitals');
-  vitalsHost.id = 'owner-vitals';
+  // The same strip element survives a rebuild, so its numbers never blink.
+  let vitalsHost = document.getElementById('owner-vitals');
+  if (!vitalsHost) {
+    vitalsHost = el('div', 'owner-vitals');
+    vitalsHost.id = 'owner-vitals';
+  }
   nodes.push(vitalsHost);
   paintOwnerVitals(vitalsHost);
   startOwnerVitals();
@@ -9893,7 +9940,20 @@ function renderOwnerConsole() {
     nodes.push(d);
   }
 
+  // Keep what the operator was in the middle of: the scroll position, and
+  // whichever field had focus (the notice box, the search).
+  const scroller = list.closest('.workspace-body') || document.scrollingElement;
+  const top = scroller ? scroller.scrollTop : 0;
+  const focusedClass = document.activeElement && list.contains(document.activeElement)
+    ? document.activeElement.className : null;
   list.replaceChildren(...nodes);
+  // The custom dropdowns are built in the same frame, before paint. Left to
+  // the page-wide observer they appeared 200ms later as native selects first,
+  // then swapped — the second jump on opening the tab.
+  try { enhanceSelects(list); } catch (_) {}
+  if (scroller) scroller.scrollTop = top;
+  const firstClass = String(focusedClass || '').trim().split(/\s+/)[0];
+  if (firstClass) { try { list.querySelector(`.${CSS.escape(firstClass)}`)?.focus?.({ preventScroll: true }); } catch (_) {} }
 }
 
 /* ── terms & privacy ──────────────────────────────────────────────────────
@@ -11030,6 +11090,29 @@ window.addEventListener('pageshow', (e) => {
  * there is no second list anywhere that has to be kept in step.
  */
 
+
+/* ── ?debugShift=1: log every layout shift with what moved ────────────────
+ * The shaking bugs in this panel have all been the same shape — something
+ * rebuilt or swapped after the first paint — and are hard to see by eye.
+ * With the flag on, each shift is logged with its size, the tab it happened
+ * on, and the elements that moved, so the culprit is one console line away.
+ * Off by default: no observer is created without the flag. */
+(function debugLayoutShifts() {
+  try {
+    if (!/[?&]debugShift=1\b/.test(location.search) || typeof PerformanceObserver !== 'function') return;
+    const describe = n => (n && n.nodeType === 1)
+      ? `${n.tagName.toLowerCase()}${n.id ? '#' + n.id : ''}${n.classList.length ? '.' + [...n.classList].slice(0, 2).join('.') : ''}`
+      : String(n);
+    new PerformanceObserver(list => {
+      for (const e of list.getEntries()) {
+        if (e.hadRecentInput || e.value < 0.001) continue;
+        console.warn(`[layout-shift] ${e.value.toFixed(4)} on "${root.dataset.section}"`,
+          (e.sources || []).map(s => describe(s.node)));
+      }
+    }).observe({ type: 'layout-shift', buffered: true });
+    console.info('[layout-shift] watching — remove ?debugShift=1 to stop');
+  } catch (_) { /* debugging aid only */ }
+})();
 
 /* Catch selects injected after first enhance (giveaway form, feeds, etc.)
  * Debounced + ignores cselect's own DOM writes so menus do not instantly

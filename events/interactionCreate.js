@@ -395,7 +395,8 @@ module.exports = {
           // this server goes straight in; everyone else gets the check card.
           const ev = require('../utils/entryVerify');
           if (ev.isEnabled(interaction.guildId)) {
-            const st = ev.statusOf(interaction.guildId, interaction.user.id);
+            // Per giveaway: passing the check for one drop does not cover the next.
+            const st = ev.statusOf(interaction.guildId, interaction.user.id, msgId);
             if (st === 'flagged') return { done: true, held: true, meta: gawMeta };
             if (st !== 'verified') return { done: false, needsVerify: true, meta: gawMeta };
           }

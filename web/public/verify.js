@@ -278,6 +278,8 @@
     if (info.serverIcon) { var si = $('server-icon'); si.src = info.serverIcon; si.hidden = false; $('server-ph').hidden = true; }
     else setText('server-ph', String(info.server || '?').charAt(0).toUpperCase());
     if (info.prize) { setText('prize-name', info.prize); $('prize').hidden = false; }
+    // Which giveaway this check is for — each drop is verified on its own.
+    if (info.dropId) { setText('drop-id', info.dropId); $('drop').hidden = false; }
     setText('sub', (info.user ? 'Hi ' + info.user + ' — h' : 'H') + 'old the shield for a second to verify in ' + (info.server || 'this server') + '.');
     document.title = 'Verify · ' + (info.server || 'Giveaway');
     if (info.expired) return fail('This link has expired', 'Links last 15 minutes and work once.', info.returnUrl);

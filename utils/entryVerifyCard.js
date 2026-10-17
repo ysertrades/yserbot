@@ -66,7 +66,7 @@ function checkCard(interaction, messageId, channelId, meta, { notYet = false } =
       v2.button({ label: 'Verify me', emoji: '🛡️', url }),
       v2.button({ customId: `gaw_vdone:${messageId}`, label: 'Finish verification', emoji: '✅', style: 3 }),
     ),
-    v2.text(`-# Link works once and expires in ${minutes} minutes · Protected by ${b.name}`),
+    v2.text(`-# ${meta?.dropId ? `Drop ID QL-${meta.dropId} · ` : ''}Every drop has its own check · link works once, expires in ${minutes} min · Protected by ${b.name}`),
   ];
   return wrap(g, kids, notYet ? 0xF59E0B : 0x2233F5);
 }

@@ -361,7 +361,8 @@ async function route(req, res, client) {
       server: guild.name, serverIcon: guild.iconURL({ size: 128, extension: 'png' }) || null,
       user: member?.displayName || member?.user?.username || null,
       prize: saved?.prize || null, returnUrl,
-      status: ev.statusOf(t.g, t.u), expired: !!t.expired,
+      dropId: saved?.dropId ? `QL-${saved.dropId}` : null,
+      status: ev.statusOf(t.g, t.u, t.m || null), expired: !!t.expired,
     };
     if (req.method !== 'POST') return json(res, 200, info);
     if (t.expired) return json(res, 410, { error: 'expired', ...info });
@@ -370,7 +371,7 @@ async function route(req, res, client) {
     usedVerifyCodes.set(t.n, t.e);
     for (const [n, exp] of usedVerifyCodes) if (exp < Date.now()) usedVerifyCodes.delete(n);
     const result = ev.record(t.g, t.u, {
-      ip, device: body.device, fingerprint: body.fingerprint, userAgent: req.headers['user-agent'],
+      ip, device: body.device, fingerprint: body.fingerprint, userAgent: req.headers['user-agent'], messageId: t.m || null,
     });
     if (result.status === 'flagged') {
       // Staff hear about it in the mod log, with who it matched.
