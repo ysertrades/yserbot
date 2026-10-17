@@ -166,7 +166,7 @@ li { margin-bottom: 0.4rem; }
 li::marker { color: var(--muted); }
 
 a { color: var(--accent); text-decoration-color: rgba(76, 125, 255, 0.4); text-underline-offset: 3px; }
-a:hover { text-decoration-color: var(--accent); }
+@media (hover: hover) { a:hover { text-decoration-color: var(--accent); } }
 
 /* Inline chip, for a command or a field name — same idea as the reference. */
 code {
@@ -212,7 +212,7 @@ code {
   color: var(--ink); text-decoration: none;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.pill:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); }
+@media (hover: hover) { .pill:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); } }
 .pill .arrow { color: var(--amber); }
 
 @media print {

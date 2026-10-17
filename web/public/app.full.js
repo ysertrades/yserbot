@@ -519,6 +519,10 @@ function bootReady() {
   boot.dataset.out = '1';
   requestAnimationFrame(() => {
     root.classList.add('booted');
+    // The one staged entrance in the panel: the first screen's cards, 100ms
+    // apart. Removed once played so later tab switches never replay it.
+    root.classList.add('first-enter');
+    setTimeout(() => root.classList.remove('first-enter'), 1400);
     boot.classList.add('out');
     setTimeout(() => boot.remove(), 700);
   });
@@ -907,8 +911,9 @@ function renderMembersRoster(filter = null) {
   const list = el('div', 'members-list');
   for (const [idx, m] of shown.entries()) {
     const row = el('div', 'member-row' + (m.isOwner ? ' is-owner' : m.isAdmin ? ' is-admin' : ''));
-    // The first rows rise in one after another; the rest just appear.
-    if (idx < 14) row.style.setProperty('--i', String(idx));
+    // No entrance: the roster redraws on every search keystroke, and routine
+    // updates get no motion.
+    void idx;
     if (isNew(m)) row.classList.add('is-new');
     const av = el('div', 'member-av');
     if (m.avatar) {
@@ -11375,6 +11380,12 @@ function showSection(name) {
 function moveSectionInk(name) {
   const nav = document.getElementById('sections');
   if (!nav) return;
+  // Retired: a tab switch is a high-frequency interaction and gets instant
+  // feedback (a 150ms background change on the button), not a sliding
+  // highlight. Anything left from an older page is removed.
+  nav.querySelector('.sec-ink')?.remove();
+  nav.classList.remove('has-ink');
+  if (name !== undefined) return;
   const btn = nav.querySelector(`button[data-goto="${name}"]`);
   let ink = nav.querySelector('.sec-ink');
   // Hidden (a closed phone drawer, a feature switched off): the buttons keep
