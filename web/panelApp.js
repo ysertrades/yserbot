@@ -32,7 +32,9 @@ async function serve(res, send) {
     if (!cache) cache = load();
     return send(res, 200, cache, {
       'content-type': 'text/javascript; charset=utf-8',
-      'cache-control': 'no-store',
+      // Revalidated, not stored: see send() in server.js. A reload gets a
+      // 304 instead of the whole script; a deploy is picked up at once.
+      'cache-control': 'no-cache',
     });
   } catch (err) {
     console.error('[Panel] panel-app failed:', err.message || err);

@@ -6,13 +6,13 @@
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex, nofollow">
 <title>QuantLab — Control Panel</title>
-<link rel="icon" href="/Quantbot.jpg" type="image/jpeg" sizes="any">
+<link rel="icon" href="/logo-64.jpg" type="image/jpeg" sizes="any">
 
 <!-- Add to Home Screen. iOS ignores the manifest's icons entirely and only
      reads apple-touch-icon, and it will not accept an SVG for it — hence the
      drawn PNG. Both point at the same generated mark. -->
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="/Quantbot.jpg">
+<link rel="apple-touch-icon" href="/logo-256.jpg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="QuantLab">
@@ -28,12 +28,47 @@
 <link rel="stylesheet" href="/desk.css">
 <link rel="stylesheet" href="/shell-am.css">
 <script defer src="/shell-am.js"></script>
+<link rel="preload" href="/panel-app.js" as="script">
+<!-- The launch splash. Inline so it is styled on the very first frame, before
+     any stylesheet could fight it. It covers the half-built page until the
+     panel lifts it (bootReady in app.full.js), and the animation at the end is
+     the last resort: if the script never runs at all, it still fades by itself. -->
+<style>
+#boot{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;background:#121212;
+  transition:opacity .5s cubic-bezier(.2,.7,.2,1),visibility .5s;animation:boot-giveup .4s 14s forwards}
+#boot.out{opacity:0;visibility:hidden;pointer-events:none}
+#boot .boot-card{display:flex;flex-direction:column;align-items:center;gap:14px;transition:transform .5s cubic-bezier(.2,.7,.2,1)}
+#boot.out .boot-card{transform:scale(1.04)}
+#boot .boot-mark{width:64px;height:64px;border-radius:18px;box-shadow:0 10px 40px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.06);
+  animation:boot-in .6s cubic-bezier(.2,.7,.2,1) both}
+#boot .boot-word{font:600 15px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.14em;color:#e8ebf1;opacity:.85;
+  animation:boot-in .6s .08s cubic-bezier(.2,.7,.2,1) both}
+#boot .boot-line{width:120px;height:2px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden;
+  animation:boot-in .6s .16s cubic-bezier(.2,.7,.2,1) both}
+#boot .boot-line i{display:block;width:40%;height:100%;border-radius:2px;background:linear-gradient(90deg,transparent,#8b9cff,transparent);
+  animation:boot-run 1.1s ease-in-out infinite}
+@keyframes boot-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes boot-run{from{transform:translateX(-110%)}to{transform:translateX(260%)}}
+@keyframes boot-giveup{to{opacity:0;visibility:hidden}}
+html:not(.booted) .view[data-view="loading"]{visibility:hidden}
+html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
+@keyframes boot-reveal{from{opacity:.0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){#boot,#boot *,html.booted #main{animation:none!important;transition:opacity .2s!important}}
+</style>
 </head>
 <body>
 
+<div id="boot" aria-hidden="true">
+  <div class="boot-card">
+    <img class="boot-mark" src="/logo-128.jpg" width="64" height="64" alt="" decoding="async" fetchpriority="high">
+    <span class="boot-word">QUANTLAB</span>
+    <span class="boot-line"><i></i></span>
+  </div>
+</div>
+
 <header class="bar">
   <div class="brand">
-    <img class="mark" src="/Quantbot.jpg" width="26" height="26" alt="" decoding="async">
+    <img class="mark" src="/logo-64.jpg" width="26" height="26" alt="" decoding="async">
     <span class="wordmark">quantlab</span>
     <!-- Fades in once the section nav scrolls out of view, so you always know
          where you are on a long page. -->
@@ -82,7 +117,7 @@
       <!-- Fixed left rail — same role as Quant Lab sidebar -->
       <aside class="sidebar" aria-label="Primary">
         <div class="sidebar-brand">
-          <img class="mark" src="/Quantbot.jpg" width="28" height="28" alt="" decoding="async">
+          <img class="mark" src="/logo-64.jpg" width="28" height="28" alt="" decoding="async">
           <span class="sidebar-title">Quant bot</span>
         </div>
                         <nav class="sections sidebar-nav" id="sections" aria-label="Sections">

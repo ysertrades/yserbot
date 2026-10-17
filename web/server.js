@@ -20,6 +20,8 @@
 const http = require('node:http');
 const fs   = require('node:fs');
 const path = require('node:path');
+const zlib = require('node:zlib');
+const crypto = require('node:crypto');
 
 const auth    = require('./auth');
 const api     = require('./api');
@@ -124,15 +126,68 @@ function csp() {
   ].join('; ');
 }
 
+/*
+ * Compression and revalidation.
+ *
+ * The panel's script, stylesheet and first overview went over the wire raw —
+ * close to 600 KB before anything could draw — and every reload downloaded
+ * all of it again, which is most of what the launch screen was waiting on.
+ * Text bodies are now gzipped for any browser that asks, and anything served
+ * as 'no-cache' carries an ETag, so a reload asks "still the same?" and gets
+ * a 304 with no body instead of the whole file.
+ */
+const COMPRESSIBLE = /^(text\/|application\/(json|javascript|manifest\+json)|image\/svg\+xml)/;
+const gzCache = new Map();
+
+function etagFor(buf) {
+  return `"${crypto.createHash('sha1').update(buf).digest('base64url').slice(0, 27)}"`;
+}
+
 function send(res, status, body, headers = {}) {
   if (res.writableEnded) return;
-  res.writeHead(status, {
+  const h = {
     'content-security-policy': csp(),
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'cache-control': 'no-store',
     ...headers,
-  });
+  };
+  const req = res.req;
+  const type = String(h['content-type'] || '');
+  if (req && status === 200 && body != null && !h['content-encoding']) {
+    const buf = Buffer.isBuffer(body) ? body : Buffer.from(String(body));
+    // Revalidated rather than stored: no-cache means "check with us first",
+    // which keeps every deploy instantly visible while costing a reload only
+    // a round trip.
+    if (h['cache-control'] === 'no-cache') {
+      const tag = etagFor(buf);
+      h.etag = tag;
+      if (req.headers['if-none-match'] === tag) {
+        delete h['content-type'];
+        res.writeHead(304, h);
+        return res.end();
+      }
+    }
+    if (buf.length > 1400 && COMPRESSIBLE.test(type) && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''))) {
+      // Unchanging bodies (anything with an ETag) are compressed once and
+      // kept; per-request JSON uses the fastest level so the bot's event loop
+      // is never held up for long.
+      let gz = h.etag ? gzCache.get(h.etag) : null;
+      if (!gz) {
+        gz = zlib.gzipSync(buf, { level: h.etag ? 6 : 1 });
+        if (h.etag) {
+          gzCache.set(h.etag, gz);
+          if (gzCache.size > 64) gzCache.delete(gzCache.keys().next().value);
+        }
+      }
+      h['content-encoding'] = 'gzip';
+      h.vary = 'Accept-Encoding';
+      body = gz;
+    } else {
+      body = buf;
+    }
+  }
+  res.writeHead(status, h);
   res.end(body);
 }
 
@@ -227,8 +282,36 @@ function serveStatic(res, urlPath, { orPanel = false } = {}) {
       if (orPanel) return serveStatic(res, '/');
       return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
     }
-    send(res, 200, buf, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
+    send(res, 200, buf, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache' });
   });
+}
+
+/**
+ * The brand mark at the size it is drawn. Quantbot.jpg is over half a
+ * megabyte and was fetched in full for a 26-pixel logo in the header and the
+ * launch splash. Square-cropped and resized once per size, then kept.
+ */
+const LOGO_SIZES = [64, 128, 256];
+const logoCache = new Map();
+function serveLogo(res, size) {
+  let pending = logoCache.get(size);
+  if (!pending) {
+    pending = (async () => {
+      const { createCanvas, loadImage } = require('@napi-rs/canvas');
+      const img = await loadImage(await fs.promises.readFile(path.join(PUBLIC_DIR, 'Quantbot.jpg')));
+      const side = Math.min(img.width, img.height);
+      const c = createCanvas(size, size);
+      c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+      return c.encode('jpeg', 88);
+    })();
+    logoCache.set(size, pending);
+    pending.catch(() => logoCache.delete(size));
+  }
+  pending.then(
+    buf => send(res, 200, buf, { 'content-type': 'image/jpeg', 'cache-control': 'public, max-age=86400' }),
+    // Never a broken logo: the original still works, it is only heavier.
+    () => serveStatic(res, '/Quantbot.jpg'),
+  );
 }
 
 /* ─── routing ────────────────────────────────────────────────────────────── */
@@ -253,6 +336,13 @@ async function route(req, res, client) {
   // Home-screen icons. Public on purpose: iOS and Android fetch these from
   // outside any session — often before one exists — so putting them behind the
   // auth gate would mean an installed app with a blank icon.
+
+  const logoMatch = /^\/logo-(\d{2,3})\.jpg$/.exec(p);
+  if (logoMatch) {
+    const size = Number(logoMatch[1]);
+    if (!LOGO_SIZES.includes(size)) return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
+    return serveLogo(res, size);
+  }
 
   const iconMatch = /^\/icon-(\d{2,4})\.png$/.exec(p);
   if (iconMatch) {
