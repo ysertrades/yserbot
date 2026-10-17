@@ -5,9 +5,12 @@ const { createServerEmbed } = require('../../utils/embedBuilder');
 const { readJson, writeJson } = require('../../utils/jsonStorage');
 const { serverAction } = require('../../utils/modEmbed');
 
+// /report is for members to reach the moderators, so it is public only. It
+// was listed here as well, and once a mod role was set that locked every
+// regular member out of reporting anything.
 const MOD_COMMANDS = [
   'ban', 'clearwarnings', 'kick', 'lock', 'mute', 'purge',
-  'report', 'unban', 'unlock', 'unmute', 'warn', 'warn-settings', 'warnings',
+  'unban', 'unlock', 'unmute', 'warn', 'warn-settings', 'warnings',
 ];
 
 const ADMIN_COMMANDS = [

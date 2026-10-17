@@ -25,7 +25,7 @@ module.exports = {
     if (isTicket) {
       const ticketCmd = client?.commands?.get('ticket');
       if (ticketCmd?.resetInactivityTimer) {
-        ticketCmd.resetInactivityTimer(message.channel.id);
+        ticketCmd.resetInactivityTimer(message.channel.id, message.channel);
       }
     }
 
@@ -143,9 +143,9 @@ async function handleCardDrop(message) {
 }
 
 async function handleAutoReply(message) {
-  const isAdmin = message.member?.permissions?.has(PermissionFlagsBits.Administrator);
-  if (!isAdmin) return;
-
+  // Auto-replies answer everybody. This used to return for anyone who was not
+  // an Administrator, so the members they exist for never got one. Abuse is
+  // held off by each reply's cooldown below.
   const autoreplies  = readJson('autoreplies.json', {});
   const guildReplies = autoreplies[message.guild.id] || {};
 

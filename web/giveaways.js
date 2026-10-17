@@ -206,7 +206,14 @@ function clearHistory(guildId) {
 }
 
 async function create(guildId, body, { guild, session, client }) {
-  const kind = body.kind === 'prize' ? 'prize' : 'coins';
+  // Prize unless coins is asked for by name — and coins is refused while the
+  // economy is switched off (index.js skips commands/economy). It used to be
+  // the default, which posted giveaways whose Enter button had no handler
+  // and which were never restored, so never ended, after a restart.
+  if (body.kind === 'coins') {
+    return { error: 'coins_disabled', detail: 'Coins giveaways need the economy, which is turned off on this bot.' };
+  }
+  const kind = 'prize';
 
   let amount = 0, prize = '';
   if (kind === 'coins') {

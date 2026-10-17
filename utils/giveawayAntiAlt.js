@@ -66,7 +66,11 @@ function evaluateEntrant(guild, entrantIds, newUserId) {
 
 function errorLogChannelId(guildId) {
   const conf = readJson('config.json', {})[guildId] || {};
-  return conf.errorLogChannelId || conf.modLogChannelId || conf.logChannelId || null;
+  // The keys Settings and /config actually write are logsChannel (moderation
+  // log) and errorLogChannel. Only the *Id spellings were read, which no
+  // code stores, so no alert was ever sent. Those stay as a last fallback.
+  return conf.logsChannel || conf.errorLogChannel
+    || conf.errorLogChannelId || conf.modLogChannelId || conf.logChannelId || null;
 }
 
 async function reportSuspicious(guild, { messageId, dropId, prize, userId, analysis }) {

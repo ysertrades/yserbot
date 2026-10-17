@@ -16,15 +16,25 @@ function isDataPrintHeadline(item) {
   return DATA_PRINT_PATTERN.test(title);
 }
 
+// The entity names are built from char codes on purpose. This function was
+// once run through something that decoded entities in the source itself, so
+// every pattern became a no-op like /</g -> '<' and headlines showed
+// "S&amp;P". Spelled this way the source cannot be "fixed" like that again.
+const AMP = String.fromCharCode(38);
+const ENTITY = (name) => new RegExp(AMP + name + ';', 'gi');
+const RE_LT = ENTITY('lt'), RE_GT = ENTITY('gt'), RE_QUOT = ENTITY('quot');
+const RE_APOS = ENTITY('apos'), RE_NBSP = ENTITY('nbsp'), RE_AMP = ENTITY('amp');
+
 function decodeEntities(str) {
-  let prev = str;
+  let prev = String(str == null ? '' : str);
   for (let i = 0; i < 5; i++) {
     const next = prev
-      .replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '"')
-      .replace(/'/g, "'").replace(/&#39;/g, "'")
+      .replace(RE_LT, '<').replace(RE_GT, '>').replace(RE_QUOT, '"')
+      .replace(RE_APOS, "'").replace(RE_NBSP, ' ')
       .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
       .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
-      .replace(/&/g, '&');
+      // Last, so "&amp;lt;" becomes "&lt;" this pass and "<" the next.
+      .replace(RE_AMP, AMP);
     if (next === prev) break;
     prev = next;
   }
@@ -55,7 +65,8 @@ function extractAllImages(block, description) {
   const seen = new Set();
   const push = (u) => {
     if (!u || typeof u !== 'string') return;
-    const url = u.trim().replace(/&/g, '&');
+    // "&amp;" left in a query string breaks the image link.
+    const url = u.trim().replace(RE_AMP, AMP);
     if (!/^https?:\/\//i.test(url) || seen.has(url)) return;
     seen.add(url);
     out.push(url);
@@ -287,7 +298,7 @@ async function buildNewsV2(item, source = SOURCES.financialjuice, guildId = null
   const seen = new Set();
   const pushImg = (u) => {
     if (!u || typeof u !== 'string') return;
-    const url = u.trim().replace(/&/g, '&');
+    const url = u.trim().replace(RE_AMP, AMP);
     if (!/^https:\/\//i.test(url) || seen.has(url)) return;
     seen.add(url);
     imageList.push(url);
@@ -362,7 +373,10 @@ function cursorFor(settings, key) {
 }
 
 function topicAllows(item, settings) {
-  const picked = Array.isArray(settings.topics) ? settings.topics : [];
+  // Stored as filterTopics (web/writes.js, modConfig defaults); `topics` is
+  // only the name the panel's read uses, so the filter never applied.
+  const picked = Array.isArray(settings.filterTopics) ? settings.filterTopics
+    : Array.isArray(settings.topics) ? settings.topics : [];
   if (picked.length === 0 || picked.length >= TOPICS.length) return true;
   const words = expandTopicKeywords(picked);
   return textMatchesKeywords(item.title, item.body, words);
@@ -380,6 +394,10 @@ async function runTick(client) {
     if (!isFeatureEnabled(guildId, 'newsfeed')) continue;
     const settings = config[guildId]?.newsFeedSettings;
     if (!settings || !settings.channelId) continue;
+    // The panel's "Post live headlines" switch. It was never read, so a feed
+    // turned off kept posting as long as a channel was set. A guild that
+    // predates the switch (no key at all) stays on — see getNewsFeedSettings.
+    if (settings.enabled === false) continue;
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
     const channel = guild.channels.cache.get(settings.channelId);

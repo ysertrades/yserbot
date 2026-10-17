@@ -19,7 +19,18 @@ function tempDelete(interaction) { setTimeout(() => interaction.deleteReply().ca
 
 // Default when no timezone is given, shared by create and by the date list so
 // the days offered are the days the schedule would actually land on.
-const DEFAULT_OFFSET_MINUTES = -240;
+//
+// New York time, as the economic calendar uses — computed for today, so it
+// is -240 in summer and -300 in winter. It was a fixed -240 while the option
+// claimed "default: UTC", which was wrong both ways for half the year.
+function defaultOffsetMinutes() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date()).map(x => [x.type, x.value]));
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute);
+  return Math.round((asUtc - Math.floor(Date.now() / 60000) * 60000) / 60000);
+}
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -129,7 +140,7 @@ module.exports = {
       .addIntegerOption(opt => opt.setName('day').setDescription('Which day, for a weekly schedule').setRequired(false)
         .addChoices(...DAY_NAMES.map((name, value) => ({ name, value }))))
       .addStringOption(opt => opt.setName('mention').setDescription('Mention @everyone, @here, or a role ID').setRequired(false))
-      .addStringOption(opt => opt.setName('timezone').setDescription('UTC offset, e.g. -4 or +5:30 (default: UTC)').setRequired(false)))
+      .addStringOption(opt => opt.setName('timezone').setDescription('UTC offset, e.g. -4 or +5:30 (default: New York time)').setRequired(false)))
     .addSubcommand(sub => sub.setName('list').setDescription('List all scheduled embeds'))
     .addSubcommand(sub => sub.setName('cancel').setDescription('Cancel a schedule — choose from a dropdown')),
 
@@ -141,8 +152,8 @@ module.exports = {
       // the days as the schedule's own zone sees them — otherwise "Today"
       // could name a date that has already ended where the post is going.
       const typedZone = interaction.options.getString('timezone');
-      const offset = typedZone ? parseUtcOffset(typedZone) : DEFAULT_OFFSET_MINUTES;
-      return interaction.respond(dateSuggestions(focused.value, offset ?? DEFAULT_OFFSET_MINUTES)).catch(() => {});
+      const offset = typedZone ? parseUtcOffset(typedZone) : defaultOffsetMinutes();
+      return interaction.respond(dateSuggestions(focused.value, offset ?? defaultOffsetMinutes())).catch(() => {});
     }
 
     if (focused.name !== 'embed') return interaction.respond([]).catch(() => {});
@@ -160,7 +171,8 @@ module.exports = {
     if (!schedules[guildId]) schedules[guildId] = {};
 
     if (sub === 'create') {
-      const embedName     = interaction.options.getString('embed').toLowerCase();
+      // As stored, not lowercased: "Welcome" saved in the panel is not "welcome".
+      const embedName     = require('./embed').resolveTemplateName(interaction.guild.id, interaction.options.getString('embed'));
       const channel       = interaction.options.getChannel('channel');
       const timeInput     = interaction.options.getString('time');
       const frequency     = interaction.options.getString('frequency');
@@ -173,8 +185,8 @@ module.exports = {
       if (!embeds[guildId]?.[embedName])
         return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Template Not Found', description: `No embed template **${embedName}** exists.` }, interaction.guild)] });
 
-      // Default to UTC-4 when no timezone is provided
-      const offsetMinutes = timezoneInput ? parseUtcOffset(timezoneInput) : DEFAULT_OFFSET_MINUTES;
+      // New York time when no timezone is provided (see defaultOffsetMinutes)
+      const offsetMinutes = timezoneInput ? parseUtcOffset(timezoneInput) : defaultOffsetMinutes();
       if (offsetMinutes === null)
         return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Invalid Timezone', description: 'Use a UTC offset like `-4`, `+5:30`, or `0`.' }, interaction.guild)] });
 

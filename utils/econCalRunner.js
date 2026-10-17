@@ -29,10 +29,26 @@ const SCOPE_WORDS = {
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES   = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-const DISPLAY_OFFSET_MIN = -4 * 60; // UTC-4
+// New York time, daylight saving included. This was a fixed UTC-4, which is
+// only New York in summer, so every time and day header was an hour out from
+// November to March.
+const DISPLAY_TZ = 'America/New_York';
+const NY_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: DISPLAY_TZ, hourCycle: 'h23',
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
 
+/** Minutes New York is ahead of UTC at this instant (-240 or -300). */
+function displayOffsetMin(timestampMs) {
+  const p = Object.fromEntries(NY_PARTS.formatToParts(new Date(timestampMs)).map(x => [x.type, x.value]));
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+  return Math.round((asUtc - Math.floor(timestampMs / 1000) * 1000) / 60000);
+}
+
+// A Date whose UTC fields read as New York wall time — the callers use
+// getUTC*() on it, as they did with the fixed offset.
 function toDisplayDate(timestampMs) {
-  return new Date(timestampMs + DISPLAY_OFFSET_MIN * 60000);
+  return new Date(timestampMs + displayOffsetMin(timestampMs) * 60000);
 }
 
 function dayKeyOf(e) {

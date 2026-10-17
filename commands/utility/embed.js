@@ -357,7 +357,7 @@ module.exports = {
     const guildId = interaction.guild.id;
     const all     = readTemplates(guildId);
     const sub     = interaction.options.getSubcommand();
-    const name    = interaction.options.getString('name')?.toLowerCase();
+    const name    = resolveTemplateName(guildId, interaction.options.getString('name'));
 
     if (sub === 'create') {
       if (all[guildId][name])
@@ -466,6 +466,24 @@ module.exports = {
 
 // ── Build payload for sending ──────────────────────────────────────────────────
 
+/**
+ * The stored key for a template name typed into a command.
+ *
+ * The panel saves names as written ("Welcome"), while the commands
+ * lowercased whatever was typed and looked up "welcome" — so any template
+ * with a capital letter could not be sent, scheduled or put on a button.
+ * Exact match first, then a case-insensitive one; with no match it is a new
+ * name, lowercased as commands have always created them.
+ */
+function resolveTemplateName(guildId, input) {
+  if (input == null) return input;
+  const raw = String(input).trim();
+  const keys = Object.keys(readJson('embeds.json', {})[guildId] || {});
+  if (keys.includes(raw)) return raw;
+  const lower = raw.toLowerCase();
+  return keys.find(k => k.toLowerCase() === lower) || lower;
+}
+
 function isV2Template(raw) {
   return !!raw && (raw.format === 'v2' || (Array.isArray(raw.blocks) && raw.blocks.length > 0));
 }
@@ -567,6 +585,7 @@ function toMessageOptions(payload, { content, allowedMentions, ephemeral = false
 module.exports.buildEmbedPayload = buildEmbedPayload;
 module.exports.toMessageOptions = toMessageOptions;
 module.exports.isV2Template = isV2Template;
+module.exports.resolveTemplateName = resolveTemplateName;
 
 /**
  * The same treatment, for text that is not part of an embed.

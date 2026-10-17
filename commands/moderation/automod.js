@@ -886,16 +886,37 @@ async function handleLinkModAction(interaction, action, requestId) {
   const reason = reasons[action] || `Restricted ${platform} link`;
   const verbs = { kick: 'kicked', ban: 'banned', timeout: 'timed out', mute: 'muted' };
 
+  if (!member && action !== 'ban') {
+    return interaction.reply({ content: '❌ Member is no longer in the server.', flags: MessageFlags.Ephemeral });
+  }
+
+  // The same trail /kick, /ban and /mute leave: a DM first (it cannot reach
+  // them once they are out), then the case and the mod log. These buttons
+  // used to act with none of it, so the case history had gaps.
+  const { sendModLog, dmUser } = require('../../utils/modLog');
+  const { appendCase } = require('../../utils/modActions');
+  const logType = action === 'timeout' || action === 'mute' ? 'mute' : action;
+  const duration = logType === 'mute' ? '1h' : undefined;
+  const targetUser = member?.user || await interaction.client.users.fetch(request.userId).catch(() => null);
+  if (targetUser) await dmUser(targetUser, logType, guild, reason, duration ? { duration } : {}).catch(() => {});
+
   try {
-    if (action === 'kick' && member) await member.kick(reason);
+    if (action === 'kick') await member.kick(reason);
     else if (action === 'ban') await guild.members.ban(request.userId, { reason, deleteMessageSeconds: 0 });
-    else if ((action === 'timeout' || action === 'mute') && member) {
-      await member.timeout(60 * 60 * 1000, reason); // 1h
-    } else if (!member && action !== 'ban') {
-      return interaction.reply({ content: '❌ Member is no longer in the server.', flags: MessageFlags.Ephemeral });
-    }
+    else if (action === 'timeout' || action === 'mute') await member.timeout(60 * 60 * 1000, reason); // 1h
   } catch (err) {
     return interaction.reply({ content: `❌ Action failed: ${String(err.message || err).slice(0, 120)}`, flags: MessageFlags.Ephemeral });
+  }
+
+  try {
+    const { id: caseId } = appendCase(guild.id, {
+      type: logType, userId: request.userId, userTag: targetUser?.tag || request.userId,
+      moderatorId: interaction.user.id, moderatorTag: interaction.user.tag, reason,
+      ...(duration ? { duration } : {}),
+    });
+    if (targetUser) await sendModLog(guild, logType, targetUser, interaction.user, reason, { caseId, ...(duration ? { duration } : {}) });
+  } catch (err) {
+    console.warn('[automod] invite action log:', err.message);
   }
 
   updateRequest(requestId, { status: 'actioned', decidedAt: Date.now(), decidedBy: interaction.user.tag, action });

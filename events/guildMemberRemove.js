@@ -17,7 +17,8 @@ module.exports = {
                 .setTitle('📤 Member Left')
                 .addFields(
                     { name: 'Member',       value: `\`${member.user.tag}\` (${member.id})`, inline: true },
-                    { name: 'Roles',        value: member.roles?.cache?.filter(r => r.id !== member.guild.id).map(r => `${r}`).join(', ') || '*(none)*', inline: false },
+                    // A member the bot never cached arrives partial: no roles known.
+                    { name: 'Roles',        value: member.partial ? '*(not cached)*' : (member.roles?.cache?.filter(r => r.id !== member.guild.id).map(r => `${r}`).join(', ') || '*(none)*'), inline: false },
                     { name: 'Member Count', value: `${member.guild.memberCount}`, inline: true },
                 )
                 .setTimestamp());

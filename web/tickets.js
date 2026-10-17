@@ -30,7 +30,11 @@ const TOPIC_PREFIX = 'ticket-owner:';
 // different name, in a different unit, describing a thing it does not do.
 const { DEFAULT: DEFAULTS } = require('../commands/utility/ticket');
 
-const FIELDS = [];
+// Minutes, as everywhere else in the bot (see the note in web/settings.js).
+// 0 turns the nudge off; it never closes a ticket.
+const FIELDS = [
+  { key: 'inactivityTime', type: 'int', label: 'Nudge after (minutes)', min: 0, max: 10080 },
+];
 
 function settingsFor(guildId) {
   const stored = readJson('config.json', {})[guildId]?.ticketSettings || {};
@@ -85,7 +89,7 @@ function read(guildId, guild) {
   const ts = conf.ticketSettings || {};
   return {
     fields: FIELDS,
-    values: {},
+    values: Object.fromEntries(FIELDS.map(f => [f.key, ts[f.key] ?? (f.type === 'int' ? 0 : null)])),
     supportRoleIds,
     supportRoles,
     // legacy single for any old UI
@@ -213,6 +217,7 @@ async function close(guildId, body, { guild, session }) {
   const name = channel.name;
   const ownerId = topic.startsWith(TOPIC_PREFIX) ? topic.slice(TOPIC_PREFIX.length) : null;
 
+  try { ticketCmd().clearInactivityTimer?.(channel.id); } catch (_) {}
   try {
     await channel.delete(`Ticket closed from the control panel by ${session.name}`);
   } catch (err) {

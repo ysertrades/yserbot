@@ -24,6 +24,31 @@ async function sendTempReply(interaction, embed) {
   setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 }
 
+// ── Quiet-ticket nudge ────────────────────────────────────────────────────
+/** channelId -> { timer, channel } */
+const inactivityTimers = new Map();
+
+async function sendInactivityNudge(channel, minutes) {
+  // Gone, or no longer a ticket: nothing to nudge.
+  if (!channel?.guild?.channels?.cache?.has(channel.id)) return;
+  const topic = channel.topic || '';
+  if (!topic.startsWith('ticket-owner:') && !channel.name?.startsWith('ticket-')) return;
+  const ownerId = topic.startsWith('ticket-owner:') ? topic.slice('ticket-owner:'.length).split('|')[0] : null;
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('ticket_still_here').setLabel('Still here').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('close_ticket').setLabel('Close ticket').setStyle(ButtonStyle.Danger),
+  );
+  await channel.send({
+    content: ownerId ? `<@${ownerId}>` : undefined,
+    embeds: [createServerEmbed('info', {
+      title: 'Still need help?',
+      description: `Nobody has written here for **${minutes} minute${minutes === 1 ? '' : 's'}**. Press **Still here** to keep this ticket open, or close it if you are done.`,
+    }, channel.guild)],
+    components: [row],
+    allowedMentions: { users: ownerId ? [ownerId] : [] },
+  });
+}
+
 // ── Main command ──────────────────────────────────────────────────────────
 /**
  * The "open a ticket" panel, card and button together.
@@ -107,6 +132,7 @@ module.exports = {
       if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
         return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
       }
+      module.exports.clearInactivityTimer(channel.id);
       await interaction.reply({ embeds: [createServerEmbed('info', { title: 'Closing Ticket', description: 'This ticket will be closed in **5 seconds**.' }, interaction.guild)] });
       setTimeout(async () => { try { await channel.delete('Ticket closed'); } catch {} }, 5000);
 
@@ -149,9 +175,51 @@ module.exports = {
     }
   },
 
+  /**
+   * (Re)starts the quiet-ticket nudge for one channel.
+   *
+   * messageCreate has always called this on every ticket message, but it did
+   * not exist, so no reminder was ever sent and the "Still here" button on
+   * older ones had nothing behind it. Off unless the Tickets screen sets a
+   * time; timers live in memory and restart on the next message after a
+   * restart. One nudge per quiet spell — the next message re-arms it.
+   */
+  resetInactivityTimer(channelId, channel = null) {
+    const prev = inactivityTimers.get(channelId);
+    if (prev) clearTimeout(prev.timer);
+    inactivityTimers.delete(channelId);
+    const ch = channel || prev?.channel;
+    if (!ch?.guild) return;
+    const minutes = Number(readJson('config.json', {})[ch.guild.id]?.ticketSettings?.inactivityTime) || 0;
+    if (minutes <= 0) return;
+    const timer = setTimeout(() => {
+      inactivityTimers.delete(channelId);
+      sendInactivityNudge(ch, minutes).catch(() => {});
+    }, Math.min(minutes, 10080) * 60_000);
+    timer.unref?.();
+    inactivityTimers.set(channelId, { timer, channel: ch });
+  },
+
+  clearInactivityTimer(channelId) {
+    const prev = inactivityTimers.get(channelId);
+    if (prev) clearTimeout(prev.timer);
+    inactivityTimers.delete(channelId);
+  },
+
   // ── Button handlers ───────────────────────────────────────────────────────
   handleButton: async function(interaction) {
+    if (interaction.customId === 'ticket_still_here') {
+      // Routed here by interactionCreate, but nothing answered it, so the
+      // click always ended in "This interaction failed".
+      await interaction.update({
+        embeds: [createServerEmbed('success', { title: 'Still here', description: `${interaction.user} is still here — the ticket stays open.` }, interaction.guild)],
+        components: [],
+      }).catch(() => {});
+      module.exports.resetInactivityTimer(interaction.channel.id, interaction.channel);
+      return;
+    }
     if (interaction.customId === 'close_ticket') {
+      module.exports.clearInactivityTimer(interaction.channel.id);
       const channel = interaction.channel;
       if (!channel.topic?.startsWith('ticket-owner:') && !channel.name.startsWith('ticket-')) {
         return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'This is not a ticket channel.' }, interaction.guild)] });
@@ -241,6 +309,9 @@ module.exports = {
       // empty row rather than ignoring it.
       components: closeRow ? [closeRow] : [],
     });
+
+    // A ticket nobody ever writes in still gets its nudge.
+    module.exports.resetInactivityTimer(channel.id, channel);
 
     await interaction.editReply({
       embeds: [createServerEmbed('success', { title: 'Ticket Created', description: `Your ticket: ${channel}` }, guild)],

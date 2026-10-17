@@ -90,7 +90,8 @@ function read(guildId, guild) {
 
   return {
     filterOn: !!automod.linkFilter,
-    waiting: active.filter(r => r.status === 'pending_review'),
+    // Auto-detected invites ('reported') need a decision just as much.
+    waiting: active.filter(r => r.status === 'pending_review' || r.status === 'reported'),
     unfinished: active.filter(r => r.status === 'pending'),
     permits,
     recent: getDecidedRequests(guildId, 15).map(r => describe(r, guild)),

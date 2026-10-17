@@ -7818,10 +7818,11 @@ function renderTickets() {
   /* -- settings: support roles (multi) — same list as Settings role chips */
   const draft = {
     supportRoleIds: Array.isArray(t.supportRoleIds) ? [...t.supportRoleIds] : (t.supportRoleId ? [t.supportRoleId] : []),
+    inactivityTime: Number(t.values?.inactivityTime) || 0,
   };
   const rolesForm = $('#form-tickets');
   if (rolesForm) {
-    const rolesSig = JSON.stringify(draft.supportRoleIds || []);
+    const rolesSig = JSON.stringify([draft.supportRoleIds || [], draft.inactivityTime]);
     // Do not rebuild while the user is interacting, or when nothing changed.
     if (rolesForm.dataset.dirty !== '1' && rolesForm.dataset.sig !== rolesSig) {
       rolesForm.dataset.sig = rolesSig;
@@ -7833,6 +7834,11 @@ function renderTickets() {
           ids => { draft.supportRoleIds = ids; rolesForm.dataset.dirty = '1'; },
         ),
         el('p', 'hint', 'Members with any of these roles can see and answer tickets. Pick one or more.'),
+        textField('Nudge a quiet ticket after (minutes)', String(draft.inactivityTime || 0), v => {
+          draft.inactivityTime = Math.max(0, Math.floor(Number(v) || 0));
+          rolesForm.dataset.dirty = '1';
+        }, { placeholder: '0 = off' }),
+        el('p', 'hint', 'Posts a "still need help?" message with a Still here button when nobody has written for this long. 0 turns it off. It never closes the ticket.'),
         actions(async () => {
           const out = await post('tickets', draft);
           if (out) rolesForm.dataset.dirty = '0';

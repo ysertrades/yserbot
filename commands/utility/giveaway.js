@@ -305,8 +305,16 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
 }
 
 
-async function restoreGiveaways(client) {
+/** Re-runs the restore for one giveaway that hit a temporary error. */
+async function restoreOne(client, msgId) {
   const active = readJson(ACTIVE_FILE, {});
+  if (!active[msgId]) return;
+  return restoreGiveaways(client, { only: msgId });
+}
+
+async function restoreGiveaways(client, { only = null } = {}) {
+  const all    = readJson(ACTIVE_FILE, {});
+  const active = only ? (all[only] ? { [only]: all[only] } : {}) : all;
   const now    = Date.now();
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   if (!global.giveawayMeta)     global.giveawayMeta     = new Map();
@@ -330,11 +338,21 @@ async function restoreGiveaways(client) {
     try {
       const ch = await client.channels.fetch(data.channelId);
       msg = await ch.messages.fetch(msgId);
-    } catch {
-      // Channel or message deleted while bot was offline — clean up
-      removeActiveGiveaway(msgId);
-      global.giveawayEntrants.delete(msgId);
-      global.giveawayMeta.delete(msgId);
+    } catch (err) {
+      // Only Discord saying the channel or message is gone (Unknown Channel /
+      // Unknown Message, or no access any more) removes the giveaway. Any
+      // other failure — a timeout or 5xx while the bot is still starting —
+      // used to delete it too, entrants and all. Those are retried.
+      const gone = [10003, 10008, 50001].includes(err?.code);
+      if (gone) {
+        removeActiveGiveaway(msgId);
+        global.giveawayEntrants.delete(msgId);
+        global.giveawayMeta.delete(msgId);
+      } else {
+        console.warn(`[GIVEAWAY ${msgId}] restore failed (${err?.message || err}) — retrying in 60s`);
+        const retry = setTimeout(() => restoreOne(client, msgId).catch(() => {}), 60_000);
+        retry.unref?.();
+      }
       continue;
     }
 

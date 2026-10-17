@@ -65,6 +65,35 @@ function checkCmdPermission(interaction) {
   return true;
 }
 
+/**
+ * May this member use a moderation button (report cards, invite cards)?
+ *
+ * Those buttons used to have no check at all: anyone who could see the
+ * report channel could warn, kick or ban from them. Allowed: server
+ * Administrators, the /cmd mod and admin roles, and anyone holding the
+ * Discord permission the action itself needs.
+ */
+const ACTION_PERMS = {
+  warn: PermissionFlagsBits.ModerateMembers,
+  timeout: PermissionFlagsBits.ModerateMembers,
+  kick: PermissionFlagsBits.KickMembers,
+  ban: PermissionFlagsBits.BanMembers,
+  dismiss: PermissionFlagsBits.ManageMessages,
+};
+function canUseModButton(interaction, action) {
+  const member = interaction.member;
+  if (!member?.permissions) return false;
+  if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
+  const setup = readJson('config.json', {})[interaction.guild?.id]?.cmdSetup || {};
+  const staff = [...(setup.modRoles || []), ...(setup.adminRoles || [])];
+  if (staff.some(id => member.roles?.cache?.has(id))) return true;
+  const need = ACTION_PERMS[action] || PermissionFlagsBits.ModerateMembers;
+  return member.permissions.has(need);
+}
+function denyModButton(interaction) {
+  return interaction.reply({ content: '❌ You do not have permission to take moderation actions.', flags: EPHEMERAL_FLAG }).catch(() => {});
+}
+
 // ── Giveaway participants helpers ─────────────────────────────────────────────
 const PAGE_SIZE = 10;
 
@@ -640,6 +669,7 @@ module.exports = {
 
         // Report — take action
         if (id.startsWith('rpt_action:')) {
+          if (!canUseModButton(interaction, 'warn')) return denyModButton(interaction);
           const [, targetUserId, reportChannelId] = id.split(':');
           return await handleReportAction(interaction, targetUserId, reportChannelId);
         }
@@ -648,11 +678,13 @@ module.exports = {
         if (id.startsWith('rpt_w:') || id.startsWith('rpt_k:') || id.startsWith('rpt_b:') || id.startsWith('rpt_dismiss:')) {
           const parts = id.split(':');
           if (id.startsWith('rpt_dismiss:')) {
+            if (!canUseModButton(interaction, 'dismiss')) return denyModButton(interaction);
             const [, reportChannelId, reportMsgId] = parts;
             return await executeReportAction(interaction, 'dismiss', null, reportChannelId, reportMsgId);
           }
           const [, targetUserId, reportChannelId, reportMsgId] = parts;
           const action = id.startsWith('rpt_w:') ? 'warn' : id.startsWith('rpt_k:') ? 'kick' : 'ban';
+          if (!canUseModButton(interaction, action)) return denyModButton(interaction);
           return await executeReportAction(interaction, action, targetUserId, reportChannelId, reportMsgId);
         }
 

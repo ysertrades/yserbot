@@ -26,7 +26,10 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
     ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+    // GuildMember: without it discord.js silently drops guildMemberRemove for
+    // anyone not in the member cache, so their leave message and leave log
+    // never appeared. The remove payload still carries the full user.
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember],
 });
 
 client.commands = new Collection();
