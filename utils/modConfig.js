@@ -108,15 +108,12 @@ function setEconCalSettings(guildId, patch) {
  *
  * Defaults to on for everything: the log is what makes handing the panel out
  * safe, so silence has to be chosen deliberately rather than arrived at.
- * Coin movements are deliberately absent — an economy change that leaves no
- * trace is the one thing worth keeping unconditional.
  */
 const PANEL_LOG_CATEGORIES = {
   feeds:      { label: 'News feed and calendar' },
   moderation: { label: 'Moderation and filters' },
-  shop:       { label: 'Shop items' },
   composer:   { label: 'Messages, buttons and posting' },
-  giveaways:  { label: 'Giveaways and lottery' },
+  giveaways:  { label: 'Giveaways' },
   settings:   { label: 'Server settings' },
   features:   { label: 'Feature settings and levelling' },
   studio:     { label: 'Studio banner wording' },

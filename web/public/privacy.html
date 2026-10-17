@@ -18,7 +18,7 @@
   <p class="lede">Written from the code, not from a template. Everything below is something the bot actually stores, and the list is meant to be complete.</p>
 
   <div class="meta">
-    <span><b>Effective</b> 5 August 2026</span>
+    <span><b>Effective</b> 17 October 2026</span>
     <span><b>Applies to</b> the bot and its control panel</span>
     <span><a href="/terms">Terms of Service →</a></span>
   </div>
@@ -26,9 +26,9 @@
   <section>
     <div class="eyebrow"><span class="n">01</span> The short version</div>
     <h2>Identifiers and counters, <span class="serif">not</span> conversations</h2>
-    <p>QuantLab stores Discord IDs and the numbers attached to them — your balance, your level, the cards you hold, the warnings against you. It does not keep a copy of your conversations, it never asks for an email or a password, and it does not sell or share anything with advertisers.</p>
+    <p>QuantLab stores Discord IDs and the numbers attached to them — your level and the warnings against you. It does not keep a copy of your conversations, it never asks for an email or a password, and it does not sell or share anything with advertisers.</p>
     <div class="note blue">
-      <p class="tight">The bot reads messages in order to award XP, drop cards, run auto-replies and apply the word filter. Reading is not the same as keeping: message text is examined as it arrives and discarded. The exceptions are named in <strong>section 03</strong>, and there are only three.</p>
+      <p class="tight">The bot reads messages in order to award XP, run auto-replies and apply the word filter. Reading is not the same as keeping: message text is examined as it arrives and discarded. The exceptions are named in <strong>section 03</strong>, and there are only three.</p>
     </div>
   </section>
 
@@ -38,9 +38,8 @@
     <dl class="rows">
       <div class="row"><dt>Discord user ID</dt><dd>The number that identifies your account. It is the key every record below hangs off.</dd></div>
       <div class="row"><dt>Server &amp; channel IDs</dt><dd>Which server a setting belongs to, and which channels a feature posts in.</dd></div>
-      <div class="row"><dt>Economy</dt><dd>Wallet and bank balances, interest timing, shop purchases, active boosts, and command cooldowns.</dd></div>
+      <div class="row"><dt>Retired features</dt><dd>Balances, shop purchases, collected cards and lottery entries left over from the coin economy, which has been removed. The bot no longer reads or adds to them; ask the operator to have them deleted.</dd></div>
       <div class="row"><dt>Levelling</dt><dd>XP, level, a count of messages that earned XP, and the timestamp of the last one — the count only, never the messages.</dd></div>
-      <div class="row"><dt>Cards &amp; games</dt><dd>The cards you have collected, lottery tickets held today, and casino limits such as the daily wheel cap.</dd></div>
       <div class="row"><dt>Moderation records</dt><dd>Warnings, kicks, bans, timeouts and reports: who, by whom, when, and the reason a moderator typed.</dd></div>
       <div class="row"><dt>Giveaways</dt><dd>Who entered which giveaway, and who won.</dd></div>
       <div class="row"><dt>Server configuration</dt><dd>Everything an administrator sets — embed templates, scheduled posts, auto-replies, feeds, message wording and colours.</dd></div>
@@ -66,8 +65,8 @@
     <div class="eyebrow"><span class="n">04</span> Why</div>
     <h2>Each thing has <span class="serif">one</span> job</h2>
     <ul>
-      <li><strong>To make the features work at all.</strong> A balance that is not stored is not a balance; a level that resets every restart is not a level.</li>
-      <li><strong>To enforce fairness.</strong> Cooldowns, daily caps and ticket limits need to remember what you already did.</li>
+      <li><strong>To make the features work at all.</strong> A level that resets every restart is not a level.</li>
+      <li><strong>To enforce fairness.</strong> Cooldowns and ticket limits need to remember what you already did.</li>
       <li><strong>To give moderators a record.</strong> A warning nobody can look up later is not moderation.</li>
       <li><strong>To keep you signed in</strong> to the panel between visits.</li>
     </ul>
@@ -85,7 +84,7 @@
   <section>
     <div class="eyebrow"><span class="n">06</span> Who can see it</div>
     <h2>Your server's staff, and <span class="serif">nobody</span> else</h2>
-    <p>Anyone with <strong>Manage Server</strong> on a server can see that server's data through the panel — balances, levels, warnings, tickets and configuration. That is the same group who could already see it through Discord's own tools.</p>
+    <p>Anyone with <strong>Manage Server</strong> on a server can see that server's data through the panel — levels, warnings, tickets and configuration. That is the same group who could already see it through Discord's own tools.</p>
     <p>Data is not sold, rented, or shared with third parties for their own purposes. It leaves the bot only in these ways:</p>
     <ul>
       <li><strong>Discord</strong>, which is where every message the bot sends necessarily goes.</li>
@@ -99,9 +98,8 @@
     <div class="eyebrow"><span class="n">07</span> How long</div>
     <h2>Until it stops being <span class="serif">needed</span></h2>
     <ul>
-      <li><strong>Economy, levels and cards</strong> stay while the bot is in the server, so your progress survives.</li>
-      <li><strong>Cooldowns and daily caps</strong> expire on their own.</li>
-      <li><strong>Lottery tickets</strong> clear at each daily draw.</li>
+      <li><strong>Levels</strong> stay while the bot is in the server, so your progress survives.</li>
+      <li><strong>Cooldowns</strong> expire on their own.</li>
       <li><strong>Moderation records</strong> stay until a moderator clears them.</li>
       <li><strong>Panel sessions</strong> expire, and signing out ends them immediately.</li>
       <li><strong>Removing the bot</strong> ends all processing for that server. Ask the operator if you also want the stored records deleted.</li>
@@ -111,8 +109,8 @@
   <section>
     <div class="eyebrow"><span class="n">08</span> Your choices</div>
     <h2>Seeing it, and <span class="serif">deleting</span> it</h2>
-    <p>Much of your own data is readable from Discord right now: <code>/bank</code> for balances, <code>/rank</code> for level, <code>/cards collection</code> for cards, <code>/warnings</code> for moderation history.</p>
-    <p>For a copy of everything held about you, or for deletion, contact the operator of the bot through the support server or the contact route published where you added it. Ask your own server's administrators first for anything they control directly — balances, warnings and configuration are theirs to change.</p>
+    <p>Much of your own data is readable from Discord right now: <code>/rank</code> for level and <code>/warnings</code> for moderation history.</p>
+    <p>For a copy of everything held about you, or for deletion, contact the operator of the bot through the support server or the contact route published where you added it. Ask your own server's administrators first for anything they control directly — levels, warnings and configuration are theirs to change.</p>
     <p>Deleting a record may reset progress tied to it. That is the trade, and it is yours to make.</p>
   </section>
 

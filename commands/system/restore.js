@@ -7,20 +7,13 @@ const { readJson, writeJson } = require('../../utils/jsonStorage');
 // Must stay in sync with backup.js
 const GUILD_FILES = new Set([
   'config.json',
-  'economy.json',
   'levels.json',
-  'bank.json',
-  'shop.json',
-  'casino-settings.json',
   'cases.json',
   'autoreplies.json',
   'buttons.json',
   'embeds.json',
   'schedules.json',
-  'cards_config.json',
-  'wheel_limits.json',
   'giveaways_ended.json',
-  'active_effects.json',
   'member_history.json',
 ]);
 

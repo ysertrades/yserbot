@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * Filters bot accounts out of a list of user IDs. Used to keep economy/XP/
- * card leaderboards restricted to real members — a bot account can end up
- * with a balance (e.g. via /give-coins) and shouldn't show up next to human
- * players. Falls back to treating an unresolvable ID as human rather than
+ * Filters bot accounts out of a list of user IDs. Used to keep XP
+ * leaderboards restricted to real members — a bot account can end up with
+ * XP and shouldn't show up next to human members. Falls back to treating
+ * an unresolvable ID as human rather than
  * hiding a real user over a transient fetch failure.
  */
 async function filterNonBotIds(client, userIds) {

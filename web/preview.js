@@ -23,7 +23,6 @@ const { memoizeRender } = require('../utils/renderCache');
 const { generateTradingViewBannerImage, TV_DEFAULTS } = require('../utils/tradingViewVisual');
 const { generateWhopBannerImage, WHOP_DEFAULTS } = require('../utils/whopVisual');
 const { generatePrizeGiveawayBannerImage, PRIZE_DEFAULTS } = require('../utils/prizeGiveawayVisual');
-const { generateGiveawayBannerImage } = require('../utils/giveawayVisual');
 const { LIMITS, normalise, getBannerCopy, copyForDynamicKey } = require('../utils/bannerCopy');
 const { DYNAMIC_IMAGES } = require('../utils/dynamicEmbedImages');
 
@@ -48,40 +47,12 @@ const TEMPLATES = {
   },
 };
 
-// The giveaway banner takes labels rather than copy fields, so it is not in
-// TEMPLATES — the Studio form would not know what to do with it. It still goes
-// through the same memoiser and the same pacing.
-const giveawayBanner = memoizeRender(generateGiveawayBannerImage, { name: 'preview:giveaway', max: 24 });
-
-/**
- * Preview of what a giveaway will look like before it is posted, built from
- * the same generator coinsgiveaway.js uses when it actually launches one.
- */
-function renderGiveaway(params) {
-  const amount = Math.max(0, Math.min(1e8, Number(params.get('amount')) || 0));
-  const winners = Math.max(1, Math.min(50, Number(params.get('winners')) || 1));
-  const opts = {
-    amountLabel: `${amount.toLocaleString()} COINS EACH`,
-    subLabel: `${winners} WINNER${winners !== 1 ? 'S' : ''} • HIT ENTER BELOW`,
-  };
-
-  const cached = giveawayBanner.peek(opts);
-  if (cached) return { png: cached, cached: true, filename: 'giveaway_preview.png' };
-
-  const since = Date.now() - lastRenderAt;
-  if (since < MIN_GAP_MS) return { retryAfterMs: MIN_GAP_MS - since };
-
-  const png = giveawayBanner(opts);
-  lastRenderAt = Date.now();
-  return { png, cached: false, filename: 'giveaway_preview.png' };
-}
-
 /**
  * Any dynamic embed image, by its `dynamic:<key>` key.
  *
  * Studio only edits the two banners, but the composer's preview has to be able
  * to show whichever generated image a template actually references — otherwise
- * previewing an embed built on the economy showcase shows a gap where the
+ * previewing an embed built on a generated banner shows a gap where the
  * artwork will be, which is worse than not offering a preview.
  */
 function renderDynamicImage(key, guildId = null) {
@@ -132,7 +103,6 @@ let lastRenderAt = 0;
  * @returns {{png: Buffer, cached: boolean} | {retryAfterMs: number}}
  */
 function render(key, params, guildId = null) {
-  if (key === 'giveaway') return renderGiveaway(params);
   const template = TEMPLATES[key];
   if (!template) return null;
 
@@ -157,4 +127,4 @@ function render(key, params, guildId = null) {
   return { png, cached: false, filename: template.filename };
 }
 
-module.exports = { listTemplates, render, renderGiveaway, renderDynamicImage, TEMPLATES, LIMITS };
+module.exports = { listTemplates, render, renderDynamicImage, TEMPLATES, LIMITS };

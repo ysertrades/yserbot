@@ -3,9 +3,9 @@
 /**
  * web/features.js
  *
- * The rest of the bot's adjustable surface: the lottery
- * channel, card drops, levelling, verification, scheduled posts, auto-replies
- * and direct coin adjustments.
+ * The rest of the bot's adjustable surface: levelling, verification,
+ * scheduled posts and auto-replies. (The lottery, card drops and coin
+ * adjustments went with the economy.)
  *
  * Same shape as web/settings.js and for the same reason — these are a dozen
  * small settings that differ only in where they live and what counts as a
@@ -17,14 +17,12 @@
  */
 
 const { readJson, writeJson } = require('../utils/jsonStorage');
-const { getBalance, addCoins, setBalance } = require('../utils/economyManager');
 const { BADGE_DEFS } = require('../utils/badges');
 const {
   generateScheduleId, parseScheduleTime,
   nextWeekdayTimestamp, nextDayOfWeekTimestamp, onDateTimestamp,
   formatDate, dayOfWeek, DAY_NAMES,
 } = require('../utils/scheduler');
-const { todaysSlotUTC, REWARD: LOTTERY_REWARD, drawStatus } = require('../utils/lotteryRunner');
 const { normaliseMention } = require('../utils/mentionTarget');
 const { parseDuration, formatDuration } = require('../utils/duration');
 
@@ -73,34 +71,11 @@ function scheduleDate(body) {
 }
 
 // file → the settings inside it, so one table covers several stores.
-const GROUPS = {
-  cards: {
-    file: 'cards_config.json',
-    label: 'Card drops',
-    fields: [
-      { key: 'channelId', label: 'Drop channel', type: 'channel' },
-      { key: 'chance', label: 'Drop chance (%)', type: 'int', min: 1, max: 100, fallback: 5 },
-      { key: 'interval', label: 'Messages between drops', type: 'int', min: 1, max: 1000, fallback: 25 },
-    ],
-  },
-};
+// (Card drops lived here; they were removed with the economy.)
+const GROUPS = {};
 
 // These live under config.json[guildId], like web/settings.js.
 const CONFIG_GROUPS = {
-  lottery: {
-    label: 'Lottery',
-    fields: [
-      // Without one there is no draw at all — the runner has always skipped a
-      // guild that has not set this, so it is the difference between the
-      // lottery existing and not.
-      { key: 'channelId', path: ['lotterySettings', 'channelId'], label: 'Results channel', type: 'channel' },
-      // Stops the draw *and* the ticket sales. It used to stop only the draw,
-      // which meant a paused lottery went on taking coins for entries that
-      // would never be drawn. The pool itself is untouched either way, so
-      // entries already bought are still there when it is switched back on.
-      { key: 'paused', path: ['lotterySettings', 'paused'], label: 'Pause the daily draw', type: 'bool' },
-    ],
-  },
   verify: {
     label: 'Verification',
     fields: [
@@ -260,29 +235,6 @@ function read(guildId, guild) {
         }))
         .sort((a, b) => a.name.localeCompare(b.name))
     : [];
-
-  // Today's lottery pool, resolved to names. The draw itself is run by
-  // utils/lotteryRunner on its own schedule; this is the window onto it.
-  const lot = readJson('lottery.json', {})[guildId] || { pool: {}, lastDrawAt: 0, history: [] };
-  const pool = Object.entries(lot.pool || {}).sort((a, b) => b[1] - a[1]);
-  const lotteryStatus = drawStatus(guildId);
-  out.lottery = {
-    reward: LOTTERY_REWARD,
-    // Whether a draw can actually happen. The panel used to show a countdown
-    // whatever the state, which is the screen promising a draw that a paused
-    // or unconfigured lottery was never going to run.
-    open: lotteryStatus.open,
-    closedReason: lotteryStatus.reason,
-    totalTickets: pool.reduce((n, [, c]) => n + c, 0),
-    participants: pool.length,
-    nextDrawAt: todaysSlotUTC(Date.now() + 86400000),
-    lastDrawAt: lot.lastDrawAt || null,
-    top: pool.slice(0, 10).map(([userId, tickets]) => ({
-      userId, tickets,
-      name: guild.members?.cache?.get(userId)?.displayName || null,
-    })),
-    history: (lot.history || []).slice(-5).reverse(),
-  };
 
   out.frequencies = FREQUENCIES;
   out.scheduleDays = DAY_OPTIONS;
@@ -656,58 +608,8 @@ function saveAutoreply(guildId, body) {
   return { ok: true, key, isNew: !existing };
 }
 
-/**
- * Direct coin adjustment.
- *
- * The most dangerous thing the panel can do, so it is the most constrained:
- * a bounded amount, a member who is actually in the guild, and an explicit
- * mode rather than a signed number that could be fat-fingered into a wipe.
- */
-function adjustCoins(guildId, body, guild) {
-  const amount = Number(body.amount);
-  if (!Number.isInteger(amount) || amount < 0 || amount > 100_000_000) return { error: 'bad_amount' };
-
-  const mode = ['give', 'take', 'set'].includes(body.mode) ? body.mode : null;
-  if (!mode) return { error: 'bad_mode' };
-
-  if (body.everyone) {
-    if (mode === 'set') return { error: 'no_bulk_set' };
-    const members = [...(guild.members?.cache?.values() || [])].filter(m => !m.user?.bot);
-    if (!members.length) return { error: 'no_members' };
-    for (const m of members) addCoins(m.id, mode === 'give' ? amount : -amount);
-    return { ok: true, mode, amount, count: members.length };
-  }
-
-  const userId = String(body.userId || '');
-  const member = guild.members?.cache?.get(userId);
-  if (!member || member.user?.bot) return { error: 'bad_member' };
-
-  const before = getBalance(userId);
-  if (mode === 'set') setBalance(userId, amount);
-  else addCoins(userId, mode === 'give' ? amount : -amount);
-
-  return { ok: true, mode, amount, userId, name: member.displayName, before, after: getBalance(userId) };
-}
-
-/**
- * Clears today's lottery pool.
- *
- * Deliberately not a "draw now" button: the runner owns drawing, and a second
- * path into it would race the scheduled one and could pay a winner twice.
- * Clearing is the safe intervention — it voids a round without touching money.
- */
-function clearLottery(guildId) {
-  const all = readJson('lottery.json', {});
-  const state = all[guildId];
-  const count = Object.keys(state?.pool || {}).length;
-  if (!count) return { unchanged: true };
-  state.pool = {};
-  writeJson('lottery.json', all);
-  return { ok: true, cleared: count };
-}
-
 module.exports = {
   read, saveGroup, saveLevels, saveLevelRole, saveLevelBadge, resetAllLevels,
-  createSchedule, saveSchedule, saveAutoreply, adjustCoins, clearLottery,
+  createSchedule, saveSchedule, saveAutoreply,
   GROUPS, CONFIG_GROUPS, LEVEL_FIELDS, FREQUENCIES, FREQUENCY_VALUES,
 };

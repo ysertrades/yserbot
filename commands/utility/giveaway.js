@@ -1657,8 +1657,8 @@ module.exports.reroll = async function(message, shortId) {
   });
 };
 
-// Exposed for the web control panel — same reason as coinsgiveaway.js: the
-// panel drives the real end path, it does not reimplement drawing winners.
+// Exposed for the web control panel: the panel drives the real end path, it
+// does not reimplement drawing winners.
 module.exports.postGiveaway = postGiveaway;
 module.exports.performReroll = performReroll;
 module.exports.endGiveaway = endGiveaway;

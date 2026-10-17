@@ -127,37 +127,6 @@ function buildParticipantsRow(giveawayMsgId, currentPage, totalPages) {
   );
 }
 
-// ── Coins giveaway participants helpers (mirrors the block above) ────────────
-
-function buildCoinsParticipantsEmbed(giveawayMsgId, page) {
-  const entrants   = global.coinsGiveawayEntrants?.get(giveawayMsgId) || new Set();
-  const members    = Array.from(entrants).map(id => `<@${id}>`);
-  const total      = members.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const safePage   = Math.max(1, Math.min(page, totalPages));
-  const slice      = members.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  const embed = new EmbedBuilder()
-    .setColor(0xFFD700)
-    .setTitle('🏅 Coins Giveaway Participants')
-    .setDescription(total === 0 ? 'No participants yet.' : slice.map((m, i) => `**${(safePage - 1) * PAGE_SIZE + i + 1}.** ${m}`).join('\n'))
-    .setFooter({ text: `Page ${safePage}/${totalPages} • ${total} participant${total !== 1 ? 's' : ''}` });
-
-  return { embed, totalPages, currentPage: safePage };
-}
-
-function buildCoinsParticipantsRow(giveawayMsgId, currentPage, totalPages) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`cg_p:${giveawayMsgId}:${currentPage}`)
-      .setLabel('◄ Prev').setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentPage <= 1),
-    new ButtonBuilder()
-      .setCustomId(`cg_n:${giveawayMsgId}:${currentPage}`)
-      .setLabel('Next ►').setStyle(ButtonStyle.Secondary)
-      .setDisabled(currentPage >= totalPages),
-  );
-}
 
 // ── Report action helpers ─────────────────────────────────────────────────────
 
@@ -532,89 +501,10 @@ module.exports = {
           return await interaction.update({ embeds: [embed], components: [row] });
         }
 
-        // Coins giveaway — setup panel buttons
-        if (id.startsWith('cg_setup:')) {
-          return await client.commands.get('coinsgiveaway')?.handleSetupButton(interaction);
-        }
-
-        // Coins giveaway — list view: delete-ended-giveaway confirm/back
-        if (id.startsWith('cg_list_delyes:') || id === 'cg_list_delno') {
-          return await client.commands.get('coinsgiveaway')?.handleListButton(interaction);
-        }
-
-        // Coins giveaway — enter
-        if (id === 'coinsgaw_enter') {
-          if (!global.coinsGiveawayEntrants) global.coinsGiveawayEntrants = new Map();
-          let entrants = global.coinsGiveawayEntrants.get(interaction.message.id);
-
-          // Not in memory — bot may have restarted during a long giveaway.
-          // Check persisted active-giveaway state before declaring it ended.
-          if (!entrants) {
-            const cgCmd = client.commands.get('coinsgiveaway');
-            const saved = cgCmd?.getActive?.(interaction.message.id);
-            if (saved && saved.endTime > Date.now()) {
-              if (!global.coinsGiveawayMeta) global.coinsGiveawayMeta = new Map();
-              entrants = new Set(saved.entrants || []);
-              global.coinsGiveawayEntrants.set(interaction.message.id, entrants);
-              global.coinsGiveawayMeta.set(interaction.message.id, {
-                amount: saved.amount, winners: saved.winnersCount,
-                hostId: saved.hostId, endTime: saved.endTime, guildId: saved.guildId,
-                requiredRoleId: saved.requiredRoleId || null, bonusRoleId: saved.bonusRoleId || null,
-                minAccountAgeDays: saved.minAccountAgeDays || 0,
-              });
-            }
-          }
-
-          if (!entrants) return interaction.reply({ content: 'This giveaway has ended.', flags: EPHEMERAL_FLAG });
-          if (entrants.has(interaction.user.id)) return interaction.reply({ content: "You've already entered!", flags: EPHEMERAL_FLAG });
-
-          const cgMeta = global.coinsGiveawayMeta?.get(interaction.message.id);
-          if (cgMeta?.requiredRoleId && !interaction.member.roles.cache.has(cgMeta.requiredRoleId)) {
-            return await interaction.reply({ content: `❌ You need the <@&${cgMeta.requiredRoleId}> role to enter this giveaway.`, flags: EPHEMERAL_FLAG });
-          }
-          if (cgMeta?.minAccountAgeDays > 0) {
-            const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86400000;
-            if (ageDays < cgMeta.minAccountAgeDays) {
-              return await interaction.reply({ content: `❌ Your account must be at least **${cgMeta.minAccountAgeDays} days** old to enter this giveaway.`, flags: EPHEMERAL_FLAG });
-            }
-          }
-
-          entrants.add(interaction.user.id);
-          try {
-            const upd  = EmbedBuilder.from(interaction.message.embeds[0]);
-            const desc = (upd.data.description || '').replace(/📊 \*\*Entries:\*\* \d+ participants?/, `📊 **Entries:** ${entrants.size} participant${entrants.size !== 1 ? 's' : ''}`);
-            upd.setDescription(desc);
-            // Redrawn and re-uploaded, for the same reason as the prize
-            // giveaway above: pointing the embed at the file already on the
-            // message is a guess, and it was the wrong one.
-            const cgCmdRef = client.commands.get('coinsgiveaway');
-            const forBanner = cgMeta ?? cgCmdRef?.getActive?.(interaction.message.id);
-            const banner = forBanner
-              ? cgCmdRef?.buildBanner?.({ amount: forBanner.amount, winners: forBanner.winners ?? forBanner.winnersCount ?? 1 })
-              : null;
-            const coinsOpts = banner ? reattachBuilt(upd, banner) : {};
-            await interaction.message.edit({ embeds: [upd], ...coinsOpts }).catch(() => {});
-          } catch {}
-          client.commands.get('coinsgiveaway')?.persistEntry?.(interaction.message.id, entrants);
-          return await interaction.reply({ content: '🎟️ You\'ve entered the giveaway! Good luck!', flags: EPHEMERAL_FLAG });
-        }
-
-        // Coins giveaway — participants (first page)
-        if (id === 'coinsgaw_participants') {
-          const giveawayMsgId = interaction.message.id;
-          const { embed, totalPages, currentPage } = buildCoinsParticipantsEmbed(giveawayMsgId, 1);
-          const row = buildCoinsParticipantsRow(giveawayMsgId, currentPage, totalPages);
-          return await interaction.reply({ embeds: [embed], components: [row], flags: EPHEMERAL_FLAG });
-        }
-
-        // Coins giveaway — prev/next page (updates in-place, no new message)
-        if (id.startsWith('cg_p:') || id.startsWith('cg_n:')) {
-          const [, giveawayMsgId, pageStr] = id.split(':');
-          const currentPage = parseInt(pageStr);
-          const newPage     = id.startsWith('cg_p:') ? currentPage - 1 : currentPage + 1;
-          const { embed, totalPages, currentPage: safePage } = buildCoinsParticipantsEmbed(giveawayMsgId, newPage);
-          const row = buildCoinsParticipantsRow(giveawayMsgId, safePage, totalPages);
-          return await interaction.update({ embeds: [embed], components: [row] });
+        // Coins giveaways were removed with the economy. Their old messages can
+        // still be clicked; answer instead of letting it end in "interaction failed".
+        if (id.startsWith('cg_') || id.startsWith('coinsgaw_') || id.startsWith('cg_list_')) {
+          return await interaction.reply({ content: 'This giveaway is no longer active.', flags: EPHEMERAL_FLAG }).catch(() => {});
         }
 
         // Ticket buttons
@@ -657,11 +547,6 @@ module.exports = {
           return await client.commands.get('schedule')?.handleScheduleButton(interaction);
         }
 
-        // Shop settings panel — add/edit/remove/close buttons
-        if (id.startsWith('shopset_')) {
-          return await client.commands.get('shopsettings')?.handleButton(interaction);
-        }
-
         // Report — submission panel buttons (link/submit/cancel)
         if (id.startsWith('report_link:') || id.startsWith('report_submit:') || id.startsWith('report_cancel:')) {
           return await client.commands.get('report')?.handleButton(interaction);
@@ -688,40 +573,10 @@ module.exports = {
           return await executeReportAction(interaction, action, targetUserId, reportChannelId, reportMsgId);
         }
 
-        // Card grab
+        // Collectible cards were removed with the economy; old drop messages
+        // still carry the button.
         if (id === 'card_grab') {
-          if (interaction.guild && !isFeatureEnabled(interaction.guild.id, 'cards')) {
-            return interaction.reply({
-              content: 'Collectible cards are switched off for this server.',
-              flags: EPHEMERAL_FLAG,
-            }).catch(() => {});
-          }
-          if (!global.cardDrops) global.cardDrops = new Map();
-          // Atomic claim: only the first click that deletes the entry wins.
-          // Checking grabbed then setting it allowed two users to both pass.
-          const drop = global.cardDrops.get(interaction.message.id);
-          if (!drop || drop.grabbed) {
-            return await interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', flags: EPHEMERAL_FLAG });
-          }
-          drop.grabbed = true;
-          if (!global.cardDrops.delete(interaction.message.id)) {
-            return await interaction.reply({ content: '💨 Too late! Someone already grabbed this card.', flags: EPHEMERAL_FLAG });
-          }
-          const { writeJson } = require('../utils/jsonStorage');
-          const { buildClaimedEmbed } = require('../utils/cardsManager');
-          const allCards = readJson('cards.json', {});
-          if (!allCards[interaction.user.id]) allCards[interaction.user.id] = [];
-          allCards[interaction.user.id].push({ ...drop.card, collectedAt: Date.now() });
-          writeJson('cards.json', allCards);
-          const { embed: claimedEmbed, files: claimedFiles } = buildClaimedEmbed(drop.card, interaction.user);
-          const disabled = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId('card_claimed')
-              .setLabel(`🎉 ${interaction.user.username} grabbed it!`)
-              .setStyle(ButtonStyle.Success)
-              .setDisabled(true),
-          );
-          return await interaction.update({ embeds: [claimedEmbed], files: claimedFiles, components: [disabled], attachments: [] });
+          return interaction.reply({ content: 'This is no longer available.', flags: EPHEMERAL_FLAG }).catch(() => {});
         }
 
         // Restore — confirm
@@ -755,18 +610,11 @@ module.exports = {
           return await client.commands.get('econcal')?.handlePanelButton(interaction, id.slice('econcal_panel:'.length));
         }
 
-        // Trivia — answer buttons / close session
-        if (id.startsWith('trivia_answer:')) {
-          return await client.commands.get('trivia')?.handleAnswer(interaction);
-        }
-        if (id.startsWith('trivia_close:')) {
-          return await client.commands.get('trivia')?.handleClose(interaction);
-        }
-
-        // Fishing / mining — continue-session or close-session buttons
-        if (id.startsWith('gather_again:') || id.startsWith('gather_close:')) {
-          const action = id.split(':')[1];
-          return await client.commands.get(action)?.handleButton(interaction);
+        // Trivia, fishing/mining, shop and bank were removed with the
+        // economy. Their old messages can still be clicked.
+        if (id.startsWith('trivia_') || id.startsWith('gather_') || id.startsWith('bank_')
+            || id === 'shop_buy' || id === 'shop_inventory' || id === 'shop_use' || id.startsWith('shop_close:')) {
+          return interaction.reply({ content: 'This is no longer available.', flags: EPHEMERAL_FLAG }).catch(() => {});
         }
 
         // News feed panel — toggle/channel/sources/topics/close
@@ -774,22 +622,9 @@ module.exports = {
           return await client.commands.get('newsfeed')?.handleButton(interaction);
         }
 
-        // Shop panel — buy/inventory/use/close buttons
-        if (id === 'shop_buy' || id === 'shop_inventory' || id === 'shop_use' || id.startsWith('shop_close:')) {
-          return await client.commands.get('shop')?.handleButton(interaction);
-        }
-
         // XP Ladder Desk — Refresh / Me on /leaderboard
         if (id.startsWith('lb:')) {
           return await client.commands.get('leaderboard')?.handleButton(interaction);
-        }
-
-        // Bank panel — deposit/withdraw/collect/check-balance/leaderboard/close
-        if (id.startsWith('bank_panel:')) {
-          return await client.commands.get('bank')?.handleButton(interaction);
-        }
-        if (id.startsWith('bank_close:')) {
-          return await client.commands.get('bank')?.handleClose(interaction);
         }
 
         // Auto-mod — link request flow
@@ -918,17 +753,11 @@ module.exports = {
     // ── Modal Submissions ─────────────────────────────────────────────────────
     if (interaction.isModalSubmit()) {
       const id = interaction.customId;
-      if (id.startsWith('cs:')) return; // casino handler
 
       try {
         // Giveaway setup modals
         if (id.startsWith('gaw_modal:')) {
           return await client.commands.get('giveaway')?.handleSetupModal(interaction);
-        }
-
-        // Coins giveaway setup modals
-        if (id.startsWith('cg_modal:')) {
-          return await client.commands.get('coinsgiveaway')?.handleSetupModal(interaction);
         }
 
         // Embed editor modals
@@ -939,11 +768,6 @@ module.exports = {
         // Button editor modals
         if (id.startsWith('be_modal_')) {
           return await client.commands.get('button')?.handleButtonEditModal(interaction);
-        }
-
-        // Shop settings — add/edit item modals
-        if (id.startsWith('shopset_')) {
-          return await client.commands.get('shopsettings')?.handleModal(interaction);
         }
 
         // Report — link modal
@@ -974,11 +798,6 @@ module.exports = {
         // Economic calendar — weekly post time/offset modal
         if (id === 'econcal_weekly_time_modal') {
           return await client.commands.get('econcal')?.handleWeeklyTimeModalSubmit(interaction);
-        }
-
-        // Bank panel — deposit/withdraw amount modal
-        if (id.startsWith('bank_amount_modal:')) {
-          return await client.commands.get('bank')?.handleModal(interaction);
         }
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
@@ -1011,8 +830,6 @@ module.exports = {
           return await client.commands.get('schedule')?.handleScheduleSelect(interaction);
         if (id === 'gaw_list_delsel')
           return await client.commands.get('giveaway')?.handleListSelect(interaction);
-        if (id === 'cg_list_delsel')
-          return await client.commands.get('coinsgiveaway')?.handleListSelect(interaction);
         if (id === 'automod_cd_select')
           return await client.commands.get('automod')?.handleCooldownSelect(interaction);
         if (id === 'automod_req_select')
@@ -1025,12 +842,8 @@ module.exports = {
           return await client.commands.get('econcal')?.handleCurrencySelect(interaction);
         if (id === 'econcal_weekly_weekday_select')
           return await client.commands.get('econcal')?.handleWeekdaySelect(interaction);
-        if (id === 'shop_buy_select' || id === 'shop_use_select')
-          return await client.commands.get('shop')?.handleSelect(interaction);
         if (id.startsWith('report_reason_select:'))
           return await client.commands.get('report')?.handleReasonSelect(interaction);
-        if (id.startsWith('shopset_'))
-          return await client.commands.get('shopsettings')?.handleSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
@@ -1051,8 +864,6 @@ module.exports = {
       try {
         if (id.startsWith('report_user_select:'))
           return await client.commands.get('report')?.handleUserSelect(interaction);
-        if (id.startsWith('bank_checkbalance_select:'))
-          return await client.commands.get('bank')?.handleUserSelect(interaction);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
         reportAndLog(err, { area: 'User select interaction', customId: id, guildId: interaction.guildId });
@@ -1068,8 +879,6 @@ module.exports = {
       try {
         if (id.startsWith('gaw_role_select:'))
           return await client.commands.get('giveaway')?.handleRoleSelect(interaction);
-        if (id.startsWith('cg_role_select:'))
-          return await client.commands.get('coinsgiveaway')?.handleRoleSelect(interaction);
         if (id === 'econcal_role_select')
           return await client.commands.get('econcal')?.handleRoleSelect(interaction);
       } catch (err) {
@@ -1086,8 +895,6 @@ module.exports = {
       try {
         if (id.startsWith('gaw_channel_select:'))
           return await client.commands.get('giveaway')?.handleChannelSelect(interaction);
-        if (id.startsWith('cg_channel_select:'))
-          return await client.commands.get('coinsgiveaway')?.handleChannelSelect(interaction);
         if (id.startsWith('nf_channel_select:'))
           return await client.commands.get('newsfeed')?.handleChannelSelect(interaction);
         if (id === 'econcal_channel_select')

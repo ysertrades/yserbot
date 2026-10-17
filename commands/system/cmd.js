@@ -14,17 +14,15 @@ const MOD_COMMANDS = [
 ];
 
 const ADMIN_COMMANDS = [
-  'automod', 'autoreply', 'backup', 'button', 'cardsettings', 'casino-settings',
-  'cmd', 'coinsgiveaway', 'config', 'econcal', 'embed', 'give-coins', 'giveaway',
-  'levelsettings', 'modlog', 'newsfeed', 'restore', 'schedule', 'shopsettings',
+  'automod', 'autoreply', 'backup', 'button',
+  'cmd', 'config', 'econcal', 'embed', 'giveaway',
+  'levelsettings', 'modlog', 'newsfeed', 'restore', 'schedule',
   'ticket', 'verify', 'warn-settings',
 ];
 
 const PUBLIC_COMMANDS = [
-  'bank', 'cards', 'casino', 'daily', 'fish',
-  'help', 'inventory', 'jobs', 'leaderboard', 'lottery', 'mine', 'ping',
-  'poll', 'rank', 'report', 'risk', 'rob', 'shop',
-  'transfer', 'trivia', 'userinfo', 'work',
+  'help', 'leaderboard', 'ping',
+  'poll', 'rank', 'report', 'risk', 'userinfo',
 ];
 
 function getCmdSetup(guildId) {

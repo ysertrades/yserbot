@@ -2,14 +2,12 @@ const { Events, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const { createEmbed } = require('../utils/embedBuilder');
 const messageStyle = require('../utils/messageStyle');
-const { addCoins } = require('../utils/economyManager');
 const { getModLogSettings } = require('../utils/modConfig');
 const { postCustomLog } = require('../utils/modLog');
 const { generateWelcomeCardImage } = require('../utils/welcomeVisual');
 const { fetchAvatarPng } = require('../utils/avatarUtil');
 const { isFeatureEnabled } = require('../utils/featureToggles');
 
-const WELCOME_BONUS = 500;
 const MEMBER_HISTORY_FILE = 'member_history.json';
 
 // Has this (non-bot) user ever joined this guild before? Tracked separately
@@ -67,24 +65,16 @@ module.exports = {
                 .setTimestamp());
         }
 
-        // Bots joining (app installs) don't take part in the coin economy or
-        // the welcome flow at all.
+        // Bots joining (app installs) don't take part in the welcome flow.
         if (isBot) return;
 
+        // The welcome card still tells new and returning members apart; only
+        // the coin bonus that rode on it went with the economy.
         const isReturning = hasJoinedBefore(member.guild.id, member.id);
         recordJoin(member.guild.id, member.id);
         const welcomeOn = isFeatureEnabled(member.guild.id, 'welcome_leave');
-        const economyOn = false; // economy removed
-        const eligibleForBonus = !isReturning && welcomeOn && economyOn;
-        if (eligibleForBonus) addCoins(member.id, WELCOME_BONUS);
-
-        // The second chip on the card always says something — which of the
-        // three things it says depends on whether there's a coin bonus to
-        // report at all, not just whether this member already claimed it.
-        let bonusText;
-        if (!economyOn) bonusText = 'GOOD TO HAVE YOU HERE';
-        else if (eligibleForBonus) bonusText = `+${WELCOME_BONUS.toLocaleString()} COINS`;
-        else bonusText = 'BONUS ALREADY CLAIMED';
+        const eligibleForBonus = false;
+        const bonusText = 'GOOD TO HAVE YOU HERE';
 
         const welcomeStyle = messageStyle.styleFor(member.guild.id, 'member.welcome');
         if (welcomeOn && guildConfig.welcomeChannel && welcomeStyle.enabled) {
