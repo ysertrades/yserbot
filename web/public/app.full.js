@@ -2064,19 +2064,34 @@ function renderFeedForms() {
       { value: 'geopolitics', label: '🌐 Geopolitics' },
       { value: 'trump', label: '🦅 Trump / Truth Social' },
     ];
+    // A power card for the feed itself: what it is, whether it is live, one tap.
+    const power = el('button', 'feed-power' + (nf.enabled ? ' on' : ''));
+    power.type = 'button';
+    power.setAttribute('aria-pressed', String(nf.enabled));
+    const pText = el('span', 'feed-power-text');
+    pText.append(el('b', null, 'Live headlines'), el('span', null, 'Breaking market news from Financial Juice, as it happens'));
+    power.append(el('span', 'feed-power-ic', '📰'), pText, el('span', 'feat-switch'));
+    power.addEventListener('click', () => {
+      nf.enabled = !nf.enabled;
+      power.classList.toggle('on', nf.enabled);
+      power.setAttribute('aria-pressed', String(nf.enabled));
+      if (nfState) {
+        nfState.textContent = nf.enabled ? 'LIVE' : 'OFF';
+        nfState.className = 'pill' + (nf.enabled ? ' live' : '');
+      }
+    });
+    const facts = el('div', 'feed-facts');
+    facts.append(
+      el('span', 'feed-fact', '⚡ Checks as often as the source allows'),
+      el('span', 'feed-fact', '🧹 Never dumps the backlog when turned on'),
+      el('span', 'feed-fact', '🦅 Truth Social posts get a gold card'),
+    );
     nfForm.replaceChildren(
-      toggle('Post live headlines', nf.enabled, v => {
-        nf.enabled = v;
-        if (nfState) {
-          nfState.textContent = v ? 'LIVE' : 'OFF';
-          nfState.className = 'pill' + (v ? ' live' : '');
-        }
-      }),
-      pickOne('Channel', 'channel', nf.channelId, v => { nf.channelId = v; }, { blank: 'Pick a channel…' }),
-      el('p', 'hint', 'Polls Financial Juice about every 12 seconds (avoids rate limits). Enabling never dumps the backlog.'),
-      pickValues('Topics to include', topics, nf.filterTopics, v => { nf.filterTopics = v; },
+      power,
+      pickOne('Posts in', 'channel', nf.channelId, v => { nf.channelId = v; }, { blank: 'Pick a channel…' }),
+      pickValues('Topics', topics, nf.filterTopics, v => { nf.filterTopics = v; },
         { allNote: 'Nothing picked — every headline posts.' }),
-      el('p', 'hint', 'Trump / Truth Social items from Financial Juice get a gold V2 card automatically.'),
+      facts,
       actions(async () => {
         await post('newsfeed', {
           enabled: nf.enabled,
@@ -2110,8 +2125,9 @@ function renderFeedForms() {
     }),
     select('Timezone', String(wp.offsetMinutes), UTC_OFFSET_OPTIONS, v => { wp.offsetMinutes = Number(v); }),
   ];
-  const weeklyWrap = el('div', 'subfields');
-  weeklyWrap.append(...weeklyRows);
+  // Read as a sentence: "Every Monday at 09:00, UTC+0".
+  const weeklyWrap = el('div', 'feed-sentence');
+  weeklyWrap.append(el('span', 'feed-sentence-k', 'Every'), weeklyRows[0], el('span', 'feed-sentence-k', 'at'), weeklyRows[1], weeklyRows[2]);
   weeklyWrap.hidden = !wp.enabled;
 
   const ecForm = $('#form-econcal');
@@ -2124,16 +2140,32 @@ function renderFeedForms() {
   } else if (ecForm) {
   ecForm.dataset.sig = ecSig;
   ecForm.dataset.wired = '1';
+  const calPower = el('button', 'feed-power' + (ec.enabled ? ' on' : ''));
+  calPower.type = 'button';
+  calPower.setAttribute('aria-pressed', String(!!ec.enabled));
+  const cText = el('span', 'feed-power-text');
+  cText.append(el('b', null, 'Release reminders'), el('span', null, 'A heads-up before each release, and the result when it lands'));
+  calPower.append(el('span', 'feed-power-ic', '🗓️'), cText, el('span', 'feat-switch'));
+  calPower.addEventListener('click', () => {
+    ec.enabled = !ec.enabled;
+    calPower.classList.toggle('on', ec.enabled);
+    calPower.setAttribute('aria-pressed', String(ec.enabled));
+  });
+  const where = el('div', 'feed-two');
+  where.append(
+    pickOne('Posts in', 'channel', d.econcal.channelId, v => { ec.channelId = v; }),
+    pickOne('Pings', 'role', d.econcal.roleId, v => { ec.roleId = v; }, { blank: 'No ping' }),
+  );
+  // Impact levels in the colours the release desk uses for them.
+  const impactTones = { High: 'bad', Medium: 'warn', Low: 'low', Holiday: 'muted' };
   ecForm.replaceChildren(
-    toggle('Calendar running', ec.enabled, v => { ec.enabled = v; }),
-    pickOne('Channel', 'channel', d.econcal.channelId, v => { ec.channelId = v; }),
-    pickOne('Ping this role on reminders', 'role', d.econcal.roleId, v => { ec.roleId = v; },
-      { blank: 'No ping' }),
-    pickValues('Impact levels', d.econcal.impactLevels || [], ec.impactFilter,
-      v => { ec.impactFilter = v; }, { allNote: 'Nothing picked — every impact level is sent.' }),
+    calPower,
+    where,
+    pickValues('Impact', d.econcal.impactLevels || [], ec.impactFilter,
+      v => { ec.impactFilter = v; }, { allNote: 'Nothing picked — every impact level is sent.', tones: impactTones }),
     pickValues('Currencies', d.econcal.currencyCodes || [], ec.currencyFilter,
       v => { ec.currencyFilter = v; }, { allNote: 'Nothing picked — every currency is sent.' }),
-    el('h2', null, 'Weekly summary'),
+    el('h3', 'feed-sub', 'Week ahead summary'),
     toggle('Post the week ahead', wp.enabled, v => { wp.enabled = v; weeklyWrap.hidden = !v; }),
     weeklyWrap,
     actions(() => post('econcal', ec)),
@@ -2283,8 +2315,11 @@ function paintAgenda() {
   const weekly = desk.scope === 'week';
   host.dataset.range = weekly ? 'week' : 'day';
 
+  // The next release to land gets a live countdown; ones already out dim.
+  const now = Date.now();
+  const nextTs = scope.events.map(e => e.timestamp).filter(t => t > now).sort((a, b) => a - b)[0] || null;
   const rows = scope.events.map(e => {
-    const r = el('div', 'agenda-row');
+    const r = el('div', 'agenda-row' + (e.timestamp < now ? ' is-past' : '') + (e.timestamp === nextTs ? ' is-next' : ''));
     r.append(el('span', `impact-dot ${IMPACT_RANK[e.impact] || 'low'}`));
     if (weekly) r.append(el('span', 'agenda-day', deskDay(e.timestamp)));
     r.append(el('span', 'agenda-time', deskTime(e.timestamp)));
@@ -2301,7 +2336,24 @@ function paintAgenda() {
   if (scope.truncated) {
     rows.push(el('p', 'muted', `Showing the first ${scope.events.length} of ${num(scope.count)} — all of them are posted.`));
   }
-  host.replaceChildren(...rows);
+  if (nextTs) {
+    const ev = scope.events.find(e => e.timestamp === nextTs);
+    const banner = el('div', 'agenda-next');
+    const cd = el('b', 'agenda-next-cd');
+    banner.append(el('span', `impact-dot ${IMPACT_RANK[ev.impact] || 'low'}`), el('span', null, 'Next:'),
+      el('span', 'agenda-next-title', `${ev.currency || ''} ${ev.title}`.trim()), cd);
+    const paint = () => {
+      if (!cd.isConnected) return false;
+      const left = nextTs - Date.now();
+      cd.textContent = left > 0 ? (left < 3600e3 ? `in ${Math.floor(left / 60000)}m ${String(Math.floor(left / 1000) % 60).padStart(2, '0')}s` : `in ${duration(left)}`) : 'now';
+      return left > 0;
+    };
+    rows.unshift(banner);
+    host.replaceChildren(...rows);
+    if (paint()) { ticking.add(paint); startTicking(); }
+  } else {
+    host.replaceChildren(...rows);
+  }
   // Only fade the bottom edge when there is something below it to fade to.
   host.classList.toggle('is-scrollable', host.scrollHeight > host.clientHeight + 1);
 }
@@ -2601,22 +2653,40 @@ function pickMany(label, kind, values, onChange) {
  * an empty filter means to the calendar, so the field says so rather than
  * leaving it to be inferred from a blank row.
  */
-function pickValues(label, options, values, onChange, { allNote = 'Nothing picked — everything is sent.' } = {}) {
+function pickValues(label, options, values, onChange, { allNote = 'Nothing picked — everything is sent.', tones = null } = {}) {
   const chosen = new Set(values || []);
-  const wrap = el('div', 'field');
+  const wrap = el('div', 'field pick-values');
   const head = el('div', 'field-head');
   const note = el('span', 'count');
-  head.append(el('span', null, label), note);
+  // Nothing picked means "everything", so that is what the counter says —
+  // the long sentence that sat under every list is its tooltip now.
+  note.title = allNote;
+  const quick = el('span', 'pick-quick');
+  const allBtn = el('button', 'pick-q', 'All');
+  allBtn.type = 'button';
+  allBtn.title = 'Pick every one';
+  const noneBtn = el('button', 'pick-q', 'None');
+  noneBtn.type = 'button';
+  noneBtn.title = 'Clear — which sends everything';
+  quick.append(allBtn, noneBtn);
+  head.append(el('span', null, label), note, quick);
   wrap.append(head);
 
-  const sync = () => { note.textContent = chosen.size ? `${chosen.size} picked` : 'all'; };
+  const valueOf = x => (typeof x === 'string' ? x : x.value);
+  const emit = () => onChange(options.map(valueOf).filter(v => chosen.has(v)));
+  const sync = () => {
+    note.textContent = chosen.size ? `${chosen.size} of ${options.length}` : 'all';
+    note.classList.toggle('is-all', !chosen.size);
+  };
 
   const box = el('div', 'chipset');
+  const buttons = [];
   for (const o of options) {
-    const value = typeof o === 'string' ? o : o.value;
+    const value = valueOf(o);
     const text = typeof o === 'string' ? o : o.label;
     const b = el('button', 'chip-toggle', text);
     b.type = 'button';
+    if (tones && tones[value]) b.classList.add(`tone-${tones[value]}`);
     // What the option actually covers, for vocabularies where the name alone
     // does not say — "Commodities" is not obviously oil, gold and gas.
     if (o && o.hint) b.title = o.hint;
@@ -2626,13 +2696,22 @@ function pickValues(label, options, values, onChange, { allNote = 'Nothing picke
       else { chosen.add(value); b.setAttribute('aria-pressed', 'true'); }
       sync();
       // Ordered by the vocabulary so what is sent matches what is stored.
-      onChange(options.map(x => (typeof x === 'string' ? x : x.value)).filter(v => chosen.has(v)));
+      emit();
     });
+    buttons.push([value, b]);
     box.append(b);
   }
+  allBtn.addEventListener('click', () => {
+    for (const [v, b] of buttons) { chosen.add(v); b.setAttribute('aria-pressed', 'true'); }
+    sync(); emit();
+  });
+  noneBtn.addEventListener('click', () => {
+    chosen.clear();
+    for (const [, b] of buttons) b.removeAttribute('aria-pressed');
+    sync(); emit();
+  });
   sync();
   wrap.append(box);
-  wrap.append(el('p', 'hint', allNote));
   return wrap;
 }
 
@@ -3317,6 +3396,15 @@ function renderComposer() {
     if (!Array.isArray(draft.blocks) || !draft.blocks.length) {
       draft.blocks = [{ type: 'text', content: '' }];
     }
+    if (state._appendSep) {
+      // Came from ＋ Separator in the classic editor.
+      state._appendSep = false;
+      draft.blocks = draft.blocks.filter(function (b) { return !(b && b.type === 'text' && !String(b.content || '').trim()); });
+      draft.blocks.push({ type: 'separator' }, { type: 'text', content: '' });
+      // The snapshot no longer matches, so switching back converts properly.
+      draft._legacySnap = null;
+      setTimeout(function () { toast('Switched to Component V2 — separators only work there. Your content came with it.', 'good'); }, 0);
+    }
     draft.blocks.forEach(function (b) {
       if (b && b.type === 'heading') {
         var m = String(b.content || '').match(/^(#{1,3})\s+/);
@@ -3430,6 +3518,7 @@ function renderComposer() {
         }
         canvas.appendChild(p);
       });
+      ensureTrailingLine();
       if (typeof draft._onChange === 'function') draft._onChange();
       (draft._buttons || []).forEach(function (btn, i) {
         var bb = el('span', 'c-btn v2-btn-pill bstyle ' + String(btn.style || 'Primary').toLowerCase());
@@ -3460,6 +3549,19 @@ function renderComposer() {
         else s += inlineText(c);
       });
       return s;
+    }
+
+    // A separator or a picture as the last thing on the canvas left nowhere
+    // to put the caret, so nothing could be typed under it. There is always
+    // an empty line after the last one now (dropped again on save if unused).
+    function ensureTrailingLine() {
+      var last = canvas.lastElementChild;
+      while (last && last.classList.contains('c-btn')) last = last.previousElementSibling;
+      if (!last || !isProtected(last)) return;
+      var p = el('div', 'c-text');
+      p.setAttribute('data-type', 'text');
+      p.appendChild(document.createElement('br'));
+      if (last.nextSibling) canvas.insertBefore(p, last.nextSibling); else canvas.appendChild(p);
     }
 
     function makeMedia(url) {
@@ -3545,17 +3647,48 @@ function renderComposer() {
       canvas.focus();
       var sel = window.getSelection();
       if (!sel.rangeCount || !canvas.contains(sel.anchorNode)) {
-        canvas.appendChild(elNode);
+        // Before the buttons, never after them.
+        var firstBtn = canvas.querySelector('.c-btn');
+        if (firstBtn) canvas.insertBefore(elNode, firstBtn); else canvas.appendChild(elNode);
         placeCaretAfter(elNode);
         syncBlocksFromDom();
         return;
       }
       var range = sel.getRangeAt(0);
-      range.deleteContents();
-      range.insertNode(elNode);
+      // A block dropped in the middle of a line lands at the top level, after
+      // that line — inserting it inside the line's div is what made the text
+      // after a separator impossible to reach.
+      var line = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+      while (line && line.parentElement !== canvas && line !== canvas) line = line.parentElement;
+      if (line && line !== canvas && (elNode.classList.contains('c-sep') || elNode.classList.contains('c-media'))) {
+        if (line.nextSibling) canvas.insertBefore(elNode, line.nextSibling); else canvas.appendChild(elNode);
+        // An empty line the block went after is just removed.
+        if (line.classList.contains('c-text') && !(line.textContent || '').trim()) line.remove();
+      } else {
+        range.deleteContents();
+        range.insertNode(elNode);
+      }
       placeCaretAfter(elNode);
       syncBlocksFromDom();
     }
+
+    // Tapping the empty space under the last line puts the caret on it.
+    canvas.addEventListener('mousedown', function (e) {
+      if (e.target !== canvas) return;
+      var lines = canvas.querySelectorAll('.c-text, .c-heading');
+      var lastLine = lines[lines.length - 1];
+      if (!lastLine) return;
+      var r = lastLine.getBoundingClientRect();
+      if (e.clientY < r.bottom) return;
+      e.preventDefault();
+      var range = document.createRange();
+      range.selectNodeContents(lastLine);
+      range.collapse(false);
+      var s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(range);
+      canvas.focus();
+    });
 
     canvas.addEventListener('beforeinput', function (e) {
       var sel = window.getSelection();
@@ -3815,9 +3948,17 @@ function renderComposer() {
       state.draft = draft;
       renderComposer();
     });
-    row.append(back);
+    // Separators only exist in V2 messages, so asking for one switches the
+    // message over (content and all) and adds the line at the end.
+    const sepBtn = el('button', 'btn small', '＋ Separator');
+    sepBtn.type = 'button';
+    sepBtn.title = 'Adds a divider line — switches this message to Component V2, keeping everything in it';
+    sepBtn.addEventListener('click', () => { state._appendSep = true; back.click(); });
+    const rowBtns = el('div', 'composer-mode-btns');
+    rowBtns.append(sepBtn, back);
+    row.append(rowBtns);
     sw.append(row);
-    sw.append(el('p', 'hint', 'Switching moves everything across — text, titles, fields and pictures. Switch straight back and the original returns unchanged.'));
+    sw.append(el('p', 'hint', 'Want a divider line? Press ＋ Separator — the message becomes Component V2 automatically, with everything kept.'));
     parts.push(sw);
   }
   const a = draft.around;
@@ -4131,7 +4272,14 @@ function renderComposer() {
         const up = el('button', 'btn small', 'Push update');
         up.type = 'button';
         up.title = 'Re-render this template into the message that is already posted';
-        up.addEventListener('click', () => post('updatepost', { channelId: p.channelId, messageId: p.messageId, name: draft.name }));
+        up.addEventListener('click', async () => {
+          up.disabled = true;
+          const out = await post('updatepost', { channelId: p.channelId, messageId: p.messageId, name: draft.name }, { quiet: true });
+          up.disabled = false;
+          if (!out) return;
+          if (out.replaced) toast('Re-posted as a V2 message in the same channel — Discord cannot turn a classic post into V2 by editing.', 'good');
+          else toast('Post updated.', 'good');
+        });
         line.append(up);
         sendPanel.append(line);
       }
@@ -9780,6 +9928,43 @@ const DATE_NOTE = {
   weekly:   'It starts on this day and repeats weekly on that weekday — a date set here wins over the day picker.',
 };
 
+/**
+ * The strip across the top of Automation: how many clocks are running, how
+ * many are paused, a live countdown to the next post, and replies on/total.
+ */
+function renderAutoStats() {
+  const host = $('#auto-stats');
+  if (!host) return;
+  const sched = state.overview?.features?.schedules || [];
+  const replies = state.overview?.features?.autoreplies || [];
+  const live = sched.filter(s => s.enabled !== false);
+  const next = live.map(s => Number(s.time) || 0).filter(t => t > Date.now()).sort((a, b) => a - b)[0] || null;
+  const nextOf = next ? live.find(s => Number(s.time) === next) : null;
+  const stat = (n, l, cls = '') => {
+    const t = el('div', `auto-stat ${cls}`);
+    t.append(el('span', 'n', n), el('span', 'l', l));
+    return t;
+  };
+  const nextTile = stat('—', nextOf ? `Next · ${nextOf.embedName || 'post'}` : 'Next post', next ? 'live' : '');
+  host.replaceChildren(
+    stat(String(live.length), 'Running', live.length ? 'good' : ''),
+    stat(String(sched.length - live.length), 'Paused'),
+    nextTile,
+    stat(`${replies.filter(r => r.enabled).length}/${replies.length}`, 'Replies on'),
+  );
+  if (next) {
+    // Counted down live on the page's one shared ticker.
+    const n = nextTile.querySelector('.n');
+    const paint = () => {
+      if (!n.isConnected) return false;
+      const left = next - Date.now();
+      n.textContent = left > 0 ? (left < 3600e3 ? `${Math.floor(left / 60000)}m ${String(Math.floor(left / 1000) % 60).padStart(2, '0')}s` : duration(left)) : 'now';
+      return left > 0;
+    };
+    if (paint()) { ticking.add(paint); startTicking(); }
+  }
+}
+
 function renderSchedules() {
   const list = $('#sched-list');
   const composer = $('#sched-composer');
@@ -9787,9 +9972,16 @@ function renderSchedules() {
   const items = state.overview?.features?.schedules || [];
   if (countPill) {
     countPill.textContent = items.length
-      ? `${items.length} active`
+      ? `${items.filter(s => s.enabled !== false).length}/${items.length} running`
       : 'none yet';
   }
+  try { renderAutoStats(); } catch (_) {}
+
+  // Redrawn only when the schedules themselves change. Rebuilding on every
+  // visit is what made the tab jump as it opened.
+  const sig = JSON.stringify([items, templateOptions().length, channelList().length]);
+  const listSame = list.dataset.sig === sig && list.childNodes.length;
+  list.dataset.sig = sig;
 
   const nodes = [];
   if (!items.length) {
@@ -9824,13 +10016,28 @@ function renderSchedules() {
       enabled: s.enabled !== false,
     };
     let timeEdited = false;
-    const d = el('details', 'item');
+    const d = el('details', 'item sched-item');
     const sum = el('summary');
     const on = s.enabled !== false;
+    if (!on) d.classList.add('is-paused');
+    // A clock face for the time it fires, then what and where.
+    const clock = el('span', 'sched-clock');
+    clock.append(el('b', null, clockOf(s.time) || '—'), el('span', null, cadenceLabel(s)));
+    const pause = el('button', `sched-pause${on ? '' : ' is-paused'}`, on ? 'Pause' : 'Resume');
+    pause.type = 'button';
+    pause.title = on ? 'Stop posting until resumed (the clock keeps its time)' : 'Start posting again';
+    pause.addEventListener('click', async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      pause.disabled = true;
+      const payload = { ...draft, enabled: !on, offsetMinutes: tzOffset() };
+      delete payload.time;
+      await post('schedule', payload);
+      pause.disabled = false;
+    });
     sum.append(
-      el('span', `bstyle ${on ? 'success' : 'secondary'}`, on ? 'live' : 'paused'),
+      clock,
       el('span', 'nm', s.embedName || 'Untitled'),
-      el('span', 'pr', cadenceLabel(s)),
+      pause,
     );
     const meta = el('p', 'hint');
     meta.textContent = [
@@ -9886,11 +10093,21 @@ function renderSchedules() {
     d.append(sum, body);
     nodes.push(d);
   }
-  list.replaceChildren(...nodes);
+  if (!listSame) {
+    const openIds = new Set([...list.querySelectorAll('details[open]')].map(x => x.dataset.id));
+    nodes.forEach((n, i) => {
+      if (n.tagName !== 'DETAILS') return;
+      n.dataset.id = String(items[i - (items.length ? 0 : 1)]?.id ?? '');
+      if (openIds.has(n.dataset.id)) n.open = true;
+    });
+    list.replaceChildren(...nodes);
+  }
 
-  // Composer — skip rebuild while the user is typing in it
+  // Composer — built once; never rebuilt under the user's fingers.
   if (!composer) return;
   if (composer.contains(document.activeElement)) return;
+  if (composer.dataset.ready === `${state.guildId}:${templateOptions().length}`) return;
+  composer.dataset.ready = `${state.guildId}:${templateOptions().length}`;
 
   const nb = {
     embedName: '', channelId: '', frequency: 'everyday',
@@ -9953,8 +10170,37 @@ function renderSchedules() {
     timeField,
     newDatePick,
     mentionPicker('Optional ping', null, v => { nb.mention = v; }),
-    actions(() => post('schedulenew', { ...nb, offsetMinutes: tzOffset() }), { label: 'Create schedule' }),
   );
+
+  // The schedule read back as one sentence while it is being built, so a
+  // wrong channel or cadence is obvious before it is saved.
+  const sentence = el('p', 'sched-sentence');
+  const paintSentence = () => {
+    const ch = channelList().find(c => c.id === nb.channelId);
+    const f = freqs.find(x => x.value === nb.frequency);
+    const day = nb.frequency === 'weekly' && nb.dayOfWeek != null ? ` on ${(dayOptions().find(o => String(o.value) === String(nb.dayOfWeek)) || {}).label || 'that day'}` : '';
+    sentence.replaceChildren(
+      el('span', null, 'Posts '),
+      el('b', null, nb.embedName || 'a message'),
+      el('span', null, ' in '),
+      el('b', null, ch ? `#${ch.name}` : 'a channel'),
+      el('span', null, ` ${String(f?.label || nb.frequency).toLowerCase()}${day} at `),
+      el('b', null, nb.time || '—'),
+      el('span', null, nb.mention ? ' with a ping.' : '.'),
+    );
+  };
+  for (const ev of ['input', 'change', 'click']) wrap.addEventListener(ev, () => setTimeout(paintSentence, 0));
+  paintSentence();
+  wrap.append(sentence, actions(async () => {
+    const out = await post('schedulenew', { ...nb, offsetMinutes: tzOffset() });
+    // A fresh, empty form for the next one.
+    if (out) {
+      composer.dataset.ready = '';
+      try { document.activeElement?.blur?.(); } catch (_) {}
+      setTimeout(() => { try { renderSchedules(); } catch (_) {} }, 0);
+    }
+    return out;
+  }, { label: 'Create schedule' }));
   composer.replaceChildren(wrap);
 }
 
@@ -9969,8 +10215,33 @@ function renderAutoreplies() {
       ? `${enabledN}/${items.length} on`
       : 'none yet';
   }
+  try { renderAutoStats(); } catch (_) {}
+  const sig = JSON.stringify([items, templateOptions().length]);
+  if (list.dataset.sig === sig && list.childNodes.length && composer?.dataset.ready) return;
+  list.dataset.sig = sig;
 
   const nodes = [];
+
+  // Try a message: type what a member might write and see which reply fires.
+  const tester = el('div', 'reply-tester');
+  const tIn = el('input', 'reply-test-input');
+  tIn.type = 'search';
+  tIn.placeholder = 'Test a message — e.g. “what are the rules?”';
+  tIn.autocomplete = 'off';
+  const tOut = el('div', 'reply-test-out');
+  const runTest = () => {
+    const msg = tIn.value.trim().toLowerCase();
+    if (!msg) { tOut.replaceChildren(); return; }
+    const hits = items.filter(r => r.enabled && r.trigger && (r.exact
+      ? msg === String(r.trigger).trim().toLowerCase()
+      : msg.includes(String(r.trigger).trim().toLowerCase())));
+    tOut.replaceChildren(hits.length
+      ? el('p', 'reply-test-hit', `Replies with “${hits[0].embedName || '—'}” (trigger “${hits[0].trigger}”${hits[0].exact ? ', exact' : ''})${hits.length > 1 ? ` · ${hits.length - 1} more would match` : ''}`)
+      : el('p', 'reply-test-miss', 'No reply — nothing matches that message.'));
+  };
+  tIn.addEventListener('input', runTest);
+  tester.append(tIn, tOut);
+  if (items.length) nodes.push(tester);
   if (!items.length) {
     const empty = el('div', 'empty-desk');
     empty.append(
@@ -9985,13 +10256,24 @@ function renderAutoreplies() {
       key: r.key, trigger: r.trigger, embedName: r.embedName,
       exact: r.exact, cooldown: r.cooldown, enabled: r.enabled,
     };
-    const d = el('details', 'item');
+    const d = el('details', 'item reply-item' + (r.enabled ? '' : ' is-paused'));
     const sum = el('summary');
-    sum.append(
-      el('span', `bstyle ${r.enabled ? 'success' : 'secondary'}`, r.enabled ? 'on' : 'off'),
-      el('span', 'nm', r.trigger),
-      el('span', 'pr', r.embedName || '—'),
-    );
+    // "trigger → reply" reads as what it does.
+    const flow = el('span', 'reply-flow');
+    flow.append(el('b', 'reply-trigger', `“${r.trigger}”`), el('span', 'reply-arrow', '→'), el('span', 'reply-target', r.embedName || '—'));
+    const tags = el('span', 'reply-tags');
+    tags.append(el('span', 'tpl-kind', r.exact ? 'Exact' : 'Contains'));
+    if (r.cooldown) tags.append(el('span', 'tpl-kind', r.cooldown < 60 ? `${r.cooldown}s` : `${Math.round(r.cooldown / 60)}m`));
+    const flip = el('button', `sched-pause${r.enabled ? '' : ' is-paused'}`, r.enabled ? 'On' : 'Off');
+    flip.type = 'button';
+    flip.title = r.enabled ? 'Turn this reply off' : 'Turn this reply on';
+    flip.addEventListener('click', async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      flip.disabled = true;
+      await post('autoreply', { ...draft, enabled: !r.enabled });
+      flip.disabled = false;
+    });
+    sum.append(flow, tags, flip);
     const body = el('div', 'body');
     body.append(
       textField('Trigger phrase', r.trigger, v => { draft.trigger = v; }),
@@ -10023,11 +10305,13 @@ function renderAutoreplies() {
 
   if (!composer) return;
   if (composer.contains(document.activeElement)) return;
+  if (composer.dataset.ready === `${state.guildId}:${templateOptions().length}`) return;
+  composer.dataset.ready = `${state.guildId}:${templateOptions().length}`;
 
   const nb = { key: '', trigger: '', embedName: '', cooldown: 5, exact: false, enabled: true };
   const wrap = el('div', 'desk-composer');
   wrap.append(el('h3', null, 'New auto-reply'));
-  wrap.append(el('p', 'hint', 'When a member’s message matches the trigger, the bot posts a Studio template. Use exact match for command-style phrases; leave it off for keywords inside longer messages.'));
+  wrap.append(el('p', 'hint', 'Exact match for command-style phrases; off to catch a word anywhere in a message.'));
 
   const cd = el('div', 'field');
   cd.append(el('label', null, 'Cooldown'));
@@ -10050,7 +10334,15 @@ function renderAutoreplies() {
     cd,
     toggle('Whole message must match exactly', false, v => { nb.exact = v; }),
     toggle('Enabled immediately', true, v => { nb.enabled = v; }),
-    actions(() => post('autoreply', nb), { label: 'Create auto-reply' }),
+    actions(async () => {
+      const out = await post('autoreply', nb);
+      if (out) {
+        composer.dataset.ready = '';
+        try { document.activeElement?.blur?.(); } catch (_) {}
+        setTimeout(() => { try { renderAutoreplies(); } catch (_) {} }, 0);
+      }
+      return out;
+    }, { label: 'Create auto-reply' }),
   );
   composer.replaceChildren(wrap);
 }
@@ -11015,7 +11307,11 @@ function moveSectionInk(name) {
   let ink = nav.querySelector('.sec-ink');
   // Hidden (a closed phone drawer, a feature switched off): the buttons keep
   // their own highlight, and the ink waits for the next visible switch.
-  if (!btn || btn.offsetParent === null || !btn.getBoundingClientRect().height) {
+  // The phone drawer (≤900px) slides in from off-screen, so anything measured
+  // while it is closed is wrong — that was the box sitting over the tabs.
+  // The drawer keeps the plain per-button highlight.
+  const drawer = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+  if (drawer || !btn || btn.offsetParent === null || !btn.getBoundingClientRect().height) {
     if (ink) ink.style.opacity = '0';
     nav.classList.remove('has-ink');
     return;
@@ -11316,7 +11612,18 @@ async function main() {
  * overview is, so the whole screen recovers together rather than in pieces.
  */
 function refreshSidecars() {
-  get('/api/health').then(renderHealth).catch(() => {});
+  const pull = () => get('/api/health').then(h => {
+    state.health = h;
+    renderHealth(h);
+    try { window.__paintShellStatus?.(); } catch (_) {}
+  }).catch(() => {});
+  pull();
+  // Live, not a snapshot from when the page opened: every 20s while the panel
+  // is actually on screen. One small JSON read each time.
+  if (!refreshSidecars._timer) {
+    refreshSidecars._timer = setInterval(() => { if (!document.hidden) pull(); }, 20000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
+  }
 }
 
 // Never sign somebody out over a bug. Before /api/me answers, a failure really

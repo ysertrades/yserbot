@@ -163,8 +163,10 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       customWords: (automod.customWords || []).length,
     },
     modlog: {
-      channelId: modlog.channelId ?? getModLogChannel(guildId) ?? null,
-      channel: channelName(modlog.channelId || getModLogChannel(guildId)),
+      // getModLogChannel takes the guild, not its id — handed the id it always
+      // found nothing, so the panel said "no channel set" while Settings had one.
+      channelId: modlog.channelId ?? getModLogChannel(guild)?.id ?? null,
+      channel: channelName(modlog.channelId || getModLogChannel(guild)?.id),
       members: !!modlog.members,
       messages: !!modlog.messages,
       roles: !!modlog.roles,

@@ -122,3 +122,8 @@ select.desk-forum-sel{
 @keyframes deskFadeIn{from{opacity:.35;transform:translateY(4px)}to{opacity:1;transform:none}}
 .desk-panel.desk-ready .desk-controls{opacity:1}
 .desk-empty{animation:deskFadeIn .25s ease both}
+
+/* The wrap added for the Latest button has to take the stream's place in the
+   column, or the stream grows past the card and never scrolls. */
+.desk-stream-wrap{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative}
+.desk-stream-wrap>.desk-stream{flex:1 1 auto;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}

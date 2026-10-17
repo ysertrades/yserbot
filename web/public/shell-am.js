@@ -2,14 +2,29 @@
   "use strict";
   var navWired = false;
   function $(id) { return document.getElementById(id); }
-  function setVal(id, text, on) {
+  // tone: "on" (live, pulsing dot), "warn" (running but unhappy), "off".
+  function setVal(id, text, tone) {
     var el = $(id);
     if (!el) return;
-    el.textContent = text;
-    el.classList.toggle("is-on", !!on);
+    if (el.textContent !== text) el.textContent = text;
+    el.classList.toggle("is-on", tone === "on");
+    el.classList.toggle("is-warn", tone === "warn");
+    el.classList.toggle("is-off", tone === "off");
   }
+  /*
+   * The sidebar's Bot status, live. Each line is what is actually running:
+   * the feature has to be switched on in Settings AND the system itself
+   * enabled. It used to fall back to "feature on" whenever the system was
+   * off, so a stopped calendar still read "On".
+   */
   function paintShellStatus() {
-    var ov = window.state && window.state.overview;
+    var st = window.state || {};
+    var ov = st.overview;
+    var h = st.health;
+    if (h) {
+      var ping = Math.round(Number(h.ping) || 0);
+      setVal("st-gateway", ping > 0 ? ping + " ms" : "—", ping <= 0 ? "off" : ping < 400 ? "on" : "warn");
+    }
     if (!ov) return;
     function groupOn(key) {
       try {
@@ -18,19 +33,16 @@
         return !g || g.enabled !== false;
       } catch (e) { return true; }
     }
-    var calOn = !!(ov.econcal && ov.econcal.enabled);
-    if (!calOn) calOn = groupOn("econ_calendar");
-    var newsOn = !!(ov.newsfeed && ov.newsfeed.enabled);
-    if (!newsOn) newsOn = groupOn("newsfeed");
-    var lvlOn = groupOn("leveling");
-    if (ov.leveling && ov.leveling.enabled === false) lvlOn = false;
-    if (ov.leveling && ov.leveling.enabled === true) lvlOn = true;
-    var whopOn = !!(ov.whop && ov.whop.enabled);
-    if (!whopOn) whopOn = groupOn("whop");
-    setVal("st-calendar", calOn ? "On" : "Off", calOn);
-    setVal("st-newsfeed", newsOn ? "On" : "Off", newsOn);
-    setVal("st-leveling", lvlOn ? "On" : "Off", lvlOn);
-    setVal("st-whop", whopOn ? "On" : "Off", whopOn);
+    var calOn = groupOn("econ_calendar") && !!(ov.econcal && ov.econcal.enabled);
+    var calWarn = calOn && !(ov.econcal && (ov.econcal.channel || ov.econcal.channelId));
+    setVal("st-calendar", calOn ? (calWarn ? "No channel" : "Live") : "Off", calOn ? (calWarn ? "warn" : "on") : "off");
+    var newsOn = groupOn("newsfeed") && !!(ov.newsfeed && ov.newsfeed.enabled);
+    setVal("st-newsfeed", newsOn ? "Live" : "Off", newsOn ? "on" : "off");
+    var lvlOn = groupOn("leveling") && !(ov.leveling && ov.leveling.enabled === false);
+    setVal("st-leveling", lvlOn ? "On" : "Off", lvlOn ? "on" : "off");
+    var whopOn = groupOn("whop") && !!(ov.whop && ov.whop.enabled);
+    var whopErr = whopOn && !!(ov.whop && ov.whop.lastError);
+    setVal("st-whop", whopOn ? (whopErr ? "Error" : "Live") : "Off", whopOn ? (whopErr ? "warn" : "on") : "off");
   }
   function closeFloaters() {
     document.querySelectorAll("body > .cselect-menu, .cselect-menu.is-open, .cselect-menu:not([hidden])").forEach(function (m) {
