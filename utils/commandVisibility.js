@@ -12,6 +12,22 @@
 const { REST, Routes } = require('discord.js');
 const { FEATURE_GROUPS, isFeatureEnabled } = require('./featureToggles');
 
+/**
+ * A REST client that may edit command permissions, or null.
+ *
+ * Discord only accepts these edits from a *user* OAuth2 token with the
+ * applications.commands.permissions.update scope — never from a bot token.
+ * Every call this file and /cmd made with the bot token was refused, so
+ * hiding commands never worked. Usage is still blocked in interactionCreate
+ * (feature off / missing /cmd role), so this is visibility only. Set
+ * COMMAND_PERMS_BEARER to a server admin's token to make hiding real.
+ */
+function permissionsRest() {
+  const bearer = process.env.COMMAND_PERMS_BEARER;
+  if (!bearer) return null;
+  return new REST({ version: '10', authPrefix: 'Bearer' }).setToken(bearer);
+}
+
 let nameToIdCache = null;
 let cacheAt = 0;
 const CACHE_MS = 5 * 60 * 1000;
@@ -36,7 +52,10 @@ async function applyFeatureCommandPermissions(client, guildId) {
   const token = process.env.TOKEN;
   const clientId = process.env.CLIENT_ID || client?.user?.id;
   if (!token || !clientId) return { ok: false, reason: 'missing_env' };
+  const permRest = permissionsRest();
+  if (!permRest) return { ok: false, reason: 'needs_user_token' };
 
+  // Listing commands works with the bot token; only the edits need the user's.
   const rest = new REST({ version: '10' }).setToken(token);
   let nameToId;
   try {
@@ -68,7 +87,7 @@ async function applyFeatureCommandPermissions(client, guildId) {
   try {
     for (let i = 0; i < batch.length; i += 50) {
       const chunk = batch.slice(i, i + 50);
-      await rest.put(
+      await permRest.put(
         Routes.guildApplicationCommandsPermissions(clientId, guildId),
         { body: chunk },
       );
@@ -80,7 +99,7 @@ async function applyFeatureCommandPermissions(client, guildId) {
     let ok = 0;
     for (const item of batch) {
       try {
-        await rest.put(
+        await permRest.put(
           Routes.applicationCommandPermissions(clientId, guildId, item.id),
           { body: { permissions: item.permissions } },
         );
@@ -93,4 +112,4 @@ async function applyFeatureCommandPermissions(client, guildId) {
   }
 }
 
-module.exports = { applyFeatureCommandPermissions };
+module.exports = { applyFeatureCommandPermissions, permissionsRest };

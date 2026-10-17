@@ -182,7 +182,8 @@ module.exports = {
       const style     = interaction.options.getString('style');
       const label     = interaction.options.getString('label') || null;
       const emoji     = interaction.options.getString('emoji') || null;
-      const embedName = interaction.options.getString('embed').toLowerCase();
+      // As stored, not lowercased: "Welcome" saved in the panel is not "welcome".
+      const embedName = require('./embed').resolveTemplateName(interaction.guild.id, interaction.options.getString('embed'));
       const colorHex  = interaction.options.getString('color') || null;
       const cooldown  = interaction.options.getInteger('cooldown') || 0;
 

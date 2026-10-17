@@ -54,6 +54,29 @@ const watchers = new Map();
 /** guildId → the JSON last pushed, so an unchanged tick sends nothing. */
 const lastSent = new Map();
 
+/**
+ * guildId → { interval, nextAt }. A quiet guild is rebuilt less often.
+ *
+ * Every watched guild's whole overview (member list, templates, every tab)
+ * used to be rebuilt and stringified every 3s, on the thread that also
+ * answers Discord, even when nothing had changed for an hour. Each unchanged
+ * build now stretches the gap (up to MAX_IDLE_MS); any change — or a panel
+ * write, via nudge() — brings it straight back to TICK_MS.
+ */
+const MAX_IDLE_MS = 15_000;
+const pace = new Map();
+function paceFor(guildId) {
+  let p = pace.get(guildId);
+  if (!p) { p = { interval: TICK_MS, nextAt: 0 }; pace.set(guildId, p); }
+  return p;
+}
+/** Something just changed for this guild: check it on the next tick. */
+function nudge(guildId) {
+  const p = paceFor(guildId);
+  p.interval = TICK_MS;
+  p.nextAt = 0;
+}
+
 let timer = null;
 let heartbeat = null;
 let nextId = 1;
@@ -108,6 +131,7 @@ function subscribe(guildId, res, req, client) {
     if (watchers.get(guildId) === set && set.size === 0) {
       watchers.delete(guildId);
       lastSent.delete(guildId);
+      pace.delete(guildId);
     }
     stopIfIdle();
   };
@@ -140,8 +164,14 @@ function writeEvent(entry, event, data) {
 
 /** Rebuild each watched guild's overview and push the ones that moved. */
 async function tick(client) {
+  let first = true;
   for (const [guildId, set] of watchers) {
     if (set.size === 0) continue;
+    const p = paceFor(guildId);
+    if (Date.now() < p.nextAt) continue;
+    // Let queued Discord events run between guilds instead of after all of them.
+    if (!first) await new Promise(resolve => setImmediate(resolve));
+    first = false;
     let body;
     try {
       body = JSON.stringify(await api.guildOverview(guildId, client));
@@ -151,7 +181,13 @@ async function tick(client) {
       console.error('[Live] could not build the overview:', err.message);
       continue;
     }
-    if (body === lastSent.get(guildId)) continue;
+    if (body === lastSent.get(guildId)) {
+      p.interval = Math.min(MAX_IDLE_MS, Math.round(p.interval * 1.5));
+      p.nextAt = Date.now() + p.interval;
+      continue;
+    }
+    p.interval = TICK_MS;
+    p.nextAt = Date.now() + TICK_MS;
     lastSent.set(guildId, body);
     for (const entry of set) writeEvent(entry, 'overview', body);
   }
@@ -159,7 +195,14 @@ async function tick(client) {
 
 function start(client) {
   if (timer) return;
-  timer = setInterval(() => { tick(client).catch(err => console.error('[Live]', err)); }, TICK_MS);
+  // One tick at a time: a tick now yields between guilds, so a slow one
+  // could otherwise still be running when the next interval fires.
+  let busy = false;
+  timer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    tick(client).catch(err => console.error('[Live]', err)).finally(() => { busy = false; });
+  }, TICK_MS);
   heartbeat = setInterval(() => {
     for (const set of watchers.values()) {
       for (const entry of set) {
@@ -184,6 +227,7 @@ function stop() {
   }
   watchers.clear();
   lastSent.clear();
+  pace.clear();
   stopIfIdle();
 }
 
@@ -195,4 +239,4 @@ function stats() {
   };
 }
 
-module.exports = { subscribe, tick, stop, stats, countFor, TICK_MS, MAX_PER_GUILD };
+module.exports = { subscribe, tick, stop, stats, countFor, nudge, TICK_MS, MAX_PER_GUILD };

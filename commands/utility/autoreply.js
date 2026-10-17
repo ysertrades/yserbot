@@ -57,7 +57,7 @@ module.exports = {
             if (autoreplies[guildId][name]) return sendTempEphemeralReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'Auto-reply exists.' }, interaction.guild)] });
             autoreplies[guildId][name] = {
                 trigger: interaction.options.getString('trigger'),
-                embedName: interaction.options.getString('embed').toLowerCase(),
+                embedName: require('./embed').resolveTemplateName(interaction.guild.id, interaction.options.getString('embed')),
                 exact: interaction.options.getBoolean('exact') || false,
                 cooldown: interaction.options.getInteger('cooldown') || 5,
                 enabled: true,

@@ -83,10 +83,16 @@ function deleteRequest(id) {
 }
 
 /** Every pending/pending_review request for a guild, for /automod requests. */
+// 'reported' is what an auto-detected invite is filed as (automod.js). It was
+// in neither list, so the panel's Link Requests showed nothing for invites —
+// before or after a moderator acted on them.
+const ACTIVE = new Set(['pending', 'pending_review', 'reported']);
+const DECIDED = new Set(['approved', 'denied', 'actioned', 'dismissed']);
+
 function getAllActiveRequests(guildId) {
   const all = readJson(FILE, {});
   return Object.values(all)
-    .filter(r => r.guildId === guildId && (r.status === 'pending' || r.status === 'pending_review'))
+    .filter(r => r.guildId === guildId && ACTIVE.has(r.status))
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
@@ -111,7 +117,7 @@ function getUserHistory(guildId, userId) {
 function getDecidedRequests(guildId, limit = 20) {
   const all = readJson(FILE, {});
   return Object.values(all)
-    .filter(r => r.guildId === guildId && (r.status === 'approved' || r.status === 'denied'))
+    .filter(r => r.guildId === guildId && DECIDED.has(r.status))
     .sort((a, b) => (b.decidedAt || b.createdAt || 0) - (a.decidedAt || a.createdAt || 0))
     .slice(0, limit);
 }

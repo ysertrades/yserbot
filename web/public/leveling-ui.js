@@ -166,8 +166,10 @@
     for (var n = 0; n < Lv; n++) s += stepXp(n, mode, base, mult);
     return s;
   }
-  function render() {
-    const root = document.getElementById('leveling-root');
+  // `target` lets the live refresh build into a detached node and lift out
+  // only the parts that changed (see paintLiveParts).
+  function render(target) {
+    const root = target instanceof Element ? target : document.getElementById('leveling-root');
     if (!root) return;
     const L = data();
     root.replaceChildren();
@@ -575,8 +577,10 @@
     const iWeekend = num(L.weekendBoost != null ? L.weekendBoost : 1, { min: 1, max: 5, step: 0.1 });
     rateGrid.append(field('Weekend boost', iWeekend, '1 = off'));
     cfg.append(rateGrid);
-    cfg.append(el('h2', null, 'Exclusions'));
-    cfg.append(el('p', 'hint', 'Pick from the list — each choice appears as a chip you can remove anytime.'));
+    // The channel list is an allow-list, not an exclusion: picking a channel
+    // stops XP everywhere else. Under "Exclusions" it read as the reverse.
+    cfg.append(el('h2', null, 'Where XP counts'));
+    cfg.append(el('p', 'hint', 'Leave "Only these channels" empty to earn XP in every channel. Add channels to earn XP there and nowhere else. Members with a no-XP role never earn XP.'));
 
     function chipPicker(opts, selectedIds, blankLabel, nameOf) {
       const wrap = el('div', 'lvl-chip-picker');
@@ -670,7 +674,7 @@
     const chNo = chipPicker(L.channelOpts || [], L.xpChannelIds || [], 'Add XP channel…', chName);
     const roleNo = chipPicker(L.roleOpts || [], L.noXpRoleIds, 'Add no-XP role…', roleName);
     const excl = el('div', 'lvl-channel-grid');
-    excl.append(field('XP channels', chNo));
+    excl.append(field('Only these channels (empty = all)', chNo));
     excl.append(field('No-XP roles', roleNo));
     cfg.append(excl);
 
@@ -790,56 +794,62 @@
     return !!document.querySelector('.section[data-section="leveling"][data-active]');
   }
 
-  async function refreshLevelsFromServer() {
+  /**
+   * Swaps in a fresh leaderboard and stat row, nothing else.
+   *
+   * This used to fetch the whole overview every 8s, overwrite state.overview
+   * with it and re-render the entire tab — wiping half-typed settings and
+   * closing any open dropdown. The live stream already keeps
+   * state.overview.features.levels current, so this only reads it, and only
+   * the two read-only parts are replaced.
+   */
+  function paintLiveParts() {
+    var root = document.getElementById('leveling-root');
+    if (!root) return;
+    var tmp = document.createElement('div');
+    render(tmp);
+    var parts = ['.lvl-lb-panel', '.lvl-stat-row', '.lvl-empty'];
+    var sameShape = parts.every(function (s) { return !!root.querySelector(s) === !!tmp.querySelector(s); });
+    if (sameShape && root.querySelector('.lvl-lb-panel')) {
+      parts.forEach(function (s) {
+        var cur = root.querySelector(s);
+        var next = tmp.querySelector(s);
+        if (cur && next) cur.replaceWith(next);
+      });
+      return;
+    }
+    // Tracked/untracked flipped: the layout itself differs, so only a full
+    // render is correct — and never while somebody is typing in the tab.
+    var ae = document.activeElement;
+    var busy = ae && ae.closest && ae.closest('#leveling-root') && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName);
+    if (busy) { _lbLastSig = '#retry'; return; } // differs from any real sig: retried next check
+    render();
+  }
+
+  function refreshLevelsFromServer() {
     if (_lbPollBusy) return;
     if (!levelingSectionActive()) return;
-    var guildId = window.state && window.state.guildId;
-    if (!guildId) return;
+    var L = data();
+    var sig = leaderboardSig(L);
+    if (sig === _lbLastSig) return;
+    var first = _lbLastSig === '';
+    _lbLastSig = sig;
+    if (first) return; // render() on open already painted this
     _lbPollBusy = true;
     try {
-      var headers = { 'x-csrf-token': (window.state && window.state.csrf) || '' };
-      try { if (typeof authHeaders === 'function') Object.assign(headers, authHeaders()); } catch (e) {}
-      var res = await fetch('/api/guild/' + guildId, { credentials: 'same-origin', headers: headers });
-      if (!res.ok) return;
-      var data = await res.json().catch(function () { return null; });
-      if (!data) return;
-      var levels = null;
-      if (data.features && data.features.levels) levels = data.features.levels;
-      else if (data.overview && data.overview.features && data.overview.features.levels) levels = data.overview.features.levels;
-
-      if (data.overview) {
-        window.state.overview = data.overview;
-      } else if (data.features) {
-        if (!window.state.overview) window.state.overview = {};
-        window.state.overview.features = data.features;
-      }
-      if (levels) {
-        if (!window.state.overview) window.state.overview = {};
-        if (!window.state.overview.features) window.state.overview.features = {};
-        window.state.overview.features.levels = levels;
-      }
-      var L = (window.state.overview && window.state.overview.features && window.state.overview.features.levels) || null;
-      var sig = leaderboardSig(L);
-      if (sig === _lbLastSig) return;
-      _lbLastSig = sig;
-      var ae = document.activeElement;
-      var typing = ae && ae.closest && ae.closest('#leveling-root') &&
-        (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA');
-      if (typing) return;
-      render();
+      paintLiveParts();
     } catch (err) {
-      console.warn('[leveling] live poll', err && err.message ? err.message : err);
+      console.warn('[leveling] live paint', err && err.message ? err.message : err);
     } finally {
       _lbPollBusy = false;
     }
   }
 
   function startLivePoll() {
-    stopLivePoll();
-    _lbPollTimer = setInterval(function () {
-      refreshLevelsFromServer();
-    }, 8000);
-    setTimeout(refreshLevelsFromServer, 400);
+    if (_lbPollTimer) return;
+    _lbLastSig = leaderboardSig(data());
+    // A local check, no network: the stream does the fetching.
+    _lbPollTimer = setInterval(refreshLevelsFromServer, 3000);
   }
 
   function stopLivePoll() {
@@ -858,8 +868,15 @@
       render();
     }
     document.addEventListener('panel-overview', tryRender);
+    // Fires for every data-active change anywhere in the page, so it acts
+    // only when the Leveling tab itself opens or closes. It used to re-render
+    // the whole tab on each one.
+    var wasActive = levelingSectionActive();
     const obs = new MutationObserver(function () {
-      if (levelingSectionActive()) {
+      var active = levelingSectionActive();
+      if (active === wasActive) return;
+      wasActive = active;
+      if (active) {
         tryRender();
         startLivePoll();
       } else {
@@ -873,7 +890,7 @@
       window.showSection = function (name) {
         const r = prev.apply(this, arguments);
         if (name === 'leveling') {
-          setTimeout(render, 30);
+          // The observer above paints on open; this only starts the check.
           startLivePoll();
         } else {
           stopLivePoll();

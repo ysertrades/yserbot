@@ -15,7 +15,10 @@ module.exports = {
   async execute(interaction) {
     const user   = interaction.options.getUser('user');
     const reason = interaction.options.getString('reason') || 'No reason provided';
-    const member = interaction.guild.members.cache.get(user.id);
+    // The interaction carries the member; the cache alone said "not in this
+    // server" for anyone the bot had not seen recently.
+    const member = interaction.options.getMember('user')
+      || await interaction.guild.members.fetch(user.id).catch(() => null);
 
     if (!member) return sendTempReply(interaction, { embeds: [createServerEmbed('error', { title: 'Error', description: 'User not found in this server.' }, interaction.guild)] });
     if (member.roles.highest.position >= interaction.member.roles.highest.position)

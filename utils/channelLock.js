@@ -64,13 +64,34 @@ function _snapshot(channel, roleId, perms) {
   return snap;
 }
 
-function _cleanOverwrite(obj) {
+/**
+ * The snapshot as an overwrite patch. `null` is kept — it is what tells
+ * Discord to put a permission back to "inherit". Dropping it (as this used
+ * to) meant a permission that was blank before the lock stayed denied for
+ * @everyone and stayed granted for staff, so unlocking changed nothing.
+ */
+function _restorePatch(obj) {
   if (!obj || typeof obj !== 'object') return {};
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (v === true || v === false) out[k] = v;
+    if (!PermissionFlagsBits[k]) continue;
+    out[k] = v === true || v === false ? v : null;
   }
   return out;
+}
+
+/** Restores one overwrite, removing it if the lock is what created it. */
+async function _restoreOverwrite(channel, id, snap, reason) {
+  const patch = _restorePatch(snap);
+  if (!Object.keys(patch).length) return;
+  await channel.permissionOverwrites.edit(id, patch, { reason });
+  // Nothing was set for these permissions before the lock and the overwrite
+  // is now empty: it only exists because the lock made it, so it goes.
+  const wasBlank = Object.values(patch).every(v => v === null);
+  const ow = channel.permissionOverwrites.cache.get(id);
+  if (wasBlank && ow && !ow.allow.bitfield && !ow.deny.bitfield) {
+    await ow.delete(reason).catch(() => {});
+  }
 }
 
 function listLocked(guildId, guild) {
@@ -164,20 +185,16 @@ async function unlockChannel(channel, { guildId, unlockedByTag = null, announce 
   const everyoneSnap = snap.everyone && typeof snap.everyone === 'object' ? snap.everyone : null;
   const roleSnaps = snap.roles && typeof snap.roles === 'object' ? snap.roles : {};
 
+  const reason = `Unlock by ${unlockedByTag || 'staff'}`;
   try {
     const jobs = [];
     if (everyoneSnap && channel.guild?.roles?.everyone) {
-      jobs.push(channel.permissionOverwrites.edit(
-        channel.guild.roles.everyone.id, _cleanOverwrite(everyoneSnap),
-        { reason: `Unlock by ${unlockedByTag || 'staff'}` },
-      ));
+      jobs.push(_restoreOverwrite(channel, channel.guild.roles.everyone.id, everyoneSnap, reason));
     }
     for (const [roleId, overwrite] of Object.entries(roleSnaps)) {
       if (!overwrite || typeof overwrite !== 'object') continue;
       if (!channel.guild.roles.cache.has(roleId)) continue;
-      jobs.push(channel.permissionOverwrites.edit(roleId, _cleanOverwrite(overwrite), {
-        reason: `Unlock by ${unlockedByTag || 'staff'}`,
-      }));
+      jobs.push(_restoreOverwrite(channel, roleId, overwrite, reason));
     }
     if (jobs.length) await Promise.all(jobs);
   } catch (err) {

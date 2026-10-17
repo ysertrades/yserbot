@@ -75,7 +75,7 @@
     }
     var label = map[sec] || "";
     var here = $("here");
-    if (here && label) here.textContent = label;
+    if (here && label && here.textContent !== label) here.textContent = label;
   }
   function injectFixCss() {
     if (document.getElementById("shell-am-fix-style")) return;

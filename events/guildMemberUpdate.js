@@ -9,6 +9,10 @@ module.exports = {
   async execute(oldMember, newMember) {
     const settings = getModLogSettings(newMember.guild.id);
     if (!settings.roles) return;
+    // Uncached before this update (index.js enables member partials for
+    // leave events): there is no "before" to compare, and diffing against an
+    // empty member would log every role as newly added.
+    if (oldMember.partial) return;
 
     const nickChanged = oldMember.nickname !== newMember.nickname;
     const addedRoles   = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));

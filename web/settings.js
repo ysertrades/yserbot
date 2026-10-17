@@ -17,8 +17,6 @@
 const { readJson, writeJson } = require('../utils/jsonStorage');
 const auth = require('./auth');
 
-const WARN_ACTIONS = ['none', 'mute', 'kick', 'ban'];
-
 /**
  * type      — how the value is validated and stored
  * path      — where it lives under config[guildId]
@@ -36,9 +34,9 @@ const FIELDS = [
   { key: 'reportRoles',    path: ['reportRoles'],    type: 'roles',   label: 'Report handler roles' },
   { key: 'modRoles',       path: ['cmdSetup', 'modRoles'],   type: 'roles', label: 'Moderator roles' },
   { key: 'adminRoles',     path: ['cmdSetup', 'adminRoles'], type: 'roles', label: 'Admin roles' },
-  { key: 'warnThreshold',  path: ['warnSettings', 'threshold'],    type: 'int',    label: 'Warnings before action', min: 1, max: 50 },
-  { key: 'warnAction',     path: ['warnSettings', 'action'],       type: 'choice', label: 'Action at threshold', choices: WARN_ACTIONS },
-  { key: 'warnMuteMs',     path: ['warnSettings', 'muteDuration'], type: 'int',    label: 'Mute length (minutes)', min: 1, max: 40320, scale: 60000 },
+  // Warning punishment is edited on the Moderation screen only. A second copy
+  // here defaulted its action to "none" and wrote that back on every Settings
+  // save, quietly switching off whatever Moderation had set.
   // The two ticket settings that used to sit here are gone, not moved: the
   // Tickets screen already edits the same two stored fields, and this copy
   // described them wrongly in both directions. `inactivityTime` is minutes

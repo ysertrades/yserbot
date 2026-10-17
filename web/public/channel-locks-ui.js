@@ -77,6 +77,7 @@
     const root = document.getElementById('channel-locks-root');
     if (!root) return;
     injectStyles();
+    lastSig = locksSig();
 
     const st = getState();
     const ov = st && st.overview;
@@ -297,30 +298,28 @@
   }
 
   let liveTimer = null;
-  async function pullLocksLive() {
-    if (!document.querySelector('.section[data-section="moderation"][data-active]')) return;
+  let lastSig = '';
+  function locksSig() {
     const st = getState();
-    if (!st || !st.guildId) return;
-    try {
-      let data;
-      if (typeof get === 'function') data = await get('/api/guild/' + st.guildId);
-      else {
-        const res = await fetch('/api/guild/' + st.guildId, { credentials: 'same-origin' });
-        data = await res.json();
-      }
-      if (!data || !data.mod) return;
-      if (!st.overview) st.overview = data;
-      else {
-        if (!st.overview.mod) st.overview.mod = {};
-        if (Array.isArray(data.mod.lockedChannels)) st.overview.mod.lockedChannels = data.mod.lockedChannels;
-        if (Array.isArray(data.mod.channels)) st.overview.mod.channels = data.mod.channels;
-      }
-      render();
-    } catch (e) {}
+    const m = (st && st.overview && st.overview.mod) || {};
+    try { return JSON.stringify([m.lockedChannels || [], (m.channels || []).length]); } catch (e) { return ''; }
+  }
+  /**
+   * Repaints the card when the locks actually changed, and not while a
+   * picker is open. It used to fetch the whole overview every 10s and rebuild
+   * the card regardless, which cut off an open dropdown mid-choice. The live
+   * stream already keeps state.overview.mod current.
+   */
+  function pullLocksLive() {
+    if (!document.querySelector('.section[data-section="moderation"][data-active]')) return;
+    const sig = locksSig();
+    if (sig === lastSig) return;
+    try { if (typeof isEditing === 'function' && isEditing()) return; } catch (e) {}
+    render();
   }
   function startLive() {
-    stopLive();
-    liveTimer = setInterval(pullLocksLive, 10000);
+    if (liveTimer) return;
+    liveTimer = setInterval(pullLocksLive, 3000);
   }
   function stopLive() {
     if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
@@ -333,12 +332,15 @@
   function boot() {
     document.addEventListener('panel-overview', render);
 
+    // Only on the Moderation tab opening or closing — not on every
+    // data-active change anywhere in the page.
+    let wasActive = !!document.querySelector('.section[data-section="moderation"][data-active]');
     const obs = new MutationObserver(function () {
-      if (document.querySelector('.section[data-section="moderation"][data-active]')) {
-        onModerationVisible();
-      } else {
-        stopLive();
-      }
+      const active = !!document.querySelector('.section[data-section="moderation"][data-active]');
+      if (active === wasActive) return;
+      wasActive = active;
+      if (active) onModerationVisible();
+      else stopLive();
     });
     if (document.body) {
       obs.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['data-active'] });
@@ -348,7 +350,8 @@
     if (typeof prev === 'function') {
       window.showSection = function (name) {
         const r = prev.apply(this, arguments);
-        if (name === 'moderation') setTimeout(onModerationVisible, 40);
+        // The observer paints on open; this only keeps the check running.
+        if (name === 'moderation') startLive();
         else stopLive();
         return r;
       };

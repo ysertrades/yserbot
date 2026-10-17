@@ -53,7 +53,8 @@ for (const f of cmdFiles) {
   else cmdOk++;
 }
 pass(`commands scanned ${cmdFiles.length} (ok-ish ${cmdOk})`);
-const app = fs.readFileSync(path.join(root, 'web/public/app.js'), 'utf8');
+// The real panel; web/public/app.js is only its load check.
+const app = fs.readFileSync(path.join(root, 'web/public/app.full.js'), 'utf8');
 const writes = fs.readFileSync(path.join(root, 'web/writes.js'), 'utf8');
 const posts = new Set([...app.matchAll(/post\(\s*['"]([a-z0-9_]+)['"]/gi)].map(m => m[1].toLowerCase()));
 const handlers = new Set();

@@ -305,8 +305,16 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
 }
 
 
-async function restoreGiveaways(client) {
+/** Re-runs the restore for one giveaway that hit a temporary error. */
+async function restoreOne(client, msgId) {
   const active = readJson(ACTIVE_FILE, {});
+  if (!active[msgId]) return;
+  return restoreGiveaways(client, { only: msgId });
+}
+
+async function restoreGiveaways(client, { only = null } = {}) {
+  const all    = readJson(ACTIVE_FILE, {});
+  const active = only ? (all[only] ? { [only]: all[only] } : {}) : all;
   const now    = Date.now();
   if (!global.giveawayEntrants) global.giveawayEntrants = new Map();
   if (!global.giveawayMeta)     global.giveawayMeta     = new Map();
@@ -318,7 +326,11 @@ async function restoreGiveaways(client) {
       hostId: data.hostId, endTime: data.endTime, guildId: data.guildId,
       requiredRoleId: data.requiredRoleId || null,
       bonusRoleId: data.bonusRoleId || null,
+      bonusRoles: Array.isArray(data.bonusRoles) ? data.bonusRoles : null,
       minAccountAgeDays: data.minAccountAgeDays || 0,
+      requirementLines: data.requirementLines || undefined,
+      dropId: data.dropId || undefined,
+      mentionContent: data.mentionContent || null,
     });
 
     // Re-fetch the message so the end-timer can edit it
@@ -326,11 +338,21 @@ async function restoreGiveaways(client) {
     try {
       const ch = await client.channels.fetch(data.channelId);
       msg = await ch.messages.fetch(msgId);
-    } catch {
-      // Channel or message deleted while bot was offline — clean up
-      removeActiveGiveaway(msgId);
-      global.giveawayEntrants.delete(msgId);
-      global.giveawayMeta.delete(msgId);
+    } catch (err) {
+      // Only Discord saying the channel or message is gone (Unknown Channel /
+      // Unknown Message, or no access any more) removes the giveaway. Any
+      // other failure — a timeout or 5xx while the bot is still starting —
+      // used to delete it too, entrants and all. Those are retried.
+      const gone = [10003, 10008, 50001].includes(err?.code);
+      if (gone) {
+        removeActiveGiveaway(msgId);
+        global.giveawayEntrants.delete(msgId);
+        global.giveawayMeta.delete(msgId);
+      } else {
+        console.warn(`[GIVEAWAY ${msgId}] restore failed (${err?.message || err}) — retrying in 60s`);
+        const retry = setTimeout(() => restoreOne(client, msgId).catch(() => {}), 60_000);
+        retry.unref?.();
+      }
       continue;
     }
 
@@ -343,6 +365,8 @@ async function restoreGiveaways(client) {
       () => endGiveaway(msg, {
         prize: data.prize, winnersCount: data.winnersCount, imageUrl: data.imageUrl,
         hostId: data.hostId, guildId: data.guildId, bonusRoleId: data.bonusRoleId,
+        bonusRoles: data.bonusRoles || null, dropId: data.dropId,
+        requiredRoleId: data.requiredRoleId || null, minAccountAgeDays: data.minAccountAgeDays || 0,
         createdAt: data.createdAt,
       }).catch(err => console.error(`[GIVEAWAY ${msgId}] ending failed:`, err)),
       remaining,
@@ -569,6 +593,10 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const channel = guild.channels.cache.get(channelId);
   if (!channel) throw new Error('channel-missing');
 
+  // The panel's per-role "+N entries" list. It used to be dropped here, so the
+  // draw only ever saw the single legacy bonusRoleId at +1.
+  const bonusRoles = normalizeBonusRoles(bonusRoleId, data.bonusRoles);
+
   const createdAt     = Date.now();
   const endTime        = createdAt + durationMs;
   const endTimestamp   = Math.floor(endTime / 1000);
@@ -609,7 +637,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   global.giveawayEntrants.set(msg.id, new Set());
   global.giveawayMeta.set(msg.id, {
     prize, winners, imageUrl, hostId, endTime, guildId,
-    requiredRoleId, bonusRoleId, minAccountAgeDays,
+    requiredRoleId, bonusRoleId, bonusRoles, minAccountAgeDays,
     requirementLines: reqLines,
     dropId,
     // Keep the launch ping across entry/refresh edits
@@ -622,6 +650,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
     requirementLines: reqLines,
     hostId, endTime, guildId, channelId: msg.channelId, entrants: [],
     requiredRoleId: requiredRoleId || null, bonusRoleId: bonusRoleId || null,
+    bonusRoles,
     minAccountAgeDays: minAccountAgeDays || 0, createdAt,
     dropId,
     mentionContent: content || null,
@@ -629,7 +658,10 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
 
   if (giveawayTimers.has(msg.id)) clearTimeout(giveawayTimers.get(msg.id));
   giveawayTimers.set(msg.id, setTimeout(
-    () => endGiveaway(msg, { prize, winnersCount: winners, imageUrl, hostId, guildId, bonusRoleId, createdAt, dropId })
+    () => endGiveaway(msg, {
+      prize, winnersCount: winners, imageUrl, hostId, guildId, bonusRoleId, bonusRoles, createdAt, dropId,
+      requiredRoleId, minAccountAgeDays,
+    })
       .catch(err => console.error(`[GIVEAWAY ${msg.id}] ending failed:`, err)),
     durationMs,
   ));
@@ -665,7 +697,9 @@ async function launchGiveaway(interaction, data, sessionId) {
 
 const BASE_TICKETS = 1;
 const BONUS_ROLE_EXTRA = 1;   // classic "2× entries" = one extra ticket
-const MAX_TICKETS_PER_USER = 3;
+// Base 1 + the largest single "+N" the panel offers (10). At 3, every bonus
+// above +2 was silently cut down to +2.
+const MAX_TICKETS_PER_USER = 11;
 
 function pickWinners(pool, count) {
   // pool may list the same id multiple times (tickets). Build weights, then
@@ -771,6 +805,7 @@ async function dmWinners(client, guild, winnerIds, prize, hostId, { rerolled = f
 
 async function endGiveaway(message, meta) {
   const { prize, winnersCount, imageUrl, hostId, guildId, bonusRoleId, createdAt } = meta;
+  const bonusRoles = Array.isArray(meta.bonusRoles) ? meta.bonusRoles : null;
   // Claimed before anything else is read, so a timer firing at the same
   // moment somebody presses End does not draw a second set of winners.
   if (!claimGiveaway(message.id)) return;
@@ -837,6 +872,7 @@ async function endGiveaway(message, meta) {
       channelId: message.channelId,
       entrants: [],
       bonusRoleId: bonusRoleId || null,
+      bonusRoles,
       requiredRoleId: (meta && meta.requiredRoleId) || null,
       minAccountAgeDays: (meta && meta.minAccountAgeDays) || 0,
       currentWinners: [],
@@ -856,7 +892,7 @@ async function endGiveaway(message, meta) {
   }
 
   const entrantIds     = Array.from(entrants);
-  const pool           = await buildWeightedPool(entrantIds, message.guild, bonusRoleId);
+  const pool           = await buildWeightedPool(entrantIds, message.guild, bonusRoleId, bonusRoles);
   const winnerIds      = pickWinners(pool, winnersCount);
   const winnerMentions = winnerIds.map(id => `<@${id}>`).join(', ');
 
@@ -870,6 +906,8 @@ async function endGiveaway(message, meta) {
     channelId: message.channelId,
     entrants:  entrantIds,
     bonusRoleId: bonusRoleId || null,
+    // performReroll draws from this record, so it needs the same weights.
+    bonusRoles,
     currentWinners: winnerIds,
     createdAt: createdAt || null,
     endedAt: Date.now(),
@@ -1000,6 +1038,8 @@ async function earlyEndGiveaway(interaction, msgId) {
   await endGiveaway(msg, {
     prize: record.prize, winnersCount: record.winnersCount, imageUrl: record.imageUrl,
     hostId: record.hostId, guildId: record.guildId, bonusRoleId: record.bonusRoleId,
+    bonusRoles: record.bonusRoles || null, dropId: record.dropId,
+    requiredRoleId: record.requiredRoleId || null, minAccountAgeDays: record.minAccountAgeDays || 0,
     createdAt: record.createdAt,
   });
 }
@@ -1363,8 +1403,9 @@ module.exports = {
             content: '❌ That file was not an image. Try again from **Image**.',
           }).catch(() => {});
         }
-        data.imageUrl = att.proxyURL || att.url;
-        await msg.delete().catch(() => {});
+        // The upload message stays: deleting it lets Discord expire the
+        // attachment, and the giveaway image then broke partway through.
+        data.imageUrl = att.url || att.proxyURL;
         return interaction.editReply({
           content: null,
           embeds: [buildSetupEmbed(data, interaction.guild)],

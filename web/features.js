@@ -190,6 +190,7 @@ function read(guildId, guild) {
     time: s.time ?? null,
     offsetMinutes: s.offsetMinutes ?? 0,
     lastRun: s.lastRun ?? null,
+    enabled: s.enabled !== false,
   })).sort((a, b) => (a.embedName || '').localeCompare(b.embedName || ''));
 
   const replies = readJson('autoreplies.json', {})[guildId] || {};
@@ -612,6 +613,12 @@ function saveSchedule(guildId, body, guild) {
       entry.time = nextDayOfWeekTimestamp(entry.time, day, offset);
       changed.push('day');
     }
+  }
+  // The panel has always shown a "Schedule enabled" switch, but nothing stored
+  // it, so a paused schedule kept posting.
+  if (typeof body.enabled === 'boolean' && body.enabled !== (entry.enabled !== false)) {
+    entry.enabled = body.enabled;
+    changed.push(body.enabled ? 'resumed' : 'paused');
   }
   if (!changed.length) return { unchanged: true };
   all[guildId][id] = entry;

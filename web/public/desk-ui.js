@@ -50,10 +50,9 @@
   async function ensureCsrf() {
     try {
       if (window.__csrf) return window.__csrf;
+      // The panel's own state carries the token. There is no /api/csrf
+      // route, so the fetch that used to sit here only ever 404'd.
       if (window.state && window.state.csrf) { window.__csrf = window.state.csrf; return window.__csrf; }
-      var r = await fetch('/api/csrf', { credentials: 'same-origin', headers: hdr(false) });
-      var j = await r.json().catch(function () { return {}; });
-      if (j && j.csrf) window.__csrf = j.csrf;
       return window.__csrf || '';
     } catch (e) { return window.__csrf || ''; }
   }
@@ -455,6 +454,7 @@
         return false;
       }
       desk.channels = out.data.channels || [];
+      desk.loadedGuild = g;
       var textCh = desk.channels.filter(function (c) { return !c.isForum; });
       var forums = desk.channels.filter(function (c) { return !!c.isForum; });
       fillSelect($('desk-channel-sel'), textCh, 'Text channels...');
@@ -489,6 +489,17 @@
     }
   }
 
+  function rowSig(m) {
+    try {
+      return JSON.stringify([m.id, m.content, m.author, m.refKind, m.repliedTo, m.forwardSnapshot, m.editedAt || m.edited || null]);
+    } catch (e) { return String(m.id) + ':' + String(m.content || ''); }
+  }
+
+  // id -> { sig, node }. Rows whose message did not change are put back as
+  // the same nodes, so their avatars are not fetched and decoded again. Every
+  // new message used to rebuild all 40 rows from scratch.
+  var rowCache = new Map();
+
   function renderMsgs(msgs) {
     var f = $('desk-stream');
     if (!f) return;
@@ -496,12 +507,38 @@
     var prevHeight = f.scrollHeight;
     var wasStick = desk.stickBottom;
 
-    f.replaceChildren();
     if (!msgs.length) {
-      f.append(el('div', 'desk-empty', 'No messages yet.'));
+      rowCache.clear();
+      f.replaceChildren(el('div', 'desk-empty', 'No messages yet.'));
       return;
     }
+    var nextCache = new Map();
+    var nodes = [];
     msgs.forEach(function (m) {
+      var sig = rowSig(m);
+      var hit = m.id != null ? rowCache.get(m.id) : null;
+      if (hit && hit.sig === sig) {
+        nextCache.set(m.id, hit);
+        nodes.push(hit.node);
+        return;
+      }
+      var built = buildRow(m);
+      if (m.id != null) nextCache.set(m.id, { sig: sig, node: built });
+      nodes.push(built);
+    });
+    rowCache = nextCache;
+    f.replaceChildren.apply(f, nodes);
+
+    if (wasStick) {
+      f.scrollTop = f.scrollHeight;
+    } else {
+      var delta = f.scrollHeight - prevHeight;
+      f.scrollTop = prevTop + Math.max(0, delta);
+    }
+  }
+
+  function buildRow(m) {
+    {
       var rowCls = 'desk-row' + (m.author && m.author.bot ? ' is-bot' : '')
         + (m.refKind === 'forward' || m.forwardSnapshot ? ' is-fwd' : '')
         + (m.refKind === 'reply' || m.repliedTo ? ' is-reply' : '');
@@ -589,14 +626,7 @@
 
       body.append(actions);
       row.append(body);
-      f.append(row);
-    });
-
-    if (wasStick) {
-      f.scrollTop = f.scrollHeight;
-    } else {
-      var delta = f.scrollHeight - prevHeight;
-      f.scrollTop = prevTop + Math.max(0, delta);
+      return row;
     }
   }
 
@@ -657,7 +687,9 @@
         return;
       }
       var msgs = (out.data.messages || out.data.history || []);
-      var sig = msgs.length + ':' + (msgs.length ? (msgs[msgs.length - 1].id || '') : '');
+      // Every row's content, not just count + last id: an edit or a delete
+      // further up used to go unnoticed until the next new message.
+      var sig = msgs.map(rowSig).join('\u0001');
       if (quiet && sig === desk.lastSig) return;
       desk.lastSig = sig;
       desk.messages = msgs;
@@ -676,31 +708,43 @@
   }
 
   function tick() {
+    // Switching server in the panel changes the guild under the desk. Its
+    // channel list used to stay on the first server, so a send went to a
+    // channel id the new server does not have.
+    var g = gid();
+    if (g && g !== desk.loadedGuild && !desk.loadingGuild) {
+      if (desk.loadedGuild) {
+        desk.channelId = null;
+        desk.lastSig = '';
+        var stream = $('desk-stream');
+        if (stream) stream.replaceChildren();
+      }
+      desk.loadingGuild = true;
+      loadCh().finally(function () { desk.loadingGuild = false; });
+      return;
+    }
     if (desk.paused || !desk.channelId) return;
     if (document.hidden || document.visibilityState === 'hidden') return;
+    // The desk sits on Overview. On any other panel tab nobody can see it,
+    // so asking Discord for its messages every 2.2s was pure load.
+    var host = $('overview-desk');
+    var sec = host && host.closest ? host.closest('.section') : null;
+    if (sec && !sec.hasAttribute('data-active')) return;
     hist(true);
   }
 
   function boot() {
     if (!$('overview-desk')) return;
     shell();
-    // Fast path: guild already known
+    // Fast path: guild already known. Otherwise tick() picks it up as soon as
+    // the panel has one. The old fallback gave up after 6s and waited for a
+    // 'yser:guild-ready' event nothing ever fires, so a slow sign-in left the
+    // desk stuck on "Waiting for server..." until a reload.
     if (gid()) {
-      loadCh();
+      desk.loadingGuild = true;
+      loadCh().finally(function () { desk.loadingGuild = false; });
     } else {
-      var tries = 0;
-      function retryLoad() {
-        if (gid()) { loadCh(); return; }
-        if (tries < 40) { tries++; setTimeout(retryLoad, 150); }
-        else setFeed('Waiting for server...');
-      }
-      retryLoad();
-      try {
-        window.addEventListener('yser:guild-ready', function onReady() {
-          window.removeEventListener('yser:guild-ready', onReady);
-          loadCh();
-        });
-      } catch (e) {}
+      setFeed('Connecting...');
     }
     if (desk.timer) clearInterval(desk.timer);
     desk.timer = setInterval(tick, POLL);

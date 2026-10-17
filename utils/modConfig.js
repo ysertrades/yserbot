@@ -62,7 +62,12 @@ function knownSourceKeys() {
 
 function getNewsFeedSettings(guildId) {
   const config = readJson('config.json', {});
-  const settings = { ...NEWSFEED_DEFAULTS, ...(config[guildId]?.newsFeedSettings || {}) };
+  const raw = config[guildId]?.newsFeedSettings || {};
+  const settings = { ...NEWSFEED_DEFAULTS, ...raw };
+  // Set up before the on/off switch existed: a channel and no `enabled` key.
+  // Those have always posted, so they read as on — the same rule the runner
+  // uses — instead of showing Off while headlines keep arriving.
+  if (raw.enabled === undefined) settings.enabled = !!raw.channelId;
 
   // Drop sources that no longer exist. Removing one from the registry used to
   // leave it sitting in every guild that had selected it — visible in the

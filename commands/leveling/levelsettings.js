@@ -80,6 +80,8 @@ module.exports = {
       if (r.error) {
         return interaction.reply({ content: `Could not adjust XP (\`${r.error}\`).`, ephemeral: true });
       }
+      // Rank role now, not on their next message.
+      levelingEngine.applyRankRole(interaction.guild, user.id).catch(() => {});
       return interaction.reply({
         content: `${sub === 'addxp' ? 'Added' : 'Removed'} **${amount}** XP ${sub === 'addxp' ? 'to' : 'from'} <@${user.id}> → Lv **${r.level}** · **${r.xp.toLocaleString()}** total.`,
         ephemeral: true,
@@ -90,6 +92,7 @@ module.exports = {
       const user = interaction.options.getUser('user', true);
       const level = interaction.options.getInteger('level', true);
       const r = levelingEngine.setUserLevel(guildId, user.id, level);
+      levelingEngine.applyRankRole(interaction.guild, user.id).catch(() => {});
       return interaction.reply({
         content: `Set <@${user.id}> to level **${r.level}** (${r.xp.toLocaleString()} XP).`,
         ephemeral: true,
@@ -103,8 +106,10 @@ module.exports = {
     }
 
     if (sub === 'resetall') {
-      levelingEngine.resetAllXp(guildId, interaction.user.id);
-      return interaction.reply({ content: 'All member XP wiped. Leaderboard starts fresh.', ephemeral: true });
+      // resetAllXp resets settings and keeps XP — the opposite of what this
+      // subcommand says it does.
+      const r = levelingEngine.wipeAllXp(guildId, interaction.user.id);
+      return interaction.reply({ content: `All member XP wiped (${r.cleared} members). Leaderboard starts fresh.`, ephemeral: true });
     }
 
     return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });

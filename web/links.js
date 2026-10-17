@@ -80,14 +80,18 @@ function read(guildId, guild) {
       userId: p.userId,
       displayName: member?.displayName || p.userId,
       state: state.state,
-      secondsLeft: state.secondsLeft || 0,
+      // An absolute time, not seconds left. A countdown changes on every
+      // build, so web/live.js saw a "new" overview every 3s while any permit
+      // existed and pushed a full redraw each time. The page counts down.
+      until: state.until || null,
       cooldownMs: p.cooldownMs || 0,
     };
   });
 
   return {
     filterOn: !!automod.linkFilter,
-    waiting: active.filter(r => r.status === 'pending_review'),
+    // Auto-detected invites ('reported') need a decision just as much.
+    waiting: active.filter(r => r.status === 'pending_review' || r.status === 'reported'),
     unfinished: active.filter(r => r.status === 'pending'),
     permits,
     recent: getDecidedRequests(guildId, 15).map(r => describe(r, guild)),

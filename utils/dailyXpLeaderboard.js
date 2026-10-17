@@ -392,7 +392,23 @@ function armNext(client, leveling) {
   console.log('[dailyXpLb] next fire in ' + Math.round(delay / 1000) + 's (America/New_York)');
   global.__dailyXpLbTimeout = setTimeout(async () => {
     try {
+      // Only the servers whose own time has come. The timer is armed for the
+      // soonest server, and this used to post for every server when it fired —
+      // so all of them went out at whichever server's time was earliest.
+      // A server whose time already passed today but has not posted (bot was
+      // down) catches up here; lastPostedDay stops a second post.
+      const now = localHM(ET);
+      const nowMin = now.hour * 60 + now.minute;
       for (const [guildId, guild] of client.guilds.cache) {
+        let conf = null;
+        try {
+          const g = typeof leveling.guildState === 'function'
+            ? leveling.guildState(guildId).g
+            : (typeof leveling.loadAll === 'function' ? leveling.loadAll()[guildId] : null);
+          conf = g ? normalizeDailyLb(g.dailyLeaderboard) : null;
+        } catch { conf = null; }
+        if (!conf || !conf.enabled || !conf.channelId) continue;
+        if (conf.hour * 60 + conf.minute > nowMin) continue;
         await postOneGuild(client, leveling, guildId, guild);
       }
     } catch (e) { console.warn('[dailyXpLb] post', e.message); }

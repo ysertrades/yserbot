@@ -259,19 +259,31 @@ function migrateDurations() {
   return changed;
 }
 
+// guildId -> [seed template names that guild has been given]. A seed is
+// handed out once. "Missing" used to mean "add it", so a starter template
+// somebody deleted came back on every restart.
+const SEEDED_FILE = 'content_seeded.json';
+
 function seedEmbedTemplates() {
   const all = readJson(EMBEDS_FILE, {});
-  let changed = false;
+  const seeded = readJson(SEEDED_FILE, {});
+  let changed = false, seededChanged = false;
 
   for (const guildId of Object.keys(all)) {
+    const given = new Set(Array.isArray(seeded[guildId]) ? seeded[guildId] : []);
     for (const [name, template] of Object.entries(TEMPLATE_SEEDS)) {
-      if (all[guildId][name]) continue;
+      if (given.has(name)) continue;           // handed out before: respect a delete
+      given.add(name);
+      seededChanged = true;
+      if (all[guildId][name]) continue;        // already there (seeded before this record existed)
       all[guildId][name] = JSON.parse(JSON.stringify(template));
       changed = true;
     }
+    seeded[guildId] = [...given];
   }
 
   if (changed) writeJson(EMBEDS_FILE, all);
+  if (seededChanged) writeJson(SEEDED_FILE, seeded);
   return changed;
 }
 
@@ -302,8 +314,9 @@ function ensureGuildEntries(client) {
   const embeds = readJson(EMBEDS_FILE, {});
   let shopChanged = false, embedsChanged = false;
 
+  const economyOn = process.env.ECONOMY_ENABLED === '1';
   for (const guild of client.guilds.cache.values()) {
-    if (!shop[guild.id]) { shop[guild.id] = { items: {} }; shopChanged = true; }
+    if (economyOn && !shop[guild.id]) { shop[guild.id] = { items: {} }; shopChanged = true; }
     if (!embeds[guild.id]) { embeds[guild.id] = {}; embedsChanged = true; }
   }
 
@@ -313,8 +326,12 @@ function ensureGuildEntries(client) {
 
 function seedDefaultContent(client) {
   ensureGuildEntries(client);
-  const shopSeeded       = seedShopDefaults();
-  const durationsFixed   = migrateDurations();
+  // The economy is switched off (index.js skips commands/economy), so the
+  // shop is not seeded or migrated: it filled shop.json for every server
+  // with items nothing can buy.
+  const economyOn = process.env.ECONOMY_ENABLED === '1';
+  const shopSeeded       = economyOn && seedShopDefaults();
+  const durationsFixed   = economyOn && migrateDurations();
   const embedSeeded      = seedEmbedTemplates();
   const embedsFixed      = migrateEmbedTemplates();
   if (shopSeeded)     console.log('[CONTENT SEED] Added missing starter shop items.');

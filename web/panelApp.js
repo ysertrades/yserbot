@@ -1,14 +1,18 @@
 'use strict';
 
-/** Panel app restore: local packs first, then GitHub with hard timeout. */
+/**
+ * Serves /panel-app.js — the control panel's browser code, web/public/app.full.js.
+ *
+ * Only the file on disk. This used to fall back to a base64 pack and then to
+ * downloading app.js from a pinned GitHub commit at runtime, which meant the
+ * panel could run code that was never in the deployed tree (and the pinned
+ * file was the 14-line loader, not the panel). A missing panel is now a clear
+ * 503 instead of a surprise.
+ */
 const fs = require('node:fs');
 const path = require('node:path');
-const zlib = require('node:zlib');
-const https = require('node:https');
 
-const PANEL_APP_SRC =
-  'https://raw.githubusercontent.com/ysertrades/yserbot/cf3277b2cde73a9f153a225f03a517f81b4063f5/web/public/app.js';
-const LOCAL_N = 28;
+const PANEL_FILE = path.join(__dirname, 'public', 'app.full.js');
 let cache = null;
 
 function injectState(body) {
@@ -17,85 +21,22 @@ function injectState(body) {
   return body + '\n;window.state = state;\n';
 }
 
-function loadLocal() {
-  // Prefer the patched full panel on disk (dropdown + baseline fixes)
-  const fullPath = path.join(__dirname, 'public', 'app.full.js');
-  if (fs.existsSync(fullPath)) {
-    const body = fs.readFileSync(fullPath, 'utf8');
-    if (body && body.length >= 100000) return injectState(body);
-  }
-  const first = path.join(__dirname, 'app.pack.0.b64');
-  if (!fs.existsSync(first)) return null;
-  const parts = [];
-  for (let i = 0; i < LOCAL_N; i++) {
-    const p = path.join(__dirname, 'app.pack.' + i + '.b64');
-    if (!fs.existsSync(p)) return null;
-    parts.push(fs.readFileSync(p, 'utf8'));
-  }
-  const body = zlib.gunzipSync(Buffer.from(parts.join(''), 'base64')).toString('utf8');
-  if (!body || body.length < 100000) return null;
+function load() {
+  const body = fs.readFileSync(PANEL_FILE, 'utf8');
+  if (!body || body.length < 100000) throw new Error('panel file too small');
   return injectState(body);
-}
-
-function fetchRemote() {
-  return new Promise((resolve, reject) => {
-    const req = https.get(PANEL_APP_SRC, { headers: { 'user-agent': 'yserbot-panel-restore' } }, (r) => {
-      if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
-        r.resume();
-        return fetchRemoteUrl(r.headers.location).then(resolve, reject);
-      }
-      const chunks = [];
-      r.on('data', (c) => chunks.push(c));
-      r.on('end', () => {
-        if (r.statusCode !== 200) return reject(new Error('http_' + r.statusCode));
-        resolve(Buffer.concat(chunks).toString('utf8'));
-      });
-      r.on('error', reject);
-    });
-    req.setTimeout(8000, () => {
-      req.destroy();
-      reject(new Error('timeout'));
-    });
-    req.on('error', reject);
-  });
-}
-
-function fetchRemoteUrl(url) {
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'user-agent': 'yserbot-panel-restore' } }, (r) => {
-      const chunks = [];
-      r.on('data', (c) => chunks.push(c));
-      r.on('end', () => {
-        if (r.statusCode !== 200) return reject(new Error('http_' + r.statusCode));
-        resolve(Buffer.concat(chunks).toString('utf8'));
-      });
-      r.on('error', reject);
-    });
-    req.setTimeout(8000, () => {
-      req.destroy();
-      reject(new Error('timeout'));
-    });
-    req.on('error', reject);
-  });
 }
 
 async function serve(res, send) {
   try {
-    if (!cache) {
-      let body = loadLocal();
-      if (!body) {
-        body = injectState(await fetchRemote());
-        if (!body || body.length < 100000) throw new Error('too_small');
-      }
-      cache = body;
-    }
+    if (!cache) cache = load();
     return send(res, 200, cache, {
       'content-type': 'text/javascript; charset=utf-8',
       'cache-control': 'no-store',
     });
   } catch (err) {
     console.error('[Panel] panel-app failed:', err.message || err);
-    return send(res, 503, '/* panel restore failed: ' + String(err.message || err).slice(0, 80) + ' */', {
+    return send(res, 503, '/* panel failed to load: ' + String(err.message || err).slice(0, 80) + ' */', {
       'content-type': 'text/javascript; charset=utf-8',
     });
   }

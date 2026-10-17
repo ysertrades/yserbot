@@ -5,3 +5,11 @@
 data/*.json
 !data/.gitkeep
 node_modules/
+
+# Hand-made backups and patch bundles. These piled up in the repo (dated
+# .bak copies, backup folders, .tgz patches, base64 packs) and drifted
+# from the real code; git history already keeps every old version.
+*.bak
+*.bak.*
+.*-bak.*/
+*.tgz

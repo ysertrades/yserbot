@@ -104,6 +104,14 @@ async function list(guildId, guild = null) {
       name,
       embeds: t.embeds,
       around: t.around || null,
+      // Components V2 templates keep their content in `blocks`. Without these
+      // three the editor saw a V2 template as an empty new one, showed a blank
+      // canvas, and saving it wrote the blank back over the real content.
+      ...(t.format === 'v2' ? {
+        format: 'v2',
+        blocks: Array.isArray(t.blocks) ? t.blocks : [],
+        buttonsOutside: !!t.buttonsOutside,
+      } : {}),
       buttons: buttonsFor(guildId, name).map(b => ({
         id: b.id, label: b.label ?? '', style: b.style || 'Primary', type: b.type || 'custom',
         emoji: b.emoji ?? '', url: b.url ?? '', roleId: b.roleId ?? '',
@@ -555,7 +563,7 @@ async function send(guildId, body, { guild }) {
           components: built.components,
           allowedMentions: { parse: [] },
         });
-        rememberPost(guildId, msg.id, { templateName: name, channelId: channel.id });
+        rememberPost(guildId, msg.id, { templateName: name, channelId: channel.id, sentAt: Date.now() });
         return { ok: true, channelId: channel.id, messageId: msg.id, format: 'v2' };
       } catch (err) {
         console.error('[Panel] V2 send failed:', err.message);
@@ -668,6 +676,27 @@ async function updatePost(guildId, body, { guild, client }) {
   const payload = embedCommand().buildEmbedPayload(guild, templateName, { channel });
   if (!payload) return { error: 'unknown_template' };
 
+  // Components V2: the container is the whole message, so the edit replaces
+  // the components and nothing else. A message posted as a classic embed
+  // cannot be turned into a V2 one by editing — Discord fixes that flag when
+  // the message is created — so that case is reported instead of failing
+  // with an unreadable 400.
+  if (payload.v2) {
+    if (!message.flags?.has?.(payload.flags)) {
+      return { error: 'update_failed', detail: 'This post was sent as a classic embed. Send the V2 message again instead of updating it.' };
+    }
+    try {
+      await message.edit({ components: payload.components, allowedMentions: { parse: [] } });
+    } catch (err) {
+      console.error('[Panel] V2 update failed:', err.message);
+      return { error: 'update_failed', detail: err.message.slice(0, 140) };
+    }
+    rememberPost(guildId, messageId, {
+      channelId, templateName, sentAt: known?.sentAt || Date.now(), content: null, belowId: null,
+    });
+    return { ok: true, messageId, templateName };
+  }
+
   const around = normalize(readJson('embeds.json', {})[guildId]?.[templateName]).around;
   // What this post was sent with wins over the template's own line: the send
   // form can override it per post, and an update must not quietly replace a
@@ -738,7 +767,7 @@ async function updatePost(guildId, body, { guild, client }) {
 
 module.exports = {
   list, meta, saveTemplate, deleteTemplate, saveButton, deleteButton, send, updatePost,
-  normalize, LIMITS, BUTTON_STYLES, BUTTON_TYPES,
+  normalize, buildV2PayloadFromTemplate, LIMITS, BUTTON_STYLES, BUTTON_TYPES,
   // Re-exported so nothing that used to reach for it here has to learn a new
   // path; utils/panelPosts.js owns the file itself.
   POSTS_FILE: panelPosts.FILE,

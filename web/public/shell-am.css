@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+/* The Google Fonts @import that was here never loaded: the panel's content
+   policy only allows styles and fonts from its own origin. Inter is used when
+   it is installed locally, otherwise the system UI font. */
 :root{
 --frame:#121212;--panel:#0a0a0a;--panel-border:#1a1a1a;--header-divider:#131313;
 --surface-1:#181818;--surface-2:#1a1a1a;--border-soft:#1b1b1b;--border-strong:#202020;
