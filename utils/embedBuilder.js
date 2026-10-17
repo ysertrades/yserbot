@@ -125,14 +125,19 @@ function createEmbed(type, options = {}) {
  * Never throws. Every caller of this is a message that has to go out.
  */
 function guildLook(type, guild) {
-  const fallback = { color: null, name: 'QuantLab', footer: `${guild?.name || 'Server'} • QuantLab` };
+  // The server's own brand (Settings → Brand), QuantLab by default.
+  const b = require('./brand').getBrand(guild?.id);
+  const brandName = b.name;
+  const accent = b.accent ? parseInt(b.accent.slice(1), 16) : null;
+  const fallback = { color: accent, name: brandName, footer: `${guild?.name || 'Server'} • ${brandName}` };
   if (!guild?.id) return fallback;
   try {
     const s = style();
     const chrome = s.styleFor(guild.id, 'base.chrome');
     return {
-      color: s.paletteFor(guild.id)[type] ?? null,
-      name: (chrome?.title || '').trim() || fallback.name,
+      color: s.paletteFor(guild.id)[type] ?? accent,
+      // The default title is "{brand}", so it is filled like the footer.
+      name: s.fill(chrome?.title ?? '', { server: guild.name || '', brand: brandName }).trim() || fallback.name,
       footer: s.fill(chrome?.footer ?? '', { server: guild.name || '' }).trim() || fallback.footer,
     };
   } catch {

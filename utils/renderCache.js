@@ -26,6 +26,8 @@
 const DEFAULT_MAX_ENTRIES = 16;
 
 const registry = [];
+// One clear() per generator, for the owner console's Clear image cache.
+const clearers = [];
 
 /**
  * Wraps a PNG generator so identical arguments reuse the previous buffer.
@@ -52,6 +54,12 @@ function memoizeRender(fn, { name = fn.name || 'anonymous', max = DEFAULT_MAX_EN
       return fn.apply(this, args);
     }
     if (key === undefined) return fn.apply(this, args);
+    // A server with its own brand gets its own copies (see brand.js); every
+    // server on the default brand still shares one.
+    try {
+      const b = require('./brand').cacheKey();
+      if (b) key = `${b}|${key}`;
+    } catch { /* brand unavailable — default key */ }
 
     const hit = cache.get(key);
     if (hit !== undefined) {
@@ -80,6 +88,7 @@ function memoizeRender(fn, { name = fn.name || 'anonymous', max = DEFAULT_MAX_EN
   };
 
   wrapped.clear = () => cache.clear();
+  clearers.push(() => cache.clear());
   wrapped.cacheSize = () => cache.size;
 
   // Answers "would this call block?" without making it. Callers that pace
@@ -88,6 +97,11 @@ function memoizeRender(fn, { name = fn.name || 'anonymous', max = DEFAULT_MAX_EN
   wrapped.peek = (...args) => {
     let key;
     try { key = args.length === 0 ? '' : JSON.stringify(args); } catch { return undefined; }
+    // Same per-brand key as the render itself, or every check is a miss.
+    try {
+      const b = require('./brand').cacheKey();
+      if (b) key = `${b}|${key}`;
+    } catch { /* default key */ }
     const hit = cache.get(key);
     if (hit === undefined) return undefined;
     cache.delete(key); cache.set(key, hit); // keep LRU ordering honest
@@ -102,4 +116,10 @@ function stats() {
   return registry.map(s => ({ ...s, ms: Math.round(s.ms) }));
 }
 
-module.exports = { memoizeRender, stats };
+/** Drops every cached image; the next draw of each renders fresh. */
+function clearAll() {
+  for (const c of clearers) { try { c(); } catch { /* keep going */ } }
+  return clearers.length;
+}
+
+module.exports = { memoizeRender, stats, clearAll };

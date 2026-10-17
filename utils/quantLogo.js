@@ -55,6 +55,10 @@ async function loadQuantLogo(size = 64) {
 }
 
 function blitQuantLogo(png, dx, dy, box, { circle = true, alpha = 1 } = {}) {
+  // A server's own logo (Settings → Brand) wins over Quantbot.jpg.
+  let logo = null;
+  try { logo = require('./brand').currentLogo(); } catch { /* default */ }
+  if (!logo) logo = defaultLogo();
   if (!logo) return false;
   const { setPxBlend } = require('./pixelArt');
   const r = box / 2;
@@ -79,6 +83,10 @@ function blitQuantLogo(png, dx, dy, box, { circle = true, alpha = 1 } = {}) {
     }
   }
   return true;
+}
+
+function defaultLogo() {
+  return logo;
 }
 
 function hasQuantLogo() {

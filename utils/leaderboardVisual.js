@@ -74,7 +74,7 @@ function drawCrown(png, cx, cy, color) {
  */
 function generateLeaderboardImage(data) {
   const entries = (data.entries || []).slice(0, 10);
-  const title = (data.title || 'QUANTLAB RANKS').toUpperCase();
+  const title = (data.title || `${require('./brand').current().name} RANKS`).toUpperCase();
   const subtitle = data.subtitle || 'TOP 10 BY XP';
 
   const W = 1200;

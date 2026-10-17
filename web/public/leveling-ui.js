@@ -181,10 +181,12 @@
 
     const hero = el('div', 'panel');
     const top = el('div', 'lvl-hero-top');
-    top.append(el('h2', null, 'Quantlab ranks'));
+    var brandName = 'QuantLab';
+    try { brandName = (window.state && window.state.overview && window.state.overview.brand && window.state.overview.brand.name) || brandName; } catch (e) {}
+    top.append(el('h2', null, brandName + ' ranks'));
     top.append(el('span', L.enabled ? 'pill on' : 'pill off', L.enabled ? 'Live' : 'Paused'));
     hero.append(top);
-    hero.append(el('p', 'muted', 'Chat XP · one rank role at a time (previous rank is removed). Premium is Whop only.'));
+    hero.append(el('p', 'hint', 'Members earn XP by chatting; each new rank role replaces the last.'));
     if (!L.tracked) {
       const empty = el('div', 'lvl-empty');
       empty.append(el('p', null, 'No XP tracked yet'));
@@ -287,25 +289,42 @@
     split.append(board);
 
     const curve = el('div', 'panel');
-    curve.append(el('h2', null, 'Base XP'));
+    curve.append(el('h2', null, 'XP curve'));
     const curveGrid = el('div', 'lvl-nums');
     const iBase = num(L.curveBase != null ? L.curveBase : 100, { min: 10, max: 50000, step: 10 });
     const iMult = num(L.curveMult != null ? L.curveMult : 1.5, { min: 1, max: 3, step: 0.01 });
     curveGrid.append(field('Base XP', iBase, 'Cost of level 0→1 when exponential is active'));
     curveGrid.append(field('Level multiplier', iMult, 'Each next step × this (1 = flat)'));
     curve.append(curveGrid);
+    // A bar per level up to 30 — how much each step costs — so the shape of
+    // the curve is visible while you tune it, plus the three numbers people
+    // actually ask about.
+    const chart = el('div', 'lvl-curve-chart');
     const preview = el('div', 'lvl-curve-table');
+    // How many messages a level takes, at the average XP per message.
+    const avgXp = ((Number(L.xpMin) || 15) + (Number(L.xpMax) || 25)) / 2;
     function paintPreview() {
       const b = Number(iBase.value) || 100;
       const m = Number(iMult.value) || 1;
+      const steps = [];
+      for (let lv = 1; lv <= 30; lv++) steps.push(stepXp(lv - 1, 'exponential', b, m));
+      const max = Math.max.apply(null, steps) || 1;
+      chart.replaceChildren.apply(chart, steps.map(function (s, i) {
+        const bar = el('span', 'lvl-curve-bar' + ((i + 1) % 10 === 0 ? ' mark' : ''));
+        bar.style.height = Math.max(3, Math.round((s / max) * 100)) + '%';
+        bar.title = 'Level ' + (i + 1) + ': ' + fmt(s) + ' XP (~' + fmt(Math.ceil(s / avgXp)) + ' messages)';
+        return bar;
+      }));
       preview.replaceChildren();
-      [1, 5, 15, 30, 50].forEach(function (lv) {
+      [5, 15, 30].forEach(function (lv) {
         const r = el('div', 'row');
+        const total = totalFor(lv, 'exponential', b, m);
         r.append(el('span', 'k', 'Level ' + lv));
-        r.append(el('span', 'v', fmt(totalFor(lv, 'exponential', b, m)) + ' XP total · ' + fmt(stepXp(lv - 1, 'exponential', b, m)) + ' / step'));
+        r.append(el('span', 'v', fmt(total) + ' XP · ~' + fmt(Math.ceil(total / avgXp)) + ' messages'));
         preview.append(r);
       });
     }
+    curve.append(chart);
     paintPreview();
     iBase.addEventListener('input', paintPreview);
     iMult.addEventListener('input', paintPreview);

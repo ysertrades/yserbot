@@ -21,6 +21,7 @@ const http = require('node:http');
 const fs   = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
+const brand = require('../utils/brand');
 const crypto = require('node:crypto');
 
 const auth    = require('./auth');
@@ -590,6 +591,38 @@ async function route(req, res, client) {
         return json(res, 200, result);
       }
 
+      // Live vitals for the whole bot — the strip at the top of the console.
+      if (p === '/api/owner/vitals') {
+        if (req.method !== 'GET') return json(res, 405, { error: 'use_get' });
+        return json(res, 200, owner.vitals(client));
+      }
+
+      // Maintenance that used to need a restart: drop cached images, reload
+      // every server's custom logo.
+      if (p === '/api/owner/maintenance') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
+        if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (err) { return json(res, err.message === 'body_too_large' ? 413 : 400, { error: err.message }); }
+        const result = await owner.maintenance(String(body.action || ''));
+        if (result.error) return json(res, 400, result);
+        return json(res, 200, result);
+      }
+
+      // One notice to the mod log of the servers you pick (maintenance,
+      // downtime, a new feature). Never to a public channel.
+      if (p === '/api/owner/announce') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
+        if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+        let body;
+        try { body = await readJsonBody(req); }
+        catch (err) { return json(res, err.message === 'body_too_large' ? 413 : 400, { error: err.message }); }
+        const result = await owner.announce(body.guildIds, body.text, session, client);
+        if (result.error) return json(res, 400, result);
+        return json(res, 200, result);
+      }
+
       return json(res, 404, { error: 'unknown_endpoint' });
     }
 
@@ -819,7 +852,11 @@ function start(client) {
     // Body size is capped inside readJsonBody, which is the only thing that
     // consumes the stream. A second listener here would read the same chunks
     // and race it to the 413.
-    Promise.resolve(route(req, res, client)).catch(err => {
+    // Whatever this request draws or sends carries that server's brand
+    // (utils/brand.js) — previews, sends and pushes from the panel alike.
+    const forGuild = (/\/api\/guild\/(\d{5,25})/.exec(req.url || '') || [])[1]
+      || (/[?&]g=(\d{5,25})/.exec(req.url || '') || [])[1] || null;
+    Promise.resolve(brand.run(forGuild, () => route(req, res, client))).catch(err => {
       console.error('[Panel] request failed:', err);
       if (!res.writableEnded) json(res, 500, { error: 'internal_error' });
     });

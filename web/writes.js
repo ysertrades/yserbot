@@ -523,6 +523,16 @@ Object.assign(OPS, {
     return r;
   },
 
+  /** Settings → Brand: the name, caption, colour and logo on this server's cards. */
+  async brand(guildId, body, ctx) {
+    const r = require('../utils/brand').setBrand(guildId, body || {});
+    if (r.ok) {
+      announce(ctx.client, guildId, ctx.session, `🏷️ **Brand** — cards now sign as **${r.brand.name}**`, 'settings').catch(() => {});
+      return { ok: true, changed: ['brand'], brand: r.brand };
+    }
+    return r;
+  },
+
   async featuretoggles(guildId, body, ctx) {
     const r = await featureToggles.save(guildId, body, ctx);
     if (r.ok) announce(ctx.client, guildId, ctx.session, `🧩 **Features** — ${r.changed.join('; ')}`, 'settings').catch(() => {});

@@ -204,6 +204,8 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
            box, which is the entire point. If renderOverview ever draws a
            different number of tiles, change the count here too — uitest
            checks that these two agree. -->
+      <div class="ov-hero" id="ov-hero"></div>
+
       <div class="tiles" id="tiles">
         <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
         <div class="tile ph"><div class="n">—</div><div class="l">Loading</div></div>
@@ -223,14 +225,15 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
           <div id="card-health" class="rows"></div>
         </article>
         <article class="panel">
-          <h2>Content</h2>
+          <h2>Protection</h2>
           <div id="card-counts" class="rows"></div>
         </article>
         <article class="panel members-panel">
           <h2>Members <span class="tag" id="members-count">0</span></h2>
-                    <div class="members-search-wrap">
+          <div class="members-search-wrap">
             <input type="search" id="members-search" class="members-search" placeholder="Search by name or username…" autocomplete="off" spellcheck="false">
           </div>
+          <div class="chipset members-filter" id="members-filter"></div>
           <div class="members-roster" id="members-roster"></div>
         </article>
       </div>
@@ -310,7 +313,7 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
     <div class="section" data-section="giveaways">
       <div class="drop-desk-head">
         <h1 class="drop-title">Drop Desk</h1>
-        <p class="muted">Launch prize drops, watch them live, Reveal winners, then DM the prize from here.</p>
+        <p class="muted">Launch drops, watch them live, reveal winners, deliver prizes.</p>
       </div>
 
       <div class="panel">
@@ -323,7 +326,7 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
 
       <div class="panel">
         <h2>New drop</h2>
-        <p class="muted">Posts a quantlab drop card with <strong>Enter drop</strong>. When it ends, press <strong>Reveal</strong>, then send the prize by DM from Recent drops.</p>
+        <p class="hint">Launch → it runs → press Reveal → DM the prize from Recent drops.</p>
         <form id="form-gaw" class="form"></form>
       </div>
 
@@ -359,33 +362,45 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
 
     <!-- ── Settings ────────────────────────────────────────────────────── -->
     <div class="section" data-section="settings">
-      <div class="panel">
+      <nav class="set-nav" id="set-nav" aria-label="Settings sections"></nav>
+
+      <!-- Brand: the name, caption, colour and logo this server's cards sign
+           with. Rendered by renderBrand(); saved through the brand op. -->
+      <div class="panel brand-card" id="brand-card" data-nav="Brand">
+        <div class="queue-head">
+          <h2>Brand</h2>
+          <span class="pill" id="brand-state"></span>
+        </div>
+        <p class="hint">Your name and logo on every banner, card and footer the bot makes here.</p>
+        <div id="brand-studio" class="brand-studio"></div>
+      </div>
+
+      <div class="panel" id="profile-card" data-nav="Bot profile">
         <h2>Bot profile</h2>
-        <p class="muted">How the bot looks here. Global name, avatar and bio affect every server and only the bot operator can change those. Server nickname is per-server — server admins can set or clear it without affecting other servers.</p>
+        <p class="hint">Nickname is per server. Global name, avatar and bio are operator-only.</p>
         <div id="bot-profile" class="form"></div>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="server-card" data-nav="Server">
         <h2>Server settings</h2>
-        <p class="muted">The bot operator can choose a private channel for actionable incidents. This setting is hidden from regular server users; runtime failures are deduplicated and sanitized before posting.</p>
         <form id="form-settings" class="form"></form>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="features-card" data-nav="Features">
         <h2>Features</h2>
-        <p class="muted">Turn any part of the bot on or off for this server. Off means the slash commands reply that the feature is disabled, and anything it does in the background — XP, filters, the news feed — stops too.</p>
+        <p class="hint">Off stops the commands and everything the feature does in the background.</p>
         <div id="form-featuretoggles" class="form"></div>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="panellog-card" data-nav="Logging">
         <h2>What the panel logs</h2>
-        <p class="muted">Every change made here is announced in your mod-log channel. Turn off the ones you do not want announced.</p>
+        <p class="hint">Changes made here are announced in your mod log.</p>
         <form id="form-panellog" class="form"></form>
       </div>
 
-      <div class="panel" id="embed-link-card">
+      <div class="panel" id="embed-link-card" data-nav="Whop embed">
         <h2>Embed in Whop</h2>
-        <p class="muted">Whop reloads whatever URL sits in its own embed field — it does not keep you signed in on its own. Get a link below and paste it into Whop as the embed address, and you will not have to sign in there again.</p>
+        <p class="hint">Paste this link into Whop's embed field and you stay signed in there.</p>
         <div class="embed-link-row" id="embed-link-row" hidden>
           <input id="embed-link-value" type="text" readonly aria-label="Whop embed link">
           <button class="btn" id="embed-link-copy" type="button">Copy</button>
@@ -401,9 +416,8 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
            once and then forget about. The addresses are shown as well as
            linked, because the thing you usually need is to paste one into
            Discord's app directory rather than to read it. -->
-      <div class="panel" id="legal-card">
+      <div class="panel" id="legal-card" data-nav="Legal">
         <h2>Terms &amp; privacy</h2>
-        <p class="muted">Two public pages, readable without signing in. Open them to check the wording, or copy an address to paste into your Discord application listing.</p>
         <div class="legal-links">
           <a class="legal-link" id="legal-terms" href="/terms" target="_blank" rel="noopener">
             <span class="legal-icon" aria-hidden="true">§</span>
@@ -437,8 +451,8 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
          in, which is the entire point of it. -->
     <div class="section" data-section="owner">
       <div class="panel">
-                <h2>Operator network</h2>
-        <p class="muted">Every server the bot is in. Open a server’s full panel from here (servers you don’t own stay out of the top picker). Flip features per server, grant or revoke staff access, sign people out, leave a server, or reset the global bot avatar.</p>
+        <h2>Operator console</h2>
+        <p class="hint">The whole bot: every server, its features and who can open its panel.</p>
         <div class="rows" id="owner-guilds"></div>
       </div>
     </div>

@@ -22,6 +22,8 @@ async function checkSchedules(client) {
     let changed = false;
 
     for (const guildId of Object.keys(schedules)) {
+        // This server's brand for everything drawn below (utils/brand.js).
+        require('./brand').enter(guildId);
         const guildSchedules = schedules[guildId];
         const guild = client.guilds.cache.get(guildId);
         if (!guild) continue; // bot no longer in this guild; leave data as-is

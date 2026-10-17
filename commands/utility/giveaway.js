@@ -1,5 +1,8 @@
 'use strict';
 
+// The server's brand name (Settings → Brand), QuantLab by default.
+const B = () => { try { return require('../../utils/brand').current().name || 'QuantLab'; } catch { return 'QuantLab'; } };
+
 const {
   SlashCommandBuilder, PermissionFlagsBits, ChannelType,
   ActionRowBuilder, ButtonBuilder, ButtonStyle,
@@ -121,7 +124,7 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
 function guildBrand(guildId) {
   const conf = readJson('config.json', {})[guildId] || {};
   const n = String(conf.brandName || '').trim();
-  return n || 'Quantlab';
+  return n || B();
 }
 
 function guildBrandAvatar(guildId, guild) {
@@ -441,7 +444,7 @@ function buildSetupEmbed(data, guild) {
 
   return new EmbedBuilder()
     .setColor(GOLD)
-    .setAuthor({ name: 'QuantLab  •  Giveaway Setup', iconURL: guild.iconURL({ dynamic: true }) || undefined })
+    .setAuthor({ name: (B() + '  •  Giveaway Setup'), iconURL: guild.iconURL({ dynamic: true }) || undefined })
     .setTitle('🎟️  New Giveaway')
     .setDescription(
       '```\nConfigure each field below, then launch when ready.\n```\n' +
@@ -805,6 +808,9 @@ async function dmWinners(client, guild, winnerIds, prize, hostId, { rerolled = f
 
 async function endGiveaway(message, meta) {
   const { prize, winnersCount, imageUrl, hostId, guildId, bonusRoleId, createdAt } = meta;
+  // Timers restored at boot run outside any server context; the results card
+  // should still carry this server's brand.
+  require('../../utils/brand').enter(guildId || message?.guildId);
   const bonusRoles = Array.isArray(meta.bonusRoles) ? meta.bonusRoles : null;
   // Claimed before anything else is read, so a timer firing at the same
   // moment somebody presses End does not draw a second set of winners.
@@ -986,7 +992,7 @@ function buildClosedCard(guild, { prize, entries, id, winners = 1, hostId }) {
       prize,
       entries: String(entries),
       winners: String(winners),
-      host: hostId ? `<@${hostId}>` : 'quantlab',
+      host: hostId ? `<@${hostId}>` : B(),
       id: id || '••••••••',
     },
   });
@@ -1003,7 +1009,7 @@ function buildRevealRow() {
 }
 
 function buildEndedCard(guild, { prize, winners, hostId, entries, id }) {
-  const rule = solidRule(prize, 'Winner', winners, 'Wait for a DM from quantlab.');
+  const rule = solidRule(prize, 'Winner', winners, 'Wait for a DM from ' + B() + '.');
   return messageStyle.build(guild.id, 'giveaway.ended', {
     tokens: {
       prize,

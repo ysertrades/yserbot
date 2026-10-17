@@ -48,11 +48,11 @@ const FILE = 'message_styles.json';
  */
 const SHAPES = {
   action: ['enabled', 'color', 'title', 'body'],
-  card:   ['enabled', 'color', 'title', 'body', 'footer', 'thumbnail', 'timestamp'],
+  card:   ['enabled', 'color', 'title', 'body', 'footer', 'thumbnail', 'timestamp', 'image'],
 };
 
 // Tokens every entry understands, on top of the ones it lists for itself.
-const COMMON_TOKENS = ['{user}', '{server}'];
+const COMMON_TOKENS = ['{user}', '{server}', '{brand}'];
 
 /**
  * The moderation cards have no on/off switch on purpose.
@@ -565,7 +565,7 @@ const CATALOGUE = {
   'giveaway.live': {
     group: 'Giveaways',
     label: 'Giveaway card',
-    blurb: 'Live quantlab drop. Clean hierarchy — no dashed rules. Enter drop is a real Discord button under the message (API limit).',
+    blurb: 'Live drop. Clean hierarchy — no dashed rules. Enter drop is a real Discord button under the message (API limit).',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer', 'buttons'],
     tokens: ['{prize}', '{winners}', '{host}', '{ends}', '{endsAt}', '{entries}', '{requirements}', '{id}'],
@@ -574,7 +574,7 @@ const CATALOGUE = {
     ],
     defaults: {
       enabled: true, color: BRAND.purple,
-      title: 'Quantlab Giveaway',
+      title: '{brand} Giveaway',
       body: '**{prize}**\n\n'
         + '**PRIZE** {prize}\n'
         + '**WINNERS** {winners}\n'
@@ -607,7 +607,7 @@ const CATALOGUE = {
   'giveaway.ended': {
     group: 'Giveaways',
     label: 'Winners drawn',
-    blurb: 'After Reveal — winners public, prize comes by quantlab DM.',
+    blurb: 'After Reveal — winners public, prize comes by DM.',
     shape: 'card',
     parts: ['color', 'title', 'body', 'footer'],
     tokens: ['{prize}', '{winners}', '{host}', '{entries}', '{id}', '{rule}'],
@@ -620,10 +620,10 @@ const CATALOGUE = {
         + '**Winner**\n'
         + '{winners}\n\n'
         + '{rule}\n\n'
-        + '**Wait for a DM from quantlab.**\n'
+        + '**Wait for a DM from {brand}.**\n'
         + 'Your prize is sent privately —\n'
         + 'codes stay out of the channel.',
-      footer: 'quantlab · id {id}', thumbnail: false, timestamp: true,
+      footer: '{brand} · id {id}', thumbnail: false, timestamp: true,
     },
   },
 
@@ -650,7 +650,7 @@ const CATALOGUE = {
     tokens: ['{prize}', '{host}'],
     defaults: {
       enabled: true, color: BRAND.cyan, title: '🎉 You Won a Giveaway!',
-      body: '## your quantlab prize\n\nYou won **{prize}** in **{server}**!\nContact the host, {host}, to claim your prize.',
+      body: '## your {brand} prize\n\nYou won **{prize}** in **{server}**!\nContact the host, {host}, to claim your prize.',
       footer: '', thumbnail: false, timestamp: true,
     },
   },
@@ -733,8 +733,8 @@ const CATALOGUE = {
     tokens: [],
     defaults: {
       enabled: true, color: BRAND.purple,
-      title: 'QuantLab', body: '',
-      footer: '{server} • QuantLab',
+      title: '{brand}', body: '',
+      footer: '{server} • {brand}',
     },
   },
 };
@@ -911,6 +911,12 @@ function setStyle(guildId, key, patch) {
       next.format = f;
     } else if (part === 'enabled' || part === 'thumbnail' || part === 'timestamp') {
       next[part] = !!value;
+    } else if (part === 'image') {
+      // A large picture under the card. Empty clears it; anything else has to
+      // be an https link Discord can fetch, or the whole message is refused.
+      const url = typeof value === 'string' ? value.trim() : '';
+      if (url && !/^https:\/\//i.test(url)) return { error: 'bad_image' };
+      next.image = url.slice(0, 500);
     } else if (part === 'palette') {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return { error: 'bad_palette' };
       const known = new Set((entry.palette || []).map(k => k.key));
@@ -1021,6 +1027,12 @@ function customised(guildId) {
 function fill(text, tokens = {}) {
   if (!text) return '';
 
+  // {brand} is the server's own name from Settings → Brand, everywhere.
+  if (!Object.hasOwn(tokens, 'brand')) {
+    let b = 'QuantLab';
+    try { b = require('./brand').current().name || b; } catch { /* default */ }
+    tokens = { ...tokens, brand: b };
+  }
   const resolve = name => {
     if (Object.hasOwn(tokens, name)) {
       const v = tokens[name];
@@ -1130,6 +1142,8 @@ function build(guildId, key, opts = {}) {
   if (footer) set(() => embed.setFooter({ text: footer }));
   if (style.thumbnail && thumbnailURL) set(() => embed.setThumbnail(thumbnailURL));
   if (style.timestamp) set(() => embed.setTimestamp(at ?? undefined));
+  // Set first so a caller that attaches its own generated picture still wins.
+  if (style.image && /^https:\/\//i.test(style.image)) set(() => embed.setImage(style.image));
 
   return embed;
 }

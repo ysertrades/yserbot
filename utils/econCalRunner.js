@@ -1,5 +1,8 @@
 'use strict';
 
+// The server's brand name (Settings → Brand), QuantLab by default.
+const B = () => { try { return require('./brand').current().name || 'QuantLab'; } catch { return 'QuantLab'; } };
+
 const { AttachmentBuilder } = require('discord.js');
 const { readJson, writeJson } = require('./jsonStorage');
 const { createEmbed } = require('./embedBuilder');
@@ -147,13 +150,13 @@ function buildWeeklySummaryEmbeds(events, guild, scope = 'week') {
         .setColor(0x9397EE)
         .setTitle(scope === 'today' ? "Today's releases" : scope === 'tomorrow' ? "Tomorrow's releases" : 'High Impact news This week')
         .setDescription(`No matching releases for ${words}.`)
-        .setFooter({ text: 'quantlab · economic calendar' })],
+        .setFooter({ text: (B().toLowerCase() + ' · economic calendar') })],
     }];
   }
   if ((events || []).length > MAX_EVENTS_RENDERED && embeds.length) {
     const extra = events.length - MAX_EVENTS_RENDERED;
     try {
-      embeds[embeds.length - 1].setFooter({ text: `quantlab · economic calendar · +${extra} more not shown` });
+      embeds[embeds.length - 1].setFooter({ text: `${B().toLowerCase()} · economic calendar · +${extra} more not shown` });
     } catch { /* */ }
   }
   const payloads = [];
@@ -178,6 +181,8 @@ async function runTick(client) {
   let changed = false;
 
   for (const guildId of Object.keys(config)) {
+    // This server's brand for everything drawn below (utils/brand.js).
+    require('./brand').enter(guildId);
     const settings = config[guildId]?.econCalSettings;
     if (!settings?.enabled || !settings.channelId) continue;
     if (!isFeatureEnabled(guildId, 'econ_calendar')) continue;

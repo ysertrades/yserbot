@@ -179,6 +179,10 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     links: links.read(guildId, guild),
     mod: (function () { try { return moderation.read(guildId, guild); } catch (e) { console.warn('[api] mod read', e.message); return { reports: { open: [], handled: [] }, cases: [], caseTotal: 0, warned: [], filters: {}, lockedChannels: [], lockModes: [], roles: [] }; } })(),
     appearance: appearance.read(guildId),
+    brand: (function () {
+      const b = require('../utils/brand').getBrand(guildId);
+      return { name: b.name, caption: b.caption, accent: b.accent, logoUrl: b.logoUrl, watermark: b.watermark, isDefault: !b.version };
+    })(),
     whop: whopPanel.read(guildId, guild),
     botProfile: session ? botProfile.read(guildId, client, session) : null,
     panelLog: {

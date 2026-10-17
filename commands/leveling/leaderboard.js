@@ -1,5 +1,8 @@
 'use strict';
 
+// The server's brand name (Settings → Brand), QuantLab by default.
+const B = () => { try { return require('../../utils/brand').current().name || 'QuantLab'; } catch { return 'QuantLab'; } };
+
 /**
  * /leaderboard — pure Discord embed (no PNG, no component bank).
  * Matches the classic QuantLab · Ranks layout:
@@ -109,10 +112,10 @@ module.exports = {
     if (!ranked.length) {
       const empty = new EmbedBuilder()
         .setColor(BRAND_PURPLE)
-        .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+        .setAuthor({ name: (B() + '  ·  Ranks'), iconURL: icon || undefined })
         .setTitle('All-time XP ladder')
         .setDescription('No ranks yet — chat in allowed channels to earn XP.')
-        .setFooter({ text: 'QuantLab ranks' });
+        .setFooter({ text: B() + ' ranks' });
       if (icon) empty.setThumbnail(icon);
       return interaction.reply({ embeds: [empty] });
     }
@@ -127,7 +130,7 @@ module.exports = {
 
     const embed = new EmbedBuilder()
       .setColor(BRAND_PURPLE)
-      .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+      .setAuthor({ name: (B() + '  ·  Ranks'), iconURL: icon || undefined })
       .setTitle('All-time XP ladder')
       .setDescription(DIV);
 
@@ -198,7 +201,7 @@ module.exports = {
       text:
         'Top ' +
         ranked.length +
-        ' · progress = XP into next level · QuantLab',
+        ' · progress = XP into next level · ' + B(),
     });
     embed.setTimestamp();
 

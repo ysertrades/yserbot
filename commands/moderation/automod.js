@@ -826,7 +826,7 @@ async function setMentionSpamRule(guild, enable) {
 
   try {
     const rule = await guild.autoModerationRules.create({
-      name: 'QuantLab — Mass-Mention Raid Protection',
+      name: `${require('../../utils/brand').getBrand(guild.id).name} — Mass-Mention Raid Protection`.slice(0, 100),
       eventType: AutoModerationRuleEventType.MessageSend,
       triggerType: AutoModerationRuleTriggerType.MentionSpam,
       triggerMetadata: { mentionTotalLimit: 6, mentionRaidProtectionEnabled: true },

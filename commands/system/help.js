@@ -129,7 +129,7 @@ module.exports = {
       :                    '🌐 Member';
 
     const embed = createServerEmbed('info', {
-      title: '📖 QuantLab — Commands',
+      title: '📖 ' + require('../../utils/brand').current().name + ' — Commands',
       description: `Showing commands available to your role. Use \`/cmd view\` to see the permission setup.\n\u200b`,
       fields,
       footer: `Viewing as: ${tier}`,
