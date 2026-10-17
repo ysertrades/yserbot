@@ -72,13 +72,19 @@ for (const folder of commandFolders) {
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
+// Each event runs inside its server's brand context (utils/brand.js), so the
+// cards and footers it produces carry that server's name and logo.
+const brand = require('./utils/brand');
+const inBrand = (event) => (...args) => brand.run(brand.guildIdOf(args[0]) || brand.guildIdOf(args[1]),
+    () => event.execute(...args, client));
+
 for (const file of eventFiles) {
     const filePath = path.join(eventsPath, file);
     const event = require(filePath);
     if (event.once) {
-        client.once(event.name, (...args) => event.execute(...args, client));
+        client.once(event.name, inBrand(event));
     } else {
-        client.on(event.name, (...args) => event.execute(...args, client));
+        client.on(event.name, inBrand(event));
     }
 }
 
@@ -87,6 +93,7 @@ for (const file of eventFiles) {
   await warmRenderCache();
 
   client.once(Events.ClientReady, () => {
+    brand.warmAll().catch(() => {});
     try {
       startPanel(client);
     } catch (err) {

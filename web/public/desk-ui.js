@@ -231,7 +231,14 @@
     var send = $('desk-send');
     var on = !desk.paused && !desk.busy && desk.channelId;
     if (input) input.disabled = !on || desk.busy;
-    if (send) send.disabled = !on || !(input && input.value.trim());
+    if (send) send.disabled = !on || !(input && input.value.trim()) || (input && input.value.length > 2000);
+    var count = $('desk-count');
+    if (count && input) {
+      var n = input.value.length;
+      count.textContent = n + ' / 2000';
+      count.classList.toggle('over', n > 2000);
+      count.classList.toggle('near', n > 1800 && n <= 2000);
+    }
   }
 
   function fillSelect(sel, list, prefix) {
@@ -266,6 +273,8 @@
     desk.channelId = id || null;
     desk.stickBottom = true;
     desk.lastSig = '';
+    // A different channel is a first paint, not a stream of new arrivals.
+    rowCache.clear();
     desk.replyTo = null;
     desk.replyName = '';
     paintReplyChip();
@@ -297,6 +306,8 @@
     f.addEventListener('scroll', function () {
       var dist = f.scrollHeight - f.scrollTop - f.clientHeight;
       desk.stickBottom = dist < 48;
+      var jump = $('desk-jump');
+      if (jump) jump.hidden = desk.stickBottom;
     }, { passive: true });
   }
 
@@ -316,8 +327,10 @@
 
     var head = el('div', 'desk-head');
     var title = el('div', 'desk-title-block');
-    title.append(el('p', 'desk-kicker', 'CHANNEL DESK'));
-    title.append(el('p', 'muted', 'Read and post as the bot. Forum posts are listed under each forum name.'));
+    var kicker = el('p', 'desk-kicker');
+    kicker.append(el('span', 'desk-live-dot'), document.createTextNode('CHANNEL DESK'));
+    title.append(kicker);
+    title.append(el('p', 'hint', 'Read and talk as the bot, live.'));
     head.append(title);
 
     var controls = el('div', 'desk-controls');
@@ -348,9 +361,23 @@
     head.append(controls);
     host.append(head);
 
+    var streamWrap = el('div', 'desk-stream-wrap');
     var stream = el('div', 'desk-stream');
     stream.id = 'desk-stream';
-    host.append(stream);
+    streamWrap.append(stream);
+    // Shown once you scroll up, so new messages never drag you away from
+    // what you were reading — and one tap brings you back.
+    var jump = el('button', 'desk-jump', '↓ Latest');
+    jump.type = 'button';
+    jump.id = 'desk-jump';
+    jump.hidden = true;
+    jump.addEventListener('click', function () {
+      desk.stickBottom = true;
+      stream.scrollTo({ top: stream.scrollHeight, behavior: 'smooth' });
+      jump.hidden = true;
+    });
+    streamWrap.append(jump);
+    host.append(streamWrap);
 
     var chip = el('div', 'desk-reply-chip');
     chip.id = 'desk-reply-chip';
@@ -382,6 +409,10 @@
     input.placeholder = 'Message as the bot...';
     composer.append(input);
     var row = el('div', 'desk-composer-row');
+    var tip = el('span', 'desk-tip', 'Enter sends · Shift+Enter for a new line');
+    var count = el('span', 'desk-count', '0 / 2000');
+    count.id = 'desk-count';
+    row.append(tip, count);
     var send = el('button', 'btn primary small desk-send', 'Send');
     send.type = 'button';
     send.id = 'desk-send';
@@ -514,17 +545,28 @@
     }
     var nextCache = new Map();
     var nodes = [];
+    // Rows arriving after the first paint of this channel animate in.
+    var firstPaint = rowCache.size === 0;
+    var prevAuthor = null;
     msgs.forEach(function (m) {
       var sig = rowSig(m);
       var hit = m.id != null ? rowCache.get(m.id) : null;
+      var node;
       if (hit && hit.sig === sig) {
         nextCache.set(m.id, hit);
-        nodes.push(hit.node);
-        return;
+        node = hit.node;
+      } else {
+        node = buildRow(m);
+        if (!firstPaint && !hit) node.classList.add('is-arriving');
+        if (m.id != null) nextCache.set(m.id, { sig: sig, node: node });
       }
-      var built = buildRow(m);
-      if (m.id != null) nextCache.set(m.id, { sig: sig, node: built });
-      nodes.push(built);
+      // Discord's grouping: the same author again, with no reply or forward
+      // in between, drops the avatar and name so a conversation reads as one.
+      var author = (m.author && (m.author.id || m.author.name)) || null;
+      var plain = !(m.refKind || m.repliedTo || m.forwardSnapshot);
+      node.classList.toggle('is-cont', !!author && author === prevAuthor && plain);
+      prevAuthor = plain ? author : null;
+      nodes.push(node);
     });
     rowCache = nextCache;
     f.replaceChildren.apply(f, nodes);
@@ -590,7 +632,17 @@
         body.append(fbar);
       }
 
-      if (m.content) body.append(el('div', 'desk-text', m.content));
+      if (m.content) {
+        // Bold, italics, code and links drawn the way Discord shows them.
+        var textEl = el('div', 'desk-text');
+        if (typeof window.mdNodes === 'function') {
+          try { textEl.append.apply(textEl, window.mdNodes(m.content)); }
+          catch (e) { textEl.textContent = m.content; }
+        } else {
+          textEl.textContent = m.content;
+        }
+        body.append(textEl);
+      }
 
       var actions = el('div', 'desk-actions');
       var replyBtn = el('button', 'desk-act', 'Reply');

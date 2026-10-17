@@ -55,7 +55,7 @@ function buildLessonV2(settings, lesson, imageUrl, mention) {
 
   // ## instead of # — same hierarchy, much less vertical space under the eyebrow
   const header = [
-    '-# NEW LESSON  ✦  QUANTLAB',
+    '-# NEW LESSON  ✦  ' + require('./brand').current().name.toUpperCase(),
     '## ' + title,
   ].join('\n');
 
@@ -120,7 +120,7 @@ function buildLessonEmbed(settings, lesson, imageUrl) {
     .setTitle(title)
     .setDescription(
       [
-        '-# NEW LESSON  ✦  QUANTLAB',
+        '-# NEW LESSON  ✦  ' + require('./brand').current().name.toUpperCase(),
         path ? ('\n' + path) : null,
         url ? ('\n[Open on Whop](' + url + ')') : null,
       ].filter(Boolean).join('\n')
@@ -293,6 +293,8 @@ async function runTick(client) {
   const { isFeatureEnabled } = require('./featureToggles');
   const stored = require('./jsonStorage').readJson(whop.FILE, {});
   for (const guildId of Object.keys(stored)) {
+    // This server's brand for everything drawn below (utils/brand.js).
+    require('./brand').enter(guildId);
     if (!isFeatureEnabled(guildId, 'whop')) continue;
     if (!whop.getSettings(guildId).enabled) continue;
     if (!client.guilds.cache.has(guildId)) continue;

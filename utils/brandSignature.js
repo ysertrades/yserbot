@@ -32,8 +32,11 @@ const {
   drawText, textWidth, GLYPH_H,
 } = require('./pixelArt');
 
-const WORDMARK = 'QUANTLAB';
-const LATTICE_WORD = WORDMARK;
+// The server's own brand (utils/brand.js); QUANTLAB when it has set none.
+function brandNow() {
+  try { return require('./brand').current(); } catch { return { name: 'QuantLab', caption: 'ORIGINAL DESIGN', watermark: true }; }
+}
+const wordmark = () => String(brandNow().name || 'QuantLab').toUpperCase();
 
 /* ─── Layer 1: the woven micro-watermark ─────────────────────────────────── */
 
@@ -52,6 +55,8 @@ function drawFlowLattice(png, opts = {}) {
     drift = 43,    // sideways slide per row — what turns the grid into a weave
   } = opts;
 
+  if (brandNow().watermark === false) return;
+  const LATTICE_WORD = wordmark();
   const pitch = textWidth(LATTICE_WORD, scale) + colGap;
   const rowH = GLYPH_H * scale + rowGap;
 
@@ -72,11 +77,11 @@ function drawFlowLattice(png, opts = {}) {
 const CHIP = 34;        // the monogram chip is square
 const CHIP_GAP = 14;    // chip to wordmark
 const WORD_SCALE = 2;
-const CAPTION = 'ORIGINAL DESIGN';
+const captionText = () => { const c = brandNow().caption; return c == null ? 'ORIGINAL DESIGN' : String(c).toUpperCase(); };
 
 /** Total width of the signature block, for centring it under a logo. */
 function signatureWidth() {
-  return CHIP + CHIP_GAP + textWidth(WORDMARK, WORD_SCALE);
+  return CHIP + CHIP_GAP + textWidth(wordmark(), WORD_SCALE);
 }
 
 const SIGNATURE_HEIGHT = CHIP;
@@ -132,7 +137,7 @@ function drawFlowSignature(png, x, y, opts = {}) {
   // Falls back to the line monogram if the logo is not warmed yet.
   try {
     const { blitQuantLogo, hasQuantLogo } = require('./quantLogo');
-    if (hasQuantLogo()) {
+    if (require('./brand').currentLogo() || hasQuantLogo()) {
       blitQuantLogo(png, x + 2, y + 2, CHIP - 4, { circle: true, alpha: 1 });
     } else {
       drawFlowMonogram(png, x, y, chip);
@@ -143,12 +148,12 @@ function drawFlowSignature(png, x, y, opts = {}) {
 
   const tx = x + CHIP + CHIP_GAP;
   const ty = y + 5;
-  drawText(png, WORDMARK, tx, ty, WORD_SCALE, primary);
+  drawText(png, wordmark(), tx, ty, WORD_SCALE, primary);
   // `caption` is always the *colour*. Optional label is `captionText`.
   // (Using caption as text printed RGBA arrays like "174,180,192,255".)
   const label = Object.prototype.hasOwnProperty.call(opts, 'captionText')
     ? (opts.captionText == null ? '' : String(opts.captionText))
-    : CAPTION;
+    : captionText();
   if (label) {
     drawText(png, label, tx, ty + GLYPH_H * WORD_SCALE + 4, 1, caption, captionAlpha);
   }

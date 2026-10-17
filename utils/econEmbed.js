@@ -1,5 +1,8 @@
 'use strict';
 
+// The server's brand name (Settings → Brand), QuantLab by default.
+const B = () => { try { return require('./brand').current().name || 'QuantLab'; } catch { return 'QuantLab'; } };
+
 /**
  * Economic-calendar embeds as a compact grid (Discord inline fields).
  * Max 3 events per horizontal row. One forecast/previous code box per event.
@@ -135,7 +138,7 @@ function buildGridEmbeds(guildId, events, { mode = 'day', minutes = null, dayLab
       .addFields(fields);
 
     if (mode === 'week' && idx === chunks.length - 1) {
-      embed.setFooter({ text: 'quantlab · economic calendar' });
+      embed.setFooter({ text: (B().toLowerCase() + ' · economic calendar') });
     }
     return embed;
   });
@@ -186,7 +189,7 @@ function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
     return [{
       flags: IS_COMPONENTS_V2,
       components: [container([
-        text('-# quantlab · economic calendar'),
+        text('-# ' + B().toLowerCase() + ' · economic calendar'),
         separator({ divider: true, spacing: 1 }),
         text(`No matching releases for ${words}.`),
       ], accent)],
@@ -221,7 +224,7 @@ function buildWeeklyV2Payloads(guildId, events, { scope = 'week' } = {}) {
   };
   const pushHeader = () => {
     if (!firstInMsg) return;
-    kids.push(text(`-# quantlab · ${scopeTitle} · ${list.length}`));
+    kids.push(text(`-# ${B().toLowerCase()} · ${scopeTitle} · ${list.length}`));
     kids.push(separator({ divider: true, spacing: 1 }));
     firstInMsg = false;
   };
@@ -293,7 +296,7 @@ function buildAlertV2Payload(guildId, e, mode, { minutes = null } = {}) {
   ];
   if (boxLines.length) kids.push(text(codeBox(boxLines)));
   kids.push(separator({ divider: true, spacing: 1 }));
-  kids.push(text('-# quantlab · economic calendar'));
+  kids.push(text('-# ' + B().toLowerCase() + ' · economic calendar'));
   return { flags: IS_COMPONENTS_V2, components: [container(kids, accent)], embeds: [] };
 }
 

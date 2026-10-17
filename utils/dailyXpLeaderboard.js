@@ -1,4 +1,7 @@
 'use strict';
+
+// The server's brand name (Settings → Brand), QuantLab by default.
+const B = () => { try { return require('./brand').current().name || 'QuantLab'; } catch { return 'QuantLab'; } };
 const { EmbedBuilder } = require('discord.js');
 const ET = 'America/New_York';
 
@@ -220,10 +223,10 @@ async function buildDailyLeaderboardMessage(guild, g, cfg) {
   if (!dayRows.length) {
     const empty = new EmbedBuilder()
       .setColor(BRAND_PURPLE)
-      .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+      .setAuthor({ name: (B() + '  ·  Ranks'), iconURL: icon || undefined })
       .setTitle("Today's XP ladder")
       .setDescription('No XP earned yet today — chat in allowed channels to climb the daily ranks.')
-      .setFooter({ text: 'QuantLab ranks · ' + today + ' ET' });
+      .setFooter({ text: (B() + ' ranks · ') + today + ' ET' });
     if (icon) empty.setThumbnail(icon);
     empty.setTimestamp(new Date());
     return {
@@ -260,7 +263,7 @@ async function buildDailyLeaderboardMessage(guild, g, cfg) {
 
   const embed = new EmbedBuilder()
     .setColor(BRAND_PURPLE)
-    .setAuthor({ name: 'QuantLab  ·  Ranks', iconURL: icon || undefined })
+    .setAuthor({ name: (B() + '  ·  Ranks'), iconURL: icon || undefined })
     .setTitle("Today's XP ladder")
     .setDescription(DIV);
 
@@ -311,7 +314,7 @@ async function buildDailyLeaderboardMessage(guild, g, cfg) {
 
   if (icon) embed.setThumbnail(icon);
   embed.setFooter({
-    text: 'Top ' + ranked.length + ' today · progress = XP into next level · QuantLab · ' + today + ' ET',
+    text: 'Top ' + ranked.length + ' today · progress = XP into next level · ' + B() + ' · ' + today + ' ET',
   });
   embed.setTimestamp(new Date());
 
@@ -400,6 +403,8 @@ function armNext(client, leveling) {
       const now = localHM(ET);
       const nowMin = now.hour * 60 + now.minute;
       for (const [guildId, guild] of client.guilds.cache) {
+        // This server's brand for everything drawn below (utils/brand.js).
+        require('./brand').enter(guildId);
         let conf = null;
         try {
           const g = typeof leveling.guildState === 'function'

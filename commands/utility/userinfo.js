@@ -47,7 +47,7 @@ module.exports = {
 (<t:${joinedAt}:R>)` : '*Unknown*', inline: false },
                 { name: `🎭 Roles [${roles.length}]`, value: roles.length ? roles.join(' ') : '*None*', inline: false },
             )
-            .setFooter({ text: `${interaction.guild.name} • QuantLab`, iconURL: interaction.guild.iconURL({ dynamic: true }) })
+            .setFooter({ text: `${interaction.guild.name} • ${require('../../utils/brand').current().name}`, iconURL: interaction.guild.iconURL({ dynamic: true }) })
             .setTimestamp();
 
         if (member?.premiumSince) {

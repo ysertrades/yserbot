@@ -246,3 +246,22 @@ nav.sections .nav-ico-wrap,
   transform: none !important;
   filter: none !important;
 }
+
+/* ── Tab motion + sliding nav highlight (after every other sheet) ──────────
+   .sec-enter is added by showSection on a real tab switch and removed once
+   played, so live repaints can never replay it (the old shake). */
+@keyframes sec-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+html[data-entered] body .section.sec-enter > * { animation: sec-in .42s cubic-bezier(.2,.8,.2,1) both !important; }
+html[data-entered] body .section.sec-enter > :nth-child(2) { animation-delay: 40ms !important; }
+html[data-entered] body .section.sec-enter > :nth-child(3) { animation-delay: 80ms !important; }
+html[data-entered] body .section.sec-enter > :nth-child(4) { animation-delay: 120ms !important; }
+html[data-entered] body .section.sec-enter > :nth-child(5) { animation-delay: 160ms !important; }
+html[data-entered] body .section.sec-enter > :nth-child(n+6) { animation-delay: 200ms !important; }
+.sidebar-nav.sections .sec-ink { position: absolute; top: 0; left: 0; z-index: 0; border-radius: 10px; background: var(--surface-2); pointer-events: none;
+  transition: transform .34s cubic-bezier(.3,.75,.2,1), width .34s, height .34s, opacity .2s; }
+.sidebar-nav.sections > button { position: relative; z-index: 1; }
+.sidebar-nav.sections.has-ink > button[aria-current=true] { background: transparent !important; }
+@media (prefers-reduced-motion: reduce) {
+  html[data-entered] body .section.sec-enter > * { animation: none !important; }
+  .sidebar-nav.sections .sec-ink { transition: none; }
+}

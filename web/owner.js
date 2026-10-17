@@ -171,6 +171,76 @@ async function saveFeatures(guildId, body, client) {
   return { ok: true, guilds: listGuilds(client) };
 }
 
+/* ── vitals, maintenance, announcements ─────────────────────────────────── */
+
+/** Everything the console's top strip shows, in one read. */
+function vitals(client) {
+  const h = api.health(client);
+  const mem = process.memoryUsage();
+  const guilds = [...client.guilds.cache.values()];
+  let branded = 0;
+  try { branded = Object.keys(readJson('brand.json', {})).length; } catch { /* none */ }
+  return {
+    ...h,
+    heapMb: Math.round(mem.heapUsed / 1024 / 1024),
+    members: guilds.reduce((n, g) => n + (g.memberCount || 0), 0),
+    node: process.version,
+    startedAt: Date.now() - h.uptimeMs,
+    branded,
+    botName: client.user?.username || null,
+    botAvatar: client.user?.displayAvatarURL?.({ size: 128 }) || null,
+  };
+}
+
+async function maintenance(action) {
+  if (action === 'clear-cache') {
+    const n = require('../utils/renderCache').clearAll();
+    return { ok: true, changed: [`cleared ${n} image cache${n === 1 ? '' : 's'}`] };
+  }
+  if (action === 'reload-logos') {
+    await require('../utils/brand').warmAll();
+    require('../utils/renderCache').clearAll();
+    return { ok: true, changed: ['reloaded server logos'] };
+  }
+  return { error: 'unknown_action' };
+}
+
+/**
+ * Posts one notice to each chosen server's mod-log channel. Only the mod log:
+ * this is the operator talking to server staff, never to their members.
+ */
+async function announce(guildIds, text, session, client) {
+  const body = String(text || '').trim().slice(0, 1800);
+  if (!body) return { error: 'empty_message' };
+  const ids = Array.isArray(guildIds) ? [...new Set(guildIds.map(String))].slice(0, 200) : [];
+  if (!ids.length) return { error: 'no_servers' };
+  const { EmbedBuilder } = require('discord.js');
+  const { getModLogChannel } = require('../utils/modConfig');
+  let sent = 0;
+  const skipped = [];
+  for (const id of ids) {
+    const guild = client.guilds.cache.get(id);
+    if (!guild) { skipped.push(id); continue; }
+    try {
+      const channel = getModLogChannel(guild);
+      if (!channel) { skipped.push(guild.name); continue; }
+      await channel.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0x2233F5)
+          .setAuthor({ name: `${client.user?.username || 'Bot'} · operator notice` })
+          .setDescription(body)
+          .setFooter({ text: `Sent by ${session?.name || 'the operator'}` })
+          .setTimestamp()],
+      });
+      sent++;
+    } catch {
+      skipped.push(guild.name);
+    }
+  }
+  return { ok: true, sent, skipped, changed: [`notice sent to ${sent} server${sent === 1 ? '' : 's'}`] };
+}
+
 module.exports = {
   listGuilds, listMembers, grantStaff, revokeStaffGrant, signOut, leaveGuild, saveFeatures,
+  vitals, maintenance, announce,
 };

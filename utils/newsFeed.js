@@ -450,6 +450,8 @@ async function runTick(client) {
   const config = readJson('config.json', {});
   let changed = false;
   for (const guildId of Object.keys(config)) {
+    // This server's brand for everything drawn below (utils/brand.js).
+    require('./brand').enter(guildId);
     if (!isFeatureEnabled(guildId, 'newsfeed')) continue;
     const settings = config[guildId]?.newsFeedSettings;
     if (!settings || !settings.channelId) continue;

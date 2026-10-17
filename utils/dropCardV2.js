@@ -47,7 +47,7 @@ function line(label, value) {
 function buildLiveV2({
   prize, winnersCount, ends, endsAt, entries,
   requirements = [], dropId, iconUrl = null, imageUrl = null,
-  brand = 'Quantlab',
+  brand = require('./brand').current().name,
 }) {
   const req = requirements.length ? '\n\n' + requirements.join('\n') : '';
   const body =
@@ -82,9 +82,9 @@ function buildLiveV2({
 
 function buildClosedV2({
   prize, entries, winnersCount, hostId, dropId,
-  iconUrl = null, imageUrl = null, brand = 'Quantlab',
+  iconUrl = null, imageUrl = null, brand = require('./brand').current().name,
 }) {
-  const n = Number(winnersCount) || 1;
+  const n =Number(winnersCount) || 1;
   const selectedLine = n === 1
     ? 'The winner has been selected. Reveal to see if you won.'
     : 'The winners have been selected. Reveal to see if you won.';
@@ -114,7 +114,7 @@ function buildClosedV2({
  */
 function buildEmptyV2({
   prize, hostId, dropId,
-  iconUrl = null, imageUrl = null, brand = 'Quantlab',
+  iconUrl = null, imageUrl = null, brand = require('./brand').current().name,
 }) {
   const host = hostId ? '<@' + hostId + '>' : brand;
   const body =

@@ -14,6 +14,11 @@ const LOGIN_ERRORS = {
 };
 
 const WRITE_ERRORS = {
+  bad_image:       'The image needs an https link or an upload.',
+  no_servers:      'Pick at least one server.',
+  unknown_action:  'That maintenance action is not available.',
+  bad_url:         'That needs an https link or an upload.',
+  bad_guild:       'Pick a server first.',
   bad_channel:     'Pick a text channel that still exists.',
   bad_scope:       'Pick today, tomorrow or this week.',
   missing_permissions: 'I need Send Messages and Embed Links in that channel.',
@@ -736,13 +741,28 @@ function paintTiles(specs) {
   host.dataset.guild = state.guildId || '';
 
   if (arrived) {
-    host.replaceChildren(...specs.map(s => tile(s.value, s.label, s.kind)));
+    host.replaceChildren(...specs.map((s, i) => {
+      const t = tile(s.value, s.label, s.kind);
+      t.style.setProperty('--i', String(i));
+      // Each tile opens the tab it is counting.
+      if (s.goto) {
+        t.dataset.goto = s.goto;
+        t.tabIndex = 0;
+        t.setAttribute('role', 'button');
+        t.title = `Open ${s.label}`;
+        const go = () => { try { showSection(s.goto); } catch (_) {} };
+        t.addEventListener('click', go);
+        t.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+      }
+      if (s.icon) t.prepend(el('span', 'tile-ic', s.icon));
+      return t;
+    }));
     return;
   }
 
   specs.forEach((s, i) => {
     const t = live[i];
-    const n = t.firstElementChild;
+    const n = t.querySelector('.n') || t.firstElementChild;
     const next = String(s.value);
     if (n.textContent !== next) {
       // Update digits only — no opacity animation / forced reflow.
@@ -820,8 +840,32 @@ function renderMembersRoster(filter = null) {
   const search = document.getElementById('members-search');
   if (!host) return;
 
-  const members = state.overview?.features?.members || [];
+  const allMembers = state.overview?.features?.members || [];
   const q = (filter != null ? String(filter) : (search?.value || '')).trim().toLowerCase();
+
+  // All / Staff / New this week — chips over the list, counted live.
+  const WEEK = 7 * 86400000;
+  const isNew = m => m.joinedAt && Date.now() - Number(m.joinedAt) < WEEK;
+  const isStaff = m => m.isOwner || m.isAdmin;
+  const mode = state.memberFilter || 'all';
+  const filterHost = document.getElementById('members-filter');
+  if (filterHost) {
+    const counts = { all: allMembers.length, staff: allMembers.filter(isStaff).length, new: allMembers.filter(isNew).length };
+    const fsig = `${mode}|${counts.all}|${counts.staff}|${counts.new}`;
+    if (filterHost.dataset.sig !== fsig) {
+      filterHost.dataset.sig = fsig;
+      filterHost.replaceChildren(...[['all', 'All'], ['staff', 'Staff'], ['new', 'New this week']].map(([k, label]) => {
+        const b = el('button', 'chip-toggle' + (mode === k ? ' on' : ''), label);
+        b.type = 'button';
+        b.setAttribute('aria-pressed', String(mode === k));
+        if (counts[k]) b.append(el('span', 'chip-n', String(counts[k])));
+        b.addEventListener('click', () => { state.memberFilter = k; renderMembersRoster(); });
+        return b;
+      }));
+    }
+  }
+  const members = mode === 'staff' ? allMembers.filter(isStaff) : mode === 'new' ? allMembers.filter(isNew) : allMembers;
+
   let shown;
   if (!q) {
     shown = members.slice();
@@ -844,13 +888,15 @@ function renderMembersRoster(filter = null) {
   // save and every live push — whether or not anybody's roles had changed.
   // Same members and same search: the list on screen is already right.
   let sig;
-  try { sig = q + '\u0000' + JSON.stringify(members); } catch { sig = null; }
+  try { sig = mode + '\u0000' + q + '\u0000' + JSON.stringify(members); } catch { sig = null; }
   if (sig && _rosterPainted.host === host && _rosterPainted.sig === sig && host.firstChild) return;
   _rosterPainted.host = host;
   _rosterPainted.sig = sig;
 
   if (!members.length) {
-    host.replaceChildren(el('div', 'muted members-empty', 'No members loaded yet \u2014 refresh in a moment.'));
+    host.replaceChildren(el('div', 'muted members-empty', allMembers.length
+      ? (mode === 'new' ? 'Nobody joined in the last 7 days.' : 'No staff found.')
+      : 'No members loaded yet \u2014 refresh in a moment.'));
     return;
   }
   if (!shown.length) {
@@ -859,8 +905,11 @@ function renderMembersRoster(filter = null) {
   }
 
   const list = el('div', 'members-list');
-  for (const m of shown) {
+  for (const [idx, m] of shown.entries()) {
     const row = el('div', 'member-row' + (m.isOwner ? ' is-owner' : m.isAdmin ? ' is-admin' : ''));
+    // The first rows rise in one after another; the rest just appear.
+    if (idx < 14) row.style.setProperty('--i', String(idx));
+    if (isNew(m)) row.classList.add('is-new');
     const av = el('div', 'member-av');
     if (m.avatar) {
       const img = el('img');
@@ -1085,9 +1134,23 @@ meta.append(el('div', 'member-pad-name', m.displayName || m.name || m.id));
   acts.append(el('div', 'member-pad-label', 'Moderation'));
   const grid = el('div', 'member-pad-grid');
 
+  // One reason box for all five buttons, instead of a browser prompt per
+  // click; kick and ban ask once more before they go.
+  const reasonBox = el('textarea', 'member-pad-reason');
+  reasonBox.rows = 2;
+  reasonBox.maxLength = 400;
+  reasonBox.placeholder = 'Reason (optional) — shown to them and kept on the case';
+  acts.append(reasonBox);
+
   const runMod = async (action, extra) => {
     extra = extra || {};
-    const reason = window.prompt('Reason for ' + action + ' (optional):', '') || '';
+    const reason = reasonBox.value.trim();
+    const who = m.displayName || m.name || 'this member';
+    if ((action === 'kick' || action === 'ban') && !await askConfirm({
+      title: `${action === 'ban' ? 'Ban' : 'Kick'} ${who}?`,
+      message: reason ? `Reason: ${reason}` : 'No reason given. A case is logged either way.',
+      confirmLabel: action === 'ban' ? 'Ban' : 'Kick', danger: true,
+    })) return;
     const payload = Object.assign({ action: action, userId: m.id, reason: reason }, extra);
     const out = await post('modaction', payload);
     if (out && out.ok) {
@@ -1096,9 +1159,8 @@ meta.append(el('div', 'member-pad-name', m.displayName || m.name || m.id));
         const data = await get('/api/guild/' + state.guildId);
         if (data) { state.overview = data; renderOverviewCards(); renderMembersRoster(); }
       } catch (err) {}
-    } else if (out && out.error) {
-      window.alert(out.detail || out.error);
     }
+    // A refusal is already explained by post()'s toast.
   };
 
   const mk = (label, cls, fn) => {
@@ -1148,29 +1210,82 @@ function renderOverviewCards() {
   $('#server-meta').textContent = `${num(d.guild.members)} members · ${num(d.guild.channels)} channels`;
 
   paintTiles([
-    { value: d.econcal.enabled ? 'LIVE' : 'OFF', label: 'Calendar', kind: d.econcal.enabled ? 'live' : 'idle' },
-    { value: num(d.counts.activeGiveaways), label: 'Giveaways', kind: d.counts.activeGiveaways ? 'live' : 'idle' },
-    { value: num(d.counts.embedTemplates), label: 'Templates', kind: '' },
-    { value: num(d.counts.moderationCases), label: 'Mod cases', kind: '' },
-    { value: d.whop?.enabled ? 'ON' : 'OFF', label: 'Whop', kind: d.whop?.enabled ? 'live' : 'idle' },
-    { value: num(d.guild?.members) || '—', label: 'Members', kind: '' },
+    { value: d.econcal.enabled ? 'LIVE' : 'OFF', label: 'Calendar', kind: d.econcal.enabled ? 'live' : 'idle', goto: 'feeds', icon: '🗓️' },
+    { value: num(d.counts.activeGiveaways), label: 'Giveaways', kind: d.counts.activeGiveaways ? 'live' : 'idle', goto: 'giveaways', icon: '🎁' },
+    { value: num(d.counts.embedTemplates), label: 'Templates', kind: '', goto: 'composer', icon: '🧩' },
+    { value: num(d.counts.moderationCases), label: 'Mod cases', kind: '', goto: 'moderation', icon: '🛡️' },
+    { value: d.whop?.enabled ? 'ON' : 'OFF', label: 'Whop', kind: d.whop?.enabled ? 'live' : 'idle', goto: 'feeds', icon: '🎓' },
+    { value: num(d.guild?.members) || '—', label: 'Members', kind: '', icon: '👥' },
   ]);
 
+  renderOverviewHero();
+
+  // A status line: a dot that says on/off/unset at a glance, the value, and
+  // a jump to where it is changed.
+  const status = (label, state, value, goto) => {
+    const r = el('div', 'ov-status');
+    r.append(el('span', `ov-dot ${state}`), el('span', 'ov-k', label), el('span', 'ov-v', value));
+    if (goto) {
+      const b = el('button', 'ov-go', '›');
+      b.type = 'button';
+      b.title = 'Open';
+      b.addEventListener('click', () => { try { showSection(goto); } catch (_) {} });
+      r.append(b);
+    }
+    return r;
+  };
+  const chan = c => (c ? `#${c}` : 'not set');
+
   $('#card-systems').replaceChildren(
-    row('Calendar', pill(d.econcal.enabled, 'Running', 'Stopped')),
-    row('Calendar channel', d.econcal.channel ? `#${d.econcal.channel}` : 'not set', { dim: !d.econcal.channel }),
-    row('Whop tracker', pill(!!d.whop?.enabled, 'On', 'Off')),
-    row('Mod log', d.modlog.channel ? `#${d.modlog.channel}` : 'not set', { dim: !d.modlog.channel }),
+    status('Calendar', d.econcal.enabled ? (d.econcal.channel ? 'on' : 'warn') : 'off', d.econcal.enabled ? chan(d.econcal.channel) : 'Stopped', 'feeds'),
+    status('News feed', d.newsfeed?.enabled ? 'on' : 'off', d.newsfeed?.enabled ? 'Live' : 'Off', 'feeds'),
+    status('Whop tracker', d.whop?.enabled ? (d.whop?.lastError ? 'warn' : 'on') : 'off', d.whop?.enabled ? `${(d.whop.log || []).length} tracked` : 'Off', 'feeds'),
+    status('Mod log', d.modlog.channel ? 'on' : 'warn', chan(d.modlog.channel), 'moderation'),
+    status('Brand', d.brand && !d.brand.isDefault ? 'on' : 'off', d.brand?.name || 'QuantLab', 'settings'),
   );
 
   $('#card-counts').replaceChildren(
-    row('Embed templates', num(d.counts.embedTemplates)),
-    row('Moderation cases', num(d.counts.moderationCases)),
-    row('Word filter', pill(d.automod.badWords)),
-    row('Link filter', pill(d.automod.linkFilter)),
-    row('Custom words', num(d.automod.customWords)),
+    status('Word filter', d.automod.badWords ? 'on' : 'off', d.automod.badWords ? `On · ${num(d.automod.customWords)} custom` : 'Off', 'moderation'),
+    status('Link filter', d.automod.linkFilter ? 'on' : 'off', d.automod.linkFilter ? 'On' : 'Off', 'moderation'),
+    status('Mention spam', d.automod.mentionSpam ? 'on' : 'off', d.automod.mentionSpam ? 'On' : 'Off', 'moderation'),
+    status('Messages', 'info', `${num(d.counts.embedTemplates)} templates`, 'composer'),
+    status('Cases', 'info', num(d.counts.moderationCases), 'moderation'),
   );
 
+}
+
+/**
+ * The strip above the tiles: a greeting, the server, and the four things
+ * people open the panel to do. */
+function renderOverviewHero() {
+  const host = $('#ov-hero');
+  const d = state.overview;
+  if (!host || !d) return;
+  const sig = `${state.guildId}|${state.me?.name}|${d.brand?.name}`;
+  if (host.dataset.sig === sig) return;
+  host.dataset.sig = sig;
+  const h = new Date().getHours();
+  const hello = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  const text = el('div', 'ov-hello');
+  text.append(
+    el('span', 'ov-hello-k', `${hello}${state.me?.name ? `, ${state.me.name}` : ''}`),
+    el('b', 'ov-hello-v', d.guild?.name || 'Your server'),
+  );
+  const quick = el('div', 'ov-quick');
+  const QUICK = [
+    { icon: '🎁', label: 'New giveaway', goto: 'giveaways' },
+    { icon: '✍️', label: 'Write a message', goto: 'composer' },
+    { icon: '🛡️', label: 'Moderation', goto: 'moderation' },
+    { icon: '🏷️', label: 'Brand', goto: 'settings' },
+  ];
+  for (const q of QUICK) {
+    const b = el('button', 'ov-quick-btn');
+    b.type = 'button';
+    b.append(el('span', null, q.icon), document.createTextNode(q.label));
+    b.addEventListener('click', () => { try { showSection(q.goto); } catch (_) {} });
+    quick.append(b);
+  }
+  host.replaceChildren(text, quick);
 }
 
 /**
@@ -1234,13 +1349,28 @@ function renderOverview() {
 
 function renderHealth(h) {
   const c = h.renderCache;
+  const ping = Number(h.ping) || 0;
+  const pingTone = ping <= 0 ? 'off' : ping < 150 ? 'on' : ping < 400 ? 'warn' : 'bad';
+  const pingRow = el('div', 'ov-status');
+  pingRow.append(el('span', `ov-dot ${pingTone}`), el('span', 'ov-k', 'Gateway ping'),
+    el('span', 'ov-v', ping > 0 ? `${ping} ms · ${pingTone === 'on' ? 'fast' : pingTone === 'warn' ? 'ok' : 'slow'}` : '—'));
+  // The host gives this bot 2 GB; the bar is how much of it is in use.
+  const memMb = Number(h.memoryMb) || 0;
+  const mem = el('div', 'ov-meter');
+  const memFill = el('i');
+  memFill.style.width = `${Math.min(100, Math.round((memMb / 2048) * 100))}%`;
+  mem.append(memFill);
+  const memRow = el('div', 'ov-status col');
+  const memTop = el('div', 'ov-status-top');
+  memTop.append(el('span', 'ov-k', 'Memory'), el('span', 'ov-v', `${memMb} MB`));
+  memRow.append(memTop, mem);
+  const hitRate = c.hits + c.misses ? Math.round((c.hits / (c.hits + c.misses)) * 100) : 0;
   $('#card-health').replaceChildren(
     row('Uptime', duration(h.uptimeMs)),
-    row('Gateway ping', `${h.ping} ms`),
+    pingRow,
     row('Servers', num(h.guilds)),
-    row('Memory', `${h.memoryMb} MB`),
-    row('Cached renders', `${num(c.hits)} / ${num(c.hits + c.misses)}`),
-    row('Blocking avoided', `${num(c.blockingMsAvoided)} ms`),
+    memRow,
+    row('Image cache', `${hitRate}% reused · ${num(c.blockingMsAvoided)} ms saved`),
   );
 }
 
@@ -5281,6 +5411,7 @@ function fillPlaceholders(text) {
     .replace(/\{user\}/g, `@${state.me?.name || 'you'}`)
     .replace(/\{username\}/g, state.me?.name || 'you')
     .replace(/\{server\}/g, g?.name || 'this server')
+    .replace(/\{brand\}/g, state.overview?.brand?.name || 'QuantLab')
     .replace(/\{membercount\}/g, g ? num(g.members) : '0')
     .replace(/\{channel\}/g, '#channel');
 }
@@ -6021,6 +6152,7 @@ function stylePreview(entry, values, sample) {
   row.append(main);
   if (values.thumbnail) row.append(el('span', 'demb-thumb'));
   box.append(row);
+  if (values.image && /^https:\/\//i.test(values.image)) box.append(previewPicture(values.image, 'big'));
 
   // The buttons under the card, in the colours they will actually be. This is
   // the point of editing them here rather than guessing — "Danger" and "red"
@@ -6134,6 +6266,7 @@ const PART_LABEL = {
   enabled: 'Send this message',
   thumbnail: 'Show a picture in the corner',
   timestamp: 'Show the time',
+  image: 'Large image',
 };
 
 function appearanceEntries() {
@@ -6152,6 +6285,45 @@ function renderAppearanceIndex() {
 
   const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   const nodes = [];
+
+  // Search across every group at once, and a switch for just the ones this
+  // server has changed — with fifty-odd messages, scrolling tabs to find
+  // "the goodbye one" was the slow part.
+  const tools = el('div', 'appear-tools');
+  const search = el('input', 'appear-search');
+  search.type = 'search';
+  search.placeholder = 'Find a message…';
+  search.autocomplete = 'off';
+  search.value = state.appearanceQuery || '';
+  const changedOnly = el('button', 'chip-toggle' + (state.appearanceChanged ? ' on' : ''), 'Changed only');
+  changedOnly.type = 'button';
+  changedOnly.setAttribute('aria-pressed', String(!!state.appearanceChanged));
+  changedOnly.addEventListener('click', () => { state.appearanceChanged = !state.appearanceChanged; renderAppearanceIndex(); });
+  tools.append(search, changedOnly);
+  nodes.push(tools);
+  let searchTimer = 0;
+  search.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.appearanceQuery = search.value;
+      renderAppearanceIndex();
+      const again = document.querySelector('.appear-search');
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    }, 120);
+  });
+  const q = String(state.appearanceQuery || '').trim().toLowerCase();
+  if (q || state.appearanceChanged) {
+    const hits = groups.flatMap(g => g.entries.map(e => ({ e, g })))
+      .filter(({ e, g }) => (!state.appearanceChanged || e.changed)
+        && (!q || `${e.label} ${e.key} ${g.name} ${e.blurb || ''}`.toLowerCase().includes(q)));
+    const list = el('div', 'appear-list');
+    if (!hits.length) list.append(el('p', 'mod-empty', state.appearanceChanged && !q ? 'Nothing changed yet — every message is the shipped version' : 'No message matches that'));
+    for (const { e, g } of hits) list.append(appearanceEntryButton(e, titleCase(g.name)));
+    nodes.push(list);
+    wrap.replaceChildren(...nodes);
+    return;
+  }
+
   const tabs = el('div', 'appear-seg');
   for (const g of groups) {
     const t = el('button', 'appear-seg-btn' + (g.name === state.appearanceCat ? ' on' : ''), titleCase(g.name));
@@ -6166,21 +6338,32 @@ function renderAppearanceIndex() {
 
   const active = groups.find(g => g.name === state.appearanceCat) || groups[0];
   const list = el('div', 'appear-list');
-  for (const e of (active?.entries || [])) {
-    const b = el('button', 'tpl-entry');
-    b.type = 'button';
-    b.append(el('span', 'nm', e.label));
-    const meta = el('span', 'mt');
-    meta.textContent = `${e.values.enabled === false ? '⃠' : ''}${e.changed ? '●' : ''}`;
-    meta.title = [e.changed ? 'changed from the shipped wording' : null,
-      e.values.enabled === false ? 'not being sent' : null].filter(Boolean).join(' · ');
-    b.append(meta);
-    if (e.key === state.styleKey) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => { state.styleKey = e.key; renderAppearance(); });
-    list.append(b);
-  }
+  for (const e of (active?.entries || [])) list.append(appearanceEntryButton(e));
   nodes.push(list);
   wrap.replaceChildren(...nodes);
+}
+
+/** One message in the Appearance list: its colour, its name, its state. */
+function appearanceEntryButton(e, groupLabel = null) {
+  const b = el('button', 'tpl-entry appear-entry');
+  b.type = 'button';
+  const top = el('span', 'tpl-top');
+  const nm = el('span', 'nm');
+  const dot = el('span', 'appear-dot');
+  const c = e.values?.color;
+  if (/^#[0-9a-f]{6}$/i.test(c || '')) dot.style.background = c;
+  else dot.classList.add('none');
+  nm.append(dot, document.createTextNode(e.label));
+  top.append(nm);
+  const flags = el('span', 'appear-flags');
+  if (e.values?.enabled === false) flags.append(el('span', 'tpl-kind', 'Off'));
+  if (e.changed) flags.append(el('span', 'tpl-kind k-v2', 'Edited'));
+  top.append(flags);
+  b.append(top);
+  if (groupLabel) b.append(el('span', 'tpl-snip', groupLabel));
+  if (e.key === state.styleKey) b.setAttribute('aria-current', 'true');
+  b.addEventListener('click', () => { state.styleKey = e.key; renderAppearance(); });
+  return b;
 }
 
 
@@ -6250,7 +6433,7 @@ function renderAppearance() {
 
   const entry = entries.find(e => e.key === state.styleKey);
   const values = { ...entry.values };
-  const sample = { ...(data.sample || {}), server: state.overview?.guild?.name || 'your server' };
+  const sample = { ...(data.sample || {}), server: state.overview?.guild?.name || 'your server', brand: state.overview?.brand?.name || 'QuantLab' };
   const focusRef = { el: null };
 
   const card = el('article', 'panel');
@@ -6302,6 +6485,9 @@ function renderAppearance() {
       fields.append(textField('Footer', values.footer, v => { values.footer = v; repaint(); }));
     } else if (part === 'thumbnail' || part === 'timestamp') {
       fields.append(toggle(PART_LABEL[part], !!values[part], v => { values[part] = v; repaint(); }));
+    } else if (part === 'image') {
+      // New: a large picture under the card — a welcome banner, a rules image.
+      fields.append(imageSourceField('Large image (optional)', values.image || '', v => { values.image = v; repaint(); }, { noGenerated: true }));
     } else if (part === 'buttons') {
       fields.append(buttonEditors(entry, values, repaint));
     } else if (part === 'palette') {
@@ -6533,7 +6719,7 @@ function renderGiveawayForm(opts = {}) {
     }
   }));
 
-  form.replaceChildren(
+  const parts = [
     textField('Prize name', '', v => { draft.prize = v; }, {
       placeholder: 'e.g. VIP role · $50 credit · 1-month membership',
     }),
@@ -6636,12 +6822,96 @@ function renderGiveawayForm(opts = {}) {
       }
       if (!await askConfirm({
         title: 'Launch this giveaway?',
-        message: `**${draft.prize}** · ${draft.winners} winner${draft.winners === 1 ? '' : 's'} · ${humanDuration(draft.duration)}. Posts to the channel with **Enter**.`,
+        // Plain text — the confirm card does not draw markdown, so the old
+        // **bold** showed up as literal asterisks.
+        message: `${draft.prize} · ${draft.winners} winner${draft.winners === 1 ? '' : 's'} · ${humanDuration(draft.duration)}. Posts to the channel with an Enter button.`,
         confirmLabel: 'Launch giveaway',
       })) return;
-      await post('giveawaystart', draft);
+      const out = await post('giveawaystart', draft);
+      if (out && out.ok !== false) {
+        launchCard.classList.remove('gaw-launched');
+        void launchCard.offsetWidth;
+        launchCard.classList.add('gaw-launched');
+      }
     }, { label: 'Launch giveaway', busyLabel: 'Launching…' }),
+  ];
+
+  // Four short steps instead of one long column.
+  const step = (n, title, nodes) => {
+    const s = el('section', 'gaw-step');
+    s.style.setProperty('--i', String(n));
+    const head = el('div', 'gaw-step-head');
+    head.append(el('span', 'gaw-step-n', String(n)), el('b', null, title));
+    s.append(head, ...nodes);
+    return s;
+  };
+  const steps = el('div', 'gaw-steps');
+  steps.append(
+    step(1, 'Prize', [parts[0], parts[1]]),
+    step(2, 'Who wins', [parts[2], parts[3]]),
+    step(3, 'Where it posts', [parts[4], parts[5], parts[6]]),
+    step(4, 'Rules', [parts[7], parts[8], parts[9]]),
   );
+
+  /* -- live preview of the drop card ---------------------------------------- */
+  const launchCard = el('div', 'gaw-card');
+  const pvImg = el('img', 'gaw-card-img');
+  pvImg.alt = '';
+  pvImg.hidden = true;
+  const pvTitle = el('div', 'gaw-card-title');
+  const pvRows = el('div', 'gaw-card-rows');
+  const pvBtns = el('div', 'gaw-card-btns');
+  pvBtns.append(el('span', 'gaw-card-btn primary', '🎁 Enter'), el('span', 'gaw-card-btn', '🎟️ Check entry'));
+  const pvFoot = el('div', 'gaw-card-foot');
+  launchCard.append(pvTitle, pvRows, pvImg, pvBtns, pvFoot);
+  let lastImg = null;
+  const paintPreview = () => {
+    const brandName = state.overview?.brand?.name || 'QuantLab';
+    pvTitle.textContent = `${brandName} Giveaway`;
+    const ms = parseDurationMs(draft.duration);
+    const ends = ms ? new Date(Date.now() + ms) : null;
+    const rowsData = [
+      ['Prize', String(draft.prize || '').trim() || '—'],
+      ['Winners', String(draft.winners || 1)],
+      ['Ends', ends ? `${humanDuration(draft.duration)} · ${ends.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}` : '—'],
+      ['Entries', '0'],
+    ];
+    pvRows.replaceChildren(...rowsData.map(([k, v]) => {
+      const r = el('div', 'gaw-card-row');
+      r.append(el('b', null, k), el('span', null, v));
+      return r;
+    }));
+    const req = [];
+    if (draft.requiredRoleId) {
+      const role = roleList().find(r => r.id === draft.requiredRoleId);
+      req.push(`Needs @${role?.name || 'role'}`);
+    }
+    if ((draft.bonusRoles || []).length) req.push(`${draft.bonusRoles.length} bonus role${draft.bonusRoles.length === 1 ? '' : 's'}`);
+    if (draft.minAccountAgeDays) req.push(`Accounts ${draft.minAccountAgeDays}+ days old`);
+    const ch = channelList().find(c => c.id === draft.channelId);
+    pvFoot.textContent = [ch ? `#${ch.name}` : 'No channel yet', ...req].join('  ·  ');
+    const src = draft.imageUrl || 'dynamic:prizeGiveawayBanner';
+    if (src !== lastImg) {
+      lastImg = src;
+      pvImg.hidden = true;
+      if (String(src).startsWith('dynamic:')) loadDynamicPreview(pvImg, src.slice(8), []);
+      else if (/^https:\/\//i.test(src)) { pvImg.onload = () => { pvImg.hidden = false; }; pvImg.src = src; }
+    }
+  };
+  let pvTimer = 0;
+  const schedule = () => { clearTimeout(pvTimer); pvTimer = setTimeout(paintPreview, 120); };
+  for (const ev of ['input', 'change', 'click']) steps.addEventListener(ev, schedule);
+
+  const aside = el('aside', 'gaw-preview');
+  aside.append(el('p', 'gaw-preview-k', 'Live preview'), launchCard,
+    el('p', 'hint', 'The card members see, with your brand. Numbers fill in live once it posts.'));
+
+  const layout = el('div', 'gaw-launch');
+  const left = el('div', 'gaw-launch-form');
+  left.append(steps, parts[10]);
+  layout.append(left, aside);
+  form.replaceChildren(layout);
+  paintPreview();
 
   state.gawBump = () => {};
   form.dataset.ready = '1';
@@ -6671,7 +6941,203 @@ function renderVerifyPanel() {
 
 /* ── settings ──────────────────────────────────────────────────────────── */
 
+/* ── brand ─────────────────────────────────────────────────────────────────
+ *
+ * What this server's cards sign with: the wordmark, the little caption under
+ * it, the logo in the chip and the faint woven watermark, plus the accent for
+ * embeds that have no colour of their own. The preview on the right is drawn
+ * in the page as you type; "Render a real banner" asks the bot for an actual
+ * generated card with the saved brand, so what you see is what posts. */
+
+const BRAND_SWATCHES = ['#2233F5', '#5865F2', '#9B59B6', '#E91E63', '#F23F43', '#F59E0B', '#22C55E', '#14B8A6', '#0EA5E9', '#F3F4F6'];
+
+function renderBrand() {
+  const host = $('#brand-studio');
+  const b = state.overview?.brand;
+  if (!host || !b) return;
+  const sig = JSON.stringify(b);
+  if (host.dataset.sig === sig) return;
+  host.dataset.sig = sig;
+
+  const pill = $('#brand-state');
+  if (pill) {
+    pill.textContent = b.isDefault ? 'Default' : 'Custom';
+    pill.className = 'pill ' + (b.isDefault ? 'off' : 'on');
+  }
+
+  const d = { name: b.name || 'QuantLab', caption: b.caption ?? 'ORIGINAL DESIGN', accent: b.accent || '', logoUrl: b.logoUrl || '', watermark: b.watermark !== false };
+
+  /* -- preview ------------------------------------------------------------ */
+  const prev = el('div', 'brand-preview');
+  const banner = el('div', 'brand-banner');
+  const lattice = el('div', 'brand-lattice');
+  const sigRow = el('div', 'brand-sig');
+  const chip = el('span', 'brand-chip');
+  const chipImg = el('img');
+  chipImg.alt = '';
+  const words = el('div', 'brand-words');
+  const wordmark = el('b', 'brand-wordmark');
+  const caption = el('span', 'brand-caption');
+  words.append(wordmark, caption);
+  chip.append(chipImg);
+  sigRow.append(chip, words);
+  banner.append(lattice, sigRow);
+
+  const embed = el('div', 'brand-embed');
+  const embedTitle = el('b', null, 'Giveaway');
+  const embedFoot = el('span', 'brand-embed-foot');
+  embed.append(embedTitle, el('span', 'hint', 'Footers and titles use your name too.'), embedFoot);
+
+  const real = el('div', 'brand-real');
+  const realBtn = el('button', 'btn small', 'Render a real banner');
+  realBtn.type = 'button';
+  realBtn.title = 'Draws an actual giveaway banner with the saved brand';
+  const realImg = el('img', 'brand-real-img');
+  realImg.alt = 'Generated banner with your brand';
+  realImg.hidden = true;
+  realBtn.addEventListener('click', async () => {
+    realBtn.disabled = true;
+    realBtn.textContent = 'Drawing…';
+    try {
+      const key = (state.overview?.composerMeta?.dynamicImages || []).find(k => /prize/i.test(k)) || 'prizeGiveawayBanner';
+      const res = await fetch(`/api/preview-image/${encodeURIComponent(String(key).replace(/^dynamic:/, ''))}?g=${state.guildId}&v=${Date.now()}`,
+        { credentials: 'same-origin', headers: authHeaders() });
+      if (!res.ok) throw new Error(String(res.status));
+      if (realImg.src.startsWith('blob:')) URL.revokeObjectURL(realImg.src);
+      realImg.src = URL.createObjectURL(await res.blob());
+      realImg.hidden = false;
+      realImg.classList.remove('pop');
+      void realImg.offsetWidth;
+      realImg.classList.add('pop');
+    } catch {
+      toast('Could not draw the banner just now — try again in a moment.', 'bad');
+    } finally {
+      realBtn.disabled = false;
+      realBtn.textContent = 'Render a real banner';
+    }
+  });
+  real.append(realBtn, el('span', 'hint', 'Uses the saved brand — save first.'), realImg);
+  prev.append(banner, embed, real);
+
+  const paint = () => {
+    const name = (d.name.trim() || 'QuantLab').slice(0, 24);
+    wordmark.textContent = name.toUpperCase();
+    caption.textContent = (d.caption || '').toUpperCase();
+    caption.hidden = !d.caption;
+    chipImg.src = /^https:\/\//i.test(d.logoUrl) ? d.logoUrl : '/logo-128.jpg';
+    lattice.textContent = `${name.toUpperCase()}   `.repeat(40);
+    lattice.hidden = !d.watermark;
+    const accent = /^#[0-9a-f]{6}$/i.test(d.accent) ? d.accent : '#2233F5';
+    banner.style.setProperty('--brand-accent', accent);
+    embed.style.borderLeftColor = accent;
+    embedTitle.textContent = `${name} Giveaway`;
+    embedFoot.textContent = `${state.overview?.guild?.name || 'Server'} • ${name}`;
+  };
+
+  /* -- controls ----------------------------------------------------------- */
+  const form = el('div', 'brand-form');
+  const nameField = textField('Name on your cards', d.name, v => { d.name = v; paint(); }, { placeholder: 'QuantLab' });
+  nameField.querySelector('input').maxLength = 24;
+  const capField = textField('Caption under it', d.caption, v => { d.caption = v; paint(); }, { placeholder: 'ORIGINAL DESIGN' });
+  capField.querySelector('input').maxLength = 28;
+
+  const accentWrap = el('div', 'field');
+  accentWrap.append(el('span', null, 'Accent colour'));
+  const sw = el('div', 'brand-swatches');
+  const custom = el('input', 'brand-color');
+  custom.type = 'color';
+  custom.value = /^#[0-9a-f]{6}$/i.test(d.accent) ? d.accent : '#2233F5';
+  custom.title = 'Pick any colour';
+  const paintSw = () => sw.querySelectorAll('.brand-sw').forEach(x => x.classList.toggle('on', x.dataset.c.toLowerCase() === (d.accent || '').toLowerCase()));
+  const none = el('button', 'brand-sw none', '∅');
+  none.type = 'button';
+  none.dataset.c = '';
+  none.title = 'No accent — every card keeps its own colours';
+  none.addEventListener('click', () => { d.accent = ''; paintSw(); paint(); });
+  sw.append(none);
+  for (const c of BRAND_SWATCHES) {
+    const s = el('button', 'brand-sw');
+    s.type = 'button';
+    s.dataset.c = c;
+    s.style.background = c;
+    s.title = c;
+    s.addEventListener('click', () => { d.accent = c; custom.value = c; paintSw(); paint(); });
+    sw.append(s);
+  }
+  custom.addEventListener('input', () => { d.accent = custom.value.toUpperCase(); paintSw(); paint(); });
+  sw.append(custom);
+  accentWrap.append(sw);
+
+  form.append(
+    nameField,
+    capField,
+    imageSourceField('Logo', d.logoUrl, v => { d.logoUrl = v; paint(); }, { noGenerated: true }),
+    el('p', 'hint', 'Square works best. Upload one or paste an https link; empty uses the QuantLab logo.'),
+    accentWrap,
+    toggle('Woven watermark across banners', d.watermark, v => { d.watermark = v; paint(); }),
+  );
+
+  const acts = el('div', 'actions');
+  const save = el('button', 'btn primary small', 'Save brand');
+  save.type = 'button';
+  save.addEventListener('click', async () => {
+    const logo = String(d.logoUrl || '').trim();
+    if (logo && !/^https:\/\//i.test(logo)) { toast('The logo needs an https link or an upload.', 'bad'); return; }
+    save.disabled = true;
+    try {
+      const out = await post('brand', { name: d.name, caption: d.caption, accent: d.accent || null, logoUrl: logo || null, watermark: d.watermark }, { quiet: true });
+      if (out?.ok) {
+        toast(`Brand saved — cards now sign as ${out.brand?.name || d.name}.`, 'good');
+        if (state.overview && out.brand) {
+          state.overview.brand = { ...out.brand, isDefault: false };
+          host.dataset.sig = '';
+          renderBrand();
+        }
+      }
+    } finally { save.disabled = false; }
+  });
+  const reset = el('button', 'btn small ghost', 'Back to QuantLab');
+  reset.type = 'button';
+  reset.addEventListener('click', async () => {
+    if (!await askConfirm({ title: 'Go back to the QuantLab brand?', message: 'Your name, caption, colour and logo are cleared from this server’s cards.', confirmLabel: 'Reset brand' })) return;
+    const out = await post('brand', { reset: true }, { quiet: true });
+    if (out?.ok && state.overview) {
+      state.overview.brand = { ...out.brand, isDefault: true };
+      host.dataset.sig = '';
+      renderBrand();
+      toast('Back to the QuantLab brand.', 'good');
+    }
+  });
+  acts.append(reset, save);
+  form.append(acts);
+
+  host.replaceChildren(form, prev);
+  paint();
+  paintSw();
+}
+
+/** Jump chips along the top of Settings — one per card that has data-nav. */
+function renderSetNav() {
+  const nav = $('#set-nav');
+  if (!nav || nav.dataset.built) return;
+  nav.dataset.built = '1';
+  const cards = [...document.querySelectorAll('.section[data-section="settings"] [data-nav]')];
+  nav.replaceChildren(...cards.map(c => {
+    const b = el('button', 'set-nav-chip', c.dataset.nav);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      c.classList.remove('mod-flash');
+      void c.offsetWidth;
+      c.classList.add('mod-flash');
+    });
+    return b;
+  }));
+}
+
 function renderSettings() {
+  try { renderBrand(); } catch (e) { console.warn('[panel] brand', e); }
+  try { renderSetNav(); } catch (_) {}
   const s = state.overview?.settings;
   if (!s) return;
   const form = $('#form-settings');
@@ -6709,7 +7175,7 @@ function renderSettings() {
         v => { draft[f.key] = v; markDirty(); }));
     } else if (f.type === 'string') {
       nodes.push(textField(f.label, value == null ? '' : String(value),
-        v => { draft[f.key] = v; markDirty(); }, { placeholder: 'e.g. Quantlab' }));
+        v => { draft[f.key] = v; markDirty(); }, { placeholder: 'e.g. your server name' }));
     } else {
       const scale = f.scale || 0;
       const shown = value == null || value === ''
@@ -6845,17 +7311,28 @@ function renderFeatureToggles() {
   const draft = {};
   for (const g of ft.groups) draft[g.key] = g.enabled !== false;
 
-  const rows = ft.groups.map(g => {
-    const row = el('div', 'toggle-row');
-    row.append(
-      toggle(g.label, !!draft[g.key], v => {
-        draft[g.key] = v;
-        box.dataset.dirty = '1';
-      }),
-      el('p', 'hint', g.description),
-    );
-    return row;
-  });
+  const FEATURE_ICONS = {
+    leveling: '📈', giveaways: '🎁', tickets: '🎫', newsfeed: '📰', econ_calendar: '🗓️', whop: '🎓',
+    moderation: '🛡️', automod: '🤖', welcome: '👋', polls: '📊', autoreplies: '💬', schedules: '⏰', social: '📣',
+  };
+  const grid = el('div', 'feat-grid');
+  for (const g of ft.groups) {
+    const card = el('button', 'feat-card' + (draft[g.key] ? ' on' : ''));
+    card.type = 'button';
+    card.setAttribute('aria-pressed', String(!!draft[g.key]));
+    const text = el('span', 'feat-text');
+    text.append(el('b', null, g.label), el('span', null, g.description || ''));
+    const sw = el('span', 'feat-switch');
+    card.append(el('span', 'feat-ic', FEATURE_ICONS[g.key] || '⚙️'), text, sw);
+    card.addEventListener('click', () => {
+      draft[g.key] = !draft[g.key];
+      card.classList.toggle('on', draft[g.key]);
+      card.setAttribute('aria-pressed', String(draft[g.key]));
+      box.dataset.dirty = '1';
+    });
+    grid.append(card);
+  }
+  const rows = [grid];
 
   box.replaceChildren(...rows, actions(async () => {
     const out = await post('featuretoggles', draft);
@@ -8781,6 +9258,56 @@ async function loadOwnerConsole() {
   }
 }
 
+/* The console's top strip. Polled every 15s, and only while the Owner tab is
+   the one on screen — nobody needs the bot's memory graph ticking in a tab
+   they are not looking at. */
+let ownerVitalsTimer = null;
+
+function paintOwnerVitals(host) {
+  const v = state.ownerVitals;
+  if (!host) return;
+  const stat = (n, l, tone = '') => {
+    const t = el('div', `owner-stat ${tone}`);
+    t.append(el('span', 'n', n), el('span', 'l', l));
+    return t;
+  };
+  if (!v) {
+    host.replaceChildren(...['Servers', 'Members', 'Ping', 'Memory', 'Uptime'].map(l => stat('—', l, 'ph')));
+    return;
+  }
+  const ping = Number(v.ping) || 0;
+  const head = el('div', 'owner-bot');
+  if (v.botAvatar) { const i = el('img'); i.src = v.botAvatar; i.alt = ''; head.append(i); }
+  const who = el('div');
+  who.append(el('b', null, v.botName || 'Bot'), el('span', 'hint', `Node ${v.node} · up since ${new Date(v.startedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`));
+  head.append(who);
+  host.replaceChildren(
+    head,
+    stat(num(v.guilds), 'Servers'),
+    stat(num(v.members), 'Members'),
+    stat(ping > 0 ? `${ping} ms` : '—', 'Ping', ping <= 0 ? '' : ping < 150 ? 'good' : ping < 400 ? 'warn' : 'bad'),
+    stat(`${v.memoryMb} MB`, `Memory · heap ${v.heapMb} MB`, v.memoryMb > 1600 ? 'warn' : ''),
+    stat(duration(v.uptimeMs), 'Uptime'),
+    stat(num(v.branded), 'Custom brands'),
+  );
+}
+
+async function refreshOwnerVitals() {
+  try {
+    state.ownerVitals = await get('/api/owner/vitals');
+    paintOwnerVitals(document.getElementById('owner-vitals'));
+  } catch (_) { /* the strip keeps its last numbers */ }
+}
+
+function startOwnerVitals() {
+  if (ownerVitalsTimer) return;
+  refreshOwnerVitals();
+  ownerVitalsTimer = setInterval(() => {
+    if (root.dataset.section !== 'owner' || document.hidden) return;
+    refreshOwnerVitals();
+  }, 15000);
+}
+
 // Fetched once per guild card, the first time it is opened, and kept —
 // nothing on this page changes who is a member of a server, so there is
 // nothing that should ever invalidate it during one visit.
@@ -8872,21 +9399,98 @@ function renderOwnerConsole() {
   const flags = state.botProfileFlags || { allowGuildNickname: false };
   const openIds = new Set([...list.querySelectorAll('details[open]')].map(d => d.dataset.guildId));
 
-  const totalMembers = guilds.reduce((n, g) => n + (g.members || 0), 0);
   const nodes = [];
 
-  // ── Network summary ───────────────────────────────────────────────────
-  const summary = el('div', 'gaw');
-  summary.append(el('div', 'gaw-top', el('span', 'nm', 'Network')));
-  summary.append(el('p', 'hint',
-    `${guilds.length} server${guilds.length === 1 ? '' : 's'} · ${num(totalMembers)} members total. Top picker only shows servers you own or were granted. Open any other server from a card below.`));
-  nodes.push(summary);
+  // ── Vitals: the whole bot at a glance, refreshed while you look ───────
+  const vitalsHost = el('div', 'owner-vitals');
+  vitalsHost.id = 'owner-vitals';
+  nodes.push(vitalsHost);
+  paintOwnerVitals(vitalsHost);
+  startOwnerVitals();
+
+  // ── Tools: maintenance and an operator notice ─────────────────────────
+  const tools = el('div', 'owner-tools');
+  const maint = el('div', 'owner-tool');
+  maint.append(el('b', null, 'Maintenance'), el('span', 'hint', 'Fixes that used to need a restart.'));
+  const mAct = el('div', 'actions');
+  const mkMaint = (label, action, done) => {
+    const b = el('button', 'btn small', label);
+    b.type = 'button';
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      const out = await ownerWrite('POST', '/api/owner/maintenance', { action });
+      b.disabled = false;
+      if (out) toast(done, 'good');
+    });
+    return b;
+  };
+  mAct.append(
+    mkMaint('Clear image cache', 'clear-cache', 'Image cache cleared — banners redraw fresh.'),
+    mkMaint('Reload server logos', 'reload-logos', 'Every server’s brand logo reloaded.'),
+  );
+  maint.append(mAct);
+
+  const notice = el('div', 'owner-tool');
+  notice.append(el('b', null, 'Operator notice'), el('span', 'hint', 'Posts to each picked server’s mod log — staff only, never members.'));
+  const picked = new Set(state.ownerNoticeTo || []);
+  const chipsBox = el('div', 'chipset owner-notice-to');
+  const paintChips = () => {
+    chipsBox.replaceChildren();
+    const all = el('button', 'chip-toggle' + (picked.size === guilds.length ? ' on' : ''), 'All servers');
+    all.type = 'button';
+    all.addEventListener('click', () => {
+      if (picked.size === guilds.length) picked.clear(); else guilds.forEach(g => picked.add(g.id));
+      state.ownerNoticeTo = [...picked];
+      paintChips();
+    });
+    chipsBox.append(all);
+    for (const g of guilds) {
+      const c = el('button', 'chip-toggle' + (picked.has(g.id) ? ' on' : ''), g.name);
+      c.type = 'button';
+      c.addEventListener('click', () => {
+        if (picked.has(g.id)) picked.delete(g.id); else picked.add(g.id);
+        state.ownerNoticeTo = [...picked];
+        paintChips();
+      });
+      chipsBox.append(c);
+    }
+  };
+  paintChips();
+  const noticeText = el('textarea');
+  noticeText.rows = 3;
+  noticeText.maxLength = 1800;
+  noticeText.placeholder = 'e.g. Maintenance tonight 22:00–22:15 UTC — the bot may restart once.';
+  noticeText.value = state.ownerNoticeDraft || '';
+  noticeText.addEventListener('input', () => { state.ownerNoticeDraft = noticeText.value; });
+  const nAct = el('div', 'actions');
+  const sendNotice = el('button', 'btn primary small', 'Send notice');
+  sendNotice.type = 'button';
+  sendNotice.addEventListener('click', async () => {
+    const text = noticeText.value.trim();
+    if (!text) { toast('Write the notice first.', 'bad'); return; }
+    if (!picked.size) { toast('Pick at least one server.', 'bad'); return; }
+    if (!await askConfirm({
+      title: `Send to ${picked.size} server${picked.size === 1 ? '' : 's'}?`,
+      message: 'It posts in each one’s mod-log channel. Servers without a mod log are skipped.',
+      confirmLabel: 'Send it',
+    })) return;
+    sendNotice.disabled = true;
+    const out = await ownerWrite('POST', '/api/owner/announce', { guildIds: [...picked], text });
+    sendNotice.disabled = false;
+    if (!out) return;
+    noticeText.value = '';
+    state.ownerNoticeDraft = '';
+    toast(`Sent to ${out.sent} server${out.sent === 1 ? '' : 's'}${out.skipped?.length ? ` · ${out.skipped.length} skipped (no mod log)` : ''}.`, 'good');
+  });
+  nAct.append(sendNotice);
+  notice.append(chipsBox, noticeText, nAct);
+  tools.append(maint, notice);
+  nodes.push(tools);
 
   // ── Global operator controls ──────────────────────────────────────────
-  const global = el('div', 'gaw');
+  const global = el('div', 'gaw owner-global');
   global.append(el('div', 'gaw-top', el('span', 'nm', 'Global controls')));
-  global.append(el('p', 'hint',
-    'These affect the bot everywhere. Per-server nickname is separate and only changes that server’s display name.'));
+  global.append(el('p', 'hint', 'Affects the bot in every server.'));
   global.append(toggle('Allow server admins to set bot nickname', !!flags.allowGuildNickname, async (v) => {
     const data = await ownerWrite('POST', '/api/owner/bot-profile', { allowGuildNickname: v });
     if (!data) return;
@@ -8910,10 +9514,41 @@ function renderOwnerConsole() {
   global.append(gAct);
   nodes.push(global);
 
-  // ── Per-server cards ──────────────────────────────────────────────────
-  for (const g of guilds) {
-    const d = el('details', 'item');
+  // ── Per-server cards: find and sort ───────────────────────────────────
+  const findRow = el('div', 'owner-find');
+  const find = el('input', 'owner-search');
+  find.type = 'search';
+  find.placeholder = `Find one of ${guilds.length} server${guilds.length === 1 ? '' : 's'}…`;
+  find.autocomplete = 'off';
+  find.value = state.ownerFind || '';
+  const sortBy = state.ownerSort || 'name';
+  const sortSel = select('', sortBy, [
+    { value: 'name', label: 'A → Z' },
+    { value: 'members', label: 'Most members' },
+    { value: 'joined', label: 'Newest first' },
+  ], v => { state.ownerSort = v; renderOwnerConsole(); });
+  sortSel.classList.add('owner-sort');
+  findRow.append(find, sortSel);
+  nodes.push(findRow);
+  find.addEventListener('input', () => {
+    state.ownerFind = find.value;
+    const q = find.value.trim().toLowerCase();
+    list.querySelectorAll('details[data-guild-id]').forEach(d => {
+      d.hidden = !!q && !String(d.dataset.name || '').includes(q);
+    });
+  });
+
+  const ordered = guilds.slice().sort((a, b) =>
+    sortBy === 'members' ? (b.members || 0) - (a.members || 0)
+      : sortBy === 'joined' ? (b.joinedAt || 0) - (a.joinedAt || 0)
+        : a.name.localeCompare(b.name));
+  const q0 = String(state.ownerFind || '').trim().toLowerCase();
+
+  for (const g of ordered) {
+    const d = el('details', 'item owner-guild');
     d.dataset.guildId = g.id;
+    d.dataset.name = String(g.name || '').toLowerCase();
+    if (q0 && !d.dataset.name.includes(q0)) d.hidden = true;
     const sum = el('summary');
     if (g.icon) { const i = el('img'); i.src = g.icon; i.alt = ''; sum.append(i); }
     const onCount = (g.features || []).filter(f => f.enabled).length;
@@ -10336,7 +10971,19 @@ function showSection(name) {
   for (const s of document.querySelectorAll('.section')) {
     const active = s.dataset.section === name;
     s.toggleAttribute('data-active', active);
+    // One entrance per tab switch: the cards rise in one after another. Added
+    // only here and removed once it has played, so a live repaint can never
+    // set it off again — that replay was the old "shaking" panel.
+    if (active && prev !== name) {
+      s.classList.remove('sec-enter');
+      void s.offsetWidth;
+      s.classList.add('sec-enter');
+      clearTimeout(s._secEnterT);
+      s._secEnterT = setTimeout(() => s.classList.remove('sec-enter'), 900);
+    }
   }
+  // The tab underline glides to the tab that was picked.
+  try { moveSectionInk(name); } catch (_) {}
   for (const b of document.querySelectorAll('#sections button')) {
     if (b.dataset.goto === name) b.setAttribute('aria-current', 'true');
     else b.removeAttribute('aria-current');
@@ -10356,6 +11003,41 @@ function showSection(name) {
     renderGiveawayForm({ force: !$('#form-gaw')?.dataset?.ready });
   }
 }
+
+/**
+ * A highlight that slides between sidebar/tab buttons instead of jumping.
+ * One absolutely positioned bar inside #sections, moved with a transform.
+ */
+function moveSectionInk(name) {
+  const nav = document.getElementById('sections');
+  if (!nav) return;
+  const btn = nav.querySelector(`button[data-goto="${name}"]`);
+  let ink = nav.querySelector('.sec-ink');
+  // Hidden (a closed phone drawer, a feature switched off): the buttons keep
+  // their own highlight, and the ink waits for the next visible switch.
+  if (!btn || btn.offsetParent === null || !btn.getBoundingClientRect().height) {
+    if (ink) ink.style.opacity = '0';
+    nav.classList.remove('has-ink');
+    return;
+  }
+  if (!ink) {
+    ink = el('span', 'sec-ink');
+    ink.setAttribute('aria-hidden', 'true');
+    if (getComputedStyle(nav).position === 'static') nav.style.position = 'relative';
+    nav.prepend(ink);
+    // First placement without a slide from the corner.
+    ink.style.transition = 'none';
+    requestAnimationFrame(() => requestAnimationFrame(() => { ink.style.transition = ''; }));
+  }
+  nav.classList.add('has-ink');
+  const nr = nav.getBoundingClientRect();
+  const br = btn.getBoundingClientRect();
+  ink.style.opacity = '1';
+  ink.style.width = `${br.width}px`;
+  ink.style.height = `${br.height}px`;
+  ink.style.transform = `translate(${br.left - nr.left + nav.scrollLeft}px, ${br.top - nr.top + nav.scrollTop}px)`;
+}
+window.addEventListener('resize', () => { try { moveSectionInk(root.dataset.section); } catch (_) {} });
 
 function initSections() {
   for (const b of document.querySelectorAll('#sections button')) {
