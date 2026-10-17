@@ -72,6 +72,7 @@ function list(guildId, guild) {
       winners: d.winnersCount ?? 1, entrants: (d.entrants || []).length,
       endedAt: d.endedAt ?? d.createdAt ?? null,
       prizeDmSent: !!d.prizeDmSent,
+      prizeSentTo: d.prizeSentTo || {},
       revealed: !!d.revealed,
       empty: !!d.empty || ((d.entrants || []).length === 0 && !(d.currentWinners || []).length),
       needsRestart: !!d.needsRestart || !!d.empty,

@@ -339,23 +339,33 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
     </div>
 
     <div class="section" data-section="tickets">
+      <!-- At a glance: what is open, how long the oldest has waited, who answers. -->
+      <div class="panel tix-hero" id="tix-hero"></div>
+
       <div class="grid">
-        <article class="panel">
-          <h2>Open tickets</h2>
-          <p class="muted">Every ticket channel currently open. Closing one here deletes the channel, exactly as <code>/ticket close</code> does inside it.</p>
-          <div class="rows" id="ticket-open"></div>
+        <article class="panel tix-queue">
+          <div class="tix-head">
+            <h2>Open tickets</h2>
+            <span class="pill" id="tix-open-pill"></span>
+          </div>
+          <p class="muted">Every ticket channel open right now. Closing one deletes the channel, exactly as <code>/ticket close</code> does inside it.</p>
+          <div class="tix-tools" id="tix-tools"></div>
+          <div class="rows tix-list" id="ticket-open"></div>
         </article>
 
-        <article class="panel">
-          <h2>Ticket settings</h2>
+        <article class="panel tix-rules">
+          <h2>Who answers, and when to nudge</h2>
           <form id="form-tickets" class="form"></form>
         </article>
       </div>
 
-      <div class="panel">
+      <div class="panel tix-post">
         <h2>Post the ticket panel</h2>
-        <p class="muted">Sends the “Create Ticket” message members press to open one. Posting it again makes a second panel — it does not move the first.</p>
-        <form id="form-ticketpanel" class="form"></form>
+        <p class="muted">Sends the message members press to open a ticket. Posting it again makes a second panel — it does not move the first.</p>
+        <div class="tix-post-grid">
+          <div class="tix-preview" id="tix-preview" aria-label="Preview of the ticket panel"></div>
+          <form id="form-ticketpanel" class="form"></form>
+        </div>
       </div>
     </div>
 

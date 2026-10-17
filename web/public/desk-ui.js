@@ -609,11 +609,15 @@
 
       if (m.repliedTo || (m.refKind === 'reply' && m.reference)) {
         var rbar = el('div', 'desk-ref desk-ref-reply');
-        var rWho = (m.repliedTo && m.repliedTo.author && m.repliedTo.author.name) || 'someone';
+        var rA = m.repliedTo && m.repliedTo.author;
         var rTxt = (m.repliedTo && m.repliedTo.content) || '';
         var rTop = el('div', 'desk-ref-top');
         rTop.append(el('span', 'desk-ref-label', 'Replying to'));
-        rTop.append(el('strong', 'desk-ref-author', rWho));
+        // Discord-style mention chip; an original the bot cannot load
+        // (deleted, or out of reach) is named as a message, not "someone".
+        rTop.append(rA && rA.id
+          ? el('strong', 'desk-ref-author desk-mention', rA.mention || ('@' + rA.name))
+          : el('span', 'desk-ref-author desk-ref-muted', 'an earlier message'));
         rbar.append(rTop);
         if (rTxt) rbar.append(el('div', 'desk-ref-snippet', rTxt));
         body.append(rbar);
@@ -623,8 +627,8 @@
         var fbar = el('div', 'desk-ref desk-ref-fwd');
         var fTop = el('div', 'desk-ref-top');
         fTop.append(el('span', 'desk-ref-label', 'Forwarded message'));
-        var fWho = (m.forwardSnapshot && m.forwardSnapshot.author && m.forwardSnapshot.author.name) || '';
-        if (fWho) fTop.append(el('strong', 'desk-ref-author', fWho));
+        var fA = m.forwardSnapshot && m.forwardSnapshot.author;
+        if (fA && fA.id) fTop.append(el('span', 'desk-ref-label', 'from'), el('strong', 'desk-ref-author desk-mention', fA.mention || ('@' + fA.name)));
         fbar.append(fTop);
         var fTxt = (m.forwardSnapshot && m.forwardSnapshot.content) || '';
         if (fTxt) fbar.append(el('div', 'desk-ref-snippet', fTxt));

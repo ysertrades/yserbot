@@ -1119,21 +1119,31 @@ async function sendPrizeDm(guild, shortId, text, onlyWinnerId = null, imageOpts 
   } catch (err) {
     console.warn('[GIVEAWAY] prize image:', err.message || err);
   }
+  // Each winner is delivered on their own: the panel sends one prize at a
+  // time, and the drop only counts as done once every current winner got one.
+  const sentTo = data.prizeSentTo && typeof data.prizeSentTo === 'object' ? data.prizeSentTo : {};
   let sent = 0;
+  const results = [];
   for (const id of winners) {
+    let ok = false;
     try {
       const user = await guild.client.users.fetch(id);
       const payload = { content: body.slice(0, 1800) };
       if (files.length) payload.files = files;
       await user.send(payload);
       sent += 1;
+      ok = true;
     } catch { /* DMs closed */ }
+    // A closed DM is remembered too, so the panel can say so and offer a retry.
+    sentTo[String(id)] = { at: Date.now(), ok };
+    results.push({ id: String(id), ok });
   }
-  data.prizeDmSent = true;
+  data.prizeSentTo = sentTo;
+  data.prizeDmSent = (data.currentWinners || []).every(id => sentTo[String(id)]?.ok);
   data.prizeDmText = body.slice(0, 1000);
   allEnded[guild.id][String(shortId).toLowerCase()] = data;
   writeJson('giveaways_ended.json', allEnded);
-  return { ok: true, sent, total: winners.length };
+  return { ok: true, sent, total: winners.length, results, done: data.prizeDmSent, prizeSentTo: sentTo };
 }
 
 
