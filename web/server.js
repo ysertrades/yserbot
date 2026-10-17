@@ -53,6 +53,9 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024; // server-image / avatar data URIs
 // gets its own small budget, which is what the limit is really for.
 const RATE_LIMIT = { windowMs: 60_000, max: Number(process.env.PANEL_RATE_LIMIT) || 600 };
 const AUTH_RATE_LIMIT = { windowMs: 60_000, max: 30 };
+// The public verification page: a handful of reads and one write per member.
+const VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 20 };
+const usedVerifyCodes = new Map(); // nonce → expiry
 
 /* ─── rate limiting ──────────────────────────────────────────────────────── */
 
@@ -331,6 +334,56 @@ async function route(req, res, client) {
   // directory — so putting them behind the gate would defeat the point of
   // having them. Clean paths rather than /terms.html because these are the
   // addresses that get pasted into places that never change.
+  /* -- giveaway entry verification -----------------------------------------
+   * Public on purpose: the member opening this has no panel session. What
+   * proves who they are is the signed one-time code in the link the bot gave
+   * them privately in Discord (utils/entryVerify.js). */
+  if (p === '/verify' || p === '/verify/') return serveStatic(res, 'verify.html');
+  if (p === '/api/verify/info' || p === '/api/verify') {
+    const ev = require('../utils/entryVerify');
+    const ip = clientIp(req);
+    if (rateLimited(`verify:${ip}`, VERIFY_RATE_LIMIT)) return json(res, 429, { error: 'rate_limited' });
+    let body = {};
+    if (req.method === 'POST') {
+      try { body = await readJsonBody(req); }
+      catch (err) { return json(res, 400, { error: err.message }); }
+    }
+    const t = ev.readToken(req.method === 'POST' ? body.t : url.searchParams.get('t'));
+    if (!t) return json(res, 400, { error: 'bad_link' });
+    const guild = client.guilds.cache.get(t.g);
+    if (!guild) return json(res, 404, { error: 'unknown_server' });
+    const b = brand.getBrand(t.g);
+    const saved = t.m ? client.commands?.get('giveaway')?.getActiveGiveaway?.(t.m) : null;
+    const returnUrl = t.c && t.m ? `https://discord.com/channels/${t.g}/${t.c}/${t.m}` : `https://discord.com/channels/${t.g}`;
+    const member = guild.members.cache.get(t.u);
+    const info = {
+      brand: b.name, logo: b.logoUrl || '/logo-128.jpg', accent: b.accent || null,
+      server: guild.name, serverIcon: guild.iconURL({ size: 128, extension: 'png' }) || null,
+      user: member?.displayName || member?.user?.username || null,
+      prize: saved?.prize || null, returnUrl,
+      status: ev.statusOf(t.g, t.u), expired: !!t.expired,
+    };
+    if (req.method !== 'POST') return json(res, 200, info);
+    if (t.expired) return json(res, 410, { error: 'expired', ...info });
+    // Each link verifies once.
+    if (usedVerifyCodes.has(t.n)) return json(res, 409, { error: 'used', ...info });
+    usedVerifyCodes.set(t.n, t.e);
+    for (const [n, exp] of usedVerifyCodes) if (exp < Date.now()) usedVerifyCodes.delete(n);
+    const result = ev.record(t.g, t.u, {
+      ip, device: body.device, fingerprint: body.fingerprint, userAgent: req.headers['user-agent'],
+    });
+    if (result.status === 'flagged') {
+      // Staff hear about it in the mod log, with who it matched.
+      try {
+        const { getModLogChannel } = require('../utils/modConfig');
+        const ch = getModLogChannel(guild);
+        const names = (result.matchedWith || []).map(id => `<@${id}>`).join(', ');
+        if (ch) ch.send({ content: `🛡️ **Entry check flagged** <@${t.u}> — ${result.reason}${names ? ` (${names})` : ''}. Review it on the panel's Moderation tab.`, allowedMentions: { parse: [] } }).catch(() => {});
+      } catch { /* the decision stands either way */ }
+    }
+    return json(res, 200, { ...info, status: result.status, reason: result.reason });
+  }
+
   if (p === '/terms' || p === '/terms/') return serveStatic(res, 'terms.html');
   if (p === '/privacy' || p === '/privacy/') return serveStatic(res, 'privacy.html');
 

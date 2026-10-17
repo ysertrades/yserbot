@@ -11,6 +11,9 @@ module.exports = {
         const config = readJson('config.json', {});
         const guildConfig = config[member.guild.id] || {};
 
+        // Their giveaway entry-check signals go with them (utils/entryVerify).
+        try { require('../utils/entryVerify').forget(member.guild.id, member.id); } catch { /* never block a leave */ }
+
         if (getModLogSettings(member.guild.id).members) {
             await postCustomLog(member.guild, new EmbedBuilder()
                 .setColor(0xE67E22)
