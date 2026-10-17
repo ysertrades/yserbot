@@ -105,7 +105,7 @@
     head.append(el('span', 'tag', locked.length ? String(locked.length) + ' locked' : 'Clear'));
     root.append(head);
     root.append(el('p', 'muted',
-      '🔒 in Discord locks chat + media (reactions stay if allowed). 🔓 unlocks. List stays live.'));
+      'Freeze a channel in one tap. Reactions still work.'));
 
     if (!ov) {
       root.append(el('p', 'hint', 'Loading server data…'));

@@ -480,12 +480,10 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
           <h2>Whop courses</h2>
           <span class="pill" id="whop-state"></span>
         </div>
-        <p class="muted">API key once. Scan courses, pick which to track. New video lessons post here. Embed look: Appearance → Whop lesson. Optional link button below.</p>
+        <p class="hint">New lessons post as they go live. Alert look: Appearance → Whop lesson.</p>
+        <div class="whop-status" id="whop-status"></div>
         <form id="form-whop" class="form"></form>
-        <div class="actions" style="border-top:none;padding-top:0;margin-top:0.5rem">
-          <button type="button" class="btn small" id="whop-scan">Scan courses</button>
-        </div>
-        <div id="whop-courses" class="items" style="margin-top:1rem"></div>
+        <div id="whop-courses" class="whop-courses"></div>
       </div>
     </div>
 
@@ -523,34 +521,50 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
     
 
     <div class="section" data-section="moderation">
-      <!-- Queues first: the things waiting on a person, before the settings
-           that govern them. -->
+      <!-- The deck: what needs a person right now, and the three shields, at a
+           glance. Each count jumps to its card. -->
+      <div class="mod-deck" id="mod-deck"></div>
+
       <div class="panel" id="channel-locks-card">
         <div id="channel-locks-root"></div>
       </div>
 
-      <div class="panel" id="report-card">
-        <div class="queue-head">
-          <h2>Reports <span class="tag" id="report-count" hidden></span></h2>
-          <span class="hint" id="report-channel-state"></span>
-        </div>
-        <p class="muted">Every report members file with <code>/report</code>. Acting here does exactly what the buttons on the report card do — a case is logged, the member is told, and it goes to your mod log.</p>
-        <div class="rows" id="report-open"></div>
+      <div class="grid">
+        <article class="panel" id="report-card">
+          <div class="queue-head">
+            <h2>Reports <span class="tag" id="report-count" hidden></span></h2>
+            <span class="hint" id="report-channel-state"></span>
+          </div>
+          <div class="rows" id="report-open"></div>
+        </article>
+
+        <article class="panel" id="link-queue-card">
+          <div class="queue-head">
+            <h2>Link requests <span class="tag" id="link-count" hidden></span></h2>
+            <span class="hint" id="link-filter-state"></span>
+          </div>
+          <div class="rows" id="link-waiting"></div>
+        </article>
       </div>
 
-      <div class="panel" id="link-queue-card">
-        <div class="queue-head">
-          <h2>Link requests <span class="tag" id="link-count" hidden></span></h2>
-          <span class="hint" id="link-filter-state"></span>
-        </div>
-        <p class="muted">When the link filter removes someone's message they can ask for it back. Each request is checked against the address itself, how old the account is and how their previous requests went — tap one to see what was found.</p>
-        <div class="rows" id="link-waiting"></div>
+      <div class="grid">
+        <article class="panel" id="quick-card">
+          <h2>Quick action</h2>
+          <form id="form-modaction" class="form"></form>
+        </article>
+
+        <article class="panel" id="warned-card">
+          <div class="queue-head">
+            <h2>Warned members</h2>
+            <span class="hint" id="case-total"></span>
+          </div>
+          <div class="rows" id="warned-list"></div>
+        </article>
       </div>
 
       <div class="grid">
         <article class="panel">
-          <h2>Standing permissions</h2>
-          <p class="muted">Members who were approved and may post again on a cooldown.</p>
+          <h2>Link permissions</h2>
           <div class="rows" id="link-permits"></div>
         </article>
 
@@ -560,60 +574,39 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
         </article>
       </div>
 
-      <div class="panel">
-        <h2>Members with warnings <span class="tag" id="case-total"></span></h2>
-        <p class="muted">Everyone carrying a warning, most first. Clearing removes their warnings; kicks and bans stay on record.</p>
-        <div class="rows" id="warned-list"></div>
-      </div>
-
       <div class="grid">
         <article class="panel">
-          <h2>Filters</h2>
-          <form id="form-moderation" class="form"></form>
-        </article>
-
-        <article class="panel">
-          <h2>Automatic punishment</h2>
-          <p class="muted">What happens once a member reaches a set number of warnings.</p>
+          <h2>Escalation</h2>
           <form id="form-warnsettings" class="form"></form>
         </article>
-      </div>
 
-      <div class="panel">
-        <h2>Auto-role on join</h2>
-        <p class="muted">Given to every new member the moment they join — set to "Not set" to turn this off.</p>
-        <form id="form-autorole" class="form"></form>
-      </div>
-
-      <div class="panel">
-        <h2>Filtered words</h2>
-        <p class="muted">Added on top of the built-in list. Messages containing any of them are removed and the sender warned.</p>
-        <form id="form-badwords" class="form"></form>
+        <article class="panel">
+          <h2>Mod log</h2>
+          <form id="form-moderation" class="form"></form>
+        </article>
       </div>
 
       <div class="grid">
         <article class="panel">
-          <h2>Quick action</h2>
-          <p class="muted">Warn, timeout, kick or ban from the panel. Same case log, DM and mod-log as the slash commands.</p>
-          <form id="form-modaction" class="form"></form>
+          <h2>Filtered words</h2>
+          <form id="form-badwords" class="form"></form>
         </article>
+
         <article class="panel">
-          <h2>Case filters</h2>
-          <p class="muted">Narrow the log below. Cleared warnings stay visible but are marked forgiven.</p>
-          <div class="chipset" id="case-filters"></div>
+          <h2>Auto-role on join</h2>
+          <form id="form-autorole" class="form"></form>
         </article>
       </div>
 
-      <div class="panel">
+      <div class="panel" id="case-log-card">
         <div class="queue-head">
           <h2>Case log <span class="tag" id="case-log-count" hidden></span></h2>
           <span class="hint" id="case-log-hint"></span>
         </div>
-        <p class="muted">Recent moderation cases for this server — who, what, why, and by whom. Tap a row for details and follow-up actions.</p>
+        <div class="chipset" id="case-filters"></div>
         <div class="rows" id="case-log"></div>
       </div>
     </div>
-
 
         </div><!-- /.workspace-body -->
       </div><!-- /.workspace -->

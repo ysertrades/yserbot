@@ -1475,74 +1475,212 @@ function actions(onSave, { label = 'Save changes', busyLabel = null } = {}) {
 
 
 
+/* ── Whop tracker ──────────────────────────────────────────────────────────
+ *
+ * Three layers, top to bottom: a status strip (is it running, how many, how
+ * fresh, the Scan button), the settings that rarely change (pace chips, the
+ * button label with its look, the connection folded away once it works),
+ * then the courses — what is tracked as cards you edit in place, and the
+ * scanned library as rows you track with one tap.
+ *
+ * Every write is the same op the old form used (whop / whopscan, with add,
+ * add_app, update, remove). add_app — tracking a whole course app — existed
+ * on the server but never had a button.
+ */
+
+const WHOP_PACE = [
+  { v: 0.25, label: '15s' },
+  { v: 0.5, label: '30s' },
+  { v: 1, label: '1m' },
+  { v: 5, label: '5m' },
+  { v: 15, label: '15m' },
+];
+
+const whopPaceLabel = v => (v < 1 ? `${Math.round(v * 60)}s` : `${v}m`);
+
+/** A small square: the cover when there is one, otherwise the initial. */
+function whopThumb(src, title, cls = 'whop-thumb') {
+  const box = el('span', cls);
+  const letter = String(title || '?').trim().charAt(0).toUpperCase() || '?';
+  if (src && /^https:\/\//i.test(src)) {
+    const img = el('img');
+    img.alt = '';
+    img.loading = 'lazy';
+    img.src = src;
+    img.addEventListener('error', () => { img.remove(); box.textContent = letter; });
+    box.append(img);
+  } else {
+    box.textContent = letter;
+  }
+  return box;
+}
+
+/** A row of single-choice chips — the panel's segmented control. */
+function chipChoice(label, value, options, onChange) {
+  const wrap = el('div', 'field');
+  if (label) wrap.append(el('span', null, label));
+  const box = el('div', 'seg');
+  const paint = () => box.querySelectorAll('button').forEach(b => {
+    const on = b.dataset.v === String(value);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+  for (const o of options) {
+    const b = el('button', 'seg-opt' + (o.tone ? ` tone-${o.tone}` : ''), o.label);
+    b.type = 'button';
+    b.dataset.v = String(o.value);
+    if (o.title) b.title = o.title;
+    b.addEventListener('click', () => { value = o.value; paint(); onChange(o.value); });
+    box.append(b);
+  }
+  paint();
+  wrap.append(box);
+  return wrap;
+}
+
 function renderWhop() {
   const d = state.overview?.whop;
-  const form = $("#form-whop");
-  const list = $("#whop-courses");
-  const pillEl = $("#whop-state");
+  const form = $('#form-whop');
+  const list = $('#whop-courses');
+  const strip = $('#whop-status');
+  const pillEl = $('#whop-state');
   if (!form) return;
   if (!d) {
-    form.replaceChildren(el("p", "muted", "Whop data not loaded yet."));
+    form.replaceChildren(el('p', 'muted', 'Whop data not loaded yet.'));
     return;
   }
 
+  // Rebuilt only when what the server holds changes — never on a repaint
+  // that would throw away a half-typed label or a picked channel.
+  const sig = JSON.stringify([d, channelList().length, roleList().length]);
+  if (form.dataset.sig === sig) return;
+  form.dataset.sig = sig;
+
   const log = Array.isArray(d.log) ? d.log : [];
   const catalog = Array.isArray(d.catalog) ? d.catalog : [];
+  const apps = Array.isArray(d.apps) ? d.apps : [];
+  const ready = d.hasKey && !!d.companyId;
 
   if (pillEl) {
-    pillEl.textContent = d.enabled
-      ? (log.length ? (log.length + " tracked") : "ON")
-      : "OFF";
-    pillEl.className = "pill " + (d.enabled && log.length ? "on" : "off");
+    pillEl.textContent = !d.enabled ? 'OFF' : (d.lastError ? 'ERROR' : 'LIVE');
+    pillEl.className = 'pill ' + (!d.enabled ? 'off' : (d.lastError ? 'wait' : 'live'));
   }
 
+  /* -- status strip ------------------------------------------------------- */
+  if (strip) {
+    const stat = (n, l, cls = '') => {
+      const t = el('div', 'whop-stat ' + cls);
+      t.append(el('span', 'n', n), el('span', 'l', l));
+      return t;
+    };
+    const scan = el('button', 'btn small whop-scan-btn', 'Scan library');
+    scan.type = 'button';
+    scan.id = 'whop-scan';
+    scan.disabled = !ready;
+    scan.title = ready ? 'Re-read every course and app from Whop' : 'Connect an API key and company first';
+    scan.addEventListener('click', async () => {
+      scan.disabled = true;
+      scan.classList.add('is-busy');
+      scan.textContent = 'Scanning…';
+      try {
+        const res = await post('whopscan', {}, { quiet: true });
+        if (res && res.ok) toast(`Library updated · ${res.courses} course${res.courses === 1 ? '' : 's'}.`, 'good');
+      } finally {
+        scan.disabled = false;
+        scan.classList.remove('is-busy');
+        scan.textContent = 'Scan library';
+      }
+    });
+    strip.replaceChildren(
+      stat(d.enabled ? 'Live' : 'Paused', 'Tracking', d.enabled ? 'good' : 'idle'),
+      stat(String(log.length), 'Tracked'),
+      stat(String(catalog.length), apps.length ? `Courses · ${apps.length} app${apps.length === 1 ? '' : 's'}` : 'Courses'),
+      stat(whopPaceLabel(Number(d.pollMinutes) || 0.5), 'Checks every'),
+      stat(d.lastScanAt ? relativeTime(d.lastScanAt) : 'never', 'Last scan'),
+      scan,
+    );
+  }
+
+  /* -- settings ----------------------------------------------------------- */
   const draft = {
     enabled: !!d.enabled,
-    apiKey: "",
-    unlockKey: false,
-    companyId: d.companyId || "",
-    pollMinutes: d.pollMinutes != null ? d.pollMinutes : 0.5,
-    onlyVideos: d.onlyVideos !== false,
-    buttonLabel: d.buttonLabel || "open course",
+    apiKey: '',
+    companyId: d.companyId || '',
+    pollMinutes: d.pollMinutes != null ? Number(d.pollMinutes) : 0.5,
+    onlyVideos: !!d.onlyVideos,
+    buttonLabel: d.buttonLabel || 'open course',
   };
 
   const children = [];
-  children.push(toggle("Tracking on", draft.enabled, v => { draft.enabled = v; }));
-
-  if (d.hasKey && !draft.unlockKey) {
-    children.push(el("p", "hint", "API key locked · " + (d.keyMask || "••••")));
-    const unlock = el("button", "btn small", "Change API key");
-    unlock.type = "button";
-    unlock.addEventListener("click", () => { draft.unlockKey = true; renderWhop(); });
-    const row = el("div", "actions");
-    row.append(unlock);
-    children.push(row);
-  } else {
-    children.push(textField("Whop API key", draft.apiKey, v => { draft.apiKey = v; }, { placeholder: "Company / Account API key" }));
-    children.push(el("p", "hint", "Saved once and locked."));
+  if (d.lastError) {
+    const err = el('div', 'whop-alert');
+    err.append(el('strong', null, 'Last check failed'), el('span', null, String(d.lastError)));
+    children.push(err);
   }
 
-  children.push(textField("Company ID", draft.companyId, v => { draft.companyId = v; }, { placeholder: "biz_…" }));
-  children.push(el("p", "hint", "Required. Example: biz_61…"));
-  children.push(textField("Check every (minutes)", String(draft.pollMinutes), v => { draft.pollMinutes = Number(v) || 0.5; }));
-  children.push(el("p", "hint", "How often to look for new lessons. Use 0.5 for ~30s, 0.25 for ~15s (fastest)."));
-  children.push(toggle("Only video lessons", draft.onlyVideos, v => { draft.onlyVideos = v; }));
-  children.push(textField("Button label", draft.buttonLabel, v => { draft.buttonLabel = v; }, { placeholder: "Open course" }));
-  children.push(el("p", "hint", "Each alert includes course name, course app, and banner art when available."));
+  const switches = el('div', 'whop-switches');
+  switches.append(
+    toggle('Tracking', draft.enabled, v => { draft.enabled = v; }),
+    toggle('Video lessons only', draft.onlyVideos, v => { draft.onlyVideos = v; }),
+  );
+  children.push(switches);
 
-  if (d.lastError) children.push(el("p", "hint bad", String(d.lastError)));
-  else if (d.lastScanAt) children.push(el("p", "hint", "Last scan · " + new Date(d.lastScanAt).toLocaleString()));
+  const pace = WHOP_PACE.slice();
+  if (!pace.some(p => p.v === draft.pollMinutes)) {
+    pace.push({ v: draft.pollMinutes, label: whopPaceLabel(draft.pollMinutes) });
+    pace.sort((a, b) => a.v - b.v);
+  }
+  children.push(chipChoice('Check for new lessons every', draft.pollMinutes,
+    pace.map(p => ({ value: p.v, label: p.label })), v => { draft.pollMinutes = Number(v); }));
+
+  // The label with the button it becomes, so you see what members will tap.
+  const labelRow = el('div', 'whop-label-row');
+  const btnPreview = el('span', 'whop-btn-preview');
+  const paintBtn = () => { btnPreview.textContent = (draft.buttonLabel.trim() || 'open course') + ' ↗'; };
+  paintBtn();
+  labelRow.append(
+    textField('Button on each alert', draft.buttonLabel, v => { draft.buttonLabel = v; paintBtn(); }, { placeholder: 'open course' }),
+    btnPreview,
+  );
+  children.push(labelRow);
+
+  // Folded away once it works; open while anything is missing.
+  const conn = el('details', 'whop-conn');
+  conn.open = !ready || !!state.whopConnOpen;
+  conn.addEventListener('toggle', () => { state.whopConnOpen = conn.open; });
+  const connSum = el('summary');
+  connSum.append(
+    el('span', 'whop-conn-title', 'Connection'),
+    el('span', `pill ${ready ? 'on' : 'wait'}`, ready ? (d.companyTitle || d.companyId) : 'Not connected'),
+  );
+  conn.append(connSum);
+  const connBody = el('div', 'whop-conn-body');
+  if (d.hasKey && !state.whopKeyUnlock) {
+    const keyRow = el('div', 'whop-key');
+    keyRow.append(el('span', 'whop-key-lock', '🔒'), el('span', 'whop-key-mask', d.keyMask || '••••'));
+    const change = el('button', 'btn small', 'Replace key');
+    change.type = 'button';
+    change.addEventListener('click', () => { state.whopKeyUnlock = true; state.whopConnOpen = true; form.dataset.sig = ''; renderWhop(); });
+    keyRow.append(change);
+    connBody.append(keyRow);
+  } else {
+    connBody.append(textField('API key', '', v => { draft.apiKey = v; }, { placeholder: 'Company or account API key' }));
+  }
+  connBody.append(textField('Company ID', draft.companyId, v => { draft.companyId = v; }, { placeholder: 'biz_…' }));
+  conn.append(connBody);
+  children.push(conn);
 
   children.push(actions(async () => {
     const body = {
       enabled: draft.enabled,
-      companyId: draft.companyId || null,
+      companyId: draft.companyId.trim() || null,
       pollMinutes: draft.pollMinutes,
       onlyVideos: draft.onlyVideos,
       buttonLabel: draft.buttonLabel,
     };
     if (draft.apiKey.trim()) body.apiKey = draft.apiKey.trim();
-    await post("whop", body);
+    const out = await post('whop', body);
+    if (out && body.apiKey) state.whopKeyUnlock = false;
   }));
 
   form.replaceChildren(...children);
@@ -1550,218 +1688,202 @@ function renderWhop() {
   if (!list) return;
   const blocks = [];
 
-  /* ---- Tracking log — collapsed by default ---- */
-  if (state.trackLogOpen == null) state.trackLogOpen = false;
-  const trackHead = el("div", "track-log-head");
-  trackHead.append(el("h3", null, "Tracking log"));
-  const trackToggle = el("button", "btn small track-log-toggle", state.trackLogOpen ? "Hide" : "Show");
-  trackToggle.type = "button";
-  trackToggle.setAttribute("aria-expanded", state.trackLogOpen ? "true" : "false");
-  trackToggle.addEventListener("click", () => {
-    state.trackLogOpen = !state.trackLogOpen;
-    if (typeof renderWhop === "function") renderWhop();
-  });
-  trackHead.append(trackToggle);
-  blocks.push(trackHead);
+  /* -- tracked ------------------------------------------------------------ */
+  const trackedHead = el('div', 'whop-sec-head');
+  trackedHead.append(el('h3', null, 'Tracked'), el('span', 'tag', String(log.length)));
+  blocks.push(trackedHead);
 
   if (!log.length) {
-    if (state.trackLogOpen) {
-      blocks.push(el("p", "muted track-log-body is-open", "Empty. Add a course from the library below (course + channel)."));
-    }
-  } else if (!state.trackLogOpen) {
-    blocks.push(el("p", "hint track-log-summary", `${log.length} course${log.length === 1 ? "" : "s"} tracked — press Show to manage channels and pings.`));
+    blocks.push(el('p', 'whop-empty', catalog.length ? 'Nothing tracked yet — pick a course below.' : 'Nothing tracked yet.'));
   } else {
-    const pageSize = 3;
-    const total = log.length;
-    const pages = Math.max(1, Math.ceil(total / pageSize));
-    let page = Math.max(0, state.trackLogPage || 0);
-    if (page >= pages) page = pages - 1;
-    state.trackLogPage = page;
-    const slice = log.slice(page * pageSize, (page + 1) * pageSize);
-
-    const desk = el("div", "track-desk");
-    const grid = el("div", "track-grid");
-    for (const e of slice) {
-      const card = el("div", "track-card");
-      const kind = e.type === 'app' ? 'Course app' : 'Course';
-      card.append(
-        el("p", "track-title", (e.type === 'app' ? '▦ ' : '') + (e.title || e.id)),
-        el("p", "track-meta",
-          kind
-          + (e.experienceName && e.type !== 'app' ? (" · " + e.experienceName) : "")
-          + (e.channel ? (" · #" + e.channel) : "")
-          + " · " + (e.knownCount || 0) + " lessons"
-          + (e.baselined ? " · live" : " · warming up")
-        )
+    const grid = el('div', 'whop-track-grid');
+    for (const e of log) {
+      const card = el('article', 'whop-track');
+      const head = el('div', 'whop-track-head');
+      const titleBox = el('div', 'whop-track-title');
+      titleBox.append(el('b', null, e.title || e.id));
+      const meta = el('div', 'whop-badges');
+      meta.append(
+        el('span', 'whop-badge', e.type === 'app' ? 'Whole app' : 'Course'),
+        el('span', 'whop-badge', `${e.knownCount || 0} lessons`),
+        el('span', `whop-badge ${e.baselined ? 'is-live' : 'is-warm'}`, e.baselined ? 'Live' : 'Warming up'),
       );
+      if (e.experienceName && e.type !== 'app') meta.append(el('span', 'whop-badge dim', e.experienceName));
+      titleBox.append(meta);
+      head.append(whopThumb(e.cover, e.title), titleBox);
+      card.append(head);
+
       let ch = e.channelId || null;
       let role = e.mentionRoleId || null;
-      card.append(pickOne("Channel", "channel", ch, v => { ch = v; }));
-      card.append(pickOne("Ping role", "role", role, v => { role = v; }));
-      const acts = el("div", "actions");
-      const save = el("button", "btn small primary", "Save");
-      save.type = "button";
-      save.addEventListener("click", async () => {
+      const save = el('button', 'btn small primary', 'Save');
+      save.type = 'button';
+      save.disabled = true;
+      const dirty = () => { save.disabled = ch === (e.channelId || null) && role === (e.mentionRoleId || null); };
+      const pickers = el('div', 'whop-pickers');
+      pickers.append(
+        pickOne('Posts in', 'channel', ch, v => { ch = v; dirty(); }, { blank: 'Pick a channel…' }),
+        pickOne('Pings', 'role', role, v => { role = v; dirty(); }, { blank: 'No ping' }),
+      );
+      card.append(pickers);
+
+      save.addEventListener('click', async () => {
+        if (!ch) { toast('Pick a channel for it to post in.', 'bad'); return; }
         save.disabled = true;
-        try {
-          await post("whop", { op: "update", courseId: e.id, channelId: ch, mentionRoleId: role });
-        } finally { save.disabled = false; }
+        const out = await post('whop', { op: 'update', courseId: e.id, channelId: ch, mentionRoleId: role });
+        if (!out) dirty();
       });
-      const remove = el("button", "btn small", "Remove");
-      remove.type = "button";
-      remove.addEventListener("click", async () => {
+      const remove = el('button', 'btn small danger ghost', 'Stop tracking');
+      remove.type = 'button';
+      remove.addEventListener('click', async () => {
+        if (!await askConfirm({
+          title: `Stop tracking “${e.title || e.id}”?`,
+          message: 'New lessons stop posting. Alerts already sent stay where they are.',
+          confirmLabel: 'Stop tracking', danger: true,
+        })) return;
         remove.disabled = true;
-        try {
-          await post("whop", { op: "remove", courseId: e.id });
-          toast("Removed from log.", "good");
-        } finally { remove.disabled = false; }
+        const out = await post('whop', { op: 'remove', courseId: e.id });
+        if (!out) remove.disabled = false;
       });
-      acts.append(save, remove);
+      const acts = el('div', 'actions whop-track-acts');
+      acts.append(remove, save);
       card.append(acts);
       grid.append(card);
     }
-    desk.append(grid);
-    if (pages > 1) {
-      const pager = el("div", "drop-pager track-pager");
-      const meta = el("div", "drop-pager-meta");
-      meta.append(
-        el("span", "drop-pager-label", "Tracking desk"),
-        el("span", "drop-pager-count", `${page * pageSize + 1}–${Math.min((page + 1) * pageSize, total)} of ${total}`),
-      );
-      const dots = el("div", "drop-pager-dots");
-      for (let i = 0; i < pages; i++) {
-        const dot = el("button", "drop-pager-dot" + (i === page ? " on" : ""), String(i + 1));
-        dot.type = "button";
-        if (i === page) dot.setAttribute("aria-current", "page");
-        dot.addEventListener("click", () => {
-          state.trackLogPage = i;
-          if (typeof renderWhop === "function") renderWhop();
-        });
-        dots.append(dot);
-      }
-      const nav = el("div", "drop-pager-nav");
-      const prev = el("button", "btn small drop-pager-btn", "←");
-      prev.type = "button";
-      prev.disabled = page <= 0;
-      prev.addEventListener("click", () => {
-        if ((state.trackLogPage || 0) > 0) {
-          state.trackLogPage -= 1;
-          if (typeof renderWhop === "function") renderWhop();
-        }
-      });
-      const next = el("button", "btn small drop-pager-btn", "→");
-      next.type = "button";
-      next.disabled = page >= pages - 1;
-      next.addEventListener("click", () => {
-        if ((state.trackLogPage || 0) < pages - 1) {
-          state.trackLogPage += 1;
-          if (typeof renderWhop === "function") renderWhop();
-        }
-      });
-      nav.append(prev, next);
-      pager.append(meta, dots, nav);
-      desk.append(pager);
-    }
-    desk.classList.add("track-log-body", "is-open");
-    blocks.push(desk);
+    blocks.push(grid);
   }
 
-  /* ---- Single courses from scan (grouped by course app) ---- */
-  blocks.push(el("h3", null, "Courses"));
+  /* -- library ------------------------------------------------------------ */
+  const libHead = el('div', 'whop-sec-head');
+  libHead.append(el('h3', null, 'Library'));
+  const available = catalog.filter(c => !c.inLog);
+  libHead.append(el('span', 'tag', `${available.length} to track`));
+  blocks.push(libHead);
+
   if (!catalog.length) {
-    blocks.push(el("p", "muted", "No library yet. Save API key + Company ID, then press Scan courses."));
-  } else {
-    const available = catalog.filter(c => !c.inLog);
-    blocks.push(el("p", "hint",
-      catalog.length + " course(s) in library · "
-      + available.length + " available to track · grouped by course app"));
+    blocks.push(el('p', 'whop-empty', ready ? 'Press Scan library to load your courses.' : 'Connect your API key and company, then scan.'));
+    list.replaceChildren(...blocks);
+    return;
+  }
 
-    if (!available.length) {
-      blocks.push(el("p", "muted", "Every scanned course is already tracked individually."));
-    } else {
-      // Group by course app. Missing experienceId still shows — attach to the
-      // only app when there is one, otherwise a library group so Scan is never empty.
-      const appList = Array.isArray(d.apps) ? d.apps : [];
-      const onlyApp = appList.length === 1 ? appList[0] : null;
-      const groups = new Map();
-      for (const c of available) {
-        let expId = c.experienceId || (onlyApp && onlyApp.id) || "_library";
-        const fromApps = appList.find(a => a.id === expId);
-        const label = c.experienceName
-          || fromApps?.name
-          || (onlyApp && onlyApp.name)
-          || (d.companyTitle ? (d.companyTitle + " · courses") : "Courses");
-        const key = String(expId);
-        if (!groups.has(key)) groups.set(key, { label, items: [] });
-        groups.get(key).items.push(c);
-      }
-      const ordered = [...groups.entries()].sort((a, b) => a[1].label.localeCompare(b[1].label));
-      if (!ordered.length) {
-        blocks.push(el("p", "muted", "Scan returned no courses. Check API key + Company ID, then Scan again."));
-      }
+  let search = null;
+  if (catalog.length > 6) {
+    search = el('input', 'whop-search');
+    search.type = 'search';
+    search.placeholder = 'Find a course…';
+    search.autocomplete = 'off';
+    blocks.push(search);
+  }
 
-      const groupsWrap = el("div", "whop-app-groups");
-      for (const [, g] of ordered) {
-        const head = el("div", "whop-app-group");
-        head.append(el("div", "whop-app-group-title", g.label));
-        head.append(el("p", "hint", g.items.length + " course" + (g.items.length === 1 ? "" : "s")));
+  // Grouped by course app. A course without an experience id joins the only
+  // app when there is one, otherwise a library group, so nothing is hidden.
+  const onlyApp = apps.length === 1 ? apps[0] : null;
+  const groups = new Map();
+  for (const c of catalog) {
+    const expId = c.experienceId || (onlyApp && onlyApp.id) || '_library';
+    const app = apps.find(a => a.id === expId) || null;
+    const label = c.experienceName || app?.name || (d.companyTitle ? `${d.companyTitle} · courses` : 'Courses');
+    if (!groups.has(expId)) groups.set(expId, { id: expId, label, app, items: [] });
+    groups.get(expId).items.push(c);
+  }
+  const ordered = [...groups.values()].sort((a, b) => a.label.localeCompare(b.label));
 
-        let pickId = null;
-        let pickCh = null;
-        let pickRole = null;
-        const options = g.items.map(c => ({
-          value: c.id,
-          label: (c.title || c.id)
-            + (c.lessonsCount != null ? (" · " + c.lessonsCount + " lessons") : ""),
-        }));
-        head.append(select("Course", "", options, v => { pickId = v || null; }, { blank: "Choose a course in this app…" }));
-        head.append(pickOne("Channel", "channel", null, v => { pickCh = v; }));
-        head.append(pickOne("Ping role (optional)", "role", null, v => { pickRole = v; }));
-
-        const addRow = el("div", "actions");
-        const addBtn = el("button", "btn primary small", "Track course");
-        addBtn.type = "button";
-        addBtn.addEventListener("click", async () => {
-          if (!pickId) { toast("Choose a course.", "bad"); return; }
-          if (!pickCh) { toast("Choose a channel.", "bad"); return; }
-          addBtn.disabled = true;
-          try {
-            await post("whop", {
-              op: "add",
-              courseId: pickId,
-              channelId: pickCh,
-              mentionRoleId: pickRole,
-            });
-            toast("Course tracked.", "good");
-          } finally { addBtn.disabled = false; }
-        });
-        addRow.append(addBtn);
-        head.append(addRow);
-        groupsWrap.append(head);
-      }
-      blocks.push(groupsWrap);
+  // One inline "where should it post?" form at a time, opened under its row.
+  let openForm = null;
+  const openTrackForm = (anchor, { title, op, idKey, id }) => {
+    if (openForm) {
+      const same = openForm.dataset.for === id;
+      openForm.remove();
+      openForm = null;
+      if (same) return;
     }
+    let ch = null;
+    let role = null;
+    const f = el('div', 'whop-inline');
+    f.dataset.for = id;
+    f.append(el('p', 'whop-inline-title', `Track ${title}`));
+    const pickers = el('div', 'whop-pickers');
+    pickers.append(
+      pickOne('Posts in', 'channel', null, v => { ch = v; }, { blank: 'Pick a channel…' }),
+      pickOne('Pings', 'role', null, v => { role = v; }, { blank: 'No ping' }),
+    );
+    f.append(pickers);
+    const acts = el('div', 'actions');
+    const cancel = el('button', 'btn small ghost', 'Cancel');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => { f.remove(); openForm = null; });
+    const go = el('button', 'btn small primary', 'Start tracking');
+    go.type = 'button';
+    go.addEventListener('click', async () => {
+      if (!ch) { toast('Pick a channel for it to post in.', 'bad'); return; }
+      go.disabled = true;
+      const out = await post('whop', { op, [idKey]: id, channelId: ch, mentionRoleId: role });
+      if (!out) go.disabled = false;
+    });
+    acts.append(cancel, go);
+    f.append(acts);
+    anchor.after(f);
+    openForm = f;
+    try { enhanceSelects(f); } catch (_) {}
+  };
+
+  const groupsWrap = el('div', 'whop-lib');
+  for (const g of ordered) {
+    const sec = el('section', 'whop-group');
+    const gh = el('div', 'whop-group-head');
+    const gTitle = el('div', 'whop-group-title');
+    gTitle.append(el('b', null, g.label), el('span', 'hint', `${g.items.length} course${g.items.length === 1 ? '' : 's'}`));
+    gh.append(whopThumb(g.app?.image, g.label, 'whop-thumb sm'), gTitle);
+    if (g.app && g.id !== '_library') {
+      if (g.app.inLog) {
+        gh.append(el('span', 'whop-badge is-live', 'App tracked'));
+      } else {
+        const all = el('button', 'btn small', 'Track whole app');
+        all.type = 'button';
+        all.title = 'Every course in this app, including ones added later';
+        all.addEventListener('click', () => openTrackForm(gh, { title: `all of ${g.label}`, op: 'add_app', idKey: 'experienceId', id: g.id }));
+        gh.append(all);
+      }
+    }
+    sec.append(gh);
+
+    for (const c of g.items) {
+      const r = el('div', 'whop-course' + (c.inLog ? ' is-tracked' : ''));
+      r.dataset.q = `${c.title || ''} ${c.tagline || ''} ${g.label}`.toLowerCase();
+      const txt = el('div', 'whop-course-text');
+      txt.append(el('b', null, c.title || c.id));
+      const sub = [c.lessonsCount != null ? `${c.lessonsCount} lessons` : null, c.tagline || null].filter(Boolean).join(' · ');
+      if (sub) txt.append(el('span', 'hint', sub));
+      r.append(whopThumb(c.cover, c.title, 'whop-thumb sm'), txt);
+      if (c.inLog) {
+        r.append(el('span', 'whop-badge is-live', 'Tracked'));
+      } else {
+        const t = el('button', 'btn small primary ghost', 'Track');
+        t.type = 'button';
+        t.addEventListener('click', () => openTrackForm(r, { title: `“${c.title || c.id}”`, op: 'add', idKey: 'courseId', id: c.id }));
+        r.append(t);
+      }
+      sec.append(r);
+    }
+    groupsWrap.append(sec);
+  }
+  blocks.push(groupsWrap);
+
+  if (search) {
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      groupsWrap.querySelectorAll('.whop-group').forEach(sec => {
+        let shown = 0;
+        sec.querySelectorAll('.whop-course').forEach(r => {
+          const hit = !q || r.dataset.q.includes(q);
+          r.hidden = !hit;
+          if (hit) shown++;
+        });
+        sec.hidden = shown === 0;
+      });
+    });
   }
 
   list.replaceChildren(...blocks);
-
-  const scanBtn = $("#whop-scan");
-  if (scanBtn && !scanBtn.dataset.bound) {
-    scanBtn.dataset.bound = "1";
-    scanBtn.addEventListener("click", async () => {
-      scanBtn.disabled = true;
-      scanBtn.textContent = "Scanning…";
-      try {
-        const res = await post("whopscan", {});
-        if (res && res.ok) {
-          toast("Library updated · " + res.courses + " course(s).", "good");
-        }
-      } finally {
-        scanBtn.disabled = false;
-        scanBtn.textContent = "Scan courses";
-      }
-    });
-  }
 }
 
 
@@ -2091,28 +2213,135 @@ const UTC_OFFSET_OPTIONS = Array.from({ length: 27 }, (_, i) => {
   return { value: String(hours * 60), label: `UTC${hours >= 0 ? '+' : ''}${hours}` };
 });
 
+/* ── moderation ────────────────────────────────────────────────────────────
+ *
+ * The three filters live on the deck as shields that switch the moment they
+ * are tapped; this card is only what the mod log records, as chips. */
+
+const MODLOG_EVENTS = [
+  { key: 'members', label: 'Joins & leaves', icon: '👋' },
+  { key: 'messages', label: 'Edits & deletes', icon: '✏️' },
+  { key: 'roles', label: 'Role changes', icon: '🎭' },
+  { key: 'purges', label: 'Purges', icon: '🧹' },
+];
+
+/** Multi-choice chips that each flip a boolean. */
+function chipToggles(items, values, onChange) {
+  const box = el('div', 'chipset mod-chips');
+  for (const it of items) {
+    const b = el('button', 'chip-toggle' + (values[it.key] ? ' on' : ''));
+    b.type = 'button';
+    b.append(el('span', 'chip-ic', it.icon || ''), document.createTextNode(it.label));
+    b.setAttribute('aria-pressed', String(!!values[it.key]));
+    b.addEventListener('click', () => {
+      values[it.key] = !values[it.key];
+      b.classList.toggle('on', values[it.key]);
+      b.setAttribute('aria-pressed', String(values[it.key]));
+      onChange(values);
+    });
+    box.append(b);
+  }
+  return box;
+}
+
 function renderModerationForm() {
   const d = state.overview;
-  const m = {
-    badWords: d.automod.badWords,
-    linkFilter: d.automod.linkFilter,
-    mentionSpamProtection: d.automod.mentionSpam,
-    modLog: { ...d.modlog },
-  };
-  delete m.modLog.channel;
+  const form = $('#form-moderation');
+  if (!form || !d?.modlog) return;
+  const sig = JSON.stringify(d.modlog);
+  if (form.dataset.sig !== sig) {
+    form.dataset.sig = sig;
+    const modLog = {};
+    for (const e of MODLOG_EVENTS) modLog[e.key] = !!d.modlog[e.key];
+    const where = el('div', 'mod-logline');
+    where.append(
+      el('span', 'hint', 'Posts to'),
+      el('span', `pill ${d.modlog.channel ? 'on' : 'wait'}`, d.modlog.channel ? `#${d.modlog.channel}` : 'no channel set'),
+    );
+    form.replaceChildren(
+      where,
+      chipToggles(MODLOG_EVENTS, modLog, () => {}),
+      actions(() => post('moderation', { modLog })),
+    );
+  }
+  renderModDeck();
+}
 
-  $('#form-moderation').replaceChildren(
-    toggle('Word filter', m.badWords, v => { m.badWords = v; }),
-    toggle('Link filter', m.linkFilter, v => { m.linkFilter = v; }),
-    toggle('Mention spam protection', m.mentionSpamProtection, v => { m.mentionSpamProtection = v; }),
-    el('h2', null, 'Log these events'),
-    toggle('Member joins and leaves', m.modLog.members, v => { m.modLog.members = v; }),
-    toggle('Message edits and deletes', m.modLog.messages, v => { m.modLog.messages = v; }),
-    toggle('Role changes', m.modLog.roles, v => { m.modLog.roles = v; }),
-    toggle('Purges', m.modLog.purges, v => { m.modLog.purges = v; }),
-    row('Log channel', d.modlog.channel ? `#${d.modlog.channel}` : 'not set', { dim: !d.modlog.channel }),
-    actions(() => post('moderation', m)),
+/**
+ * The deck at the top of Moderation: one tile per queue (tap to jump to it)
+ * and the three automod shields, which save on tap like a light switch.
+ */
+function renderModDeck() {
+  const host = $('#mod-deck');
+  const o = state.overview;
+  if (!host || !o) return;
+  const m = o.mod || {};
+  const l = o.links || o.linkRequests || {};
+  const a = o.automod || {};
+
+  const tiles = el('div', 'mod-tiles');
+  const tile = (n, label, target, tone) => {
+    const t = el('button', `mod-tile${n ? ` tone-${tone}` : ''}`);
+    t.type = 'button';
+    t.append(el('span', 'n', num(n)), el('span', 'l', label));
+    t.addEventListener('click', () => {
+      const card = document.getElementById(target);
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      card.classList.remove('mod-flash');
+      void card.offsetWidth;
+      card.classList.add('mod-flash');
+    });
+    return t;
+  };
+  tiles.append(
+    tile((m.reports?.open || []).length, 'Reports open', 'report-card', 'bad'),
+    tile((l.waiting || []).length, 'Link requests', 'link-queue-card', 'warn'),
+    tile((m.warned || []).length, 'Warned members', 'warned-card', 'warn'),
+    tile(Array.isArray(m.lockedChannels) ? m.lockedChannels.length : (Number(m.lockedChannels) || 0), 'Locked channels', 'channel-locks-card', 'info'),
+    tile(m.caseTotal || 0, 'Cases logged', 'case-log-card', 'info'),
   );
+
+  const shields = el('div', 'mod-shields');
+  const SHIELDS = [
+    { field: 'badWords', on: a.badWords, title: 'Word filter', sub: 'Removes filtered words', icon: '🤐' },
+    { field: 'linkFilter', on: a.linkFilter, title: 'Link filter', sub: 'Holds links for review', icon: '🔗' },
+    { field: 'mentionSpamProtection', on: a.mentionSpam, title: 'Mention spam', sub: 'Stops mass pings', icon: '📣' },
+  ];
+  for (const s of SHIELDS) {
+    const b = el('button', 'mod-shield' + (s.on ? ' on' : ''));
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(!!s.on));
+    const text = el('span', 'mod-shield-text');
+    text.append(el('b', null, s.title), el('span', null, s.sub));
+    b.append(el('span', 'mod-shield-ic', s.icon), text, el('span', 'mod-shield-state', s.on ? 'ON' : 'OFF'));
+    b.addEventListener('click', async () => {
+      const next = !b.classList.contains('on');
+      b.disabled = true;
+      b.classList.toggle('on', next);
+      b.querySelector('.mod-shield-state').textContent = next ? 'ON' : 'OFF';
+      const out = await post('moderation', { [s.field]: next }, { quiet: true });
+      b.disabled = false;
+      if (!out) {
+        b.classList.toggle('on', !next);
+        b.querySelector('.mod-shield-state').textContent = !next ? 'ON' : 'OFF';
+        return;
+      }
+      b.setAttribute('aria-pressed', String(next));
+      // Kept in step locally so the next repaint does not flip it back
+      // before the overview catches up.
+      const key = s.field === 'mentionSpamProtection' ? 'mentionSpam' : s.field;
+      if (state.overview?.automod) state.overview.automod[key] = next;
+      if (s.field === 'linkFilter' && state.overview?.links) {
+        state.overview.links.filterOn = next;
+        try { renderLinkRequests(); } catch (_) {}
+      }
+      toast(`${s.title} ${next ? 'on' : 'off'}.`, 'good');
+    });
+    shields.append(b);
+  }
+
+  host.replaceChildren(tiles, shields);
 }
 
 /* ── composer ──────────────────────────────────────────────────────────────
@@ -7488,8 +7717,8 @@ function renderModeration() {
   /* -- the report queue -------------------------------------------------- */
   const chState = $('#report-channel-state');
   chState.textContent = m.reports.channel
-    ? `Filed to #${m.reports.channel}`
-    : 'No report channel set — /report cannot be used';
+    ? `→ #${m.reports.channel}`
+    : 'No report channel — /report is off';
   chState.className = `hint${m.reports.channel ? '' : ' bad'}`;
 
   const count = $('#report-count');
@@ -7517,7 +7746,7 @@ function renderModeration() {
     d.append(el('span', 'chev', '›'));
     d.addEventListener('click', () => openReport(r));
     return d;
-  }) : [el('p', 'muted', 'No reports waiting.')]));
+  }) : [el('p', 'mod-empty', 'No reports waiting')]));
 
   /* -- members with warnings --------------------------------------------- */
   const warned = $('#warned-list');
@@ -7566,9 +7795,9 @@ function renderModeration() {
     right.append(clear);
     r.append(right);
     return r;
-  }) : [el('p', 'muted', 'Nobody has a warning.')]));
+  }) : [el('p', 'mod-empty', 'Nobody has a warning')]));
 
-  $('#case-total').textContent = m.caseTotal ? `${num(m.caseTotal)} cases logged` : '';
+  $('#case-total').textContent = m.warned.length ? `${m.warned.length} member${m.warned.length === 1 ? '' : 's'}` : '';
 
   /* -- case log + filters ------------------------------------------------ */
   if (!state.caseFilter) state.caseFilter = 'all';
@@ -7588,7 +7817,9 @@ function renderModeration() {
   const filtersEl = $('#case-filters');
   if (filtersEl) {
     filtersEl.replaceChildren(...CASE_FILTERS.map(f => {
+      const n = f.id === 'all' ? allCases.length : allCases.filter(c => typeAlias(c.type) === f.id).length;
       const b = el('button', `chip-toggle${state.caseFilter === f.id ? ' on' : ''}`, f.label);
+      if (n) b.append(el('span', 'chip-n', String(n)));
       b.type = 'button';
       b.setAttribute('aria-pressed', state.caseFilter === f.id ? 'true' : 'false');
       b.addEventListener('click', () => {
@@ -7646,91 +7877,233 @@ function renderModeration() {
       d.append(el('span', 'chev', '›'));
       d.addEventListener('click', () => openCase(c));
       return d;
-    }) : [el('p', 'muted', state.caseFilter === 'all'
-      ? 'No cases logged yet.'
-      : 'No cases in this filter.')]));
+    }) : [el('p', 'mod-empty', state.caseFilter === 'all'
+      ? 'No cases logged yet'
+      : 'No cases in this filter')]));
   }
 
-  /* -- quick action form ------------------------------------------------- */
+  /* -- quick action -------------------------------------------------------
+   * Member, then the action as four coloured chips, then (for a timeout)
+   * how long, then why — with the usual reasons one tap away. */
   const qa = state.modQuick || (state.modQuick = {
     userId: '', action: 'warn', reason: '', timeoutMinutes: 60,
   });
   const qaForm = $('#form-modaction');
-  if (qaForm) {
-    const timeoutField = textField('Timeout minutes (timeout only)', String(qa.timeoutMinutes), v => {
-      qa.timeoutMinutes = Number(v) || 60;
-    });
-    timeoutField.style.display = qa.action === 'timeout' ? '' : 'none';
-    qaForm.replaceChildren(
-      pickMember('Member', qa.userId, v => { qa.userId = v || ''; }),
-      select('Action', qa.action, [
-        { value: 'warn', label: 'Warn' },
-        { value: 'timeout', label: 'Timeout' },
-        { value: 'kick', label: 'Kick' },
-        { value: 'ban', label: 'Ban' },
-      ], v => {
-        qa.action = v;
-        timeoutField.style.display = v === 'timeout' ? '' : 'none';
-      }),
-      timeoutField,
-      areaField('Reason', qa.reason, v => { qa.reason = v; }, 2),
-      actions(async () => {
-        if (!/^\d{5,25}$/.test(qa.userId || '')) {
-          toast('Pick a member from the list.', 'bad');
-          return;
-        }
-        const label = qa.action === 'timeout' ? 'timeout' : qa.action;
-        const who = (state.overview?.features?.members || []).find(m => m.id === qa.userId);
-        const whoName = who?.displayName || who?.name || qa.userId;
-        if (!await askConfirm({
-          title: `${label[0].toUpperCase() + label.slice(1)} ${whoName}?`,
-          message: `${whoName} will be ${label === 'timeout' ? 'timed out' : label + 'ed'} from the panel. A case is logged and they are DMed when possible.`,
-          confirmLabel: 'Do it', danger: qa.action === 'ban' || qa.action === 'kick',
-        })) return;
-        await post('modaction', {
+  // Drawn once per server and member list, so a live repaint never resets a
+  // half-written reason or the member you picked.
+  const qaSig = `${state.guildId}:${(state.overview?.features?.members || []).length}`;
+  if (qaForm && qaForm.dataset.sig !== qaSig) {
+    qaForm.dataset.sig = qaSig;
+    const QA_ACTIONS = [
+      { value: 'warn', label: 'Warn', tone: 'warn' },
+      { value: 'timeout', label: 'Timeout', tone: 'info' },
+      { value: 'kick', label: 'Kick', tone: 'bad' },
+      { value: 'ban', label: 'Ban', tone: 'bad' },
+    ];
+    const TIMEOUTS = [
+      { value: 10, label: '10m' }, { value: 60, label: '1h' }, { value: 360, label: '6h' },
+      { value: 1440, label: '1d' }, { value: 10080, label: '1w' },
+    ];
+    const REASONS = ['Spam', 'Harassment', 'Off-topic', 'NSFW', 'Scam link', 'Advertising'];
+
+    const timeoutBox = el('div', 'mod-timeout');
+    timeoutBox.append(chipChoice('For', TIMEOUTS.some(t => t.value === qa.timeoutMinutes) ? qa.timeoutMinutes : null,
+      TIMEOUTS, v => { qa.timeoutMinutes = Number(v); }));
+    timeoutBox.hidden = qa.action !== 'timeout';
+
+    const reasonField = areaField('Reason', qa.reason, v => { qa.reason = v; }, 2);
+    const reasonArea = reasonField.querySelector('textarea');
+    reasonArea.placeholder = 'Shown to them and kept on the case';
+    const reasonChips = el('div', 'chipset mod-reasons');
+    for (const r of REASONS) {
+      const c = el('button', 'chip-toggle', r);
+      c.type = 'button';
+      c.addEventListener('click', () => {
+        qa.reason = qa.reason.trim() ? `${qa.reason.trim()} · ${r}` : r;
+        reasonArea.value = qa.reason;
+      });
+      reasonChips.append(c);
+    }
+
+    const runLabel = () => ({ warn: 'Warn member', timeout: 'Time out member', kick: 'Kick member', ban: 'Ban member' }[qa.action]);
+    const run = el('div', 'actions');
+    const runBtn = el('button', 'btn primary small');
+    runBtn.type = 'button';
+    run.append(runBtn);
+    const paintRun = () => {
+      runBtn.textContent = runLabel();
+      runBtn.classList.toggle('danger-solid', qa.action === 'ban' || qa.action === 'kick');
+    };
+    runBtn.addEventListener('click', async () => {
+      if (runBtn.disabled) return;
+      if (!/^\d{5,25}$/.test(qa.userId || '')) {
+        toast('Pick a member from the list.', 'bad');
+        return;
+      }
+      const label = qa.action;
+      const who = (state.overview?.features?.members || []).find(x => x.id === qa.userId);
+      const whoName = who?.displayName || who?.name || qa.userId;
+      if (!await askConfirm({
+        title: `${label[0].toUpperCase() + label.slice(1)} ${whoName}?`,
+        message: `${whoName} will be ${label === 'timeout' ? 'timed out' : label === 'ban' ? 'banned' : label + 'ed'}. A case is logged and they are DMed when possible.`,
+        confirmLabel: 'Do it', danger: qa.action === 'ban' || qa.action === 'kick',
+      })) return;
+      runBtn.disabled = true;
+      runBtn.classList.add('is-busy');
+      runBtn.textContent = 'Working…';
+      try {
+        const out = await post('modaction', {
           userId: qa.userId,
           action: qa.action,
           reason: qa.reason,
           timeoutMinutes: qa.timeoutMinutes,
         });
-        qa.reason = '';
-      }, { label: 'Run action', busyLabel: 'Working…' }),
+        if (out) { qa.reason = ''; reasonArea.value = ''; }
+      } finally {
+        runBtn.disabled = false;
+        runBtn.classList.remove('is-busy');
+        paintRun();
+      }
+    });
+
+    qaForm.replaceChildren(
+      pickMember('Member', qa.userId, v => { qa.userId = v || ''; }),
+      chipChoice('Action', qa.action, QA_ACTIONS, v => {
+        qa.action = v;
+        timeoutBox.hidden = v !== 'timeout';
+        paintRun();
+      }),
+      timeoutBox,
+      reasonField,
+      reasonChips,
+      run,
+    );
+    paintRun();
+  }
+
+  /* -- escalation: "after N warnings → do this" ----------------------------- */
+  const wsForm = $('#form-warnsettings');
+  const wsSig = JSON.stringify(m.warnSettings);
+  if (wsForm && wsForm.dataset.sig !== wsSig) {
+    wsForm.dataset.sig = wsSig;
+    const ws = { ...m.warnSettings };
+    ws.threshold = Math.max(0, Number(ws.threshold) || 0);
+
+    const sentence = el('div', 'mod-rule');
+    const count = el('span', 'mod-rule-n');
+    const stepper = el('div', 'mod-stepper');
+    const minus = el('button', 'btn small', '−');
+    minus.type = 'button';
+    minus.setAttribute('aria-label', 'Fewer warnings');
+    const plus = el('button', 'btn small', '+');
+    plus.type = 'button';
+    plus.setAttribute('aria-label', 'More warnings');
+    stepper.append(minus, count, plus);
+
+    const muteBox = el('div', 'mod-timeout');
+    const MUTES = [
+      { value: 10, label: '10m' }, { value: 60, label: '1h' }, { value: 360, label: '6h' },
+      { value: 1440, label: '1d' }, { value: 10080, label: '1w' },
+    ];
+    if (ws.muteMinutes && !MUTES.some(x => x.value === Number(ws.muteMinutes))) {
+      MUTES.push({ value: Number(ws.muteMinutes), label: `${ws.muteMinutes}m` });
+      MUTES.sort((x, y) => x.value - y.value);
+    }
+    muteBox.append(chipChoice('Timeout length', Number(ws.muteMinutes) || 60, MUTES, v => { ws.muteMinutes = Number(v); }));
+
+    const actionPick = chipChoice('Then', ws.action, [
+      { value: 'mute', label: 'Timeout', tone: 'info' },
+      { value: 'kick', label: 'Kick', tone: 'bad' },
+      { value: 'ban', label: 'Ban', tone: 'bad' },
+    ], v => { ws.action = v; paint(); });
+
+    const summary = el('p', 'mod-rule-summary');
+    const paint = () => {
+      count.textContent = ws.threshold ? String(ws.threshold) : 'Off';
+      minus.disabled = ws.threshold <= 0;
+      plus.disabled = ws.threshold >= 50;
+      actionPick.hidden = !ws.threshold;
+      muteBox.hidden = !ws.threshold || ws.action !== 'mute';
+      const verb = { mute: 'timed out', kick: 'kicked', ban: 'banned' }[ws.action] || ws.action;
+      summary.textContent = ws.threshold
+        ? `At warning ${ws.threshold}, the member is ${verb} automatically.`
+        : 'Warnings never trigger anything automatically.';
+    };
+    minus.addEventListener('click', () => { ws.threshold = Math.max(0, ws.threshold - 1); paint(); });
+    plus.addEventListener('click', () => { ws.threshold = Math.min(50, ws.threshold + 1); paint(); });
+
+    const lead = el('div', 'mod-rule-lead');
+    lead.append(el('span', null, 'After'), stepper, el('span', null, 'warnings'));
+    sentence.append(lead, actionPick, muteBox);
+    paint();
+    wsForm.replaceChildren(sentence, summary, actions(() => post('warnsettings', ws)));
+  }
+
+  /* -- auto-role on join --------------------------------------------------- */
+  const arForm = $('#form-autorole');
+  const arSig = JSON.stringify([m.autoRole || '', (m.roles || []).map(r => r.id)]);
+  if (arForm && arForm.dataset.sig !== arSig) {
+    arForm.dataset.sig = arSig;
+    const roleOptions = (m.roles || []).map(r => ({ value: r.id, label: `@${r.name}` }));
+    const autoRole = { roleId: m.autoRole || '' };
+    arForm.replaceChildren(
+      select('Every new member gets', autoRole.roleId, roleOptions,
+        v => { autoRole.roleId = v; }, { blank: 'Nothing — off' }),
+      actions(() => post('autorole', autoRole)),
     );
   }
 
-  /* -- automatic punishment ---------------------------------------------- */
-  const ws = { ...m.warnSettings };
-  const muteField = textField('Mute length (minutes)', String(ws.muteMinutes), v => { ws.muteMinutes = Number(v); });
-  muteField.style.display = ws.action === 'mute' ? '' : 'none';
+  /* -- filtered words: chips you add with Enter and remove with × ---------- */
+  const bwForm = $('#form-badwords');
+  const bwSig = JSON.stringify(m.filters.customWords);
+  if (bwForm && bwForm.dataset.sig !== bwSig) {
+    bwForm.dataset.sig = bwSig;
+    const words = m.filters.customWords.slice();
+    const box = el('div', 'word-chips');
+    const input = el('input', 'word-input');
+    input.type = 'text';
+    input.placeholder = 'Add a word or phrase, then Enter';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    const counter = el('span', 'hint');
+    const paintWords = () => {
+      box.querySelectorAll('.word-chip').forEach(n => n.remove());
+      for (const w of words) {
+        const c = el('span', 'word-chip');
+        c.append(el('span', null, w));
+        const x = el('button', 'word-x', '×');
+        x.type = 'button';
+        x.setAttribute('aria-label', `Remove ${w}`);
+        x.addEventListener('click', () => { words.splice(words.indexOf(w), 1); paintWords(); });
+        c.append(x);
+        box.insertBefore(c, input);
+      }
+      counter.textContent = `${words.length} of 100 · added on top of the built-in list`;
+    };
+    const add = () => {
+      // Commas split too, so a pasted list arrives as separate words.
+      for (const part of input.value.split(/[,\n]/)) {
+        const w = part.trim().slice(0, 60);
+        if (w && words.length < 100 && !words.some(x => x.toLowerCase() === w.toLowerCase())) words.push(w);
+      }
+      input.value = '';
+      paintWords();
+    };
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(); }
+      else if (e.key === 'Backspace' && !input.value && words.length) { words.pop(); paintWords(); }
+    });
+    input.addEventListener('blur', () => { if (input.value.trim()) add(); });
+    box.addEventListener('click', e => { if (e.target === box) input.focus(); });
+    box.append(input);
+    paintWords();
+    bwForm.replaceChildren(box, counter, actions(async () => {
+      if (input.value.trim()) add();
+      await post('moderation', { customWords: words });
+    }));
+  }
 
-  $('#form-warnsettings').replaceChildren(
-    textField('Act after this many warnings — 0 for never', String(ws.threshold), v => { ws.threshold = Number(v); }),
-    select('What to do', ws.action, [
-      { value: 'kick', label: 'Kick them' },
-      { value: 'ban', label: 'Ban them' },
-      { value: 'mute', label: 'Time them out' },
-    ], v => { ws.action = v; muteField.style.display = v === 'mute' ? '' : 'none'; }),
-    muteField,
-    actions(() => post('warnsettings', ws)),
-  );
-
-  /* -- auto-role on join --------------------------------------------------- */
-  const roleOptions = (m.roles || []).map(r => ({ value: r.id, label: r.name }));
-  const autoRole = { roleId: m.autoRole || '' };
-  $('#form-autorole').replaceChildren(
-    select('Role to give new members', autoRole.roleId, roleOptions,
-      v => { autoRole.roleId = v; }, { blank: 'Not set' }),
-    actions(() => post('autorole', autoRole)),
-  );
-
-  /* -- filtered words ----------------------------------------------------- */
-  const words = { customWords: m.filters.customWords.slice() };
-  $('#form-badwords').replaceChildren(
-    areaField(`Words and phrases, one per line (${m.filters.customWords.length})`,
-      words.customWords.join('\n'),
-      v => { words.customWords = v.split('\n').map(w => w.trim()).filter(Boolean); }, 5),
-    actions(() => post('moderation', words)),
-  );
+  renderModDeck();
 }
 
 /** A report, and everything that can be done about it. */
@@ -7802,8 +8175,8 @@ function renderLinkRequests() {
 
   const stateLine = $('#link-filter-state');
   stateLine.textContent = l.filterOn
-    ? 'Link filter is on'
-    : 'Link filter is off — nothing new will arrive here';
+    ? 'Filter on'
+    : 'Filter off — nothing new arrives';
   stateLine.className = `hint${l.filterOn ? '' : ' bad'}`;
 
   const count = $('#link-count');
@@ -7849,7 +8222,7 @@ function renderLinkRequests() {
     rows.push(d);
   }
 
-  wrap.replaceChildren(...(rows.length ? rows : [el('p', 'muted', 'Nothing waiting.')]));
+  wrap.replaceChildren(...(rows.length ? rows : [el('p', 'mod-empty', 'Nothing waiting')]));
 
   /* -- standing permissions ---------------------------------------------- */
   // Its own row rather than the generic one: a name, a state and a button do
@@ -7894,7 +8267,7 @@ function renderLinkRequests() {
 
     r.append(right);
     return r;
-  }) : [el('p', 'muted', 'Nobody has a standing permission.')]));
+  }) : [el('p', 'mod-empty', 'No standing permissions')]));
 
   /* -- recently decided --------------------------------------------------- */
   const recent = $('#link-recent');
@@ -7904,7 +8277,8 @@ function renderLinkRequests() {
     row.append(el('span', 'v dim',
       `${r.displayName}${r.decidedBy ? ` · by ${r.decidedBy}` : ''}${r.decidedAt ? ` · ${relativeTime(r.decidedAt)}` : ''}`));
     return row;
-  }) : [el('p', 'muted', 'No decisions yet.')]));
+  }) : [el('p', 'mod-empty', 'No decisions yet')]));
+  renderModDeck();
 }
 
 function readableWait(seconds) {
