@@ -5,7 +5,13 @@ const { TOPICS, expandTopicKeywords, textMatchesKeywords } = require('./newsTopi
 const { isFeatureEnabled } = require('./featureToggles');
 
 const FEED_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
-const POLL_INTERVAL_MS = Math.min(300_000, Math.max(10_000, Number(process.env.NEWSFEED_POLL_MS) || 10_000));
+// Where polling starts. The runner then adapts between MIN and MAX below.
+const POLL_INTERVAL_MS = Math.min(300_000, Math.max(5_000, Number(process.env.NEWSFEED_POLL_MS) || 10_000));
+// The fastest the runner will ever ask. Financial Juice sits behind Cloudflare,
+// which answers 429 when an IP asks too often; asking faster than it allows
+// only gets every request refused (see pace below).
+const MIN_POLL_MS = Math.min(POLL_INTERVAL_MS, Math.max(3_000, Number(process.env.NEWSFEED_MIN_POLL_MS) || 5_000));
+const MAX_POLL_MS = 90_000;
 const MAX_POST_PER_TICK = 20;
 const BREAKING_PATTERN = /\b(breaking|urgent)\b/i;
 const DATA_PRINT_PATTERN = /\b(actual|forecast|previous|mom|yoy|y\/y|m\/m|cpi|ppi|nfp|nonfarm|gdp|retail sales|jobless|claims|pmi|ism|fomc|rate decision)\b/i;
@@ -123,20 +129,70 @@ function parseFeedItems(xml) {
   return items;
 }
 
+/**
+ * Polling pace, adjusted to what Cloudflare in front of Financial Juice
+ * actually allows from this IP.
+ *
+ * It used to poll every 10s no matter what, and on a 429 wait at most 45s —
+ * less than the Retry-After it was often given. So it came back early, was
+ * refused again (which extends the block), and nearly every request failed:
+ * headlines got through only now and then, about a minute late.
+ *
+ * Now: a refusal waits the full Retry-After (never less) and slows the pace;
+ * a run of successful fetches speeds it back up. That settles just under the
+ * real limit, which is the fastest headlines can actually arrive.
+ */
+const SPEED_UP_AFTER = 6;      // successful fetches in a row before asking faster
+const SPEED_UP_STEP_MS = 1_000;
+const pace = { interval: POLL_INTERVAL_MS, okStreak: 0 };
+const stats = { since: Date.now(), ok: 0, blocked: 0, errors: 0, posted: 0, lags: [] };
+
 let blockedUntil = 0;
+function noteBlocked(retryAfterSec) {
+  const asked = Number.isFinite(retryAfterSec) && retryAfterSec > 0 ? retryAfterSec * 1000 : 0;
+  // The full Retry-After plus a little jitter, so we are never early.
+  const waitMs = Math.min(300_000, Math.max(asked, pace.interval * 2) + Math.floor(Math.random() * 1500));
+  blockedUntil = Date.now() + waitMs;
+  pace.interval = Math.min(MAX_POLL_MS, Math.round(pace.interval * 1.5));
+  pace.okStreak = 0;
+  stats.blocked++;
+  if (waitMs >= 60_000) console.warn(`[NEWSFEED] Financial Juice asked us to wait ${Math.round(waitMs / 1000)}s`);
+}
+function noteOk() {
+  stats.ok++;
+  pace.okStreak++;
+  if (pace.okStreak >= SPEED_UP_AFTER) {
+    pace.interval = Math.max(MIN_POLL_MS, pace.interval - SPEED_UP_STEP_MS);
+    pace.okStreak = 0;
+  }
+}
+
 async function fetchFeedItems() {
   if (Date.now() < blockedUntil) return null;
   const res = await fetch(FEED_URL, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; YSERFlowBot/1.0)' } });
-  if (res.status === 429) {
-    const retryAfterSec = parseInt(res.headers.get('retry-after'), 10);
-    const waitMs = Number.isFinite(retryAfterSec) ? Math.min(45_000, Math.max(12_000, retryAfterSec * 1000)) : 15_000;
-    blockedUntil = Date.now() + waitMs;
-    console.warn(`[NEWSFEED] Rate-limited by Financial Juice — pausing ${Math.round(waitMs / 1000)}s`);
+  // 429 is the rate limit; 403/503 are Cloudflare refusing or challenging.
+  // All three mean "back off", not "try again in a few seconds".
+  if (res.status === 429 || res.status === 403 || res.status === 503) {
+    noteBlocked(parseInt(res.headers.get('retry-after'), 10));
+    res.body?.cancel?.().catch(() => {});
     return null;
   }
   blockedUntil = 0;
-  if (!res.ok) throw new Error(`Financial Juice feed request failed: ${res.status}`);
-  return parseFeedItems(await res.text());
+  if (!res.ok) { stats.errors++; throw new Error(`Financial Juice feed request failed: ${res.status}`); }
+  const items = parseFeedItems(await res.text());
+  noteOk();
+  return items;
+}
+
+/** One line every few minutes instead of one per refused request. */
+function logPaceSummary() {
+  const mins = Math.max(1, Math.round((Date.now() - stats.since) / 60_000));
+  const lags = stats.lags.slice().sort((a, b) => a - b);
+  const median = lags.length ? lags[Math.floor(lags.length / 2)] : null;
+  const max = lags.length ? lags[lags.length - 1] : null;
+  console.log(`[NEWSFEED] last ${mins}m: ${stats.ok} fetched, ${stats.blocked} rate-limited, ${stats.errors} errors · pace ${Math.round(pace.interval / 1000)}s`
+    + (stats.posted ? ` · ${stats.posted} posted, lag median ${median}s / max ${max}s` : ' · nothing new posted'));
+  stats.since = Date.now(); stats.ok = 0; stats.blocked = 0; stats.errors = 0; stats.posted = 0; stats.lags = [];
 }
 
 const SOURCES = {
@@ -145,7 +201,10 @@ const SOURCES = {
     label: 'Financial Juice',
     blurb: 'Real-time market-moving headlines',
     emoji: '⚡',
-    pollMs: POLL_INTERVAL_MS,
+    // The cache in getSourceItems only shares one fetch between the guilds of
+    // a single tick; it must never stretch the adaptive pace, so it uses the
+    // floor rather than the starting interval.
+    pollMs: MIN_POLL_MS,
     fetch: fetchFeedItems,
   },
 };
@@ -440,12 +499,20 @@ async function runTick(client) {
           }
         }),
       );
-      for (const payload of cards) {
+      for (let i = 0; i < cards.length; i++) {
+        const payload = cards[i];
         if (!payload || !payload.components) continue;
-        await channel.send({
+        const sent = await channel.send({
           flags: payload.flags,
           components: payload.components,
-        }).catch((err) => console.warn('[NEWSFEED] send failed:', err.message));
+        }).catch((err) => { console.warn('[NEWSFEED] send failed:', err.message); return null; });
+        // How late it landed, from Financial Juice's own timestamp — what the
+        // pace summary reports, so speed can be checked rather than guessed.
+        const pub = batch[i]?.pubDate ? new Date(batch[i].pubDate).getTime() : NaN;
+        if (sent && Number.isFinite(pub)) {
+          stats.posted++;
+          if (stats.lags.length < 500) stats.lags.push(Math.max(0, Math.round((Date.now() - pub) / 1000)));
+        }
       }
 
       if (!settings.lastGuids) settings.lastGuids = {};
@@ -463,17 +530,21 @@ async function runTick(client) {
   if (changed) writeJson('config.json', config);
 }
 
+const SUMMARY_EVERY_MS = 5 * 60_000;
+
 function startNewsFeedRunner(client) {
-  console.log(`[NEWSFEED] Polling every ${POLL_INTERVAL_MS / 1000}s (set NEWSFEED_POLL_MS to change)`);
+  console.log(`[NEWSFEED] Adaptive polling from ${POLL_INTERVAL_MS / 1000}s (fastest ${MIN_POLL_MS / 1000}s, slowest ${MAX_POLL_MS / 1000}s) — summary every ${SUMMARY_EVERY_MS / 60_000}m`);
   let timer = null;
   let running = false;
   const schedule = (ms) => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(tick, Math.max(500, ms));
   };
+  const summary = setInterval(logPaceSummary, SUMMARY_EVERY_MS);
+  summary.unref?.();
   const tick = async () => {
     if (running) {
-      schedule(POLL_INTERVAL_MS);
+      schedule(pace.interval);
       return;
     }
     running = true;
@@ -485,8 +556,11 @@ function startNewsFeedRunner(client) {
     } finally {
       running = false;
       const elapsed = Date.now() - t0;
-      const wait = Math.max(500, POLL_INTERVAL_MS - elapsed);
-      const blockedLeft = typeof blockedUntil === 'number' ? blockedUntil - Date.now() : 0;
+      // ±10% jitter so the requests do not fall into a fixed rhythm that
+      // lines up with a rate-limit window edge every time.
+      const jitter = Math.round(pace.interval * (Math.random() * 0.2 - 0.1));
+      const wait = Math.max(500, pace.interval + jitter - elapsed);
+      const blockedLeft = blockedUntil - Date.now();
       schedule(blockedLeft > 0 ? blockedLeft : wait);
     }
   };
