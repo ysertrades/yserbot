@@ -12,5 +12,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
+      # node_modules is no longer committed (it is in .gitignore).
+      - run: npm ci
       - run: npm run smoke
       - run: npm run audit:static

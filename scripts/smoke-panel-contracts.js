@@ -19,7 +19,9 @@ function mustNotMatch(id, text, re, hint) {
   else pass(id, `absent ${re}`);
 }
 const api = read('web/api.js');
-const app = read('web/public/app.js');
+// The panel's code. web/public/app.js is only a 14-line load check, so every
+// panel contract below used to be tested against the wrong file and fail.
+const app = read('web/public/app.full.js');
 const css = read('web/public/app.css');
 const html = read('web/public/index.html');
 const whopWeb = read('web/whop.js');
@@ -81,7 +83,7 @@ mustInclude('channellock.server', read('web/server.js'), "op === 'channellock'",
 mustInclude('lock.modes', read('commands/moderation/lock.js'), "value: 'media'", 'lock default media');
 mustNotMatch('lock.chatonly', read('commands/moderation/lock.js'), /Chat only/, 'lock must not offer Chat only');
 mustInclude('econcal.weekly', api, 'weekly:', 'econcal exposes weekly object for Feeds tab');
-for (const rel of ['web/writes.js', 'web/server.js', 'web/public/app.js', 'web/public/index.html']) {
+for (const rel of ['web/writes.js', 'web/server.js', 'web/public/app.full.js', 'web/public/index.html']) {
   const head = read(rel).slice(0, 200);
   if (/PLACEHOLDER_WILL_BE_REPLACED|LOADING_FROM_DISK/.test(head)) fail('placeholder.' + rel, rel + ' starts with PLACEHOLDER');
   else pass('placeholder.' + rel, rel + ' not placeholder');
