@@ -100,7 +100,7 @@ const FEATURE_GROUPS = [
   },
   {
     key: 'welcome_leave', label: 'Welcome & Leave Messages',
-    description: 'The join card, the join coin bonus, and the leave message. No command of its own — set the channels in Settings.',
+    description: 'The join card and the leave message. No command of its own — set the channels in Settings.',
     commands: [],
     passive: true,
   },

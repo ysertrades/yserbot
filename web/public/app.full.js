@@ -4189,7 +4189,7 @@ function openEndedGiveaway(x) {
   }
 
   // Prize DM — template system (code / follow-up / custom)
-  if (x.kind !== 'coins') {
+  {
     const prizeName = x.title || 'your prize';
     let mode = 'code'; // code | giftcard | followup | custom
     let prizeImageData = null;
@@ -5825,7 +5825,7 @@ function renderGiveawayForm(opts = {}) {
 
   form.replaceChildren(
     textField('Prize name', '', v => { draft.prize = v; }, {
-      placeholder: 'e.g. Weekend Coin Rain · VIP role · $50 credit',
+      placeholder: 'e.g. VIP role · $50 credit · 1-month membership',
     }),
     imageSourceField(
       'Banner',
@@ -8214,7 +8214,7 @@ function renderLegalLinks() {
 }
 
 /* ── feature groups ────────────────────────────────────────────────────────
-   Casino, lottery, cards and verification are all "a handful of typed
+   Verification and the other small groups are all "a handful of typed
    settings", so one renderer covers them from the field descriptions the
    server sends. Adding the next one is a table entry in web/features.js. */
 

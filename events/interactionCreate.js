@@ -504,7 +504,7 @@ module.exports = {
         // Coins giveaways were removed with the economy. Their old messages can
         // still be clicked; answer instead of letting it end in "interaction failed".
         if (id.startsWith('cg_') || id.startsWith('coinsgaw_') || id.startsWith('cg_list_')) {
-          return await interaction.reply({ content: 'Coins giveaways have been removed from this bot.', flags: EPHEMERAL_FLAG }).catch(() => {});
+          return await interaction.reply({ content: 'This giveaway is no longer active.', flags: EPHEMERAL_FLAG }).catch(() => {});
         }
 
         // Ticket buttons
@@ -576,7 +576,7 @@ module.exports = {
         // Collectible cards were removed with the economy; old drop messages
         // still carry the button.
         if (id === 'card_grab') {
-          return interaction.reply({ content: 'Collectible cards have been removed from this bot.', flags: EPHEMERAL_FLAG }).catch(() => {});
+          return interaction.reply({ content: 'This is no longer available.', flags: EPHEMERAL_FLAG }).catch(() => {});
         }
 
         // Restore — confirm
@@ -614,7 +614,7 @@ module.exports = {
         // economy. Their old messages can still be clicked.
         if (id.startsWith('trivia_') || id.startsWith('gather_') || id.startsWith('bank_')
             || id === 'shop_buy' || id === 'shop_inventory' || id === 'shop_use' || id.startsWith('shop_close:')) {
-          return interaction.reply({ content: 'That feature has been removed from this bot.', flags: EPHEMERAL_FLAG }).catch(() => {});
+          return interaction.reply({ content: 'This is no longer available.', flags: EPHEMERAL_FLAG }).catch(() => {});
         }
 
         // News feed panel — toggle/channel/sources/topics/close

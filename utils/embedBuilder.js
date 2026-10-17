@@ -27,8 +27,6 @@ const typeIcons = {
     giveaway: '🎟️',
     ticket: '🎫',
     userinfo: '👤',
-    shop: '🛒',
-    inventory: '🎒',
     schedule: '🗓️',
     welcome: '🌱',
     leave: '🍂',

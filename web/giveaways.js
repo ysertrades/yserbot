@@ -23,8 +23,6 @@ const giveawayCmd = () => require('../commands/utility/giveaway.js');
 
 const PRIZE_ACTIVE = 'giveaways_active.json';
 const PRIZE_ENDED = 'giveaways_ended.json';
-// Left by the removed coins giveaways. Not read; Clear history empties it.
-const COINS_ENDED = 'coinsgiveaways_ended.json';
 
 const entrantCount = (map, messageId, stored) => {
   const live = map?.get?.(messageId);
@@ -169,7 +167,7 @@ async function remove(guildId, body, ctx = {}) {
 
 function clearHistory(guildId) {
   let removed = 0;
-  for (const file of [PRIZE_ENDED, COINS_ENDED]) {
+  for (const file of [PRIZE_ENDED]) {
     const all = readJson(file, {});
     const bucket = all[guildId];
     if (!bucket) continue;
@@ -181,10 +179,10 @@ function clearHistory(guildId) {
 }
 
 async function create(guildId, body, { guild, session, client }) {
-  // Coins giveaways were removed with the economy; a stale request for one
-  // gets a clear answer instead of becoming a prize giveaway with no prize.
-  if (body.kind === 'coins') {
-    return { error: 'coins_removed', detail: 'Coins giveaways were removed along with the economy.' };
+  // Only prize giveaways exist; any other kind is refused rather than
+  // quietly turned into a prize giveaway with no prize.
+  if (body.kind && body.kind !== 'prize') {
+    return { error: 'bad_kind', detail: 'Only prize giveaways are supported.' };
   }
   const kind = 'prize';
 

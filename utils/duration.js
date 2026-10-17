@@ -5,9 +5,8 @@
  *
  * The `10s` / `10m` / `10h` / `10d` format the bot already accepts.
  *
- * This exact parser was written out three times — /mute, /giveaway and
- * /coinsgiveaway each had their own byte-identical copy — and the panel needed
- * a fourth. One copy instead, so the panel cannot drift into accepting
+ * This exact parser used to be written out once per command, each a
+ * byte-identical copy, and the panel needed another. One copy instead, so the panel cannot drift into accepting
  * something the slash commands reject, or the other way round.
  *
  * Semantics are unchanged from those three: a whole number followed by one
