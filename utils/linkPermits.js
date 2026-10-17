@@ -62,10 +62,10 @@ function evaluate(guildId, userId) {
   if (!rec) return { state: 'none' };
   const now = Date.now();
   if (rec.lockedUntil && now < rec.lockedUntil) {
-    return { state: 'locked', secondsLeft: Math.ceil((rec.lockedUntil - now) / 1000) };
+    return { state: 'locked', secondsLeft: Math.ceil((rec.lockedUntil - now) / 1000), until: rec.lockedUntil };
   }
   if (now < rec.nextAllowedAt) {
-    return { state: 'waiting', secondsLeft: Math.ceil((rec.nextAllowedAt - now) / 1000) };
+    return { state: 'waiting', secondsLeft: Math.ceil((rec.nextAllowedAt - now) / 1000), until: rec.nextAllowedAt };
   }
   return { state: 'allowed' };
 }

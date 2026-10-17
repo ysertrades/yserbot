@@ -379,15 +379,20 @@ function closeSheet() {
  */
 function openSheet(title, body, actions = [], onClose = null) {
   const wrap = $('#sheet');
-  sheetReturnFocus = document.activeElement;
+  // Repainting a sheet that is already open (the participants poll) keeps
+  // focus where it is and keeps the original return target; it used to yank
+  // focus to the close button every 8s and then return there on close.
+  const already = !wrap.hidden;
+  if (!already) sheetReturnFocus = document.activeElement;
   sheetOnClose = onClose;
   $('#sheet-title').textContent = title;
+  if (!already) $('#sheet-body').classList.remove('no-enter');
   $('#sheet-body').replaceChildren(...body);
   $('#sheet-actions').replaceChildren(...actions);
   wrap.hidden = false;
   // The close button is the one control guaranteed to exist, so it is the
   // safe place to land focus.
-  $('#sheet-close').focus();
+  if (!already) $('#sheet-close').focus();
 }
 
 function initSheet() {
@@ -792,6 +797,7 @@ function memberSearchScore(m, q) {
   return score;
 }
 
+const _rosterPainted = { host: null, sig: null };
 function renderMembersRoster(filter = null) {
   const host = document.getElementById('members-roster');
   const countEl = document.getElementById('members-count');
@@ -812,10 +818,20 @@ function renderMembersRoster(filter = null) {
   }
 
   if (countEl) {
-    countEl.textContent = q
+    const text = q
       ? String(shown.length) + ' / ' + String(members.length)
       : String(members.length);
+    if (countEl.textContent !== text) countEl.textContent = text;
   }
+
+  // Up to 500 rows with avatars were rebuilt on every overview redraw — every
+  // save and every live push — whether or not anybody's roles had changed.
+  // Same members and same search: the list on screen is already right.
+  let sig;
+  try { sig = q + '\u0000' + JSON.stringify(members); } catch { sig = null; }
+  if (sig && _rosterPainted.host === host && _rosterPainted.sig === sig && host.firstChild) return;
+  _rosterPainted.host = host;
+  _rosterPainted.sig = sig;
 
   if (!members.length) {
     host.replaceChildren(el('div', 'muted members-empty', 'No members loaded yet \u2014 refresh in a moment.'));
@@ -2430,8 +2446,17 @@ function imageSourceField(label, value, onChange, opts = {}) {
     onChange(current);
   });
 
-  const closeMenu = () => { menu.hidden = true; };
+  // The outside-click listener exists only while the menu is open. It used to
+  // be added for good on every draw of the picker — the giveaway form and
+  // the Composer redraw it often — so listeners piled up for the page's life,
+  // each holding its old, detached picker.
+  const onOutside = (e) => { if (!field.contains(e.target)) closeMenu(); };
+  const closeMenu = () => {
+    menu.hidden = true;
+    document.removeEventListener('click', onOutside);
+  };
   const openMenu = () => {
+    document.addEventListener('click', onOutside);
     menu.replaceChildren();
     if (opts.giveaway) {
       const def = opts.defaultValue || 'dynamic:prizeGiveawayBanner';
@@ -2466,9 +2491,6 @@ function imageSourceField(label, value, onChange, opts = {}) {
     e.stopPropagation();
     if (menu.hidden) openMenu();
     else closeMenu();
-  });
-  document.addEventListener('click', (e) => {
-    if (!field.contains(e.target)) closeMenu();
   });
 
   const upBtn = el('button', 'btn small img-source-up', 'Upload');
@@ -3414,6 +3436,8 @@ function timeLeft(ts) {
    and it only touches text that changed. */
 const ticking = new Set();
 let tickTimer = null;
+/** End times that have already asked for a refresh — see countdownEl. */
+const endedBumps = new Set();
 
 /**
  * @param {number} endsAt
@@ -3446,8 +3470,12 @@ function countdownEl(endsAt, startedAt = null) {
       fill.style.width = '100%';
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
-      if (!node.dataset.endedBump) {
-        node.dataset.endedBump = '1';
+      // Once per end time, not once per node. Each redraw makes a fresh
+      // countdown that is already over, and each one used to schedule its
+      // own refresh — which redrew, which made another: a refetch every
+      // 600ms until the server had finished ending the giveaway.
+      if (!endedBumps.has(endsAt)) {
+        endedBumps.add(endsAt);
         setTimeout(() => {
           try {
             if (typeof refreshOverview === 'function') refreshOverview();
@@ -3478,36 +3506,31 @@ function countdownEl(endsAt, startedAt = null) {
     return true;
   };
 
+  // One loop for both the first start and restarts. It stops by itself once
+  // its node has been replaced: a redraw of the list used to leave the old
+  // card's loop painting a detached bar every frame.
+  let mounted = false;
+  const animating = () => root.dataset.section === 'giveaways' && document.visibilityState !== 'hidden';
   const loop = () => {
+    raf = 0;
+    if (node.isConnected) mounted = true;
+    else if (mounted) return;          // replaced by a redraw
     if (!paint()) return;
-    // Only animate the bar while Giveaways is active. rAF on every frame
-    // while on Settings/Composer forced continuous style recalc panel-wide.
-    if (root.dataset.section !== 'giveaways' || document.visibilityState === 'hidden') {
-      raf = 0;
-      return;
-    }
+    if (!animating()) return;          // only animate while Giveaways is open
     raf = requestAnimationFrame(loop);
   };
-  paint();
-  if (root.dataset.section === 'giveaways' && document.visibilityState !== 'hidden') {
-    raf = requestAnimationFrame(loop);
-  }
-  // Still register with ticking so cleanup on re-render works
+  if (paint() && animating()) raf = requestAnimationFrame(loop);
+  // The 1s ticker restarts the loop when you come back to Giveaways and
+  // drops this countdown once its node is gone.
   const tickPaint = () => {
-    if (!document.body.contains(node)) {
+    if (!node.isConnected) {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       return false;
     }
+    mounted = true;
     const ok = paint();
-    if (ok && !raf && root.dataset.section === 'giveaways' && document.visibilityState !== 'hidden') {
-      const loop2 = () => {
-        if (!paint()) { raf = 0; return; }
-        if (root.dataset.section !== 'giveaways' || document.visibilityState === 'hidden') { raf = 0; return; }
-        raf = requestAnimationFrame(loop2);
-      };
-      raf = requestAnimationFrame(loop2);
-    }
+    if (ok && !raf && animating()) raf = requestAnimationFrame(loop);
     return ok;
   };
   ticking.add(tickPaint);
@@ -3715,6 +3738,12 @@ async function openGiveawayParticipants(messageId, meta = {}) {
       body.push(list);
     }
 
+    // A silent refresh is the same sheet with new numbers: no entrance
+    // animation (every row used to fade in again on each 8s poll) and the
+    // list stays where it was scrolled to.
+    const sheetBody = document.getElementById('sheet-body');
+    const keepTop = silent && sheetBody ? sheetBody.scrollTop : 0;
+    if (sheetBody) sheetBody.classList.toggle('no-enter', silent);
     openSheet(sheetTitle, body, [
       Object.assign(el('button', 'btn', 'Close'), {
         type: 'button',
@@ -3728,6 +3757,7 @@ async function openGiveawayParticipants(messageId, meta = {}) {
         },
       }),
     ]);
+    if (silent && sheetBody) sheetBody.scrollTop = keepTop;
   };
 
   await paint({ silent: false });
@@ -3752,7 +3782,9 @@ async function openGiveawayParticipants(messageId, meta = {}) {
 
 
 function renderGiveaways() {
-  ticking.clear();
+  // No ticking.clear() here: it also stopped every other countdown on the
+  // page (link permits, schedules). Countdowns whose node this redraw
+  // replaces drop themselves from the set within a second.
   const g = state.overview?.giveaways || { active: [], ended: [] };
 
   // Pending = ended prize drops waiting for prize DM (still shown in Live)
@@ -7027,8 +7059,16 @@ function openAvatarStudio(host, img, fileName, onReady) {
     state.lastY = pt.clientY;
     e.preventDefault();
   };
+  // The window listeners outlive the editor when it is closed or replaced,
+  // so they take themselves off once the stage has left the page.
+  const detachIfGone = () => {
+    if (stage.isConnected) return false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    return true;
+  };
   const onMove = (e) => {
-    if (!state.dragging) return;
+    if (!state.dragging) { detachIfGone(); return; }
     const pt = e.touches ? e.touches[0] : e;
     state.x += pt.clientX - state.lastX;
     state.y += pt.clientY - state.lastY;
@@ -7039,6 +7079,11 @@ function openAvatarStudio(host, img, fileName, onReady) {
     e.preventDefault();
   };
   const onUp = () => {
+    if (detachIfGone()) return;
+    // Only the end of a drag on this stage re-bakes. Every mouseup anywhere
+    // on the page used to encode a fresh 1024×1024 PNG — a visible stutter
+    // on each click once the editor had been opened.
+    if (!state.dragging) return;
     state.dragging = false;
     stage.style.cursor = 'grab';
     onReady(bake());
@@ -7064,12 +7109,20 @@ function openAvatarStudio(host, img, fileName, onReady) {
   range.value = '100';
   range.step = '1';
   range.style.cssText = 'width:100%;accent-color:var(--accent)';
+  // The slider and the wheel fire many times a second; encoding a 1024² PNG
+  // on each one is what made zooming stutter. The preview still redraws
+  // every step — the export waits until the movement stops.
+  let bakeTimer = null;
+  const scheduleBake = () => {
+    if (bakeTimer) clearTimeout(bakeTimer);
+    bakeTimer = setTimeout(() => { bakeTimer = null; if (stage.isConnected) onReady(bake()); }, 160);
+  };
   range.addEventListener('input', () => {
     state.zoom = Number(range.value) / 100;
     zoomVal.textContent = Math.round(state.zoom * 100) + '%';
     clampPan();
     draw();
-    onReady(bake());
+    scheduleBake();
   });
   zoomField.append(range);
 
@@ -7099,7 +7152,7 @@ function openAvatarStudio(host, img, fileName, onReady) {
     zoomVal.textContent = Math.round(next * 100) + '%';
     clampPan();
     draw();
-    onReady(bake());
+    scheduleBake();
   }, { passive: false });
 
   shell.append(title, stage, zoomField, chips, hint);
@@ -7597,12 +7650,23 @@ function renderLinkRequests() {
     r.append(el('span', 'who', p.displayName));
 
     const right = el('div', 'permit-right');
-    const state = p.state === 'locked'
-      ? { cls: 'off', text: `locked ${readableWait(p.secondsLeft)}` }
-      : p.state === 'waiting'
-        ? { cls: 'wait', text: `next in ${readableWait(p.secondsLeft)}` }
-        : { cls: 'on', text: 'may post now' };
-    right.append(el('span', `pill ${state.cls}`, state.text));
+    const pill = el('span', 'pill');
+    // Counted down here from the absolute `until` the server sends.
+    const paint = () => {
+      if (!pill.isConnected && pill.dataset.painted) return false;
+      pill.dataset.painted = '1';
+      const left = p.until ? Math.max(0, Math.ceil((p.until - Date.now()) / 1000)) : 0;
+      const state = p.state === 'locked' && left > 0
+        ? { cls: 'off', text: `locked ${readableWait(left)}` }
+        : p.state === 'waiting' && left > 0
+          ? { cls: 'wait', text: `next in ${readableWait(left)}` }
+          : { cls: 'on', text: 'may post now' };
+      pill.className = `pill ${state.cls}`;
+      if (pill.textContent !== state.text) pill.textContent = state.text;
+      return left > 0;
+    };
+    if (paint()) { ticking.add(paint); startTicking(); }
+    right.append(pill);
 
     const revoke = el('button', 'btn small danger', 'Revoke');
     revoke.type = 'button';
@@ -9148,11 +9212,13 @@ async function initStudio() {
    Two small things the bar now has room for: how far down the page you are,
    and which section you are in once the nav has scrolled past. */
 
+// Every section, including the three that were missing. Without them the
+// scroll handler blanked the title on Leveling, Appearance and Owner, and
+// shell-am.js wrote it back 1.5s later — the title flickered while scrolling.
 const SECTION_NAMES = {
-  overview: 'Overview', composer: 'Composer', studio: 'Studio', tickets: 'Tickets',
-  giveaways: 'Giveaways', feeds: 'Feeds',
-  automation: 'Automation',
-  moderation: 'Moderation', settings: 'Settings',
+  overview: 'Overview', composer: 'Composer', appearance: 'Appearance', studio: 'Studio',
+  leveling: 'Leveling', tickets: 'Tickets', giveaways: 'Giveaways', feeds: 'Feeds',
+  automation: 'Automation', moderation: 'Moderation', settings: 'Settings', owner: 'Owner',
 };
 
 function paintBar() {
@@ -9161,8 +9227,11 @@ function paintBar() {
   document.documentElement.style.setProperty('--scroll', max > 8 ? `${Math.min(100, (y / max) * 100).toFixed(1)}%` : '0%');
   // 64px is roughly where the section nav leaves the screen, so the label
   // arrives exactly as the thing it replaces goes away.
-  root.dataset.scrolled = y > 64 ? '1' : '0';
-  $('#here').textContent = SECTION_NAMES[root.dataset.section] || '';
+  const scrolled = y > 64 ? '1' : '0';
+  if (root.dataset.scrolled !== scrolled) root.dataset.scrolled = scrolled;
+  const here = $('#here');
+  const label = SECTION_NAMES[root.dataset.section];
+  if (here && label && here.textContent !== label) here.textContent = label;
 }
 
 function watchScroll() {
@@ -9344,6 +9413,15 @@ function startLive() {
     try { next = JSON.parse(ev.data); } catch { return; }
     // Guard against a payload that arrives after the guild has been switched.
     if (!next?.guild?.id || next.guild.id !== state.guildId) return;
+    // The stream is one payload per guild, built without anybody's session,
+    // so it has no botProfile and only the non-owner settings. Taking it
+    // whole made Bot Profile and owner fields vanish on every push and come
+    // back on the next save. Those two keep the session-aware copy.
+    const prev = state.overview;
+    if (prev && prev.guild?.id === next.guild.id) {
+      if (next.botProfile == null && prev.botProfile) next.botProfile = prev.botProfile;
+      if (prev.settings) next.settings = prev.settings;
+    }
     state.overview = next;
     renderLive();
   });
@@ -9555,6 +9633,11 @@ function enhanceSelects(scope) {
       wrap._cselectSoftClose = softClose;
 
       const open = () => {
+        // A close still finishing its 160ms fade would otherwise hide and
+        // empty the menu we are about to open — reopening quickly showed
+        // nothing.
+        if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        menu.classList.remove('is-leaving');
         document.querySelectorAll('.cselect-menu').forEach((m) => {
           m.hidden = true; m.replaceChildren();
           m.classList.remove('is-open', 'is-leaving');

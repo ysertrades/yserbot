@@ -489,6 +489,17 @@
     }
   }
 
+  function rowSig(m) {
+    try {
+      return JSON.stringify([m.id, m.content, m.author, m.refKind, m.repliedTo, m.forwardSnapshot, m.editedAt || m.edited || null]);
+    } catch (e) { return String(m.id) + ':' + String(m.content || ''); }
+  }
+
+  // id -> { sig, node }. Rows whose message did not change are put back as
+  // the same nodes, so their avatars are not fetched and decoded again. Every
+  // new message used to rebuild all 40 rows from scratch.
+  var rowCache = new Map();
+
   function renderMsgs(msgs) {
     var f = $('desk-stream');
     if (!f) return;
@@ -496,12 +507,38 @@
     var prevHeight = f.scrollHeight;
     var wasStick = desk.stickBottom;
 
-    f.replaceChildren();
     if (!msgs.length) {
-      f.append(el('div', 'desk-empty', 'No messages yet.'));
+      rowCache.clear();
+      f.replaceChildren(el('div', 'desk-empty', 'No messages yet.'));
       return;
     }
+    var nextCache = new Map();
+    var nodes = [];
     msgs.forEach(function (m) {
+      var sig = rowSig(m);
+      var hit = m.id != null ? rowCache.get(m.id) : null;
+      if (hit && hit.sig === sig) {
+        nextCache.set(m.id, hit);
+        nodes.push(hit.node);
+        return;
+      }
+      var built = buildRow(m);
+      if (m.id != null) nextCache.set(m.id, { sig: sig, node: built });
+      nodes.push(built);
+    });
+    rowCache = nextCache;
+    f.replaceChildren.apply(f, nodes);
+
+    if (wasStick) {
+      f.scrollTop = f.scrollHeight;
+    } else {
+      var delta = f.scrollHeight - prevHeight;
+      f.scrollTop = prevTop + Math.max(0, delta);
+    }
+  }
+
+  function buildRow(m) {
+    {
       var rowCls = 'desk-row' + (m.author && m.author.bot ? ' is-bot' : '')
         + (m.refKind === 'forward' || m.forwardSnapshot ? ' is-fwd' : '')
         + (m.refKind === 'reply' || m.repliedTo ? ' is-reply' : '');
@@ -589,14 +626,7 @@
 
       body.append(actions);
       row.append(body);
-      f.append(row);
-    });
-
-    if (wasStick) {
-      f.scrollTop = f.scrollHeight;
-    } else {
-      var delta = f.scrollHeight - prevHeight;
-      f.scrollTop = prevTop + Math.max(0, delta);
+      return row;
     }
   }
 
@@ -657,7 +687,9 @@
         return;
       }
       var msgs = (out.data.messages || out.data.history || []);
-      var sig = msgs.length + ':' + (msgs.length ? (msgs[msgs.length - 1].id || '') : '');
+      // Every row's content, not just count + last id: an edit or a delete
+      // further up used to go unnoticed until the next new message.
+      var sig = msgs.map(rowSig).join('\u0001');
       if (quiet && sig === desk.lastSig) return;
       desk.lastSig = sig;
       desk.messages = msgs;
@@ -693,6 +725,11 @@
     }
     if (desk.paused || !desk.channelId) return;
     if (document.hidden || document.visibilityState === 'hidden') return;
+    // The desk sits on Overview. On any other panel tab nobody can see it,
+    // so asking Discord for its messages every 2.2s was pure load.
+    var host = $('overview-desk');
+    var sec = host && host.closest ? host.closest('.section') : null;
+    if (sec && !sec.hasAttribute('data-active')) return;
     hist(true);
   }
 
