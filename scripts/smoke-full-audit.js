@@ -86,7 +86,9 @@ const gatedMissing = [...gated].filter(c => !onDisk.has(c));
 if (gatedMissing.length) warn(`feature-gated names not on disk: ${gatedMissing.join(', ')}`);
 else pass(`all gated command names present on disk (${gated.size})`);
 const ready = fs.readFileSync(path.join(root, 'events/ready.js'), 'utf8');
-for (const name of ['startWhopRunner', 'startScheduleRunner', 'startLotteryRunner', 'seedDefaultContent']) {
+// The lottery left with the economy (b9a6631, "remove: full economy, casino,
+// cards, lottery from runtime"): it pays out coins, so it must not start.
+for (const name of ['startWhopRunner', 'startScheduleRunner', 'seedDefaultContent']) {
   if (!ready.includes(name)) fail(`ready.js missing ${name}`);
   else pass(`ready starts ${name}`);
 }
