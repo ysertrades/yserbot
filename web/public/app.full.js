@@ -495,6 +495,28 @@ function showLogin() {
     p.hidden = false;
   }
   root.dataset.state = 'login';
+  bootReady();
+}
+
+/**
+ * Lifts the launch splash.
+ *
+ * The page used to open on a bare "Loading…" card, then flash an overview of
+ * empty "Loading" tiles and "Members 0" while the first server's data was on
+ * its way. Now the splash in the markup covers all of that from the first
+ * frame, and fades out once there is a finished screen beneath it — the
+ * panel drawn, the sign-in page, or setup. Called from each of those; only the
+ * first call does anything.
+ */
+function bootReady() {
+  const boot = document.getElementById('boot');
+  if (!boot || boot.dataset.out) return;
+  boot.dataset.out = '1';
+  requestAnimationFrame(() => {
+    root.classList.add('booted');
+    boot.classList.add('out');
+    setTimeout(() => boot.remove(), 700);
+  });
 }
 
 /**
@@ -569,6 +591,7 @@ function pollHandoff(id) {
 function showSetup(missing) {
   $('#setup-missing').replaceChildren(...missing.map(k => el('li', null, k)));
   root.dataset.state = 'setup';
+  bootReady();
 }
 
 function discordAvatarUrl(user) {
@@ -2411,7 +2434,7 @@ function imageSourceField(label, value, onChange, opts = {}) {
       b.addEventListener('click', () => { setVal(def, false); closeMenu(); });
       menu.append(b);
     }
-    for (const g of generatedImageOptions()) {
+    for (const g of (opts.noGenerated ? [] : generatedImageOptions())) {
       if (opts.giveaway && g.value === (opts.defaultValue || 'dynamic:prizeGiveawayBanner')) continue;
       const b = el('button', 'img-source-opt' + (current === g.value ? ' on' : ''), g.label);
       b.type = 'button';
@@ -2491,27 +2514,317 @@ function renderComposerIndex() {
   wrap.replaceChildren(...list.map(t => {
     const b = el('button', 'tpl-entry');
     b.type = 'button';
-    const nm = el('span', 'nm');
-    const hasEmbed = Array.isArray(t.embeds) && t.embeds.length > 0;
-    if (hasEmbed) {
-      const mark = el('span', 'tpl-embed-mark', '✦');
-      mark.title = 'Has embed';
-      nm.append(mark, document.createTextNode(' ' + t.name));
-    } else {
-      nm.textContent = t.name;
-    }
-    b.append(nm);
+    const top = el('span', 'tpl-top');
+    const nm = el('span', 'nm', t.name);
+    const fmt = composerFormat(t);
+    const kind = fmt === 'v2' ? 'V2' : (t.embeds?.length ? 'Embed' : 'Text');
+    const badge = el('span', 'tpl-kind k-' + kind.toLowerCase(), kind);
+    top.append(nm, badge);
+    b.append(top);
+    const snip = composerSnippet(t);
     const meta = el('span', 'mt');
     const eN = t.embeds?.length || 0;
     const bN = t.buttons?.length || 0;
     const pN = t.posts?.length || 0;
-    meta.textContent = `${eN ? eN + '▦ ' : ''}${bN ? bN + '⬤ ' : ''}${pN ? pN + '↗' : ''}`.trim() || 'text';
-    meta.title = `${eN} embeds · ${bN} buttons · ${pN} posted`;
-    b.append(meta);
+    meta.textContent = [eN ? `${eN} embed${eN === 1 ? '' : 's'}` : '', bN ? `${bN} button${bN === 1 ? '' : 's'}` : '', pN ? `${pN} posted` : '']
+      .filter(Boolean).join(' · ');
+    if (snip) b.append(el('span', 'tpl-snip', snip));
+    if (meta.textContent) b.append(meta);
     if (t.name === state.tplName) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => { state.tplName = t.name; state.draft = null; renderComposer(); });
+    b.addEventListener('click', async () => {
+      if (t.name === state.tplName && state.draft) return;
+      if (composerIsDirty() && !await askConfirm({
+        title: 'Discard your changes?',
+        message: `“${state.draft.name || 'This message'}” has edits that are not saved yet.`,
+        confirmLabel: 'Discard them', danger: true,
+      })) return;
+      state.tplName = t.name; state.draft = null; renderComposer();
+    });
     return b;
   }));
+}
+
+/* ── Composer helpers ──────────────────────────────────────────────────────
+ *
+ * Which editor a template opens in. A saved V2 message says so; anything
+ * else that already has content is a classic message — embeds, or only the
+ * plain text and pictures around where an embed would be. Only a message
+ * with nothing in it yet starts on the V2 canvas. Getting this wrong opened
+ * text-only templates on an empty canvas, and saving from there wiped them.
+ */
+function composerFormat(t) {
+  if (!t) return 'v2';
+  if (t.format === 'v2' || t.format === 'legacy') return t.format;
+  if (Array.isArray(t.embeds) && t.embeds.length) return 'legacy';
+  const a = t.around || {};
+  if (a.above || a.below || a.picture || a.pictureAbove) return 'legacy';
+  return 'v2';
+}
+
+/** One line of what a template says, for the list. */
+function composerSnippet(t) {
+  let s = '';
+  if (composerFormat(t) === 'v2') {
+    s = (t.blocks || []).map(b => String(b?.content || '')).find(x => x.trim()) || '';
+  } else {
+    const e = (t.embeds || [])[0];
+    s = t.around?.above || (e && (e.title || e.description)) || t.around?.below || '';
+  }
+  return String(s)
+    .replace(/<#\d+>|<@[!&]?\d+>/g, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^-#\s+|^#{1,3}\s+/gm, '')
+    .replace(/[*_`>~|]/g, '')
+    .replace(/\s+/g, ' ').trim().slice(0, 72);
+}
+
+/** Everything that ends up in the message, as one string to compare. */
+function composerDraftKey(d) {
+  if (!d) return '';
+  return JSON.stringify([d.name || '', d.format, d.format === 'v2' ? d.blocks : d.embeds,
+    d.format === 'v2' ? null : d.around, d.format === 'v2' ? (d._buttons || []) : null, !!d.buttonsOutside]);
+}
+
+/** @param {boolean} [noSync] true from the preview itself, which syncs already */
+function composerIsDirty(noSync) {
+  const d = state.draft;
+  if (!d || d._baseKey == null) return false;
+  if (!noSync && typeof d._syncFromCanvas === 'function' && d.format === 'v2') { try { d._syncFromCanvas(); } catch (_) {} }
+  return composerDraftKey(d) !== d._baseKey;
+}
+
+/**
+ * A classic message as V2 blocks, in the order Discord shows it: the picture
+ * above, the line above, each embed (title, text, fields, image, footer), then
+ * the second message underneath. Generated banners cannot go in a V2 message,
+ * so they are counted and left out rather than silently dropped on save.
+ */
+function legacyToBlocks(d) {
+  const out = [];
+  let skipped = 0;
+  const a = d.around || {};
+  const text = s => { s = String(s || '').trim(); if (s) out.push({ type: 'text', content: s.slice(0, 4000) }); };
+  const media = u => {
+    u = String(u || '').trim();
+    if (!u) return;
+    if (/^https:\/\//i.test(u)) out.push({ type: 'media', url: u });
+    else skipped++;
+  };
+  media(a.pictureAbove);
+  text(a.above);
+  (d.embeds || []).forEach(e => {
+    if (out.length) out.push({ type: 'separator' });
+    if (e.authorName) text('-# ' + e.authorName);
+    if (e.title) out.push({ type: 'heading', level: 2, content: String(e.title).slice(0, 256) });
+    text(e.description);
+    const fields = (e.fields || []).filter(f => f && (f.name || f.value))
+      .map(f => (f.name ? `**${f.name}**\n` : '') + (f.value || ''));
+    if (fields.length) text(fields.join('\n\n'));
+    media(e.image || e.thumbnail);
+    if (e.footer) text('-# ' + e.footer);
+  });
+  if (a.below || a.picture) {
+    if (out.length) out.push({ type: 'separator' });
+    text(a.below);
+    media(a.picture);
+  }
+  return { blocks: out, skipped };
+}
+
+/** V2 blocks as one classic embed: first heading as the title, the rest as text. */
+function blocksToLegacy(d) {
+  const prev = (d.embeds || [])[0] || {};
+  const e = { title: '', description: '', color: prev.color || '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false };
+  const lines = [];
+  const extra = [];
+  for (const b of d.blocks || []) {
+    if (!b) continue;
+    const c = String(b.content || '').trim();
+    if (b.type === 'heading') {
+      if (!c) continue;
+      if (!e.title && !lines.length) e.title = c.slice(0, 256);
+      else lines.push(`**${c}**`);
+    } else if (b.type === 'text') {
+      if (c) lines.push(c);
+    } else if (b.type === 'media' && b.url) {
+      if (!e.image) e.image = b.url; else extra.push(b.url);
+    }
+  }
+  e.description = lines.join('\n\n').slice(0, 4096);
+  return { embed: e, extra };
+}
+
+/* ── previewing a message ─────────────────────────────────────────────────
+ * One builder for both the live pane and the full-screen sheet, so they can
+ * never disagree about what a message looks like. */
+
+const dynamicPreviewCache = new Map();
+
+/** Draws Discord's line-level markdown — # headings, -# small print, > quotes. */
+function discordTextNode(text, cls = 'v2-text') {
+  const box = el('div', cls);
+  const channels = state.overview?.settings?.channels || [];
+  const src = fillPlaceholders(text).replace(/<#(\d+)>/g, (m, id) => {
+    const c = channels.find(x => x.id === id);
+    return c ? `#${c.name}` : '#channel';
+  });
+  let buf = [];
+  const flush = () => {
+    if (!buf.length) return;
+    const p = el('div', 'dl');
+    p.append(...mdNodes(buf.join('\n')));
+    box.append(p);
+    buf = [];
+  };
+  for (const ln of src.split('\n')) {
+    const h = ln.match(/^(#{1,3}) (.+)$/);
+    const sub = ln.match(/^-# (.+)$/);
+    const q = ln.match(/^>>?>? ?(.*)$/);
+    if (h) { flush(); const n = el('div', 'v2-h' + h[1].length); n.append(...mdNodes(h[2])); box.append(n); }
+    else if (sub) { flush(); const n = el('div', 'dsub'); n.append(...mdNodes(sub[1])); box.append(n); }
+    else if (q) { flush(); const n = el('div', 'dquote'); n.append(...mdNodes(q[1] || '​')); box.append(n); }
+    else buf.push(ln);
+  }
+  flush();
+  return box;
+}
+
+/** A picture in a preview: a URL, an upload, or one of the generated banners. */
+function previewImageNode(url, className, revocables) {
+  const u = String(url || '');
+  if (!u.startsWith('dynamic:')) return previewPicture(u, className);
+  const img = el('img');
+  img.className = className;
+  img.alt = '';
+  img.hidden = true;
+  loadDynamicPreview(img, u.slice(8), revocables);
+  return img;
+}
+
+function previewButtonsRow(buttons) {
+  const row = el('div', 'demb-btns');
+  for (const b of buttons || []) {
+    if (!b) continue;
+    row.append(el('span', b.type === 'link' ? 'link' : (b.style || 'Primary'),
+      `${b.emoji ? `${b.emoji} ` : ''}${b.label || b.id || 'Button'}`));
+  }
+  return row.childElementCount ? row : null;
+}
+
+/** The nodes of a message, as Discord would lay them out. */
+function messagePreviewNodes(draft, revocables = []) {
+  const body = [];
+  if (draft.format === 'v2') {
+    const card = el('div', 'v2-preview-card dv2-card');
+    for (const b of draft.blocks || []) {
+      if (!b) continue;
+      if (b.type === 'heading') {
+        const c = String(b.content || '').replace(/^#{1,3}\s*/, '');
+        if (!c.trim()) continue;
+        const h = el('div', 'v2-h' + Math.min(3, Math.max(1, Number(b.level) || 1)));
+        h.append(...mdNodes(fillPlaceholders(c)));
+        card.append(h);
+      } else if (b.type === 'text') {
+        if (String(b.content || '').trim()) card.append(discordTextNode(b.content));
+      } else if (b.type === 'separator') {
+        card.append(el('div', 'v2-sep'));
+      } else if (b.type === 'media' && b.url) {
+        card.append(previewImageNode(b.url, 'big dv2-img', revocables));
+      }
+    }
+    const row = previewButtonsRow(draft._buttons);
+    if (row && !draft.buttonsOutside) card.append(row);
+    if (card.childElementCount) body.push(card);
+    if (row && draft.buttonsOutside) body.push(row);
+    if (!body.length) body.push(el('p', 'muted', 'Nothing to show yet — start writing on the canvas.'));
+    return body;
+  }
+
+  const buttons = (state.overview?.composer || []).find(t => t.name === draft.name)?.buttons
+    || draft.buttons || [];
+  const around = draft.around || {};
+  const embeds = draft.embeds || [];
+  if (!embeds.length && around.pictureAbove) {
+    body.push(previewImageNode(around.pictureAbove, 'big', revocables));
+  }
+  if (around.above) body.push(discordTextNode(around.above, 'demb-say'));
+
+  embeds.forEach(e => {
+    const box = el('div', 'demb');
+    box.style.borderLeftColor = /^#?[0-9a-f]{6}$/i.test(e.color || '') ? (e.color.startsWith('#') ? e.color : '#' + e.color) : '#5865F2';
+    if (e.authorName) {
+      const author = el('p', 'demb-auth');
+      if (e.authorIcon) author.append(previewPicture(e.authorIcon, 'demb-auth-ic'));
+      author.append(el('span', null, fillPlaceholders(e.authorName)));
+      box.append(author);
+    }
+    if (e.title) { const t = el('p', 't'); t.append(...mdNodes(fillPlaceholders(e.title))); box.append(t); }
+    if (e.description) box.append(discordTextNode(e.description, 'd'));
+    if (e.fields?.length) {
+      const f = el('div', 'f');
+      for (const fd of e.fields) {
+        if (!fd.name && !fd.value) continue;
+        const cell = el('div');
+        // Inline fields sit side by side; block fields take the full width,
+        // which is the single most visible thing the inline switch does.
+        if (!fd.inline) cell.style.flexBasis = '100%';
+        const nb = el('b');
+        nb.append(...mdNodes(fillPlaceholders(fd.name || '​')));
+        cell.append(nb, discordTextNode(fd.value || '', 'fv'));
+        f.append(cell);
+      }
+      if (f.childElementCount) box.append(f);
+    }
+    if (e.thumbnail) {
+      // Wrapped, so the square sits beside what came before it rather than
+      // on top of it — the same row the Appearance preview uses.
+      const row = el('div', 'demb-row');
+      const main = el('div', 'demb-main');
+      while (box.firstChild) main.append(box.firstChild);
+      row.append(main, previewPicture(e.thumbnail, 'demb-thumb-img'));
+      box.append(row);
+    }
+    if (e.image) box.append(previewImageNode(e.image, 'big', revocables));
+    const footBits = [];
+    if (e.footer) footBits.push(fillPlaceholders(e.footer));
+    if (e.timestamp) footBits.push(new Date().toLocaleString());
+    if (footBits.length) {
+      const ft = el('p', 'ft');
+      if (e.footerIcon) ft.append(previewPicture(e.footerIcon, 'demb-auth-ic'));
+      ft.append(el('span', null, footBits.join(' • ')));
+      box.append(ft);
+    }
+    body.push(box);
+  });
+
+  const row = previewButtonsRow(buttons);
+  if (row) body.push(row);
+
+  if (around.below || around.picture) {
+    const second = el('div', 'demb-second');
+    second.append(el('p', 'hint', 'Second message, right underneath'));
+    if (around.below) second.append(discordTextNode(around.below, 'demb-say'));
+    if (around.picture) second.append(previewImageNode(around.picture, 'big', revocables));
+    body.push(second);
+  }
+  if (!body.length) body.push(el('p', 'muted', 'Nothing to show yet — write a message body or add an embed.'));
+  return body;
+}
+
+/** A Discord-style message frame — the bot's name and the time over the content. */
+function messagePreviewFrame(nodes) {
+  const msg = el('div', 'dmsg');
+  const av = el('img', 'dmsg-av');
+  av.alt = '';
+  av.src = '/logo-128.jpg';
+  av.addEventListener('error', () => { av.style.visibility = 'hidden'; });
+  const main = el('div', 'dmsg-main');
+  const head = el('div', 'dmsg-head');
+  head.append(el('span', 'dmsg-name', 'QuantLab'), el('span', 'dmsg-app', 'APP'),
+    el('span', 'dmsg-time', 'Today at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })));
+  main.append(head, ...nodes);
+  msg.append(av, main);
+  return msg;
 }
 
 /**
@@ -2611,15 +2924,21 @@ function renderComposer() {
   // to rather than each field having to cope with it being absent.
   draft.around = draft.around || { above: '', below: '', picture: '', pictureAbove: '' };
   if (draft.around.pictureAbove == null) draft.around.pictureAbove = '';
-  // New messages default to Components V2; existing legacy templates stay legacy.
-  if (!draft.format && (!draft.embeds || !draft.embeds.length) && !draft.blocks) {
-    draft.format = 'v2';
-    draft.blocks = [{ type: 'text', content: '' }];
-    draft.buttonsOutside = false;
-    draft.embeds = [];
+  if (!Array.isArray(draft.embeds)) draft.embeds = [];
+  // A blank new message starts on the V2 canvas; anything that already has
+  // content opens in the editor it was written in (see composerFormat).
+  if (!draft.format) {
+    draft.format = composerFormat(draft);
+    if (draft.format === 'v2' && !Array.isArray(draft.blocks)) {
+      draft.blocks = [{ type: 'text', content: '' }];
+      draft.buttonsOutside = false;
+    }
   }
   if (draft.format === 'v2' && !Array.isArray(draft.blocks)) draft.blocks = [];
   state.draft = draft;
+  // Rebound to this draw's preview further down; until then nothing listens.
+  draft._onChange = null;
+  draft._paintCount = null;
 
   const parts = [];
 
@@ -2661,14 +2980,31 @@ function renderComposer() {
     classicBtn.addEventListener('click', function () {
       syncBlocksFromDom();
       draft.format = 'legacy';
-      if (!draft.embeds || !draft.embeds.length) {
-        var body = (draft.blocks[0] && draft.blocks[0].content) || '';
-        draft.embeds = [{ title: '', description: body, color: '#5865F2', fields: [] }];
+      var snap = draft._legacySnap;
+      if (snap && snap.blocks === JSON.stringify(draft.blocks)) {
+        // Came from a classic message and nothing changed on the canvas:
+        // put back exactly what was there, fields and all.
+        draft.embeds = JSON.parse(snap.embeds);
+        draft.around = JSON.parse(snap.around);
+      } else {
+        var hasContent = (draft.blocks || []).some(function (b) {
+          return b && ((b.content || '').trim() || (b.type === 'media' && b.url));
+        });
+        if (hasContent) {
+          var conv = blocksToLegacy(draft);
+          draft.embeds = [conv.embed];
+          draft.around = draft.around || { above: '', below: '', picture: '', pictureAbove: '' };
+          if (conv.extra.length && !draft.around.picture) draft.around.picture = conv.extra[0];
+        } else if (!draft.embeds.length) {
+          draft.embeds = [{ title: '', description: '', color: '#5865F2', footer: '', thumbnail: '', image: '', fields: [], timestamp: false }];
+        }
       }
+      draft._legacySnap = null;
+      draft._v2Snap = { blocks: JSON.stringify(draft.blocks), embeds: JSON.stringify(draft.embeds), around: JSON.stringify(draft.around) };
       state.draft = draft;
       renderComposer();
     });
-    modeRow.append(v2Btn, classicBtn, el('span', 'tag on', 'ACTIVE'));
+    modeRow.append(v2Btn, classicBtn);
     panel.append(modeRow);
     panel.append(textField('Name', draft.name || '', function (v) { draft.name = v; draft._dirty = true; }));
 
@@ -2704,12 +3040,7 @@ function renderComposer() {
           return;
         }
         if (b.type === 'media') {
-          var med = el('div', 'c-media');
-          med.contentEditable = 'false';
-          med.setAttribute('data-type', 'media');
-          med.setAttribute('data-url', b.url || '');
-          med.textContent = b.url ? ('🖼 ' + b.url) : '🖼 Image (set URL)';
-          canvas.appendChild(med);
+          canvas.appendChild(makeMedia(b.url || ''));
           return;
         }
         if (b.type === 'heading') {
@@ -2726,16 +3057,21 @@ function renderComposer() {
         var t = String(b.content || '');
         if (!t) p.appendChild(document.createElement('br'));
         else {
-          t.split(/(\*\*[^*]+\*\*)/).forEach(function (part) {
-            if (/^\*\*[^*]+\*\*$/.test(part)) {
+          t.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/).forEach(function (part) {
+            if (/^\*\*[^*\n]+\*\*$/.test(part)) {
               var s = document.createElement('strong');
               s.textContent = part.slice(2, -2);
               p.appendChild(s);
-            } else p.appendChild(document.createTextNode(part));
+            } else if (/^\*[^*\n]+\*$/.test(part)) {
+              var em = document.createElement('em');
+              em.textContent = part.slice(1, -1);
+              p.appendChild(em);
+            } else if (part) p.appendChild(document.createTextNode(part));
           });
         }
         canvas.appendChild(p);
       });
+      if (typeof draft._onChange === 'function') draft._onChange();
       (draft._buttons || []).forEach(function (btn, i) {
         var bb = el('span', 'c-btn v2-btn-pill bstyle ' + String(btn.style || 'Primary').toLowerCase());
         bb.contentEditable = 'false';
@@ -2748,6 +3084,42 @@ function renderComposer() {
         });
         canvas.appendChild(bb);
       });
+    }
+
+    // The text of a line with its formatting written back as markdown. Reading
+    // innerText instead dropped every bold word the moment anything was typed.
+    function inlineText(node) {
+      var s = '';
+      node.childNodes.forEach(function (c) {
+        if (c.nodeType === 3) { s += c.textContent; return; }
+        if (c.nodeType !== 1) return;
+        var tag = c.tagName, t;
+        if (tag === 'BR') s += '\n';
+        else if (tag === 'STRONG' || tag === 'B') { t = inlineText(c); s += t.trim() ? '**' + t + '**' : t; }
+        else if (tag === 'EM' || tag === 'I') { t = inlineText(c); s += t.trim() ? '*' + t + '*' : t; }
+        else if (tag === 'DIV' || tag === 'P') { t = inlineText(c); s += (s && s.slice(-1) !== '\n' ? '\n' : '') + t; }
+        else s += inlineText(c);
+      });
+      return s;
+    }
+
+    function makeMedia(url) {
+      var med = el('div', 'c-media');
+      med.contentEditable = 'false';
+      med.setAttribute('data-type', 'media');
+      med.setAttribute('data-url', url || '');
+      if (url && /^https:\/\//i.test(url)) {
+        var img = el('img', 'c-media-img');
+        img.alt = '';
+        img.src = url;
+        img.addEventListener('error', function () { img.replaceWith(el('span', 'c-media-cap', '⚠ That picture would not load')); });
+        med.append(img);
+      } else {
+        med.append(el('span', 'c-media-cap', url ? '⚠ V2 images need an https link or an upload — tap to change' : '🖼 Tap to pick an image'));
+      }
+      med.title = 'Tap to change or remove';
+      med.addEventListener('click', function (e) { e.preventDefault(); openMediaEditor(med); });
+      return med;
     }
 
     function syncBlocksFromDom() {
@@ -2775,7 +3147,7 @@ function renderComposer() {
           });
           return;
         }
-        var txt = (node.innerText || node.textContent || '').replace(/\n$/, '');
+        var txt = inlineText(node).replace(/\n$/, '');
         if (node.childNodes.length === 1 && node.firstChild && node.firstChild.tagName === 'BR') txt = '';
         blocks.push({ type: 'text', content: txt });
       });
@@ -2787,6 +3159,7 @@ function renderComposer() {
       if (!blocks.length) blocks = [{ type: 'text', content: '' }];
       draft.blocks = blocks;
       draft._dirty = true;
+      if (typeof draft._onChange === 'function') draft._onChange();
     }
 
     function placeCaretAfter(node) {
@@ -2841,6 +3214,14 @@ function renderComposer() {
       if (syncTimer) clearTimeout(syncTimer);
       syncTimer = setTimeout(function () { syncBlocksFromDom(); }, 120);
     });
+    // Pasted text arrives as text. Pasted HTML brought its own fonts, colours
+    // and nested markup into the canvas, none of which Discord can show.
+    canvas.addEventListener('paste', function (e) {
+      var t = e.clipboardData && e.clipboardData.getData('text/plain');
+      if (t == null) return;
+      e.preventDefault();
+      document.execCommand('insertText', false, t);
+    });
 
     blocksToDom();
     panel.append(canvas);
@@ -2873,25 +3254,96 @@ function renderComposer() {
       sep.innerHTML = '<span class="c-sep-line"></span>';
       insertAtCaret(sep);
     }));
-    bar.append(tool('Image', function () {
-      var url = window.prompt('Image URL (https://…)', '');
-      if (url == null) return;
-      var med = el('div', 'c-media');
-      med.contentEditable = 'false';
-      med.setAttribute('data-type', 'media');
-      med.setAttribute('data-url', url || '');
-      med.textContent = url ? ('🖼 ' + url) : '🖼 Image';
-      insertAtCaret(med);
-    }));
+    bar.append(tool('Image', function () { openMediaEditor(null); }));
     bar.append(tool('Button', function () { openButtonEditor(null); }));
+    var fmtB = tool('B', function () { canvas.focus(); document.execCommand('bold'); syncBlocksFromDom(); });
+    fmtB.title = 'Bold (Ctrl+B)'; fmtB.classList.add('composer-fmt'); fmtB.style.fontWeight = '800';
+    var fmtI = tool('I', function () { canvas.focus(); document.execCommand('italic'); syncBlocksFromDom(); });
+    fmtI.title = 'Italic (Ctrl+I)'; fmtI.classList.add('composer-fmt'); fmtI.style.fontStyle = 'italic';
+    bar.append(fmtB, fmtI);
+    // Discord caps the text in one V2 message at 4000 characters in all.
+    const counter = el('span', 'composer-count');
+    bar.append(counter);
+    draft._paintCount = function () {
+      var n = (draft.blocks || []).reduce(function (s, b) {
+        return s + ((b && (b.type === 'text' || b.type === 'heading')) ? String(b.content || '').length : 0);
+      }, 0);
+      counter.textContent = n + ' / 4000';
+      counter.classList.toggle('over', n > 4000);
+      counter.classList.toggle('near', n > 3600 && n <= 4000);
+    };
+    draft._paintCount();
     panel.append(bar);
+    panel.append(toggle('Buttons under the card instead of inside it', !!draft.buttonsOutside, function (v) {
+      draft.buttonsOutside = v;
+      if (typeof draft._onChange === 'function') draft._onChange();
+    }));
 
     const btnEditorHost = el('div', 'composer-btn-editor');
     btnEditorHost.hidden = true;
     panel.append(btnEditorHost);
 
+    const mediaHost = el('div', 'composer-btn-editor');
+    mediaHost.hidden = true;
+    panel.append(mediaHost);
+
+    // Remembered when the picker opens: typing a link into it moves the focus
+    // out of the canvas, and the picture should land where the caret was.
+    var savedRange = null;
+    function openMediaEditor(node) {
+      var sel = window.getSelection();
+      savedRange = (sel && sel.rangeCount && canvas.contains(sel.anchorNode)) ? sel.getRangeAt(0).cloneRange() : null;
+      btnEditorHost.hidden = true;
+      mediaHost.hidden = false;
+      mediaHost.replaceChildren();
+      var url = node ? (node.getAttribute('data-url') || '') : '';
+      mediaHost.append(
+        el('h3', null, node ? 'Change image' : 'Add image'),
+        imageSourceField('Image', url, function (v) { url = v; }, { noGenerated: true }),
+        el('p', 'hint', 'Paste an https link or upload one from your device. Generated banners only work on classic messages.'),
+      );
+      var acts = el('div', 'actions');
+      var ok = el('button', 'btn small primary', node ? 'Update' : 'Insert');
+      ok.type = 'button';
+      ok.addEventListener('click', function () {
+        var u = String(url || '').trim();
+        if (!/^https:\/\//i.test(u)) { toast('Use an https image link, or upload one.', 'bad'); return; }
+        mediaHost.hidden = true;
+        var fresh = makeMedia(u);
+        if (node && node.parentNode) {
+          node.replaceWith(fresh);
+          syncBlocksFromDom();
+        } else {
+          canvas.focus();
+          if (savedRange) {
+            var s = window.getSelection();
+            s.removeAllRanges();
+            s.addRange(savedRange);
+          }
+          insertAtCaret(fresh);
+        }
+      });
+      var cancel = el('button', 'btn small', 'Cancel');
+      cancel.type = 'button';
+      cancel.addEventListener('click', function () { mediaHost.hidden = true; });
+      acts.append(ok, cancel);
+      if (node) {
+        var rm = el('button', 'btn small danger', 'Remove image');
+        rm.type = 'button';
+        rm.addEventListener('click', function () {
+          mediaHost.hidden = true;
+          node.remove();
+          syncBlocksFromDom();
+        });
+        acts.append(rm);
+      }
+      mediaHost.append(acts);
+      mediaHost.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
     function openButtonEditor(existing, editIndex) {
       syncBlocksFromDom();
+      mediaHost.hidden = true;
       btnEditorHost.hidden = false;
       btnEditorHost.replaceChildren();
       var st = existing ? JSON.parse(JSON.stringify(existing)) : {
@@ -2986,17 +3438,27 @@ function renderComposer() {
     const back = el('button', 'btn small', 'Use Component V2');
     back.type = 'button';
     back.addEventListener('click', function () {
-      draft.format = 'v2';
-      if (!Array.isArray(draft.blocks) || !draft.blocks.length) {
-        const emb = draft.embeds && draft.embeds[0];
-        draft.blocks = [{ type: 'text', content: (emb && (emb.description || emb.title)) || '' }];
+      const snap = draft._v2Snap;
+      const legacyNow = { embeds: JSON.stringify(draft.embeds), around: JSON.stringify(draft.around) };
+      if (snap && snap.embeds === legacyNow.embeds && snap.around === legacyNow.around) {
+        // Nothing changed since leaving the canvas — the blocks come back as they were.
+        draft.blocks = JSON.parse(snap.blocks);
+      } else {
+        const conv = legacyToBlocks(draft);
+        if (conv.blocks.length) draft.blocks = conv.blocks;
+        else if (!Array.isArray(draft.blocks) || !draft.blocks.length) draft.blocks = [{ type: 'text', content: '' }];
+        if (conv.skipped) toast(`${conv.skipped} generated image${conv.skipped === 1 ? '' : 's'} left out — V2 messages need an uploaded image or an https link.`, 'bad');
+        // Kept so switching straight back restores the classic message exactly.
+        draft._legacySnap = { blocks: JSON.stringify(draft.blocks), embeds: legacyNow.embeds, around: legacyNow.around };
       }
+      draft._v2Snap = null;
+      draft.format = 'v2';
       state.draft = draft;
       renderComposer();
     });
     row.append(back);
     sw.append(row);
-    sw.append(el('p', 'hint', 'Switch back anytime. V2 blocks are kept when possible.'));
+    sw.append(el('p', 'hint', 'Switching moves everything across — text, titles, fields and pictures. Switch straight back and the original returns unchanged.'));
     parts.push(sw);
   }
   const a = draft.around;
@@ -3319,14 +3781,53 @@ function renderComposer() {
   }
 
 
+  let saveBarEl = null;
   {
     const bar = el('div', 'composer-save-bar panel');
     bar.style.cssText = 'position:sticky;bottom:0;z-index:6;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;margin-top:1rem;padding:.75rem 1rem;border:1px solid var(--rule,#2a2d38);background:var(--panel,#12131a)';
-    const left = el('div');
-    left.append(el('span', 'tag', draft.format === 'v2' ? 'Component V2' : 'Classic embed'));
+    const left = el('div', 'composer-save-left');
+    left.append(el('span', 'tag', draft.format === 'v2' ? 'Component V2' : (draft.embeds.length ? 'Classic embed' : 'Plain text')));
     if (draft.name) left.append(el('span', 'muted', ' · ' + draft.name));
-    const saveBtn = el('button', 'btn', 'Save template');
+    const dirtyTag = el('span', 'composer-dirty', 'Unsaved changes');
+    dirtyTag.hidden = true;
+    left.append(dirtyTag);
+    draft._paintDirty = function () { dirtyTag.hidden = !composerIsDirty(true); };
+    const right = el('div', 'composer-save-right');
+    if (list.some(t => t.name === draft.name)) {
+      const dup = el('button', 'btn small', 'Duplicate');
+      dup.type = 'button';
+      dup.title = 'Start a new message from a copy of this one';
+      dup.addEventListener('click', function () {
+        if (typeof draft._syncFromCanvas === 'function') { try { draft._syncFromCanvas(); } catch (e) {} }
+        const names = new Set(list.map(t => t.name));
+        let n = `${draft.name} copy`;
+        for (let i = 2; names.has(n); i++) n = `${draft.name} copy ${i}`;
+        const copy = JSON.parse(JSON.stringify({
+          name: n, format: draft.format, blocks: draft.blocks, buttonsOutside: draft.buttonsOutside,
+          embeds: draft.embeds, around: draft.around,
+        }));
+        copy.isNew = true;
+        copy._baseKey = '';
+        copy.buttons = [];
+        copy.posts = [];
+        // Canvas buttons are saved by id, so a copy needs ids of its own or
+        // saving it would move the original's buttons onto the copy.
+        if (draft.format === 'v2') {
+          copy._buttons = (draft._buttons || []).map(function (b, i) {
+            return Object.assign({}, b, { id: 'btn_' + Date.now().toString(36) + i, uses: 0 });
+          });
+        }
+        state.tplName = null;
+        state.draft = copy;
+        renderComposer();
+        toast(`Copy made — rename it if you like, then save.`, 'ok');
+      });
+      right.append(dup);
+    }
+    const saveBtn = el('button', 'btn primary', 'Save template');
     saveBtn.type = 'button';
+    saveBtn.id = 'composer-save';
+    saveBtn.title = 'Save (Ctrl+S)';
     let saving = false;
     saveBtn.addEventListener('click', async function () {
       if (saving) return;
@@ -3362,11 +3863,84 @@ function renderComposer() {
       } catch (e) { toast('Save failed', 'bad'); }
       finally { saving = false; saveBtn.disabled = false; saveBtn.textContent = 'Save template'; }
     });
-    bar.append(left, saveBtn);
-    parts.push(bar);
+    right.append(saveBtn);
+    bar.append(left, right);
+    saveBarEl = bar;
   }
 
-  body.replaceChildren(...parts);
+  /* -- live preview ----------------------------------------------------- */
+  const pane = el('aside', 'composer-preview-pane');
+  const paneHead = el('div', 'composer-preview-head');
+  const fullBtn = el('button', 'btn small', 'Full screen');
+  fullBtn.type = 'button';
+  fullBtn.addEventListener('click', () => openEmbedPreview(draft));
+  paneHead.append(el('h2', null, 'Live preview'), fullBtn);
+  const stage = el('div', 'composer-preview-stage');
+  pane.append(paneHead, stage,
+    el('p', 'hint', 'Updates as you type. A likeness of Discord, with placeholders filled in the way they are when it is sent.'));
+
+  let lastKey = null;
+  let pvTimer = 0;
+  const paintPreview = () => {
+    pvTimer = 0;
+    if (!stage.isConnected && lastKey !== null) return;
+    if (typeof draft._paintCount === 'function') draft._paintCount();
+    const key = composerDraftKey(draft);
+    if (draft._baseKey == null) draft._baseKey = key;
+    if (typeof draft._paintDirty === 'function') draft._paintDirty();
+    if (key === lastKey) return;
+    lastKey = key;
+    // Generated banners are cached for the page's life (see loadDynamicPreview),
+    // so redrawing on every keystroke never refetches them.
+    // Held at its old height while new pictures load, so the pane does not
+    // collapse and spring back under the cursor.
+    if (stage.offsetHeight) stage.style.minHeight = stage.offsetHeight + 'px';
+    stage.replaceChildren(messagePreviewFrame(messagePreviewNodes(draft, [])));
+    clearTimeout(stage._hold);
+    stage._hold = setTimeout(() => { stage.style.minHeight = ''; }, 600);
+  };
+  const schedulePreview = () => {
+    if (pvTimer) clearTimeout(pvTimer);
+    pvTimer = setTimeout(paintPreview, 140);
+  };
+  draft._onChange = schedulePreview;
+
+  const editCol = el('div', 'composer-edit');
+  editCol.append(...parts);
+  // Every field writes into the draft as it changes, so listening on the
+  // column catches all of them — text, toggles, pickers, added fields.
+  for (const ev of ['input', 'change', 'click']) editCol.addEventListener(ev, schedulePreview);
+
+  const tabs = el('div', 'composer-tabs');
+  const split = el('div', 'composer-split');
+  split.dataset.tab = state._composerTab || 'edit';
+  for (const [k, label] of [['edit', 'Edit'], ['preview', 'Preview']]) {
+    const t = el('button', 'composer-tab', label);
+    t.type = 'button';
+    t.setAttribute('aria-pressed', String(split.dataset.tab === k));
+    t.addEventListener('click', () => {
+      state._composerTab = k;
+      split.dataset.tab = k;
+      tabs.querySelectorAll('.composer-tab').forEach(x => x.setAttribute('aria-pressed', String(x === t)));
+      if (k === 'preview') paintPreview();
+    });
+    tabs.append(t);
+  }
+  split.append(editCol, pane);
+
+  body.replaceChildren(tabs, split, ...(saveBarEl ? [saveBarEl] : []));
+  paintPreview();
+
+  if (!window.__composerKeys) {
+    window.__composerKeys = true;
+    document.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || String(e.key).toLowerCase() !== 's') return;
+      const b = document.getElementById('composer-save');
+      if (!b || b.offsetParent === null || b.disabled) return;
+      e.preventDefault();
+      b.click();
+    });
+  }
 }
 
 /* ── giveaways ─────────────────────────────────────────────────────────── */
@@ -4490,13 +5064,23 @@ function fillPlaceholders(text) {
  * page, and a preview is the last thing that should leak.
  */
 async function loadDynamicPreview(img, key, revocables) {
+  // One fetch per banner per server for the page's life: the live preview
+  // redraws as you type, and each redraw used to draw the banner again. The
+  // cached URLs are never revoked, so `revocables` is left alone.
+  void revocables;
+  const cacheKey = `${state.guildId || ''}:${key}`;
   try {
-    const url = `/api/preview-image/${encodeURIComponent(key)}${state.guildId ? `?g=${state.guildId}` : ''}`;
-    const res = await fetch(url, { credentials: 'same-origin', headers: authHeaders() });
-    if (!res.ok) throw new Error(String(res.status));
-    const objectUrl = URL.createObjectURL(await res.blob());
-    revocables.push(objectUrl);
-    img.src = objectUrl;
+    let pending = dynamicPreviewCache.get(cacheKey);
+    if (!pending) {
+      const url = `/api/preview-image/${encodeURIComponent(key)}${state.guildId ? `?g=${state.guildId}` : ''}`;
+      pending = fetch(url, { credentials: 'same-origin', headers: authHeaders() }).then(async (res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return URL.createObjectURL(await res.blob());
+      });
+      dynamicPreviewCache.set(cacheKey, pending);
+      pending.catch(() => dynamicPreviewCache.delete(cacheKey));
+    }
+    img.src = await pending;
     img.hidden = false;
   } catch {
     // The alternative is a broken-image icon, which reads as a bug rather
@@ -4516,120 +5100,17 @@ function previewPicture(url, className) {
   // glyph, which reads as the preview being broken rather than the address.
   img.addEventListener('error', () => { img.replaceWith(el('p', 'hint', 'That picture would not load.')); });
   img.src = url;
+  // Already in the browser's cache: show it now rather than a frame later, so
+  // the live preview does not blink on each redraw.
+  if (img.complete && img.naturalWidth) img.hidden = false;
   return img;
 }
 
 function openEmbedPreview(draft) {
   const revocables = [];
-  const body = [];
-
-  const buttons = (state.overview?.composer || []).find(t => t.name === draft.name)?.buttons
-    || draft.buttons || [];
-
-  // The line over the top is part of the message, so it is part of the
-  // likeness — and seeing it above the box is the only way to tell it is
-  // going where you meant.
-  const around = draft.around || {};
-  if (!draft.embeds?.length && around.pictureAbove) {
-    if (String(around.pictureAbove).startsWith('dynamic:')) {
-      const img = el('img');
-      img.className = 'big';
-      img.alt = '';
-      img.hidden = true;
-      body.push(img);
-      loadDynamicPreview(img, around.pictureAbove.slice(8), revocables);
-    } else {
-      body.push(previewPicture(around.pictureAbove, 'big'));
-    }
-    body.push(el('p', 'hint', 'Image above (own message)'));
-  }
-  if (around.above) body.push(el('p', 'demb-say', fillPlaceholders(around.above)));
-
-  draft.embeds.forEach(e => {
-    const box = el('div', 'demb');
-    box.style.borderLeftColor = /^#[0-9a-f]{6}$/i.test(e.color || '') ? e.color : '#5865F2';
-
-    if (e.authorName) {
-      const author = el('p', 'demb-auth');
-      if (e.authorIcon) author.append(previewPicture(e.authorIcon, 'demb-auth-ic'));
-      author.append(el('span', null, fillPlaceholders(e.authorName)));
-      box.append(author);
-    }
-    if (e.title) box.append(el('p', 't', fillPlaceholders(e.title)));
-    if (e.description) box.append(el('p', 'd', fillPlaceholders(e.description)));
-
-    if (e.fields?.length) {
-      const f = el('div', 'f');
-      for (const fd of e.fields) {
-        if (!fd.name && !fd.value) continue;
-        const cell = el('div');
-        // Inline fields sit side by side; block fields take the full width,
-        // which is the single most visible thing the inline switch does.
-        if (!fd.inline) cell.style.flexBasis = '100%';
-        cell.append(el('b', null, fillPlaceholders(fd.name || '​')));
-        cell.append(el('span', null, fillPlaceholders(fd.value || '')));
-        f.append(cell);
-      }
-      if (f.childElementCount) box.append(f);
-    }
-
-    if (e.thumbnail) {
-      // Wrapped, so the square sits beside what came before it rather than
-      // on top of it — the same row the Appearance preview uses.
-      const row = el('div', 'demb-row');
-      const main = el('div', 'demb-main');
-      while (box.firstChild) main.append(box.firstChild);
-      row.append(main, previewPicture(e.thumbnail, 'demb-thumb-img'));
-      box.append(row);
-    }
-
-    if (e.image) {
-      if (e.image.startsWith('dynamic:')) {
-        const img = el('img');
-        img.className = 'big';
-        img.alt = '';
-        img.hidden = true;
-        box.append(img);
-        loadDynamicPreview(img, e.image.slice(8), revocables);
-      } else {
-        box.append(previewPicture(e.image, 'big'));
-      }
-    }
-
-    const footBits = [];
-    if (e.footer) footBits.push(fillPlaceholders(e.footer));
-    if (e.timestamp) footBits.push(new Date().toLocaleString());
-    if (footBits.length) {
-      const ft = el('p', 'ft');
-      if (e.footerIcon) ft.append(previewPicture(e.footerIcon, 'demb-auth-ic'));
-      ft.append(el('span', null, footBits.join(' • ')));
-      box.append(ft);
-    }
-
-    body.push(box);
-  });
-
-  if (buttons.length) {
-    const row = el('div', 'demb-btns');
-    for (const b of buttons) {
-      const chip = el('span', b.type === 'link' ? 'link' : (b.style || 'Primary'),
-        `${b.emoji ? `${b.emoji} ` : ''}${b.label || b.id}`);
-      row.append(chip);
-    }
-    body.push(row);
-  }
-
-  if (around.below || around.picture) {
-    const second = el('div', 'demb-second');
-    second.append(el('p', 'hint', 'Sent as a second message, right underneath'));
-    if (around.below) second.append(el('p', 'demb-say', fillPlaceholders(around.below)));
-    if (around.picture) second.append(previewPicture(around.picture, 'big'));
-    body.push(second);
-  }
-
-  if (!body.length) body.push(el('p', 'muted', 'Nothing to show yet — add a title or description.'));
+  if (typeof draft._syncFromCanvas === 'function' && draft.format === 'v2') { try { draft._syncFromCanvas(); } catch (_) {} }
+  const body = [messagePreviewFrame(messagePreviewNodes(draft, revocables))];
   body.push(el('p', 'hint', 'A likeness of the message, not a screenshot of Discord. Placeholders are filled in the way they will be when it is sent.'));
-
   openSheet(draft.name ? `Preview · ${draft.name}` : 'Preview', body, [], () => {
     for (const url of revocables) URL.revokeObjectURL(url);
   });
@@ -9664,6 +10145,7 @@ function reportLoadFailure(err) {
     return showLogin();
   }
   toast('Could not load that server. Reload to try again.', 'bad');
+  bootReady();
 }
 
 async function main() {
@@ -9732,7 +10214,12 @@ async function main() {
     $('#nav-owner').hidden = false;
     loadOwnerConsole();
   }
-  $('#tpl-new').addEventListener('click', () => {
+  $('#tpl-new').addEventListener('click', async () => {
+    if (composerIsDirty() && !await askConfirm({
+      title: 'Discard your changes?',
+      message: `“${state.draft.name || 'This message'}” has edits that are not saved yet.`,
+      confirmLabel: 'Discard them', danger: true,
+    })) return;
     state.tplName = null;
     state.draft = { ...newDraft(''), isNew: true };
     renderComposer();
@@ -9757,6 +10244,8 @@ async function main() {
   // showed the sign-in page to somebody who had just signed in perfectly
   // well — one bad request and the panel appeared to reject the login.
   if (first) await selectGuild(first).catch(reportLoadFailure);
+  // The first server has drawn (or failed and is retrying) — lift the splash.
+  bootReady();
 
   refreshSidecars();
   initStudio().catch(() => {});
@@ -9778,8 +10267,12 @@ function refreshSidecars() {
 // does mean there is no session and the sign-in page is the right screen.
 // After it answers, the session is good and blanking the panel back to a
 // sign-in button just tells the person a lie about why nothing loaded.
+// The splash never outstays a slow server: after this the panel shows with
+// whatever it has, and keeps filling in behind the retries.
+setTimeout(() => bootReady(), 9000);
 main().catch(err => {
   console.error(err);
   if (signedIn) toast('Something went wrong loading the panel. Reload to try again.', 'bad');
   else showLogin();
+  bootReady();
 });

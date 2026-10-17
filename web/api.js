@@ -64,15 +64,24 @@ function me(session, client) {
 const memberFetchedAt = new Map();
 const MEMBER_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Keeps the member list fresh without making the panel wait for it.
+ *
+ * Only the very first fetch for a server is waited on — before it there is no
+ * list to show at all. After that a stale list is refreshed in the background
+ * and the overview answers straight away from the cache, instead of stalling
+ * up to four seconds every five minutes, which is what made some launches
+ * hang on the splash.
+ */
 async function ensureMembers(guild) {
   if (typeof guild?.members?.fetch !== 'function') return;
-  if (Date.now() - (memberFetchedAt.get(guild.id) || 0) < MEMBER_TTL_MS) return;
+  const last = memberFetchedAt.get(guild.id) || 0;
+  if (Date.now() - last < MEMBER_TTL_MS) return;
   memberFetchedAt.set(guild.id, Date.now());
-  try {
-    await guild.members.fetch({ time: 4_000 });
-  } catch (err) {
+  const fetching = guild.members.fetch({ time: 4_000 }).catch(err => {
     console.warn('[Panel] could not fetch the member list:', err.message);
-  }
+  });
+  if (!last) await fetching;
 }
 
 /** Everything the overview screen shows for one guild. */
