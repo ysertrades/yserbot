@@ -87,6 +87,15 @@ for (const f of ['index.html', 'home.html', 'verify.html', 'terms.html', 'privac
   mustInclude(`icon.touchlink.${f}`, read('web/public/' + f), 'href="/apple-touch-icon.png"', `${f} links the touch icon`);
 }
 mustMatch('icon.safariskip', read('web/public/favicon-live.js'), /if \(ios \|\| safari\) return;/, 'favicon-live.js must not run on Safari/iOS');
+// Sidebar: lighter icons and a collapse button, nothing else restyled.
+const sbCss = read('web/public/sidebar.css');
+mustInclude('sidebar.loaded', html, 'href="/sidebar.css"', 'index.html loads sidebar.css');
+mustInclude('sidebar.script', html, 'src="/sidebar.js"', 'index.html loads sidebar.js');
+mustMatch('sidebar.toggle', html, /id="sb-toggle"[^>]*aria-controls="sections"/, 'the collapse button is in the sidebar');
+mustMatch('sidebar.lighticons', sbCss, /svg\.nav-ico \{ stroke-width: 1\.5 !important; \}/, 'nav icons draw at 1.5px');
+mustNotMatch('sidebar.noblur', sbCss, /backdrop-filter/, 'no backdrop blur in the sidebar');
+mustNotMatch('sidebar.nodrawer', sbCss, /max-width: 900px/, 'the phone drawer is left as it is');
+mustMatch('sidebar.lsguard', read('web/public/sidebar.js'), /try \{ return localStorage\.getItem/, 'sidebar state read is guarded');
 // The link card Discord builds when /home or the panel is shared: a large
 // image, a title and a description, and an absolute image URL (crawlers
 // don't resolve relative ones). The image file itself must ship.
