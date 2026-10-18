@@ -55,6 +55,10 @@ const RATE_LIMIT = { windowMs: 60_000, max: Number(process.env.PANEL_RATE_LIMIT)
 const AUTH_RATE_LIMIT = { windowMs: 60_000, max: 30 };
 // The public verification page: a handful of reads and one write per member.
 const VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 20 };
+// Kick, Ban, Manage Channels, Add Reactions, View Channel, Send Messages,
+// Manage Messages, Embed Links, Attach Files, Read History, External Emoji,
+// Manage Roles, Manage Threads, Moderate Members.
+const INVITE_PERMISSIONS = String(2n + 4n + 16n + 64n + 1024n + 2048n + 8192n + 16384n + 32768n + 65536n + 262144n + 268435456n + 17179869184n + 1099511627776n);
 const usedVerifyCodes = new Map(); // nonce → expiry
 
 /* ─── rate limiting ──────────────────────────────────────────────────────── */
@@ -387,6 +391,38 @@ async function route(req, res, client) {
 
   if (p === '/terms' || p === '/terms/') return serveStatic(res, 'terms.html');
   if (p === '/privacy' || p === '/privacy/') return serveStatic(res, 'privacy.html');
+
+  /* -- the public landing page -------------------------------------------
+   * Public for the same reason as the legal pages: it is what someone sees
+   * before they have any reason to sign in. "/" stays the panel, so the Whop
+   * embed and every installed app keep opening where they always did. */
+  if (p === '/home' || p === '/home/') return serveStatic(res, 'home.html');
+  // Add the bot to a server. A curated permission set rather than
+  // Administrator: kick, ban, timeout, manage roles/channels/messages/threads,
+  // and the ordinary read/send/embed/attach/react/history.
+  if (p === '/invite') {
+    const id = auth.config().clientId;
+    if (!id) return send(res, 503, 'The bot is not configured yet.', { 'content-type': 'text/plain' });
+    const to = new URL('https://discord.com/oauth2/authorize');
+    to.searchParams.set('client_id', id);
+    to.searchParams.set('scope', 'bot applications.commands');
+    to.searchParams.set('permissions', INVITE_PERMISSIONS);
+    return redirect(res, to.toString());
+  }
+  // Aggregate numbers only, for the landing page's live strip: nothing that
+  // names a server or a member.
+  if (p === '/api/public/stats') {
+    if (rateLimited(`pubstats:${clientIp(req)}`, VERIFY_RATE_LIMIT)) return json(res, 429, { error: 'rate_limited' });
+    let members = 0;
+    for (const g of client.guilds.cache.values()) members += Number(g.memberCount) || 0;
+    return json(res, 200, {
+      online: !!client.isReady?.(),
+      servers: client.guilds.cache.size,
+      members,
+      ping: Math.round(client.ws.ping) || null,
+      uptimeSec: Math.round((client.uptime || 0) / 1000),
+    });
+  }
 
   // Home-screen icons. Public on purpose: iOS and Android fetch these from
   // outside any session — often before one exists — so putting them behind the
