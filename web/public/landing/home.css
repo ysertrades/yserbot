@@ -114,9 +114,12 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
    width. On narrow screens shrink it as a whole (scale composes with the
    pointer tilt in transform) rather than letting it run off the edge. */
 @media (max-width: 900px) { .stage { height: 420px; } } /* the 900px rule above loses to the base .stage that follows it */
-@media (max-width: 700px) { .plane { scale: .8; } .stage { height: 380px; } }
-@media (max-width: 520px) { .plane { scale: .62; } .stage { height: 330px; } .t1 { width: 56px; } .t4 { width: 130px; bottom: -4%; } }
-@media (max-width: 400px) { .plane { scale: .54; } .stage { height: 300px; } }
+/* Measured: these are the largest scales whose cards still land inside the
+   screen (the nudge right centres the board, whose 3D footprint leans left).
+   The hero clips the few pixels the hover bob adds, so nothing scrolls. */
+@media (max-width: 700px) { .plane { scale: .86; } .stage { height: 400px; } }
+@media (max-width: 520px) { .plane { scale: .74; translate: 6px 0; } .stage { height: 360px; } .t1 { width: 60px; } }
+@media (max-width: 400px) { .plane { scale: .66; translate: 10px 0; } .stage { height: 340px; } }
 @keyframes hover { 50% { transform: translateZ(calc(var(--z) + 14px)); } }
 .chip { animation-name: hoverchip; }
 @keyframes hoverchip { 0%, 100% { transform: translateZ(var(--z)) rotateX(-20deg); } 50% { transform: translateZ(calc(var(--z) + 16px)) rotateX(-20deg); } }
@@ -126,7 +129,6 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 .t1 { width: 74px; right: 4%; top: 2%; transform: rotate(9deg); }
 .t2 { width: 50px; left: 6%; top: 10%; transform: rotate(-12deg); animation-delay: -3s; }
 .t3 { width: 40px; right: 14%; bottom: 10%; animation-delay: -5s; }
-.t4 { width: 190px; right: -6%; bottom: -12%; transform: rotate(14deg); animation-delay: -2s; }
 @keyframes drift { 50% { translate: 0 -12px; } }
 
 /* ── marquee ─────────────────────────────────────────────────────────── */

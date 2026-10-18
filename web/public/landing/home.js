@@ -12,22 +12,22 @@
     document.querySelectorAll('.reveal, .stage').forEach(n => (io && !reduce ? io.observe(n) : n.classList.add('in')));
   }
 
-  // The intro lifts once the page has loaded, but stays long enough to play
-  // (shorter on a second visit in the same tab session) and never longer than
-  // MAX, however slow the images are. The hero's entrance starts as it lifts,
-  // so the two read as one move instead of the entrance playing hidden.
+  // The intro plays to its end before it lifts: the last of its entrances (the
+  // sheen across the logo) finishes at ~2.1s, so it holds at least MIN, and
+  // never longer than MAX however slow the images are. The page only starts
+  // coming in once the intro has fully faded (FADE matches #intro's 0.75s
+  // transition), so the two never overlap.
   const intro = document.getElementById('intro');
   if (!intro) startReveals();
   else {
     let seen = false;
     try { seen = sessionStorage.getItem('qb-intro') === '1'; sessionStorage.setItem('qb-intro', '1'); } catch (_) {}
-    const MIN = reduce ? 0 : seen ? 700 : 1500, MAX = 3200, t0 = performance.now();
+    const MIN = reduce ? 0 : seen ? 1800 : 2300, MAX = 4000, FADE = reduce ? 0 : 750, t0 = performance.now();
     let gone = false;
     const lift = () => {
       if (gone) return; gone = true;
       intro.classList.add('out');
-      startReveals();
-      setTimeout(() => intro.remove(), reduce ? 0 : 900);
+      setTimeout(() => { intro.remove(); startReveals(); }, FADE);
     };
     const whenLoaded = () => setTimeout(lift, Math.max(0, MIN - (performance.now() - t0)));
     if (document.readyState === 'complete') whenLoaded(); else addEventListener('load', whenLoaded, { once: true });

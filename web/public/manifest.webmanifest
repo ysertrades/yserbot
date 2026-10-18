@@ -1,7 +1,7 @@
 {
-  "name": "QuantLab \u2014 Control Panel",
-  "short_name": "QuantLab",
-  "description": "Run the QuantLab Discord bot: messages, giveaways, tickets, feeds and the economy.",
+  "name": "Quant Bot \u2014 Control Panel",
+  "short_name": "Quant Bot",
+  "description": "Run the Quant Bot Discord bot: messages, giveaways, tickets, feeds and the economy.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
