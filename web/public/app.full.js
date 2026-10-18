@@ -513,40 +513,42 @@ function showLogin() {
  * panel drawn, the sign-in page, or setup. Called from each of those; only the
  * first call does anything.
  *
- * Then it plays out in order:
- *  1. Hold until the splash has been seen: the logo, word and line are in by
- *     ~0.8s and the line's light has run across. Counted from the splash's
- *     first frame, read off the logo's own animation, not from navigation: a
- *     page that took 1.6s to start would otherwise get no hold at all.
- *  2. Fade the splash out (BOOT_FADE matches #boot's transition).
- *  3. Only then mark the page booted, which un-hides it (index.html) and starts
- *     its entrance: the panel's cards, or the sign-in copy (login.css). When
- *     both ran while the splash was still fading, the page was snapped to
- *     invisible and faded back in under it, which read as a blink.
- * No hold with reduced motion. A slow load is never made slower.
+ * One straight cross-fade: the page is fully drawn beneath the splash, and the
+ * splash fades out over it (0.5s, #boot's own transition). Nothing beneath is
+ * hidden or snapped to transparent while it fades; doing either is what gave
+ * the stuck, empty screen and the blink (see the smoke contracts on this).
+ *
+ * The splash stays up at least BOOT_MIN from first paint, so a very fast load
+ * still shows it. Timed with the wall clock (performance.now() against the
+ * first-paint entry), never with an animation's currentTime: that clock only
+ * advances while frames are drawn and stops at the animation's end, so on a
+ * busy phone or in-app browser it read as "just started" and added up to
+ * 1.6s of dead screen. A normal load (the panel needs ~1.6s) gets no wait.
+ *
+ * Only timers here, no requestAnimationFrame: a webview that has paused frames
+ * (Discord's in-app browser in the background) would otherwise never lift it.
  */
-const BOOT_HOLD = 1600, BOOT_FADE = 500;
+const BOOT_MIN = 900, BOOT_FADE = 500;
 function bootReady() {
   const boot = document.getElementById('boot');
   if (!boot || boot.dataset.out) return;
   boot.dataset.out = '1';
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let shown = BOOT_HOLD;
+  let paintedAt = 0;
   try {
-    const a = boot.querySelector('.boot-mark').getAnimations()[0];
-    if (a && a.currentTime != null) shown = a.currentTime;
+    const fp = performance.getEntriesByName('first-contentful-paint')[0] || performance.getEntriesByName('first-paint')[0];
+    if (fp) paintedAt = fp.startTime;
   } catch (_) {}
-  const hold = reduce ? 0 : Math.max(0, BOOT_HOLD - shown);
+  const hold = reduce ? 0 : Math.max(0, BOOT_MIN - (performance.now() - paintedAt));
   setTimeout(() => {
+    root.classList.add('booted');
+    // The one staged entrance in the panel: the first screen's cards, 100ms
+    // apart, rising as the splash clears. Removed once played so later tab
+    // switches never replay it.
+    root.classList.add('first-enter');
+    setTimeout(() => root.classList.remove('first-enter'), 1400);
     boot.classList.add('out');
-    setTimeout(() => {
-      boot.remove();
-      root.classList.add('booted');
-      // The one staged entrance in the panel: the first screen's cards, 100ms
-      // apart. Removed once played so later tab switches never replay it.
-      root.classList.add('first-enter');
-      setTimeout(() => root.classList.remove('first-enter'), 1400);
-    }, reduce ? 0 : BOOT_FADE);
+    setTimeout(() => boot.remove(), BOOT_FADE + 100);
   }, hold);
 }
 

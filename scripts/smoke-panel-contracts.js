@@ -40,6 +40,17 @@ const loginCss = read('web/public/login.css');
 mustMatch('overflow.home', homeCss, /^html \{[^}]*overflow-x: clip/m, 'landing page must never scroll sideways');
 mustMatch('overflow.hero', homeCss, /\.hero \{[^}]*overflow-x: clip/, 'hero must clip its tilted stage');
 mustMatch('overflow.login', loginCss, /\.view\[data-view="login"\] \.lg \{[^}]*overflow: hidden auto/, 'sign-in screen scrolls vertically only');
+// The launch splash hands over with one cross-fade. Each of these broke it:
+// timing the hold off an animation clock (stalls with frames, stops at its
+// end: seconds of dead screen), hiding the page under the splash (leaks via
+// visibility:visible !important, shows as a stuck empty screen), and fading
+// #main in from 0 as the splash fades out (both layers transparent: a blink).
+const bootFn = (app.match(/function bootReady\(\) \{[\s\S]*?\r?\n\}/) || [''])[0];
+mustMatch('boot.exists', bootFn, /boot\.classList\.add\('out'\)/, 'bootReady must lift the splash');
+mustNotMatch('boot.clock', bootFn, /getAnimations|currentTime/, 'time the splash with performance.now(), not an animation clock');
+mustNotMatch('boot.raf', bootFn, /requestAnimationFrame/, 'a paused webview never runs rAF; use timers');
+mustNotMatch('boot.hide', html, /:has\(#boot\)[^{]*\{[^}]*visibility:\s*hidden/, 'do not hide the page under the splash');
+mustNotMatch('boot.dip', html, /html\.booted #main\{animation/, 'do not fade #main in while the splash fades out');
 mustInclude('health.api', api, 'uptimeMs:', 'health() must expose uptimeMs');
 mustInclude('health.api', api, 'memoryMb:', 'health() must expose memoryMb');
 mustInclude('health.api', api, 'renderCache', 'health() must expose renderCache');
