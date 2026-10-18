@@ -6,7 +6,15 @@
      that turns) and, on PC, the collapsed state: a narrow column of icons,
      each on its own rounded square, the open one in blurple.
    The button and the collapsed state only exist under html.sbx, which
-   sidebar.js sets, so nothing changes if the script doesn't load. */
+   sidebar.js sets, so nothing changes if the script doesn't load.
+
+   How the collapse moves (nothing snaps; every change is a transition):
+   the width glides on one curve while the names fade and are clipped by the
+   narrowing edge; the icons hardly move (they sit at the same x in both
+   states), and each one's square blooms out of it, a few ms after the one
+   above, so a soft wave runs down the column. The button slides along the
+   brand row and comes to rest over the logo, which it swaps with on hover.
+   Status rows keep their icons in place; the live dots appear on them. */
 
 /* ── lighter icons ─────────────────────────────────────────────────── */
 .sidebar-nav.sections .nav-ico-wrap svg.nav-ico { stroke-width: 1.5 !important; }
@@ -17,61 +25,90 @@
 .sb-ico { width: 18px; height: 18px; display: block; overflow: visible; }
 .sb-ico .frame { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .sb-ico .col { fill: currentColor; opacity: .55; transform-box: fill-box; transform-origin: 0 50%;
-  transition: transform .35s cubic-bezier(.32,.72,0,1), opacity .2s ease, fill .2s ease; }
+  transition: transform .46s cubic-bezier(.65,0,.25,1), opacity .2s ease, fill .2s ease; }
 .sb-ico .chev { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
-  transform-box: fill-box; transform-origin: 50% 50%; transition: transform .35s cubic-bezier(.32,.72,0,1); }
+  transform-box: fill-box; transform-origin: 50% 50%; transition: transform .46s cubic-bezier(.65,0,.25,1); }
 
 .sb-toggle { display: none; }
-html.sbx .sb-toggle { flex: none; width: 30px; height: 30px; margin-left: auto; padding: 0; display: inline-grid; place-items: center; cursor: pointer;
-  border-radius: 9px; border: 1px solid transparent; background: transparent; color: #7b7b7b;
-  transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .15s ease; }
+html.sbx .sidebar-brand { position: relative; }
+html.sbx .sb-toggle { position: absolute; top: 3px; right: 8px; width: 30px; height: 30px; padding: 0; display: inline-grid; place-items: center; cursor: pointer;
+  border-radius: 9px; border: 1px solid transparent; background: transparent; color: #7b7b7b; z-index: 1;
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .15s ease, opacity .2s ease, right .46s cubic-bezier(.65,0,.25,1); }
 html.sbx .sb-toggle:focus-visible { outline: 2px solid var(--accent, #5865f2); outline-offset: 2px; }
 html.sbx .sb-toggle:active { transform: scale(.9); }
 @media (hover: hover) {
   html.sbx .sb-toggle:hover { background: #161616; border-color: #222; color: #e6e6e6; }
   html.sbx .sb-toggle:hover .col { transform: scaleX(.7); opacity: 1; fill: var(--accent, #5865f2); }
 }
+html.sbx .sidebar-title { white-space: nowrap; }
 /* the phone's menu button: the same panel, arrow pointing in */
 .am-menu-btn .sb-ico .chev { transform: rotate(180deg); }
 @media (hover: hover) { .am-menu-btn:hover .sb-ico .col { opacity: 1; fill: var(--accent, #5865f2); } }
 
-/* ── PC: collapsed ─────────────────────────────────────────────────── */
+/* ── PC: collapsing ────────────────────────────────────────────────── */
 @media (min-width: 901px) {
-  html.sbx.sb-ready .sidebar { transition: flex-basis .32s cubic-bezier(.32,.72,0,1), width .32s cubic-bezier(.32,.72,0,1),
-    min-width .32s cubic-bezier(.32,.72,0,1), max-width .32s cubic-bezier(.32,.72,0,1), padding .32s cubic-bezier(.32,.72,0,1) !important; }
+  html.sbx { --sb-e: cubic-bezier(.65,0,.25,1); --sb-d: .46s; }
+  html.sbx.sb-ready .sidebar { transition: flex-basis var(--sb-d) var(--sb-e), width var(--sb-d) var(--sb-e),
+    min-width var(--sb-d) var(--sb-e), max-width var(--sb-d) var(--sb-e) !important; }
   html.sbx[data-sb="rail"] { --sidebar-w: 72px; }
-  html.sbx[data-sb="rail"] .sidebar { padding: 16px 0 12px !important; align-items: center !important; }
-  html.sbx[data-sb="rail"] .sidebar-brand { flex-direction: column; gap: 12px; padding: 4px 0 12px; }
-  html.sbx[data-sb="rail"] .sidebar-brand img { width: 36px; height: 36px; border-radius: 11px; }
-  html.sbx[data-sb="rail"] .sidebar-title { display: none !important; }
-  html.sbx[data-sb="rail"] .sb-toggle { margin-left: 0; }
+
+  /* names: in no hurry to come back, quick to leave */
+  html.sbx .sidebar-title, html.sbx .sidebar-status-label, html.sbx .sidebar-status-row > span:not(.val), html.sbx .sidebar-status-row .val {
+    transition: opacity .26s ease .2s, transform .34s var(--sb-e) .16s; white-space: nowrap; }
+  html.sbx body .app-shell #sections.sidebar-nav > button .nav-label { white-space: nowrap !important; overflow: hidden;
+    transition: opacity .26s ease .2s, transform .34s var(--sb-e) .16s !important; }
+  html.sbx[data-sb="rail"] .sidebar-title, html.sbx[data-sb="rail"] .sidebar-status-label,
+  html.sbx[data-sb="rail"] .sidebar-status-row > span:not(.val), html.sbx[data-sb="rail"] .sidebar-status-row .val {
+    opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity .14s ease, transform .3s var(--sb-e); }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button .nav-label {
+    opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity .14s ease, transform .3s var(--sb-e) !important; }
+
+  /* the button slides along the brand row and settles over the logo */
+  html.sbx[data-sb="rail"] .sb-toggle { right: 11px; opacity: 0; background: #141414; border-color: #222; }
+  html.sbx[data-sb="rail"] .sidebar-brand img { transition: opacity .2s ease; }
+  html.sbx[data-sb="rail"] .sidebar-brand:hover .sb-toggle, html.sbx[data-sb="rail"] .sb-toggle:focus-visible { opacity: 1; }
+  html.sbx[data-sb="rail"] .sidebar-brand:hover img, html.sbx[data-sb="rail"] .sidebar-brand:focus-within img { opacity: 0; }
   html.sbx[data-sb="rail"] .sb-toggle .col { transform: scaleX(.4); }
   html.sbx[data-sb="rail"] .sb-toggle .chev { transform: rotate(180deg); }
   @media (hover: hover) { html.sbx[data-sb="rail"] .sb-toggle:hover .col { transform: scaleX(.75); } }
 
-  html.sbx[data-sb="rail"] .sidebar-nav.sections { align-items: center !important; gap: 6px !important; width: 100% !important; }
-  html.sbx[data-sb="rail"] .sidebar-nav.sections > button { width: 44px !important; height: 44px !important; padding: 0 !important; gap: 0 !important;
-    justify-content: center !important; background: transparent !important; flex: none !important; }
-  html.sbx[data-sb="rail"] .sidebar-nav.sections > button .nav-label { display: none !important; }
-  /* every icon on its own square */
-  html.sbx[data-sb="rail"] .sidebar-nav.sections > button .nav-ico-wrap { width: 40px !important; height: 40px !important; min-width: 40px !important;
-    border-radius: 12px !important; background: #141414 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04) !important;
-    transition: background-color .2s ease, color .2s ease !important; }
-  @media (hover: hover) { html.sbx[data-sb="rail"] .sidebar-nav.sections > button:hover .nav-ico-wrap { background: #1c1c1c !important; color: #e6e6e6 !important; } }
-  html.sbx[data-sb="rail"] .sidebar-nav.sections > button[aria-current="true"] .nav-ico-wrap {
-    background: linear-gradient(180deg, #6a76ff, #4752e0) !important; color: #fff !important;
+  /* nav: the button's padding gives way exactly as the square grows, so its
+     height never changes and the icon stays put */
+  html.sbx body .app-shell #sections.sidebar-nav > button { overflow: hidden !important;
+    transition: padding var(--sb-d) var(--sb-e), gap var(--sb-d) var(--sb-e), background-color .25s ease !important; }
+  /* (#sections: shell-am.js turns these transitions off with an id selector) */
+  html.sbx body .app-shell #sections.sidebar-nav > button .nav-ico-wrap {
+    transition: width var(--sb-d) var(--sb-e), height var(--sb-d) var(--sb-e), min-width var(--sb-d) var(--sb-e),
+      border-radius var(--sb-d) var(--sb-e), background-color .3s ease, box-shadow .3s ease, color .25s ease !important; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button { padding: 0 4px !important; gap: 4px !important; background: transparent !important; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button .nav-ico-wrap { width: 40px !important; height: 40px !important; min-width: 40px !important;
+    border-radius: 12px !important; background: #141414 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04) !important; }
+  /* the wave: each square blooms a beat after the one above (its button
+     waits the same beat, so padding and square stay in step) */
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(2), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(2) .nav-ico-wrap { transition-delay: .02s !important; }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(3), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(3) .nav-ico-wrap { transition-delay: .04s !important; }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(4), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(4) .nav-ico-wrap { transition-delay: .06s !important; }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(5), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(5) .nav-ico-wrap { transition-delay: .08s !important; }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(6), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(6) .nav-ico-wrap { transition-delay: .10s !important; }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(7), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(7) .nav-ico-wrap { transition-delay: .12s !important; }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(8), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(8) .nav-ico-wrap { transition-delay: .14s !important; }
+  html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(n+9), html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:nth-child(n+9) .nav-ico-wrap { transition-delay: .16s !important; }
+  @media (hover: hover) { html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button:hover .nav-ico-wrap { background: #1c1c1c !important; color: #e6e6e6 !important; transition-delay: 0s !important; } }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button[aria-current="true"] .nav-ico-wrap {
+    background: #5865f2 !important; color: #fff !important;
     box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 6px 16px -6px rgba(88,101,242,.7) !important; }
-  html.sbx[data-sb="rail"] .sidebar-nav.sections > button .nav-ico { color: inherit !important; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button .nav-ico { color: inherit !important; }
   html.sbx[data-sb="rail"] .sidebar-nav.sections > button[aria-current="true"] .nav-ico .duo { opacity: 0 !important; }
 
-  /* bot status: just the icons, each wearing its live dot */
-  html.sbx[data-sb="rail"] .sidebar-status { width: 100%; display: grid; justify-items: center; }
-  html.sbx[data-sb="rail"] .sidebar-status-label { display: none; }
-  html.sbx[data-sb="rail"] .sidebar-status-card { padding: 4px 0; background: transparent; border-color: transparent; }
-  html.sbx[data-sb="rail"] .sidebar-status-row { position: relative; width: 40px; height: 28px; padding: 0; justify-content: center; gap: 0; }
-  html.sbx[data-sb="rail"] .sidebar-status-row > span:not(.val) { display: none; }
-  html.sbx[data-sb="rail"] .sidebar-status-row .val { position: absolute; right: 8px; top: 4px; font-size: 0; gap: 0; }
-  html.sbx[data-sb="rail"] .sidebar-status-row .val::before { box-shadow: 0 0 0 2px var(--frame, #0e0e0e); }
+  /* bot status: the card melts away, the icons stay, live dots appear on them */
+  html.sbx .sidebar-status-card { transition: background-color .3s ease, border-color .3s ease; }
+  html.sbx .sidebar-status-row { position: relative; overflow: hidden; }
+  html.sbx .sidebar-status-row::after { content: ''; position: absolute; left: 19px; top: 4px; width: 6px; height: 6px; border-radius: 50%;
+    background: #646464; box-shadow: 0 0 0 2px var(--frame, #0e0e0e); opacity: 0; transform: scale(.3); transition: opacity .2s ease, transform .2s ease; }
+  html.sbx .sidebar-status-row:has(.val.is-on)::after { background: var(--good, #22c55e); }
+  html.sbx .sidebar-status-row:has(.val.is-warn)::after { background: var(--warn, #f59e0b); }
+  html.sbx[data-sb="rail"] .sidebar-status-card { background: transparent; border-color: transparent; }
+  html.sbx[data-sb="rail"] .sidebar-status-row::after { opacity: 1; transform: none; transition: opacity .25s ease .25s, transform .4s cubic-bezier(.3,1.6,.5,1) .25s; }
 }
 
 /* the name beside a collapsed icon (one element, placed by sidebar.js) */
@@ -82,5 +119,6 @@ html.sbx .sb-toggle:active { transform: scale(.9); }
 .sb-tip small { margin-left: 8px; color: #8a8a8a; font-size: 11.5px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .sb-ico .col, .sb-ico .chev, html.sbx.sb-ready .sidebar, .sb-tip { transition: none !important; }
+  html.sbx { --sb-d: .01s; }
+  .sb-ico .col, .sb-ico .chev, .sb-tip, html.sbx .sidebar-status-row::after { transition: none !important; }
 }
