@@ -12,8 +12,8 @@
    the width glides on one curve while the names fade and are clipped by the
    narrowing edge; the icons hardly move (they sit at the same x in both
    states), and each one's square blooms out of it, a few ms after the one
-   above, so a soft wave runs down the column. The button slides along the
-   brand row and comes to rest over the logo, which it swaps with on hover.
+   above, so a soft wave runs down the column. The button slides out of the
+   brand row into its own slot under the logo, where it stays in view.
    Status rows keep their icons in place; the live dots appear on them. */
 
 /* ── lighter icons ─────────────────────────────────────────────────── */
@@ -31,7 +31,7 @@
 
 .sb-toggle { display: none; }
 html.sbx .sidebar-brand { position: relative; }
-html.sbx .sb-toggle { position: absolute; top: 3px; right: 8px; width: 30px; height: 30px; padding: 0; display: inline-grid; place-items: center; cursor: pointer;
+html.sbx .sb-toggle { position: absolute; top: 1px; right: 8px; width: 30px; height: 30px; padding: 0; display: inline-grid; place-items: center; cursor: pointer;
   border-radius: 9px; border: 1px solid transparent; background: transparent; color: #7b7b7b; z-index: 1;
   transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .15s ease, opacity .2s ease, right .46s cubic-bezier(.65,0,.25,1); }
 html.sbx .sb-toggle:focus-visible { outline: 2px solid var(--accent, #5865f2); outline-offset: 2px; }
@@ -63,14 +63,24 @@ html.sbx .sidebar-title { white-space: nowrap; }
   html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button .nav-label {
     opacity: 0; transform: translateX(-6px); pointer-events: none; transition: opacity .14s ease, transform .3s var(--sb-e) !important; }
 
-  /* the button slides along the brand row and settles over the logo */
-  html.sbx[data-sb="rail"] .sb-toggle { right: 11px; opacity: 0; background: #141414; border-color: #222; }
-  html.sbx[data-sb="rail"] .sidebar-brand img { transition: opacity .2s ease; }
-  html.sbx[data-sb="rail"] .sidebar-brand:hover .sb-toggle, html.sbx[data-sb="rail"] .sb-toggle:focus-visible { opacity: 1; }
-  html.sbx[data-sb="rail"] .sidebar-brand:hover img, html.sbx[data-sb="rail"] .sidebar-brand:focus-within img { opacity: 0; }
+  /* collapsed, the button drops into its own slot under the logo and stays
+     there: a small pill that says "open me". Its panel column is folded thin
+     and the arrow points out; on hover the column swells (a preview of the
+     sidebar coming back) and the arrow leans the way it will go. The brand
+     row grows on the same curve, so the icons below glide down, never jump. */
+  html.sbx .sidebar-brand { transition: padding-bottom var(--sb-d) var(--sb-e); }
+  html.sbx .sb-toggle { transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .15s ease,
+    top var(--sb-d) var(--sb-e), right var(--sb-d) var(--sb-e), width var(--sb-d) var(--sb-e), height var(--sb-d) var(--sb-e); }
+  html.sbx[data-sb="rail"] .sidebar-brand { padding-bottom: 48px !important; } /* app.css pins it with !important */
+  html.sbx[data-sb="rail"] .sb-toggle { top: 40px; right: 5px; width: 40px; height: 28px; border-radius: 10px;
+    background: #141414; border-color: #242424; color: #9a9a9a; }
   html.sbx[data-sb="rail"] .sb-toggle .col { transform: scaleX(.4); }
   html.sbx[data-sb="rail"] .sb-toggle .chev { transform: rotate(180deg); }
-  @media (hover: hover) { html.sbx[data-sb="rail"] .sb-toggle:hover .col { transform: scaleX(.75); } }
+  @media (hover: hover) {
+    html.sbx[data-sb="rail"] .sb-toggle:hover { background: #1a1b24; border-color: color-mix(in srgb, var(--accent, #5865f2) 55%, #242424); color: #fff; }
+    html.sbx[data-sb="rail"] .sb-toggle:hover .col { transform: scaleX(.85); }
+    html.sbx[data-sb="rail"] .sb-toggle:hover .chev { transform: rotate(180deg) translateX(-1.5px); }
+  }
 
   /* nav: the button's padding gives way exactly as the square grows, so its
      height never changes and the icon stays put */
