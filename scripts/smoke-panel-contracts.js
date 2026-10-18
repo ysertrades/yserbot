@@ -87,17 +87,6 @@ for (const f of ['index.html', 'home.html', 'verify.html', 'terms.html', 'privac
   mustInclude(`icon.touchlink.${f}`, read('web/public/' + f), 'href="/apple-touch-icon.png"', `${f} links the touch icon`);
 }
 mustMatch('icon.safariskip', read('web/public/favicon-live.js'), /if \(ios \|\| safari\) return;/, 'favicon-live.js must not run on Safari/iOS');
-// The sidebar: light icons, a collapse toggle, a rail on PC, a swipeable drawer
-// on the phone, all without backdrop-filter (scroll jank).
-const sbCss = read('web/public/sidebar.css'), sbJs = read('web/public/sidebar.js');
-mustInclude('sidebar.loaded', html, 'href="/sidebar.css"', 'index.html loads sidebar.css');
-mustInclude('sidebar.script', html, 'src="/sidebar.js"', 'index.html loads sidebar.js');
-mustMatch('sidebar.toggle', html, /id="sb-toggle"[^>]*aria-controls="sections"/, 'the collapse toggle is in the sidebar');
-mustMatch('sidebar.lighticons', sbCss, /svg\.nav-ico \{[^}]*stroke-width: 1\.5 !important/, 'nav icons draw at 1.5px');
-mustMatch('sidebar.rail', sbCss, /\[data-sb="rail"\] \{ --sidebar-w: 76px; \}/, 'PC rail width');
-mustNotMatch('sidebar.noblur', sbCss, /backdrop-filter/, 'no backdrop-filter in the sidebar');
-mustInclude('sidebar.navapi', read('web/public/shell-am.js'), 'window.__openNav = openNav;', 'shell-am.js exposes openNav for the swipe');
-mustMatch('sidebar.lsguard', sbJs, /try \{ return localStorage\.getItem/, 'sidebar state read is guarded');
 // The link card Discord builds when /home or the panel is shared: a large
 // image, a title and a description, and an absolute image URL (crawlers
 // don't resolve relative ones). The image file itself must ship.

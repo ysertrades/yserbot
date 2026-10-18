@@ -200,8 +200,6 @@
   }
   window.__paintShellStatus = paintShellStatus;
   window.__closeFloaters = closeFloaters;
-  window.__openNav = openNav;
-  window.__closeNav = closeNav;
   window.__ensureSectionTitles = ensureSectionTitles;
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
