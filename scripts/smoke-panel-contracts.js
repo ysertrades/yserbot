@@ -32,6 +32,14 @@ const writes = read('web/writes.js');
 const interaction = read('events/interactionCreate.js');
 const help = read('commands/system/help.js');
 const featureToggles = read('utils/featureToggles.js');
+// The landing page and sign-in screen carry decorative 3D pieces that bleed
+// past their boxes. Without these guards the page grows wider than a phone's
+// screen and the browser draws everything zoomed out.
+const homeCss = read('web/public/landing/home.css');
+const loginCss = read('web/public/login.css');
+mustMatch('overflow.home', homeCss, /^html \{[^}]*overflow-x: clip/m, 'landing page must never scroll sideways');
+mustMatch('overflow.hero', homeCss, /\.hero \{[^}]*overflow-x: clip/, 'hero must clip its tilted stage');
+mustMatch('overflow.login', loginCss, /\.view\[data-view="login"\] \.lg \{[^}]*overflow: hidden auto/, 'sign-in screen scrolls vertically only');
 mustInclude('health.api', api, 'uptimeMs:', 'health() must expose uptimeMs');
 mustInclude('health.api', api, 'memoryMb:', 'health() must expose memoryMb');
 mustInclude('health.api', api, 'renderCache', 'health() must expose renderCache');

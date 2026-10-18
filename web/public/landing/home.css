@@ -17,7 +17,12 @@
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+/* The page never scrolls sideways. Decorative 3D pieces bleed past their
+   boxes on purpose; if one reaches past the viewport, a phone would widen its
+   layout viewport to fit it and draw the whole page zoomed out. clip (unlike
+   hidden) doesn't create a scroll container, so the sticky nav keeps working. */
+html { scroll-behavior: smooth; overflow-x: clip; }
+@supports not (overflow: clip) { html, body { overflow-x: hidden; } }
 body { margin: 0; color: var(--ink); font: 400 16px/1.55 var(--sans); background: var(--floor);
   background: radial-gradient(1200px 700px at 70% 0%, #ffffff 0%, var(--floor) 45%, var(--floor2) 100%) fixed; }
 body::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
@@ -69,7 +74,8 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 
 /* ── hero ────────────────────────────────────────────────────────────── */
 .hero { width: min(1180px, 100%); margin: 0 auto; padding: 72px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px));
-  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: center; gap: 24px; min-height: 640px; }
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: center; gap: 24px; min-height: 640px;
+  overflow-x: clip; /* the tilted stage and its corner tile bleed right; keep them inside the hero */ }
 .hero-copy { display: grid; gap: 24px; justify-items: start; min-width: 0; }
 .hero h1 { font: 500 clamp(42px, 5.2vw, 68px)/1.0 var(--sans); letter-spacing: -.045em; }
 .hero h1 em { font-size: 1.1em; display: inline-block; }
@@ -104,6 +110,13 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
   box-shadow: inset 0 0 0 1px var(--cardline); font: 500 15px/1 var(--sans); --z: 140px; transform: translateZ(var(--z)) rotateX(-20deg); animation: hover 5s ease-in-out infinite; }
 .c5 { left: 300px; top: 300px; animation-delay: -1.5s; }
 .c6 { left: 60px; top: 320px; --z: 110px; animation-delay: -3.5s; }
+/* The plane is a fixed 520px board turned in 3D, so it needs about 630px of
+   width. On narrow screens shrink it as a whole (scale composes with the
+   pointer tilt in transform) rather than letting it run off the edge. */
+@media (max-width: 900px) { .stage { height: 420px; } } /* the 900px rule above loses to the base .stage that follows it */
+@media (max-width: 700px) { .plane { scale: .8; } .stage { height: 380px; } }
+@media (max-width: 520px) { .plane { scale: .62; } .stage { height: 330px; } .t1 { width: 56px; } .t4 { width: 130px; bottom: -4%; } }
+@media (max-width: 400px) { .plane { scale: .54; } .stage { height: 300px; } }
 @keyframes hover { 50% { transform: translateZ(calc(var(--z) + 14px)); } }
 .chip { animation-name: hoverchip; }
 @keyframes hoverchip { 0%, 100% { transform: translateZ(var(--z)) rotateX(-20deg); } 50% { transform: translateZ(calc(var(--z) + 16px)) rotateX(-20deg); } }
