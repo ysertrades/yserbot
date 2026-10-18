@@ -228,7 +228,8 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 .window-wrap { perspective: 1600px; }
 .window { display: grid; grid-template-columns: 64px 1fr; min-height: 460px; border-radius: 26px; overflow: hidden; background: var(--card);
   box-shadow: 0 60px 100px -50px rgba(var(--shadow), .6), 0 0 0 1px rgba(255,255,255,.04) inset;
-  transform: rotateX(var(--tilt, 24deg)) scale(var(--sc, .92)); transform-origin: 50% 100%; transition: transform .2s linear; }
+  transform: rotateX(var(--tilt, 24deg)) scale(var(--sc, .92)); transform-origin: 50% 100%; will-change: transform;
+  /* No transition: home.js eases this every frame; a transition on top lags and overshoots. */ }
 .window aside { display: grid; align-content: start; justify-items: center; gap: 14px; padding: 16px 0; background: #0f1013; border-right: 1px solid var(--cardline); }
 .window aside img { width: 30px; height: 30px; border-radius: 9px; margin-bottom: 8px; }
 .window aside i { width: 22px; height: 22px; border-radius: 7px; background: rgba(255,255,255,.07); }
@@ -252,7 +253,17 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
   display: grid; justify-items: center; gap: 28px; text-align: center; }
 .end h2 { font: 500 clamp(36px, 5vw, 64px)/1.02 var(--sans); letter-spacing: -.04em; }
 .end h2 em { color: #9aa0ad; font-size: 1.1em; }
-.e1 { width: 84px; left: 9%; top: 18%; transform: rotate(-10deg); } .e2 { width: 64px; right: 11%; top: 24%; transform: rotate(12deg); animation-delay: -4s; }
+/* The two tiles frame the headline instead of sitting on it: the left one
+   rides high, the right one drops level with the buttons. Measured on a 375px
+   phone (headline 90-204px down the card, buttons 232-342px and 184px wide):
+   the left tile peeks over the card's top-left corner, the right one floats
+   beside the buttons. Same sizes as before; the drift animation still runs. */
+.e1 { width: 84px; left: 8%; top: 7%; transform: rotate(-10deg); }
+.e2 { width: 64px; right: 10%; top: 54%; transform: rotate(12deg); animation-delay: -4s; }
+@media (max-width: 760px) {
+  .e1 { left: -14px; top: -16px; transform: rotate(-14deg); }
+  .e2 { right: 7%; top: 58%; }
+}
 .e3 { width: 220px; right: -4%; bottom: -24%; animation-delay: -2s; }
 
 .foot { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 24px 0 40px; display: flex; justify-content: space-between; align-items: center; gap: 16px; color: var(--soft); font-size: 14px; }

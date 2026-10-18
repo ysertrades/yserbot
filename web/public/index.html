@@ -58,16 +58,13 @@
 @keyframes boot-run{from{transform:translateX(-110%)}to{transform:translateX(260%)}}
 @keyframes boot-giveup{to{opacity:0;visibility:hidden}}
 html:not(.booted) .view[data-view="loading"]{visibility:hidden}
-/* Nothing of the page shows through the splash as it fades: it stays hidden
-   until bootReady marks it booted, after the splash has gone, and its entrance
-   plays then. Keyed on #boot being there, so app.js removing the splash after
-   a failed load shows the page at once; and if no script runs at all, the page
-   comes back with the splash's own giveup at 14s. */
-html:not(.booted):has(#boot) body>:not(#boot){visibility:hidden;animation:boot-unhide 0s 14.5s forwards}
-@keyframes boot-unhide{to{visibility:visible}}
-html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
-@keyframes boot-reveal{from{opacity:0}}
-@media (prefers-reduced-motion:reduce){#boot,#boot *,html.booted #main{animation:none!important;transition:opacity .2s!important}}
+/* The hand-off is one cross-fade: the page is drawn, fully opaque, beneath
+   the splash, and only the splash moves. Don't hide the page while the splash
+   is up, and don't fade #main in from 0 as it lifts: a hidden page leaks (some
+   panel styles force visibility:visible !important) and shows as a stuck,
+   empty screen, and fading both layers at once dips through to the
+   background, which reads as a blink. */
+@media (prefers-reduced-motion:reduce){#boot,#boot *{animation:none!important;transition:opacity .2s!important}}
 </style>
 </head>
 <body>
