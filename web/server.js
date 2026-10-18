@@ -322,6 +322,56 @@ function serveLogo(res, size) {
   );
 }
 
+/**
+ * The tab icon. The logo is a full-bleed gradient with the bot in the middle;
+ * at 16px that is mostly gradient and a square edge. These crop in on the
+ * bot's head (the middle 76%) and round the corners like an app tile, with
+ * transparent corners so it sits cleanly on light and dark tab strips.
+ * favicon.ico carries 16, 32 and 48 as PNG entries, which every current
+ * browser reads, for the ones that ask for /favicon.ico whatever the page says.
+ */
+const FAVICON_SIZES = [16, 32, 48, 96, 192];
+const faviconCache = new Map();
+function faviconPng(size) {
+  let pending = faviconCache.get(size);
+  if (!pending) {
+    pending = (async () => {
+      const { createCanvas, loadImage } = require('@napi-rs/canvas');
+      const img = await loadImage(await fs.promises.readFile(path.join(PUBLIC_DIR, 'Quantbot.jpg')));
+      const side = Math.min(img.width, img.height), crop = side * 0.76;
+      const c = createCanvas(size, size), g = c.getContext('2d');
+      const r = size * 0.24;
+      g.beginPath(); g.moveTo(r, 0); g.arcTo(size, 0, size, size, r); g.arcTo(size, size, 0, size, r); g.arcTo(0, size, 0, 0, r); g.arcTo(0, 0, size, 0, r); g.closePath();
+      g.clip();
+      g.drawImage(img, (img.width - crop) / 2, (img.height - crop) / 2 + side * 0.02, crop, crop, 0, 0, size, size);
+      return c.encode('png');
+    })();
+    faviconCache.set(size, pending);
+    pending.catch(() => faviconCache.delete(size));
+  }
+  return pending;
+}
+let faviconIco = null;
+function faviconIcoBuffer() {
+  if (!faviconIco) {
+    faviconIco = Promise.all([16, 32, 48].map(faviconPng)).then(pngs => {
+      const head = Buffer.alloc(6 + 16 * pngs.length);
+      head.writeUInt16LE(0, 0); head.writeUInt16LE(1, 2); head.writeUInt16LE(pngs.length, 4);
+      let offset = head.length;
+      pngs.forEach((png, i) => {
+        const s = [16, 32, 48][i], e = 6 + i * 16;
+        head.writeUInt8(s, e); head.writeUInt8(s, e + 1); head.writeUInt8(0, e + 2); head.writeUInt8(0, e + 3);
+        head.writeUInt16LE(1, e + 4); head.writeUInt16LE(32, e + 6);
+        head.writeUInt32LE(png.length, e + 8); head.writeUInt32LE(offset, e + 12);
+        offset += png.length;
+      });
+      return Buffer.concat([head, ...pngs]);
+    });
+    faviconIco.catch(() => { faviconIco = null; });
+  }
+  return faviconIco;
+}
+
 /* ─── routing ────────────────────────────────────────────────────────────── */
 
 async function route(req, res, client) {
@@ -434,6 +484,24 @@ async function route(req, res, client) {
     const size = Number(logoMatch[1]);
     if (!LOGO_SIZES.includes(size)) return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
     return serveLogo(res, size);
+  }
+
+  // Tab icons: public for the same reason, and a browser asks for them on
+  // every page, signed in or not.
+  if (p === '/favicon.ico') {
+    return faviconIcoBuffer().then(
+      buf => send(res, 200, buf, { 'content-type': 'image/x-icon', 'cache-control': 'public, max-age=86400' }),
+      () => serveLogo(res, 64),
+    );
+  }
+  const favMatch = /^\/favicon-(\d{2,3})\.png$/.exec(p);
+  if (favMatch) {
+    const size = Number(favMatch[1]);
+    if (!FAVICON_SIZES.includes(size)) return send(res, 404, 'Not found', { 'content-type': 'text/plain' });
+    return faviconPng(size).then(
+      buf => send(res, 200, buf, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' }),
+      () => serveLogo(res, 64),
+    );
   }
 
   const iconMatch = /^\/icon-(\d{2,4})\.png$/.exec(p);
