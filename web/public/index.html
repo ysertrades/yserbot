@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="/leveling-podium.css">
 <link rel="stylesheet" href="/desk.css">
 <link rel="stylesheet" href="/shell-am.css">
+<link rel="stylesheet" href="/login.css">
 <script defer src="/shell-am.js"></script>
 <link rel="preload" href="/panel-app.js" as="script">
 <!-- The launch splash. Inline so it is styled on the very first frame, before
@@ -83,23 +84,50 @@ html.booted #main{animation:boot-reveal .45s cubic-bezier(.2,.7,.2,1)}
     <div class="panel center"><p class="muted">Loading…</p></div>
   </section>
 
+  <!-- Sign in. The link keeps class "btn primary" and href="/auth/login":
+       wireEmbeddedLogin() finds it by exactly that to set up the Whop popup
+       handoff, and #login-error is where every login status is written. -->
   <section class="view" data-view="login">
-    <div class="panel center">
-      <h1>Control panel</h1>
-      <p class="muted">Sign in with the Discord account that manages your server.</p>
-      <a class="btn primary" href="/auth/login">Sign in with Discord</a>
-      <p class="note" id="login-error" hidden></p>
-    </div>
+    <div class="lg">
+      <div class="lg-copy">
+        <a class="lg-badge" href="/home"><img src="/logo-64.jpg" alt="" width="22" height="22">Quant Bot<i class="lg-dot"></i><span>Control panel</span></a>
+        <h1>Sign in to your panel. <em>it&rsquo;s one tap.</em></h1>
+        <p class="lg-lead">Use the Discord account that manages your server. You land straight on its overview.</p>
+        <a class="btn primary lg-discord" href="/auth/login">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18 18 0 0 0-5.6 0L8.6 3a19.5 19.5 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18a19.8 19.8 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1l.5-.4a14 14 0 0 0 12.2 0l.5.4-2 1 1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.1-.8-9.6-3.6-13.6ZM8.1 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7.8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg>
+          <span>Continue with Discord</span>
+          <svg class="lg-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <p class="note" id="login-error" hidden></p>
+        <ul class="lg-scopes" aria-label="What signing in shares">
+          <li><i class="ok"></i>Your Discord name and avatar</li>
+          <li><i class="ok"></i>The servers you are in</li>
+          <li><i class="no"></i>Never your messages or your password</li>
+        </ul>
+        <p class="fineprint lg-fine">
+          <a href="/terms" target="_blank" rel="noopener">Terms</a><span aria-hidden="true">·</span>
+          <a href="/privacy" target="_blank" rel="noopener">Privacy</a><span aria-hidden="true">·</span>
+          <a href="/home">What is Quant Bot?</a>
+        </p>
+      </div>
 
-    <!-- Deliberately tiny and outside the card. This is the fine print you
-         want present before signing in and invisible afterwards — small
-         enough to ignore, close enough to read if you are the sort of person
-         who reads it. -->
-    <p class="fineprint">
-      <a href="/terms" target="_blank" rel="noopener">Terms of Service</a>
-      <span aria-hidden="true">·</span>
-      <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>
-    </p>
+      <!-- The handshake: Discord and the bot joined by a live line, and the
+           panel's cards floating in from behind. -->
+      <div class="lg-art" aria-hidden="true">
+        <div class="lg-shake">
+          <span class="lg-tile discord"><svg viewBox="0 0 24 24"><path d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18 18 0 0 0-5.6 0L8.6 3a19.5 19.5 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18a19.8 19.8 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1l.5-.4a14 14 0 0 0 12.2 0l.5.4-2 1 1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.1-.8-9.6-3.6-13.6ZM8.1 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7.8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg></span>
+          <svg class="lg-wire" viewBox="0 0 220 80" preserveAspectRatio="none"><path id="lg-path" d="M6 40 C 70 -6, 150 86, 214 40"/><circle r="4"><animateMotion dur="2.4s" repeatCount="indefinite" rotate="auto"><mpath href="#lg-path"/></animateMotion></circle><circle r="4" class="b"><animateMotion dur="2.4s" begin="1.2s" repeatCount="indefinite"><mpath href="#lg-path"/></animateMotion></circle></svg>
+          <span class="lg-tile bot"><img src="/logo-256.jpg" alt=""></span>
+        </div>
+        <div class="lg-stage"><div class="lg-plane">
+          <div class="lg-card a"><span>🗓️</span><b class="live">LIVE</b><small>CALENDAR</small></div>
+          <div class="lg-card b"><span>🎁</span><b>3</b><small>GIVEAWAYS</small></div>
+          <div class="lg-card c"><span>🎓</span><b class="live">ON</b><small>WHOP</small></div>
+          <div class="lg-chip"><i class="lg-dot"></i>Signed in · Overview</div>
+        </div></div>
+        <img class="lg-float f1" src="/logo-256.jpg" alt=""><img class="lg-float f2 soft" src="/logo-256.jpg" alt="">
+      </div>
+    </div>
   </section>
 
   <section class="view" data-view="setup">

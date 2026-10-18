@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Quant Bot · Your whole server, in one panel</title>
+<meta name="description" content="Giveaways, leveling, live market news, tickets and moderation for Discord, run from one panel.">
+<meta name="theme-color" content="#f9fbfb">
+<link rel="icon" href="/logo-64.jpg" type="image/jpeg">
+<link rel="preload" href="/fonts/instrument-serif-italic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/landing/home.css">
+<script src="/landing/js-on.js"></script>
+</head>
+<body>
+
+<!-- ── nav ─────────────────────────────────────────────────────────────── -->
+<header class="nav">
+  <a class="brand" href="/home"><img src="/logo-64.jpg" alt="" width="26" height="26"><span>Quant Bot</span><i class="dot" id="nav-dot" title="Bot status"></i></a>
+  <nav class="links" aria-label="Sections">
+    <a href="#features">Features</a><a href="#how">How it works</a><a href="#panel">The panel</a>
+  </nav>
+  <div class="nav-cta">
+    <a class="btn ghost" href="/">Sign in</a>
+    <a class="btn ink" href="/invite">Add to Discord</a>
+  </div>
+</header>
+
+<main>
+<!-- ── hero ────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-copy">
+    <span class="pill reveal"><img src="/logo-64.jpg" alt="" width="20" height="20">Quant Bot<i class="dot live"></i><span class="pill-sub" id="hero-live">for Discord</span></span>
+    <h1 class="reveal">Your whole server,<br>in one panel. <em>on autopilot.</em></h1>
+    <p class="lead reveal">Giveaways that can't be farmed, ranks that pay out roles, market news the second it breaks, tickets and moderation. Set it up once from a panel, and the bot runs it in Discord.</p>
+    <div class="cta reveal">
+      <a class="btn ink lg" href="/invite"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add to Discord</a>
+      <a class="btn ghost lg" href="/">Open the panel</a>
+    </div>
+    <dl class="stats reveal" aria-live="polite">
+      <div><dt>Servers</dt><dd data-stat="servers">—</dd></div>
+      <div><dt>Members</dt><dd data-stat="members">—</dd></div>
+      <div><dt>Gateway</dt><dd data-stat="ping">—</dd></div>
+    </dl>
+  </div>
+
+  <!-- The banner's scene, alive: panel cards floating over the floor. -->
+  <div class="stage" id="stage" aria-hidden="true">
+    <div class="plane" id="plane">
+      <div class="card c1"><span class="ic">🗓️</span><b class="v live">LIVE</b><span class="l">Calendar</span></div>
+      <div class="card c2"><span class="ic">👥</span><b class="v" data-stat="members">—</b><span class="l">Members</span></div>
+      <div class="card c3"><span class="ic">🎓</span><b class="v live">ON</b><span class="l">Whop</span></div>
+      <div class="card c4"><span class="ic">🎁</span><b class="v">3</b><span class="l">Giveaways</span></div>
+      <div class="chip c5">🎁 New giveaway</div>
+      <div class="chip c6"><i class="dot live"></i>Link filter · on</div>
+    </div>
+    <img class="tile t1" src="/logo-256.jpg" alt=""><img class="tile t2" src="/logo-256.jpg" alt="">
+    <img class="tile t3" src="/logo-256.jpg" alt=""><img class="tile t4 soft" src="/logo-256.jpg" alt="">
+  </div>
+</section>
+
+<!-- ── what it runs ───────────────────────────────────────────────────── -->
+<div class="marquee" aria-label="What Quant Bot runs">
+  <div class="track">
+    <span>Giveaways</span><span>Entry verification</span><span>Leveling &amp; ranks</span><span>Live market news</span><span>Economic calendar</span><span>Whop tracker</span><span>Tickets</span><span>Moderation</span><span>Composer</span><span>Studio images</span><span>Channel desk</span>
+    <span aria-hidden="true">Giveaways</span><span aria-hidden="true">Entry verification</span><span aria-hidden="true">Leveling &amp; ranks</span><span aria-hidden="true">Live market news</span><span aria-hidden="true">Economic calendar</span><span aria-hidden="true">Whop tracker</span><span aria-hidden="true">Tickets</span><span aria-hidden="true">Moderation</span><span aria-hidden="true">Composer</span><span aria-hidden="true">Studio images</span><span aria-hidden="true">Channel desk</span>
+  </div>
+</div>
+
+<!-- ── features ───────────────────────────────────────────────────────── -->
+<section class="features" id="features">
+  <div class="head reveal">
+    <span class="kicker">What it does</span>
+    <h2>Everything a server runs on. <em>none of the busywork.</em></h2>
+  </div>
+  <div class="bento">
+
+    <article class="f wide reveal">
+      <div class="f-copy"><h3>Giveaways</h3><p>Every winner gets their own prize, sent one by one. Each one is stamped the moment it lands.</p></div>
+      <div class="screen gw">
+        <div class="ticket"><small>PRIZE DROP</small><b>NITRO</b><span>3 winners · QL-7F2A</span></div>
+        <ul class="queue">
+          <li><i>1</i>@alice<em class="stamp s1">Delivered</em></li>
+          <li><i>2</i>@bob<em class="stamp s2">Delivered</em></li>
+          <li><i>3</i>@carl<em class="stamp s3">Delivered</em></li>
+        </ul>
+      </div>
+    </article>
+
+    <article class="f reveal">
+      <div class="f-copy"><h3>One person, one entry</h3><p>A quick check on every drop stops alt accounts. No sign-in, nothing to install.</p></div>
+      <div class="screen vr">
+        <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="44"/><circle class="fill" cx="60" cy="60" r="44"/>
+          <path class="shield" d="M60 30l20 8v14c0 13-8.6 23-20 28-11.4-5-20-15-20-28V38z"/><path class="check" d="M50 58l7 7 13-14"/></svg>
+      </div>
+    </article>
+
+    <article class="f reveal">
+      <div class="f-copy"><h3>Ranks that pay out</h3><p>Members earn XP by chatting. Each level can hand out a role, automatically.</p></div>
+      <div class="screen lv">
+        <div class="bars"><i style="--h:18%"></i><i style="--h:26%"></i><i style="--h:34%"></i><i style="--h:44%"></i><i style="--h:56%"></i><i style="--h:70%"></i><i class="top" style="--h:92%"></i></div>
+        <span class="lvpill">Lv 12 · Trader</span>
+      </div>
+    </article>
+
+    <article class="f reveal">
+      <div class="f-copy"><h3>News the second it breaks</h3><p>Market headlines as cards in your channel, plus the economic calendar before it moves.</p></div>
+      <div class="screen nw">
+        <div class="news n1"><span class="live-tag">LIVE</span><b>FED HOLDS RATES</b><small>EURUSD · just now</small></div>
+        <div class="news n2"><span class="live-tag">LIVE</span><b>GOLD HITS RECORD</b><small>XAUUSD · 2m ago</small></div>
+        <div class="news n3"><span class="live-tag">LIVE</span><b>CPI BEATS FORECAST</b><small>USCPI · 6m ago</small></div>
+      </div>
+    </article>
+
+    <article class="f reveal">
+      <div class="f-copy"><h3>Tickets, by age</h3><p>Every open ticket in one queue, coloured by how long it has waited.</p></div>
+      <div class="screen tk">
+        <div class="row"><b>#ticket-mia</b><span class="age" style="--w:22%;--c:#3ccf7a"></span></div>
+        <div class="row"><b>#ticket-joe</b><span class="age" style="--w:58%;--c:#eab308"></span></div>
+        <div class="row"><b>#ticket-kai</b><span class="age" style="--w:90%;--c:#f87171"></span></div>
+      </div>
+    </article>
+
+    <article class="f wide full reveal">
+      <div class="f-copy"><h3>Moderation that stays out of the way</h3><p>Link filter, mention spam, word filter and a full mod log. Switch each one on in a tap.</p></div>
+      <div class="screen md">
+        <div class="tg"><span>Link filter</span><i class="sw s1"></i></div>
+        <div class="tg"><span>Mention spam</span><i class="sw s2"></i></div>
+        <div class="tg"><span>Word filter</span><i class="sw s3"></i></div>
+        <div class="tg"><span>Mod log</span><i class="sw s4"></i></div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<!-- ── how it works: a real order, so numbered ────────────────────────── -->
+<section class="how" id="how">
+  <div class="head reveal"><span class="kicker">How it works</span><h2>Running in a minute. <em>no config files.</em></h2></div>
+  <ol class="steps">
+    <li class="reveal"><span class="n">1</span><b>Add the bot</b><p>Pick your server on Discord's screen. It only asks for what it uses.</p></li>
+    <li class="reveal"><span class="n">2</span><b>Sign in with Discord</b><p>The panel sees your name and the servers you manage. Nothing else.</p></li>
+    <li class="reveal"><span class="n">3</span><b>Run it from the panel</b><p>Turn features on, post a giveaway, pick a news channel. The bot does the rest.</p></li>
+  </ol>
+</section>
+
+<!-- ── the panel, straightening as you reach it ───────────────────────── -->
+<section class="show" id="panel">
+  <div class="head reveal"><span class="kicker">The panel</span><h2>One place for all of it. <em>on any screen.</em></h2></div>
+  <div class="window-wrap"><div class="window" id="window" aria-hidden="true">
+    <aside><img src="/logo-64.jpg" alt=""><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></aside>
+    <div class="win-main">
+      <div class="win-head"><b>Overview</b><span class="pill sm"><i class="dot live"></i>Live</span></div>
+      <div class="win-hero"><small>Good evening</small><b>Your server</b><span class="qb">🎁 New giveaway</span><span class="qb">✍️ Write a message</span></div>
+      <div class="win-tiles">
+        <div><b class="live">LIVE</b><small>CALENDAR</small></div><div><b>3</b><small>GIVEAWAYS</small></div><div><b>12</b><small>TEMPLATES</small></div>
+        <div><b>0</b><small>MOD CASES</small></div><div><b class="live">ON</b><small>WHOP</small></div><div><b>1,284</b><small>MEMBERS</small></div>
+      </div>
+      <div class="win-rows"><i></i><i></i><i></i><i></i></div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ── closing ─────────────────────────────────────────────────────────── -->
+<section class="closing reveal">
+  <div class="end">
+    <img class="tile e1" src="/logo-256.jpg" alt=""><img class="tile e2" src="/logo-256.jpg" alt=""><img class="tile e3 soft" src="/logo-256.jpg" alt="">
+    <h2>Ready when you are.<br><em>add it in a minute.</em></h2>
+    <div class="cta"><a class="btn light lg" href="/invite">Add to Discord</a><a class="btn outline lg" href="/">Open the panel</a></div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <span><img src="/logo-64.jpg" alt="" width="18" height="18">Quant Bot</span>
+  <nav><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/">Panel</a></nav>
+</footer>
+
+<script src="/landing/home.js"></script>
+</body>
+</html>
