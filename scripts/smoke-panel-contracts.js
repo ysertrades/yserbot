@@ -78,6 +78,25 @@ else pass('jank.layoutkeys', 'no keyframes animate layout properties');
 mustNotMatch('jank.revealblur', homeCss, /\.js \.reveal \{[^}]*filter/, 'landing reveals: opacity and rise only');
 mustNotMatch('jank.enterblur', read('web/public/shell-am.css'), /@keyframes bu-enter \{[^}]*filter/, 'panel entrance: opacity and rise only');
 mustNotMatch('jank.progress', css, /\.bar::after \{[^}]*transition:\s*width/, 'header progress line: scale it, do not transition its width');
+// The tab icon on Safari/iOS. Safari asks for /apple-touch-icon.png on its own
+// and draws the domain's first letter (a "Y") when it can't get an icon; it
+// also ignores data: URL icons, so the live icon script must leave it alone.
+const serverJs = read('web/server.js');
+mustInclude('icon.touchroute', serverJs, "p === '/apple-touch-icon.png'", 'serve /apple-touch-icon.png');
+for (const f of ['index.html', 'home.html', 'verify.html', 'terms.html', 'privacy.html']) {
+  mustInclude(`icon.touchlink.${f}`, read('web/public/' + f), 'href="/apple-touch-icon.png"', `${f} links the touch icon`);
+}
+mustMatch('icon.safariskip', read('web/public/favicon-live.js'), /if \(ios \|\| safari\) return;/, 'favicon-live.js must not run on Safari/iOS');
+// The link card Discord builds when /home or the panel is shared: a large
+// image, a title and a description, and an absolute image URL (crawlers
+// don't resolve relative ones). The image file itself must ship.
+for (const f of ['home.html', 'index.html']) {
+  const head = read('web/public/' + f).split('</head>')[0];
+  for (const tag of ['og:title', 'og:description', 'og:image']) mustMatch(`og.${f}.${tag}`, head, new RegExp(`property="${tag}" content="[^"]{8,}"`), `${f} needs ${tag}`);
+  mustMatch(`og.${f}.absolute`, head, /property="og:image" content="https:\/\//, `${f}: og:image must be an absolute https URL`);
+  mustInclude(`og.${f}.large`, head, 'name="twitter:card" content="summary_large_image"', `${f}: large image card`);
+}
+mustMatch('og.image.file', String(require('fs').existsSync(require('path').join(root, 'web/public/og-home.png'))), /true/, 'web/public/og-home.png must exist');
 mustInclude('health.api', api, 'uptimeMs:', 'health() must expose uptimeMs');
 mustInclude('health.api', api, 'memoryMb:', 'health() must expose memoryMb');
 mustInclude('health.api', api, 'renderCache', 'health() must expose renderCache');

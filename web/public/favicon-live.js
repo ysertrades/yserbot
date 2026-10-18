@@ -3,9 +3,17 @@
    - wear a green "online" dot, cut out of the tile like an app badge, while
      the bot is connected (checked on load and every few minutes);
    - blink now and then, the bot's two eyes closing for a moment.
-   Nothing here is needed: if the image or the stats fail, the static icon stays. */
+   Nothing here is needed: if the image or the stats fail, the static icon stays.
+
+   Not on Safari, nor on any iPhone/iPad browser (all WebKit underneath): they
+   won't use a data: URL icon, and with the real links pruned they fell back to
+   drawing the domain's first letter, a "Y". There the static icons stay. */
 (function () {
   'use strict';
+  const ua = navigator.userAgent || '';
+  const ios = /iP(hone|ad|od)/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const safari = /Safari\//.test(ua) && !/(Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS|Android)\//.test(ua);
+  if (ios || safari) return;
   const S = 64;                                  // drawn at 64, the browser scales it down
   const link = document.querySelector('link[rel="icon"][sizes="32x32"]') || document.querySelector('link[rel="icon"]');
   if (!link || !document.createElement('canvas').getContext) return;

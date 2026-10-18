@@ -351,6 +351,25 @@ function faviconPng(size) {
   }
   return pending;
 }
+// The touch icon Safari and iOS use for tabs, bookmarks and the home screen.
+// Safari asks for /apple-touch-icon.png on its own whatever the page links,
+// and when that 404s it draws the domain's first letter instead (a "Y" here).
+// Opaque and square, because iOS rounds the corners itself.
+let touchIcon = null;
+function appleTouchPng() {
+  if (!touchIcon) {
+    touchIcon = (async () => {
+      const { createCanvas, loadImage } = require('@napi-rs/canvas');
+      const img = await loadImage(await fs.promises.readFile(path.join(PUBLIC_DIR, 'Quantbot.jpg')));
+      const side = Math.min(img.width, img.height), crop = side * 0.84, size = 180;
+      const c = createCanvas(size, size);
+      c.getContext('2d').drawImage(img, (img.width - crop) / 2, (img.height - crop) / 2 + side * 0.015, crop, crop, 0, 0, size, size);
+      return c.encode('png');
+    })();
+    touchIcon.catch(() => { touchIcon = null; });
+  }
+  return touchIcon;
+}
 let faviconIco = null;
 function faviconIcoBuffer() {
   if (!faviconIco) {
@@ -492,6 +511,12 @@ async function route(req, res, client) {
     return faviconIcoBuffer().then(
       buf => send(res, 200, buf, { 'content-type': 'image/x-icon', 'cache-control': 'public, max-age=86400' }),
       () => serveLogo(res, 64),
+    );
+  }
+  if (p === '/apple-touch-icon.png' || p === '/apple-touch-icon-precomposed.png') {
+    return appleTouchPng().then(
+      buf => send(res, 200, buf, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' }),
+      () => serveLogo(res, 256),
     );
   }
   const favMatch = /^\/favicon-(\d{2,3})\.png$/.exec(p);
