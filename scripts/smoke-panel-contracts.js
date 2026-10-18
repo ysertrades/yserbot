@@ -59,6 +59,25 @@ const homeJs = read('web/public/landing/home.js');
 mustNotMatch('tilt.self', homeJs, /win\.getBoundingClientRect/, 'measure the untransformed wrapper, not the tilted window');
 mustNotMatch('tilt.transition', homeCss, /\.window \{[^}]*transition:\s*transform/, 'no CSS transition on the scroll-driven window');
 mustMatch('intro.land', homeJs, /setTimeout\(startReveals, LAND\)/, 'the hero lands while the intro lifts, not after it');
+// Scroll jank and flicker. Each of these made something lag behind the scroll
+// or flicker on phones: a live blur on a sticky bar (re-blurs what scrolls
+// under it every frame; on iOS it trails), a `fixed` page background (iOS
+// repaints the page with it), keyframes that move left/top/width/height
+// (layout every frame), and blur in entrance animations (re-rasterised per frame).
+const allCss = ['app.css', 'shell-am.css', 'desk.css', 'login.css', 'landing/home.css'].map(f => read('web/public/' + f)).join('\n');
+const ruleFor = (text, sel) => (text.match(new RegExp('(^|\\n)' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[^}]*\\}', 'g')) || []).join('\n');
+for (const [file, text, sels] of [['app.css', css, ['.bar', '.sidebar']], ['home.css', homeCss, ['.nav']], ['desk.css', read('web/public/desk.css'), ['.desk-head']]]) {
+  for (const s of sels) mustNotMatch(`jank.stickyblur.${s}`, ruleFor(text, s), /backdrop-filter:\s*blur/, `${file} ${s}: no live blur on a sticky bar`);
+}
+mustNotMatch('jank.fixedbg', homeCss, /background[^;]*\)\s*fixed\b|background-attachment:\s*fixed/, 'landing: no background-attachment fixed (use a fixed layer)');
+// Each @keyframes block exactly (its steps are one level of nested braces).
+const layoutKeys = [...allCss.matchAll(/@keyframes\s+([\w-]+)\s*\{((?:[^{}]*\{[^{}]*\})*)[^{}]*\}/g)]
+  .filter(m => /(^|[{;\s])(left|top|width|height)\s*:/.test(m[2])).map(m => m[1]);
+if (layoutKeys.length) fail('jank.layoutkeys', `keyframes animate left/top/width/height: ${layoutKeys.join(', ')} (use transform)`);
+else pass('jank.layoutkeys', 'no keyframes animate layout properties');
+mustNotMatch('jank.revealblur', homeCss, /\.js \.reveal \{[^}]*filter/, 'landing reveals: opacity and rise only');
+mustNotMatch('jank.enterblur', read('web/public/shell-am.css'), /@keyframes bu-enter \{[^}]*filter/, 'panel entrance: opacity and rise only');
+mustNotMatch('jank.progress', css, /\.bar::after \{[^}]*transition:\s*width/, 'header progress line: scale it, do not transition its width');
 mustInclude('health.api', api, 'uptimeMs:', 'health() must expose uptimeMs');
 mustInclude('health.api', api, 'memoryMb:', 'health() must expose memoryMb');
 mustInclude('health.api', api, 'renderCache', 'health() must expose renderCache');

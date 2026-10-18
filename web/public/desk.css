@@ -1,6 +1,7 @@
 /* Channel Desk */
 .desk-panel{margin-top:1.25rem;display:flex;flex-direction:column;min-height:320px;max-height:min(70vh,640px);overflow:hidden;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--rule,#2a2d38));background:color-mix(in srgb,var(--panel,#15161d) 92%,#0b0d11);position:relative;opacity:1;transition:opacity .2s ease}
-.desk-head{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.65rem 1rem;padding:.85rem 1rem;border-bottom:1px solid var(--rule,#2a2d38);overflow:visible;position:sticky;top:0;z-index:6;background:color-mix(in srgb,var(--panel,#15161d) 96%,#0b0d11);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.desk-head{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:.65rem 1rem;padding:.85rem 1rem;border-bottom:1px solid var(--rule,#2a2d38);overflow:visible;position:sticky;top:0;z-index:6;background:color-mix(in srgb,var(--panel,#15161d) 96%,#0b0d11)}
+/* .desk-head: no live blur; at 96% opaque it was invisible, but a sticky backdrop-filter re-blurs the scrolling stream under it every frame. */
 .desk-title-block{flex:1 1 auto;min-width:0}
 .desk-kicker{margin:0;font-size:.72rem;font-weight:700;letter-spacing:.12em;color:var(--muted,#9aa3b5)}
 .desk-title-block .muted{margin:.2rem 0 0;font-size:.8rem}

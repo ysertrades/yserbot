@@ -11169,7 +11169,9 @@ const SECTION_NAMES = {
 function paintBar() {
   const max = document.documentElement.scrollHeight - window.innerHeight;
   const y = window.scrollY;
-  document.documentElement.style.setProperty('--scroll', max > 8 ? `${Math.min(100, (y / max) * 100).toFixed(1)}%` : '0%');
+  // A 0..1 factor for the header's progress line, which is scaled rather than
+  // resized (see .bar::after in app.css).
+  document.documentElement.style.setProperty('--scroll-k', max > 8 ? Math.min(1, y / max).toFixed(4) : '0');
   // 64px is roughly where the section nav leaves the screen, so the label
   // arrives exactly as the thing it replaces goes away.
   const scrolled = y > 64 ? '1' : '0';
