@@ -11,7 +11,9 @@ html[data-state="login"] body { background: #f9fbfb !important; }
   --sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
   --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(.22, .8, .2, 1);
-  position: fixed; inset: 0; z-index: 40; overflow: auto; color: var(--ink); font-family: var(--sans);
+  /* Scrolls up and down only: the floating panel and the blurred corner tile
+     bleed past the right edge by design and must never add a sideways scroll. */
+  position: fixed; inset: 0; z-index: 40; overflow: hidden auto; color: var(--ink); font-family: var(--sans);
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); align-items: center; gap: 24px;
   padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
   background: radial-gradient(1100px 700px at 75% 20%, #ffffff 0%, #f9fbfb 45%, #f2f3f6 100%);
@@ -119,6 +121,11 @@ html[data-state="login"] .lg-art { animation: lg-in 1.3s var(--ease) both .15s; 
   .lg-art { height: 360px; order: -1; }
   .lg-stage { inset: 30% 0 0; } .lg-plane { transform: scale(.72) rotateX(52deg) rotateZ(-22deg); animation: none; }
   .lg-float { display: none; }
+}
+@media (max-width: 480px) {
+  /* 460px board turned in 3D: at .72 it is ~400px wide, past a phone's edge. */
+  .lg-plane { transform: scale(.6) rotateX(52deg) rotateZ(-22deg); }
+  .lg-art { height: 320px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .view[data-view="login"] .lg *, .view[data-view="login"] .lg *::after, html[data-state="login"] .lg-art { animation: none !important; }
