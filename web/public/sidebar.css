@@ -1,0 +1,156 @@
+/* The panel's sidebar, reworked (loaded last; driven by sidebar.js).
+   Everything is scoped under html.sbx, which sidebar.js sets, so the older
+   sidebar rules in app.css / shell-am.css / shell-am.js's injected sheet still
+   apply untouched if this script ever fails to load.
+
+   PC, expanded: light 1.5px icons (the solid duotone fill is gone), quiet
+   labels, the current section lit in blurple with a light bar on the edge.
+   PC, collapsed: a 76px rail, every icon on its own rounded square tile, the
+   current one filled blurple; names float out beside them on hover.
+   Between the two the width glides (an animatable --sidebar-w).
+   Phone: a drawer that glides in on a spring, follows the finger when swiped,
+   and ripples its items in as it opens.
+   No backdrop blur anywhere (see the smoke contracts on scroll jank). */
+
+@property --sidebar-w { syntax: '<length>'; inherits: true; initial-value: 248px; }
+html.sbx { --sb-ease: cubic-bezier(.32, .72, 0, 1); --sb-blurple: #5865f2; --sb-blurple2: #3b46d8;
+  --sb-ink: #e9ebf0; --sb-label: #8a8e98; --sb-ico: #7b808b; --sb-tile: #16171c; --sb-tile-h: #1d1f25; --sb-line: #1c1d22;
+  transition: --sidebar-w .42s var(--sb-ease); }
+html.sbx.sb-instant, html.sbx.sb-instant * { transition: none !important; }
+
+/* ── the toggle: a panel whose column slides, with an arrow that turns ── */
+html.sbx .sb-toggle { flex: none; width: 32px; height: 32px; margin-left: auto; display: inline-grid; place-items: center; padding: 0; cursor: pointer;
+  border-radius: 10px; border: 1px solid #23252c; background: #121318; color: #8b8f98;
+  transition: background-color .2s, color .2s, border-color .2s, transform .2s var(--sb-ease); }
+html.sbx .sb-toggle:focus-visible { outline: 2px solid rgba(110,122,255,.7); outline-offset: 2px; }
+@media (hover: hover) { html.sbx .sb-toggle:hover { background: #1a1c22; color: #fff; border-color: #2e313a; } }
+html.sbx .sb-toggle:active { transform: scale(.92); }
+.sb-ico { width: 18px; height: 18px; display: block; overflow: visible; }
+.sb-ico .frame { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.sb-ico .col { fill: currentColor; opacity: .85; transform-box: fill-box; transform-origin: 0 50%; transition: transform .42s var(--sb-ease), opacity .2s; }
+.sb-ico .chev { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  transform-box: fill-box; transform-origin: 50% 50%; transition: transform .42s var(--sb-ease); }
+@media (hover: hover) { html.sbx .sb-toggle:hover .col, .am-menu-btn:hover .sb-ico .col { transform: scaleX(.78); } }
+/* collapsed: the column narrows and the arrow turns to point outward */
+html.sbx[data-sb="rail"] .sb-toggle .col { transform: scaleX(.42); }
+html.sbx[data-sb="rail"] .sb-toggle .chev { transform: rotate(180deg); }
+@media (hover: hover) { html.sbx[data-sb="rail"] .sb-toggle:hover .col { transform: scaleX(.62); } }
+
+/* the phone's menu button wears the same panel icon */
+html.sbx .am-menu-btn { width: 38px !important; height: 38px !important; border-radius: 12px !important; border: 1px solid #22242b !important;
+  background: #111216 !important; color: #b9bcc5 !important; transition: background-color .2s, transform .2s var(--sb-ease); }
+html.sbx .am-menu-btn:active { transform: scale(.92); }
+html.sbx .am-menu-btn .sb-ico .chev { transform: rotate(180deg); }
+
+/* ── the sidebar frame ─────────────────────────────────────────────── */
+html.sbx body .app-shell .sidebar { padding: 14px 12px 12px !important; gap: 10px !important; border-right: 1px solid var(--sb-line) !important;
+  background: linear-gradient(180deg, #101115 0%, #0c0d10 100%) !important; }
+html.sbx .sidebar-brand { display: flex !important; align-items: center !important; gap: 10px !important; padding: 2px 4px 10px 6px !important; position: relative; min-height: 44px; }
+html.sbx .sidebar-brand .mark { width: 30px !important; height: 30px !important; border-radius: 9px !important; flex: none;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 6px 14px -6px rgba(0,0,0,.7); }
+html.sbx .sidebar-title { font: 600 15px/1 var(--sans, system-ui) !important; letter-spacing: -.01em; color: var(--sb-ink) !important; white-space: nowrap;
+  transition: opacity .22s ease, transform .3s var(--sb-ease); }
+html.sbx .sb-section-label { padding: 6px 12px 2px; font: 600 10.5px/1 var(--mono, ui-monospace, monospace); letter-spacing: .14em; text-transform: uppercase; color: #4f535d; white-space: nowrap;
+  transition: opacity .2s ease; }
+
+/* ── nav items ─────────────────────────────────────────────────────── */
+html.sbx body .app-shell .sidebar-nav.sections { gap: 3px !important; padding: 2px 0 !important; overflow-x: hidden !important; }
+html.sbx body .app-shell .sidebar-nav.sections > button {
+  position: relative !important; height: 40px !important; min-height: 40px !important; padding: 0 10px 0 6px !important; gap: 10px !important;
+  border-radius: 12px !important; color: var(--sb-label) !important; font: 500 14px/1 var(--sans, system-ui) !important; background: transparent !important;
+  box-shadow: none !important; transition: background-color .2s ease, color .2s ease, box-shadow .2s ease, padding .42s var(--sb-ease), width .42s var(--sb-ease) !important; }
+html.sbx body .app-shell .sidebar-nav.sections > button[hidden] { display: none !important; }
+html.sbx body .app-shell .sidebar-nav .nav-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .22s ease; }
+/* the icon sits on a small tile, which becomes the whole button on the rail */
+html.sbx body .app-shell .sidebar-nav.sections > button .nav-ico-wrap {
+  width: 30px !important; height: 30px !important; min-width: 30px !important; border-radius: 9px !important; color: var(--sb-ico) !important;
+  background: transparent !important; box-shadow: none !important; transition: background-color .25s ease, color .25s ease, box-shadow .25s ease, width .42s var(--sb-ease), height .42s var(--sb-ease), border-radius .42s var(--sb-ease) !important; }
+/* lighter icons: a 1.5px line, and no solid duotone fill underneath */
+html.sbx body .app-shell .sidebar-nav .nav-ico-wrap svg.nav-ico { width: 18px !important; height: 18px !important; stroke-width: 1.5 !important; }
+html.sbx body .app-shell .sidebar-nav .nav-ico .duo { display: none !important; }
+/* the icon and label follow their tile and button (older rules tint them directly) */
+html.sbx body .app-shell .sidebar-nav.sections > button .nav-ico { color: inherit !important; }
+html.sbx body .app-shell .sidebar-nav.sections > button .nav-label { color: inherit !important; }
+@media (hover: hover) {
+  html.sbx body .app-shell .sidebar-nav.sections > button:hover { background: #14151a !important; color: #dfe1e6 !important; }
+  html.sbx body .app-shell .sidebar-nav.sections > button:hover .nav-ico-wrap { color: #c9ccd4 !important; }
+}
+html.sbx body .app-shell .sidebar-nav.sections > button:focus-visible { outline: 2px solid rgba(110,122,255,.7) !important; outline-offset: 1px; }
+/* the current section: a soft blurple wash, a lit icon tile, a light bar on the edge */
+html.sbx body .app-shell .sidebar-nav.sections > button[aria-current="true"] {
+  color: #fff !important; background: linear-gradient(90deg, rgba(88,101,242,.20), rgba(88,101,242,.05) 70%, transparent) !important;
+  box-shadow: inset 0 0 0 1px rgba(110,122,255,.18) !important; }
+html.sbx body .app-shell .sidebar-nav.sections > button[aria-current="true"] .nav-ico-wrap { background: rgba(88,101,242,.22) !important; color: #b4bcff !important; }
+html.sbx body .app-shell .sidebar-nav.sections > button::before { content: ''; position: absolute; left: -12px; top: 50%; width: 3px; height: 0; border-radius: 0 3px 3px 0;
+  background: var(--sb-blurple); box-shadow: 0 0 12px 1px rgba(88,101,242,.75); transform: translateY(-50%); transition: height .32s var(--sb-ease), left .42s var(--sb-ease); }
+html.sbx body .app-shell .sidebar-nav.sections > button[aria-current="true"]::before { height: 20px; }
+
+/* ── bot status ────────────────────────────────────────────────────── */
+html.sbx .sidebar-status-card { transition: padding .42s var(--sb-ease), background-color .3s, border-color .3s; }
+html.sbx .sidebar-status-row { transition: padding .42s var(--sb-ease); }
+
+/* ── PC: the collapsed rail ────────────────────────────────────────── */
+@media (min-width: 901px) {
+  html.sbx[data-sb="rail"] { --sidebar-w: 76px; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar { padding: 14px 0 12px !important; align-items: center !important; }
+  html.sbx[data-sb="rail"] .sidebar-brand { flex-direction: column !important; gap: 12px !important; padding: 2px 0 10px !important; width: 100%; align-items: center !important; }
+  html.sbx[data-sb="rail"] .sidebar-brand .mark { width: 40px !important; height: 40px !important; border-radius: 12px !important; }
+  html.sbx[data-sb="rail"] .sidebar-title, html.sbx[data-sb="rail"] .sb-section-label { opacity: 0; position: absolute; pointer-events: none; }
+  html.sbx[data-sb="rail"] .sb-toggle { margin-left: 0; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections { align-items: center !important; gap: 8px !important; width: 100% !important; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button { width: 44px !important; height: 44px !important; min-height: 44px !important; padding: 0 !important;
+    justify-content: center !important; gap: 0 !important; background: transparent !important; box-shadow: none !important; flex: none !important; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav .nav-label { opacity: 0; width: 0; position: absolute; pointer-events: none; }
+  /* each icon on its own square, like the panel window on the landing page */
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button .nav-ico-wrap { width: 40px !important; height: 40px !important; min-width: 40px !important; border-radius: 12px !important;
+    background: var(--sb-tile) !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.035) !important; }
+  @media (hover: hover) { html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button:hover .nav-ico-wrap { background: var(--sb-tile-h) !important; color: #e3e5ea !important; } }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button[aria-current="true"] .nav-ico-wrap {
+    background: linear-gradient(180deg, #6773ff, var(--sb-blurple2)) !important; color: #fff !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 8px 18px -8px rgba(88,101,242,.8) !important; }
+  html.sbx[data-sb="rail"] body .app-shell .sidebar-nav.sections > button::before { left: -16px; }
+  /* status: a column of small icons, each wearing its live dot */
+  html.sbx[data-sb="rail"] .sidebar-status { width: 100%; display: grid; justify-items: center; }
+  html.sbx[data-sb="rail"] .sidebar-status-label { display: none !important; }
+  html.sbx[data-sb="rail"] .sidebar-status-card { padding: 6px 0 !important; background: transparent !important; border-color: transparent !important; display: grid !important; gap: 2px !important; }
+  html.sbx[data-sb="rail"] .sidebar-status-row { position: relative; width: 40px; height: 28px; padding: 0 !important; justify-content: center !important; gap: 0 !important; }
+  html.sbx[data-sb="rail"] .sidebar-status-row > span:not(.val) { display: none !important; }
+  html.sbx[data-sb="rail"] .sidebar-status-row .val { position: absolute; right: 7px; top: 3px; font-size: 0 !important; gap: 0 !important; }
+  html.sbx[data-sb="rail"] .sidebar-status-row .val::before { width: 6px !important; height: 6px !important; box-shadow: 0 0 0 2px #0e0f12; }
+}
+
+/* the floating name beside a rail icon (one element, placed by sidebar.js) */
+.sb-tip { position: fixed; z-index: 4000; pointer-events: none; padding: 7px 11px; border-radius: 9px; background: #1b1d23; color: #eef0f5;
+  font: 500 12.5px/1 var(--sans, system-ui); white-space: nowrap; box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 10px 24px -10px rgba(0,0,0,.8);
+  opacity: 0; transform: translate(-4px, -50%); transition: opacity .16s ease, transform .2s var(--sb-ease, ease); }
+.sb-tip.on { opacity: 1; transform: translate(0, -50%); }
+.sb-tip::before { content: ''; position: absolute; left: -4px; top: 50%; width: 8px; height: 8px; background: inherit; transform: translateY(-50%) rotate(45deg); border-radius: 2px; }
+.sb-tip small { margin-left: 8px; color: #8a8e98; font-size: 11.5px; }
+
+/* ── phone: the drawer ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  html.sbx body .app-shell .sidebar { width: min(300px, 86vw) !important; max-width: min(300px, 86vw) !important; border-radius: 0 22px 22px 0 !important;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 14px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+    transition: transform .46s var(--sb-ease) !important; box-shadow: 18px 0 48px -12px rgba(0,0,0,.65) !important; touch-action: pan-y; }
+  html.sbx body .app-shell .sidebar-nav.sections > button { height: 46px !important; min-height: 46px !important; font-size: 15px !important; }
+  html.sbx .am-nav-scrim { background: rgba(5,6,10,.62) !important; transition: opacity .38s ease, visibility .38s ease !important; }
+  /* on the phone the toggle closes the drawer: its arrow points back */
+  html.sbx .sidebar .sb-toggle .chev { transform: none; }
+  /* items ripple in as the drawer opens */
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button { animation: sb-in .42s var(--sb-ease) both; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(2) { animation-delay: .03s; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(3) { animation-delay: .06s; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(4) { animation-delay: .09s; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(5) { animation-delay: .12s; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(6) { animation-delay: .15s; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(7) { animation-delay: .18s; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(8) { animation-delay: .21s; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button:nth-child(n+9) { animation-delay: .24s; }
+  html.sbx.sb-dragging body .app-shell .sidebar, html.sbx.sb-dragging .am-nav-scrim { transition: none !important; }
+}
+@keyframes sb-in { from { opacity: 0; transform: translateX(-14px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  html.sbx, html.sbx * { transition-duration: .01s !important; }
+  html.sbx body .app-shell.nav-open .sidebar-nav.sections > button { animation: none !important; }
+}
