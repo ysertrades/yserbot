@@ -51,6 +51,14 @@ mustNotMatch('boot.clock', bootFn, /getAnimations|currentTime/, 'time the splash
 mustNotMatch('boot.raf', bootFn, /requestAnimationFrame/, 'a paused webview never runs rAF; use timers');
 mustNotMatch('boot.hide', html, /:has\(#boot\)[^{]*\{[^}]*visibility:\s*hidden/, 'do not hide the page under the splash');
 mustNotMatch('boot.dip', html, /html\.booted #main\{animation/, 'do not fade #main in while the splash fades out');
+// The landing page's panel window tilts with scroll. It shook when the code
+// measured the element it transforms (its own tilt moved its rect), read
+// innerHeight (iOS changes it as the toolbar returns on scroll-up), and had a
+// CSS transition fighting the per-frame easing.
+const homeJs = read('web/public/landing/home.js');
+mustNotMatch('tilt.self', homeJs, /win\.getBoundingClientRect/, 'measure the untransformed wrapper, not the tilted window');
+mustNotMatch('tilt.transition', homeCss, /\.window \{[^}]*transition:\s*transform/, 'no CSS transition on the scroll-driven window');
+mustMatch('intro.land', homeJs, /setTimeout\(startReveals, LAND\)/, 'the hero lands while the intro lifts, not after it');
 mustInclude('health.api', api, 'uptimeMs:', 'health() must expose uptimeMs');
 mustInclude('health.api', api, 'memoryMb:', 'health() must expose memoryMb');
 mustInclude('health.api', api, 'renderCache', 'health() must expose renderCache');
