@@ -23,8 +23,13 @@
    hidden) doesn't create a scroll container, so the sticky nav keeps working. */
 html { scroll-behavior: smooth; overflow-x: clip; }
 @supports not (overflow: clip) { html, body { overflow-x: hidden; } }
-body { margin: 0; color: var(--ink); font: 400 16px/1.55 var(--sans); background: var(--floor);
-  background: radial-gradient(1200px 700px at 70% 0%, #ffffff 0%, var(--floor) 45%, var(--floor2) 100%) fixed; }
+/* The studio light is a fixed layer of its own, not a viewport-attached
+   background on body: iOS ignores that (or repaints the whole page with it on
+   every scroll frame, which flickers). A fixed pseudo-element is composited
+   once and simply stays put. */
+body { margin: 0; color: var(--ink); font: 400 16px/1.55 var(--sans); background: var(--floor2); }
+body::after { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(1200px 700px at 70% 0%, #ffffff 0%, var(--floor) 45%, var(--floor2) 100%); }
 body::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background-image: linear-gradient(rgba(var(--shadow), .04) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--shadow), .04) 1px, transparent 1px);
   background-size: 32px 32px; mask-image: radial-gradient(90% 70% at 60% 20%, #000 20%, transparent 80%); }
@@ -62,8 +67,15 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 /* ── nav ─────────────────────────────────────────────────────────────── */
 .nav { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 14px); z-index: 20; margin: 14px auto 0; width: min(1120px, calc(100% - 32px));
   display: flex; align-items: center; gap: 16px; padding: 8px 8px 8px 14px; border-radius: 999px;
-  background: rgba(255, 255, 255, .72); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  /* Near-opaque instead of a live blur: a sticky backdrop-filter re-blurs what
+     scrolls beneath it every frame, and on iOS that blur trails behind the
+     scroll, so a lagging smear showed around the Add to Discord button. */
+  background: rgba(255, 255, 255, .92);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.8), 0 10px 30px -18px rgba(var(--shadow), .45); }
+/* Inside the floating nav the ink button gets a tight shadow; the hero's long
+   soft one read as a dark backdrop dragging under the bar. */
+.nav .btn.ink { box-shadow: 0 4px 10px -6px rgba(var(--shadow), .55), inset 0 1px 0 rgba(255,255,255,.12); }
+@media (hover: hover) { .nav .btn.ink:hover { box-shadow: 0 8px 16px -8px rgba(var(--shadow), .6), inset 0 1px 0 rgba(255,255,255,.12); } }
 .brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 600; text-decoration: none; letter-spacing: -.01em; }
 .brand img { width: 26px; height: 26px; border-radius: 8px; }
 .links { display: flex; gap: 4px; margin-left: 10px; }
@@ -92,7 +104,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 .stage { position: relative; height: 560px; perspective: 1400px; perspective-origin: 50% 35%; }
 .plane { position: absolute; left: 50%; top: 50%; width: 520px; height: 420px; margin: -210px 0 0 -260px; transform-style: preserve-3d;
   transform: rotateX(var(--rx, 50deg)) rotateZ(var(--rz, -24deg)); transition: transform .9s var(--ease); }
-.card, .chip { position: absolute; transform-style: preserve-3d; }
+.card, .chip { position: absolute; transform-style: preserve-3d; will-change: transform; } /* their hover bob moves a blurred shadow; a layer of its own keeps it from re-blurring */
 .card { width: 230px; height: 108px; border-radius: 16px; padding: 16px 18px; background: linear-gradient(180deg, var(--card2), var(--card)); color: #e9eaee;
   box-shadow: inset 0 0 0 1px var(--cardline), inset 0 1px 0 rgba(255,255,255,.08); display: grid; align-content: start; gap: 6px;
   --z: 40px; transform: translateZ(var(--z)); animation: hover 6s ease-in-out infinite; }
@@ -125,7 +137,9 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 @keyframes hoverchip { 0%, 100% { transform: translateZ(var(--z)) rotateX(-20deg); } 50% { transform: translateZ(calc(var(--z) + 16px)) rotateX(-20deg); } }
 .tile { position: absolute; border-radius: 24%; box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 18px 34px -16px rgba(var(--shadow), .55), 0 4px 10px -4px rgba(var(--shadow), .25);
   animation: drift 9s ease-in-out infinite; }
-.tile.soft { filter: blur(14px); opacity: .8; }
+/* will-change keeps the blurred tile on its own layer, so its drift moves the
+   already-blurred bitmap instead of re-blurring it every frame. */
+.tile.soft { filter: blur(14px); opacity: .8; will-change: translate; }
 .t1 { width: 74px; right: 4%; top: 2%; transform: rotate(9deg); }
 .t2 { width: 50px; left: 6%; top: 10%; transform: rotate(-12deg); animation-delay: -3s; }
 .t3 { width: 40px; right: 14%; bottom: 10%; animation-delay: -5s; }
@@ -133,7 +147,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 
 /* ── marquee ─────────────────────────────────────────────────────────── */
 .marquee { overflow: hidden; margin: 10px 0 90px; mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
-.track { display: flex; gap: 10px; width: max-content; animation: slide 40s linear infinite; }
+.track { display: flex; gap: 10px; width: max-content; animation: slide 40s linear infinite; will-change: transform; }
 .track span { padding: 10px 18px; border-radius: 999px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); font-weight: 500; font-size: 15px; color: var(--ink2); }
 @keyframes slide { to { transform: translateX(-50%); } }
 
@@ -278,12 +292,12 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 #intro { display: none; }
 .js #intro { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden;
   background: radial-gradient(900px 600px at 50% 42%, #ffffff 0%, var(--floor) 50%, var(--floor2) 100%);
-  transition: opacity .75s var(--ease), visibility .75s, filter .75s var(--ease); animation: in-giveup .6s 6s forwards; }
+  transition: opacity .75s var(--ease), visibility .75s; animation: in-giveup .6s 6s forwards; }
 #intro::before { content: ''; position: absolute; inset: -32px; pointer-events: none;
   background-image: linear-gradient(rgba(var(--shadow), .05) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--shadow), .05) 1px, transparent 1px);
   background-size: 32px 32px; mask-image: radial-gradient(46% 46% at 50% 46%, #000 10%, transparent 75%);
   animation: in-fade 1s var(--ease) both, in-grid 9s linear infinite; }
-#intro.out { opacity: 0; visibility: hidden; pointer-events: none; filter: blur(6px); }
+#intro.out { opacity: 0; visibility: hidden; pointer-events: none; } /* no full-screen blur on the way out: blurring the whole viewport every frame of the fade is what flickers */
 .in-card { position: relative; display: grid; justify-items: center; gap: 18px; transition: transform .8s var(--ease); }
 #intro.out .in-card { transform: translateY(-10px) scale(1.06); }
 
@@ -315,7 +329,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 .in-tile.a { width: 46px; left: calc(50% - 230px); top: calc(46% - 150px); --r: -12deg; --dx: -60px; --dy: -40px; --o: 1; animation-delay: .15s, 1.6s; }
 .in-tile.b { width: 58px; left: calc(50% + 170px); top: calc(46% - 110px); --r: 10deg; --dx: 60px; --dy: -30px; --o: 1; animation-delay: .25s, 1.7s; }
 .in-tile.c { width: 34px; left: calc(50% - 170px); top: calc(46% + 120px); --r: 8deg; --dx: -50px; --dy: 40px; --o: .9; animation-delay: .35s, 1.8s; }
-.in-tile.d { width: 130px; left: calc(50% + 160px); top: calc(46% + 80px); --r: 14deg; --dx: 70px; --dy: 60px; --o: .45; filter: blur(16px); animation-delay: .2s, 1.65s; }
+.in-tile.d { width: 130px; left: calc(50% + 160px); top: calc(46% + 80px); --r: 14deg; --dx: 70px; --dy: 60px; --o: .45; filter: blur(16px); will-change: transform, translate; animation-delay: .2s, 1.65s; }
 #intro.out .in-tile { animation: in-away .7s var(--ease) forwards; }
 
 @keyframes in-pop { from { opacity: 0; transform: translateY(14px) scale(.6); } }
@@ -334,8 +348,11 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 @media (max-width: 520px) { .in-tile.a { left: 8%; } .in-tile.b { left: auto; right: 8%; } .in-tile.c { left: 14%; } .in-tile.d { left: auto; right: -10%; } }
 
 /* ── entrances: visible without JS; with JS, things rise as they arrive ── */
-.js .reveal { opacity: 0; transform: translateY(18px); filter: blur(6px); transition: opacity .9s var(--ease), transform .9s var(--ease), filter .9s var(--ease); }
-.js .reveal.in { opacity: 1; transform: none; filter: none; }
+/* Opacity and rise only. A blur here was re-rasterised every frame on every
+   section as it arrived, which flickered on phones; these two stay on the
+   compositor. */
+.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .9s var(--ease), transform .9s var(--ease); }
+.js .reveal.in { opacity: 1; transform: none; }
 .hero .reveal:nth-child(2) { transition-delay: .08s; } .hero .reveal:nth-child(3) { transition-delay: .16s; } .hero .reveal:nth-child(4) { transition-delay: .24s; } .hero .reveal:nth-child(5) { transition-delay: .32s; }
 .js .stage { opacity: 0; transform: translateY(24px) scale(.97); transition: opacity 1.2s var(--ease) .2s, transform 1.2s var(--ease) .2s; }
 .js .stage.in { opacity: 1; transform: none; }

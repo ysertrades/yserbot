@@ -327,10 +327,11 @@ html[data-entered] body .section.sec-enter > * { animation: bu-fade 150ms ease-o
 .sidebar-nav.sections .sec-ink { display: none !important; }
 .sidebar-nav.sections.has-ink > button[aria-current=true] { background: var(--surface-2) !important; }
 
-/* First load: the one staged entrance, 100ms apart — opacity, 4px blur and
+/* First load: the one staged entrance, 100ms apart — opacity and
    12px of rise over 300ms ease-out. Opacity only under reduced motion. */
 html.first-enter .section[data-active] > * { animation: bu-fade 300ms ease-out both; }
-@keyframes bu-enter { from { opacity: 0; translate: 0 12px; filter: blur(4px); } }
+/* Opacity and rise only: a blur here was re-rasterised on every card of the first screen and every sheet row as they entered, which flickered. */
+@keyframes bu-enter { from { opacity: 0; translate: 0 12px; } }
 @media (prefers-reduced-motion: no-preference) {
   html.first-enter .section[data-active] > * { animation-name: bu-enter; }
 }
