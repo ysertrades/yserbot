@@ -95,6 +95,12 @@ mustMatch('sidebar.toggle', html, /id="sb-toggle"[^>]*aria-controls="sections"/,
 mustMatch('sidebar.lighticons', sbCss, /svg\.nav-ico \{ stroke-width: 1\.5 !important; \}/, 'nav icons draw at 1.5px');
 mustNotMatch('sidebar.noblur', sbCss, /backdrop-filter/, 'no backdrop blur in the sidebar');
 mustNotMatch('sidebar.nodrawer', sbCss, /max-width: 900px/, 'the phone drawer is left as it is');
+// The collapse is a transition, never a jump: shell-am.js turns nav transitions
+// off with "#sections button", so ours must carry the id to win; and nothing
+// in the collapsed state may use display:none (it can't be animated).
+mustMatch('sidebar.motion.ids', sbCss, /#sections\.sidebar-nav > button \{ overflow: hidden !important;\s*transition: padding/, 'nav button transition beats the #sections rule');
+mustMatch('sidebar.motion.tiles', sbCss, /#sections\.sidebar-nav > button \.nav-ico-wrap \{\s*transition: width/, 'icon squares grow, not snap');
+mustNotMatch('sidebar.motion.nodisplay', sbCss, /data-sb="rail"\][^{]*\{[^}]*display: none/, 'the collapsed state fades things, never display:none');
 mustMatch('sidebar.lsguard', read('web/public/sidebar.js'), /try \{ return localStorage\.getItem/, 'sidebar state read is guarded');
 // The link card Discord builds when /home or the panel is shared: a large
 // image, a title and a description, and an absolute image URL (crawlers
