@@ -419,7 +419,8 @@ async function route(req, res, client) {
       online: !!client.isReady?.(),
       servers: client.guilds.cache.size,
       members,
-      ping: Math.round(client.ws.ping) || null,
+      // -1 until Discord's first heartbeat after a restart: no reading yet.
+      ping: client.ws.ping > 0 ? Math.round(client.ws.ping) : null,
       uptimeSec: Math.round((client.uptime || 0) / 1000),
     });
   }
