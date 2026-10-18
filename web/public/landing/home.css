@@ -113,6 +113,7 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 /* The plane is a fixed 520px board turned in 3D, so it needs about 630px of
    width. On narrow screens shrink it as a whole (scale composes with the
    pointer tilt in transform) rather than letting it run off the edge. */
+@media (max-width: 900px) { .stage { height: 420px; } } /* the 900px rule above loses to the base .stage that follows it */
 @media (max-width: 700px) { .plane { scale: .8; } .stage { height: 380px; } }
 @media (max-width: 520px) { .plane { scale: .62; } .stage { height: 330px; } .t1 { width: 56px; } .t4 { width: 130px; bottom: -4%; } }
 @media (max-width: 400px) { .plane { scale: .54; } .stage { height: 300px; } }
