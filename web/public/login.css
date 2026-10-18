@@ -106,13 +106,12 @@ html[data-state="login"] body { background: #f9fbfb !important; }
 .lg-float.f1 { width: 54px; right: 12%; top: 30%; transform: rotate(12deg); animation-delay: -2s; }
 .lg-float.f2 { width: 210px; right: -6%; bottom: -8%; filter: blur(14px); opacity: .75; }
 
-/* Entrances: the copy rises, the art settles in behind it. Keyed on .booted
-   so they play once the launch splash has gone, not hidden underneath it. */
-html.booted[data-state="login"] .lg-copy > * { animation: lg-rise .9s var(--ease) both; }
-html.booted[data-state="login"] .lg-copy > :nth-child(2) { animation-delay: .06s; } html.booted[data-state="login"] .lg-copy > :nth-child(3) { animation-delay: .12s; }
-html.booted[data-state="login"] .lg-copy > :nth-child(4) { animation-delay: .18s; } html.booted[data-state="login"] .lg-copy > :nth-child(6) { animation-delay: .26s; }
-html.booted[data-state="login"] .lg-copy > :nth-child(7) { animation-delay: .32s; }
-html.booted[data-state="login"] .lg-art { animation: lg-in 1.3s var(--ease) both .15s; }
+/* Entrances: the copy rises, the art settles in behind it. */
+html[data-state="login"] .lg-copy > * { animation: lg-rise .9s var(--ease) both; }
+html[data-state="login"] .lg-copy > :nth-child(2) { animation-delay: .06s; } html[data-state="login"] .lg-copy > :nth-child(3) { animation-delay: .12s; }
+html[data-state="login"] .lg-copy > :nth-child(4) { animation-delay: .18s; } html[data-state="login"] .lg-copy > :nth-child(6) { animation-delay: .26s; }
+html[data-state="login"] .lg-copy > :nth-child(7) { animation-delay: .32s; }
+html[data-state="login"] .lg-art { animation: lg-in 1.3s var(--ease) both .15s; }
 @keyframes lg-rise { from { opacity: 0; transform: translateY(16px); filter: blur(6px); } }
 @keyframes lg-in { from { opacity: 0; transform: translateY(24px) scale(.97); } }
 
