@@ -13,6 +13,20 @@
 </head>
 <body>
 
+<!-- ── intro: the panel's launch splash, in the landing page's light ──────
+     Only shown when scripts run (.js, set in <head>), so it can never strand
+     a visitor; home.js lifts it once the page has loaded, and the giveup
+     animation in home.css fades it by itself as a last resort. -->
+<div id="intro" aria-hidden="true">
+  <img class="in-tile a" src="/logo-128.jpg" alt=""><img class="in-tile b" src="/logo-128.jpg" alt="">
+  <img class="in-tile c" src="/logo-128.jpg" alt=""><img class="in-tile d" src="/logo-256.jpg" alt="">
+  <div class="in-card">
+    <span class="in-mark"><i class="in-ring"></i><i class="in-ring two"></i><img src="/logo-128.jpg" width="72" height="72" alt="" fetchpriority="high"><i class="in-orbit"></i></span>
+    <span class="in-word"><b style="--i:0">Q</b><b style="--i:1">U</b><b style="--i:2">A</b><b style="--i:3">N</b><b style="--i:4">T</b><b style="--i:5">B</b><b style="--i:6">O</b><b style="--i:7">T</b><i class="dot live"></i></span>
+    <span class="in-line"><i></i></span>
+  </div>
+</div>
+
 <!-- ── nav ─────────────────────────────────────────────────────────────── -->
 <header class="nav">
   <a class="brand" href="/home"><img src="/logo-64.jpg" alt="" width="26" height="26"><span>Quant Bot</span><i class="dot" id="nav-dot" title="Bot status"></i></a>
