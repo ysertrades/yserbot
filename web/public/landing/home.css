@@ -257,6 +257,69 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 .foot span { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink); } .foot img { border-radius: 6px; }
 .foot nav { display: flex; gap: 18px; } .foot a { text-decoration: none; } @media (hover: hover) { .foot a:hover { color: var(--ink); } }
 
+/* ── intro: the panel's launch splash, in the studio light ─────────────
+   The logo springs in with a sheen across it and two soft rings breathing
+   out, a small live dot orbits it, QUANTBOT ripples in letter by letter as
+   its tracking settles, logo tiles drift in from the corners, and a light
+   runs along the line. On the way out the card lifts and the tiles scatter. */
+#intro { display: none; }
+.js #intro { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden;
+  background: radial-gradient(900px 600px at 50% 42%, #ffffff 0%, var(--floor) 50%, var(--floor2) 100%);
+  transition: opacity .75s var(--ease), visibility .75s, filter .75s var(--ease); animation: in-giveup .6s 6s forwards; }
+#intro::before { content: ''; position: absolute; inset: -32px; pointer-events: none;
+  background-image: linear-gradient(rgba(var(--shadow), .05) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--shadow), .05) 1px, transparent 1px);
+  background-size: 32px 32px; mask-image: radial-gradient(46% 46% at 50% 46%, #000 10%, transparent 75%);
+  animation: in-fade 1s var(--ease) both, in-grid 9s linear infinite; }
+#intro.out { opacity: 0; visibility: hidden; pointer-events: none; filter: blur(6px); }
+.in-card { position: relative; display: grid; justify-items: center; gap: 18px; transition: transform .8s var(--ease); }
+#intro.out .in-card { transform: translateY(-10px) scale(1.06); }
+
+.in-mark { position: relative; width: 72px; height: 72px; animation: in-pop .9s cubic-bezier(.34, 1.56, .64, 1) both; }
+.in-mark img { position: relative; z-index: 1; width: 72px; height: 72px; border-radius: 20px; display: block;
+  box-shadow: 0 1px 1px rgba(var(--shadow), .06), 0 20px 40px -18px rgba(var(--shadow), .55), 0 4px 10px -4px rgba(var(--shadow), .2); }
+.in-mark::after { content: ''; position: absolute; inset: 0; z-index: 2; border-radius: 20px; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .7) 50%, transparent 65%) no-repeat; background-size: 250% 100%;
+  animation: in-sheen 1.5s .55s var(--ease) both; }
+.in-ring { position: absolute; inset: -2px; border-radius: 24px; border: 1.5px solid rgba(88, 101, 242, .32); opacity: 0;
+  animation: in-ripple 2.2s .4s cubic-bezier(.2, .7, .2, 1) infinite; }
+.in-ring.two { border-color: rgba(60, 207, 122, .3); animation-delay: 1.5s; }
+.in-orbit { position: absolute; left: 50%; top: 50%; z-index: 3; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
+  background: var(--live); box-shadow: 0 0 0 3px rgba(60, 207, 122, .18), 0 0 10px rgba(60, 207, 122, .6);
+  animation: in-fade .5s .7s both, in-orbit 2.6s .7s linear infinite; }
+
+.in-word { display: flex; align-items: center; font: 600 15px/1 var(--sans); letter-spacing: .26em; color: var(--ink); perspective: 400px;
+  animation: in-track 1.4s .2s var(--ease) both; }
+.in-word b { display: inline-block; font-weight: 600; transform-origin: 50% 100%;
+  animation: in-letter .75s var(--ease) both; animation-delay: calc(.3s + var(--i) * 55ms); }
+.in-word .dot { margin-left: .5em; animation: in-fade .4s .85s both, breathe 2.4s var(--ease) infinite 1.2s; }
+.in-line { width: 132px; height: 2px; border-radius: 2px; background: rgba(var(--shadow), .08); overflow: hidden; animation: in-fade .6s .55s both; }
+.in-line i { display: block; width: 40%; height: 100%; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--blurple), transparent);
+  animation: in-run 1.15s ease-in-out infinite; }
+
+.in-tile { position: absolute; border-radius: 24%; opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)) scale(.85);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 18px 34px -16px rgba(var(--shadow), .5), 0 4px 10px -4px rgba(var(--shadow), .2);
+  animation: in-drift 1.5s var(--ease) both, in-bob 6s 1.5s ease-in-out infinite; }
+.in-tile.a { width: 46px; left: calc(50% - 230px); top: calc(46% - 150px); --r: -12deg; --dx: -60px; --dy: -40px; --o: 1; animation-delay: .15s, 1.6s; }
+.in-tile.b { width: 58px; left: calc(50% + 170px); top: calc(46% - 110px); --r: 10deg; --dx: 60px; --dy: -30px; --o: 1; animation-delay: .25s, 1.7s; }
+.in-tile.c { width: 34px; left: calc(50% - 170px); top: calc(46% + 120px); --r: 8deg; --dx: -50px; --dy: 40px; --o: .9; animation-delay: .35s, 1.8s; }
+.in-tile.d { width: 130px; left: calc(50% + 160px); top: calc(46% + 80px); --r: 14deg; --dx: 70px; --dy: 60px; --o: .45; filter: blur(16px); animation-delay: .2s, 1.65s; }
+#intro.out .in-tile { animation: in-away .7s var(--ease) forwards; }
+
+@keyframes in-pop { from { opacity: 0; transform: translateY(14px) scale(.6); } }
+@keyframes in-sheen { from { background-position: 150% 0; } to { background-position: -60% 0; } }
+@keyframes in-ripple { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes in-orbit { from { transform: rotate(0deg) translateX(58px); } to { transform: rotate(360deg) translateX(58px); } }
+@keyframes in-letter { from { opacity: 0; transform: translateY(12px) rotateX(-75deg); filter: blur(6px); } }
+@keyframes in-track { from { letter-spacing: .6em; } }
+@keyframes in-run { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
+@keyframes in-fade { from { opacity: 0; } }
+@keyframes in-grid { to { background-position: 32px 32px; } }
+@keyframes in-drift { to { opacity: var(--o); transform: rotate(var(--r)); } }
+@keyframes in-bob { 50% { translate: 0 -10px; } }
+@keyframes in-away { from { opacity: var(--o); transform: rotate(var(--r)); } to { opacity: 0; transform: translate(calc(var(--dx) * 2.2), calc(var(--dy) * 2.2)) rotate(var(--r)) scale(1.15); } }
+@keyframes in-giveup { to { opacity: 0; visibility: hidden; } }
+@media (max-width: 520px) { .in-tile.a { left: 8%; } .in-tile.b { left: auto; right: 8%; } .in-tile.c { left: 14%; } .in-tile.d { left: auto; right: -10%; } }
+
 /* ── entrances: visible without JS; with JS, things rise as they arrive ── */
 .js .reveal { opacity: 0; transform: translateY(18px); filter: blur(6px); transition: opacity .9s var(--ease), transform .9s var(--ease), filter .9s var(--ease); }
 .js .reveal.in { opacity: 1; transform: none; filter: none; }
