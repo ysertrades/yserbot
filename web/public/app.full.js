@@ -512,41 +512,20 @@ function showLogin() {
  * frame, and fades out once there is a finished screen beneath it — the
  * panel drawn, the sign-in page, or setup. Called from each of those; only the
  * first call does anything.
- *
- * Then it plays out in order, like the landing page's intro:
- *  1. Hold until the splash's own entrance has finished (the sheen across the
- *     logo ends at ~2.1s). Counted from the splash's first frame, read off its
- *     own animation, not from navigation: a page that took 1.6s to start would
- *     otherwise get no hold at all and the splash would vanish on arrival.
- *  2. Fade the splash out (BOOT_FADE matches #boot's transition).
- *  3. Only then mark the page booted, which un-hides it (index.html) and starts
- *     its entrance: the panel's cards, or the sign-in copy (login.css). Before,
- *     both ran while the splash was still fading, so they piled on top of it.
- * No hold with reduced motion. A slow load is never made slower.
  */
-const BOOT_HOLD = 2400, BOOT_FADE = 750;
 function bootReady() {
   const boot = document.getElementById('boot');
   if (!boot || boot.dataset.out) return;
   boot.dataset.out = '1';
-  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let shown = BOOT_HOLD;
-  try {
-    const a = boot.querySelector('.bt-mark').getAnimations()[0];
-    if (a && a.currentTime != null) shown = a.currentTime;
-  } catch (_) {}
-  const hold = reduce ? 0 : Math.max(0, BOOT_HOLD - shown);
-  setTimeout(() => {
+  requestAnimationFrame(() => {
+    root.classList.add('booted');
+    // The one staged entrance in the panel: the first screen's cards, 100ms
+    // apart. Removed once played so later tab switches never replay it.
+    root.classList.add('first-enter');
+    setTimeout(() => root.classList.remove('first-enter'), 1400);
     boot.classList.add('out');
-    setTimeout(() => {
-      boot.remove();
-      root.classList.add('booted');
-      // The one staged entrance in the panel: the first screen's cards, 100ms
-      // apart. Removed once played so later tab switches never replay it.
-      root.classList.add('first-enter');
-      setTimeout(() => root.classList.remove('first-enter'), 1400);
-    }, reduce ? 0 : BOOT_FADE);
-  }, hold);
+    setTimeout(() => boot.remove(), 700);
+  });
 }
 
 /**
