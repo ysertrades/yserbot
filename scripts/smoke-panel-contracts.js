@@ -78,6 +78,15 @@ else pass('jank.layoutkeys', 'no keyframes animate layout properties');
 mustNotMatch('jank.revealblur', homeCss, /\.js \.reveal \{[^}]*filter/, 'landing reveals: opacity and rise only');
 mustNotMatch('jank.enterblur', read('web/public/shell-am.css'), /@keyframes bu-enter \{[^}]*filter/, 'panel entrance: opacity and rise only');
 mustNotMatch('jank.progress', css, /\.bar::after \{[^}]*transition:\s*width/, 'header progress line: scale it, do not transition its width');
+// The tab icon on Safari/iOS. Safari asks for /apple-touch-icon.png on its own
+// and draws the domain's first letter (a "Y") when it can't get an icon; it
+// also ignores data: URL icons, so the live icon script must leave it alone.
+const serverJs = read('web/server.js');
+mustInclude('icon.touchroute', serverJs, "p === '/apple-touch-icon.png'", 'serve /apple-touch-icon.png');
+for (const f of ['index.html', 'home.html', 'verify.html', 'terms.html', 'privacy.html']) {
+  mustInclude(`icon.touchlink.${f}`, read('web/public/' + f), 'href="/apple-touch-icon.png"', `${f} links the touch icon`);
+}
+mustMatch('icon.safariskip', read('web/public/favicon-live.js'), /if \(ios \|\| safari\) return;/, 'favicon-live.js must not run on Safari/iOS');
 mustInclude('health.api', api, 'uptimeMs:', 'health() must expose uptimeMs');
 mustInclude('health.api', api, 'memoryMb:', 'health() must expose memoryMb');
 mustInclude('health.api', api, 'renderCache', 'health() must expose renderCache');
