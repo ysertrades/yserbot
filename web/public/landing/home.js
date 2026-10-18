@@ -58,7 +58,7 @@
     if (!s) return;
     document.querySelectorAll('[data-stat="servers"]').forEach(el => countUp(el, s.servers || 0));
     document.querySelectorAll('[data-stat="members"]').forEach(el => countUp(el, s.members || 0));
-    document.querySelectorAll('[data-stat="ping"]').forEach(el => { el.textContent = s.ping ? `${s.ping} ms` : '—'; });
+    document.querySelectorAll('[data-stat="ping"]').forEach(el => { el.textContent = s.ping > 0 ? `${s.ping} ms` : '—'; });
     const dot = document.getElementById('nav-dot');
     if (dot && s.online) { dot.classList.add('live'); dot.title = 'Online'; }
     const live = document.getElementById('hero-live');
