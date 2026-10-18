@@ -512,20 +512,29 @@ function showLogin() {
  * frame, and fades out once there is a finished screen beneath it — the
  * panel drawn, the sign-in page, or setup. Called from each of those; only the
  * first call does anything.
+ *
+ * It also holds the splash until its own entrance has played (the sheen across
+ * the logo ends at ~2.1s), so a fast, cached load no longer cuts it off
+ * halfway: 2.3s from navigation on the first open in a tab, 1.5s after that,
+ * and no hold at all with reduced motion. A slow load is never made slower.
  */
 function bootReady() {
   const boot = document.getElementById('boot');
   if (!boot || boot.dataset.out) return;
   boot.dataset.out = '1';
-  requestAnimationFrame(() => {
+  let seen = false;
+  try { seen = sessionStorage.getItem('qb-boot') === '1'; sessionStorage.setItem('qb-boot', '1'); } catch (_) {}
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hold = reduce ? 0 : Math.max(0, (seen ? 1500 : 2300) - performance.now());
+  setTimeout(() => requestAnimationFrame(() => {
     root.classList.add('booted');
     // The one staged entrance in the panel: the first screen's cards, 100ms
     // apart. Removed once played so later tab switches never replay it.
     root.classList.add('first-enter');
     setTimeout(() => root.classList.remove('first-enter'), 1400);
     boot.classList.add('out');
-    setTimeout(() => boot.remove(), 700);
-  });
+    setTimeout(() => boot.remove(), 800);
+  }), hold);
 }
 
 /**
