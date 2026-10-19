@@ -6,10 +6,19 @@ const { postCustomLog } = require('../utils/modLog');
 
 module.exports = {
   name: Events.MessageUpdate,
-  async execute(oldMessage, newMessage) {
-    if (!newMessage.guild || oldMessage.partial || newMessage.partial) return;
-    if (newMessage.author?.bot) return;
-    if (oldMessage.content === newMessage.content) return; // embed unfurl / pin / reaction-only update
+  async execute(oldMessage, newMessage, client) {
+    if (!newMessage.guild) return;
+    // An invite edited in after posting is caught like a fresh one. This
+    // runs even for messages the bot hadn't cached (the edit log can't).
+    if (newMessage.partial) newMessage = await newMessage.fetch().catch(() => null);
+    if (!newMessage || newMessage.author?.bot) return;
+    if (!oldMessage.partial && oldMessage.content === newMessage.content) return; // embed unfurl / pin / reaction-only update
+    try {
+      const { isFeatureEnabled } = require('../utils/featureToggles');
+      if (isFeatureEnabled(newMessage.guild.id, 'automod')
+        && await client?.commands?.get('automod')?.handleMessage(newMessage, client, { edited: true })) return;
+    } catch { /* filtering must never break the edit log */ }
+    if (oldMessage.partial) return;
 
     const settings = getModLogSettings(newMessage.guild.id);
     if (!settings.messages) return;

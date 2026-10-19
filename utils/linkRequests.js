@@ -21,16 +21,16 @@ const RESTRICTED_LINK_RE = new RegExp(
   'i'
 );
 
+// Detection lives in inviteGuard.js (disguised links, more hosts); these two
+// keep their old names so every caller gets the stronger check.
 function isRestrictedLink(text) {
-  return RESTRICTED_LINK_RE.test(String(text || ''));
+  return require('./inviteGuard').findInvites(text).length > 0;
 }
 
 function restrictedPlatform(text) {
-  const s = String(text || '').toLowerCase();
-  if (/(?:discord\.gg|discord(?:app)?\.com\/invite)/i.test(s)) return 'Discord';
-  if (/(?:t\.me|telegram\.me|telegram\.dog)/i.test(s)) return 'Telegram';
-  if (/(?:wa\.me|api\.whatsapp\.com|chat\.whatsapp\.com)/i.test(s)) return 'WhatsApp';
-  return 'invite';
+  const hits = require('./inviteGuard').findInvites(text);
+  const kinds = [...new Set(hits.map(h => h.platform))];
+  return kinds.length === 1 ? kinds[0] : 'invite';
 }
 
 

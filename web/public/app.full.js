@@ -2887,7 +2887,7 @@ function renderModDeck() {
   const shields = el('div', 'mod-shields');
   const SHIELDS = [
     { field: 'badWords', on: a.badWords, title: 'Word filter', sub: 'Removes filtered words', icon: '🤐' },
-    { field: 'linkFilter', on: a.linkFilter, title: 'Link filter', sub: 'Holds links for review', icon: '🔗' },
+    { field: 'linkFilter', on: a.linkFilter, title: 'Invite guard', sub: 'Blocks Discord, Telegram & WhatsApp invites', icon: '🔗' },
     { field: 'mentionSpamProtection', on: a.mentionSpam, title: 'Mention spam', sub: 'Stops mass pings', icon: '📣' },
   ];
   for (const s of SHIELDS) {

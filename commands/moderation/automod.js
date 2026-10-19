@@ -21,10 +21,11 @@ const {
 const { analyse, humanAge, flagLines, severity } = require('../../utils/linkInsight');
 const linkDecisions = require('../../utils/linkDecisions');
 const { evaluate, consumeAllowed, lockAfterViolation, grantPermit, getRecord, clearRecord, getAllPermits } = require('../../utils/linkPermits');
+const { findInvites, wasDisguised, defang } = require('../../utils/inviteGuard');
 
 const FEATURES = [
   { key: 'badWords',              label: '🤬 Bad Word / Harassment Filter',        desc: 'Deletes messages containing filtered words and warns the sender in-channel.' },
-  { key: 'linkFilter',            label: '🔗 Invite Link Guard',                   desc: 'Deletes Discord, Telegram & WhatsApp invites, DMs the member, and posts a staff card in the mod-log. Other links are allowed.' },
+  { key: 'linkFilter',            label: '🔗 Invite Link Guard',                   desc: 'Deletes Discord, Telegram & WhatsApp invites (even disguised, edited in or forwarded), warns the member in the channel, and reports it in the mod-log. This server\'s own invites and other links are allowed.' },
   { key: 'mentionSpamProtection', label: '🚨 Mass-Mention Raid Protection (native)', desc: 'Uses Discord\'s built-in Auto Moderation to instantly block messages with excessive @mentions — a common raid tactic.' },
 ];
 
@@ -146,17 +147,30 @@ module.exports = {
   // ── Message filtering (called from events/messageCreate.js) ────────────
   // Returns true if the message was removed/handled — the caller should stop
   // further processing (XP, card drops, autoreply) for that message.
-  async handleMessage(message, client) {
-    if (!message.guild || message.author.bot || !message.member) return false;
+  // opts.edited: called from messageUpdate, for an invite edited in later.
+  async handleMessage(message, client, opts = {}) {
+    if (!message.guild || message.author?.bot || !message.member) return false;
     const settings = getAutoModSettings(message.guild.id);
     if (!settings.badWords && !settings.linkFilter) return false;
     if (isAutoModExempt(message.member)) return false;
 
-    if (settings.linkFilter && isRestrictedLink(message.content)) {
-      // Discord / Telegram / WhatsApp only — always delete + report.
-      // No permit, no cooldown, no "request approval" loop.
-      await handleLinkViolation(message, client);
-      return true;
+    if (settings.linkFilter) {
+      // Discord / Telegram / WhatsApp invites, in the text or in a forwarded
+      // message, however disguised: always delete, warn and report. No
+      // permit, no cooldown, no "request approval" loop. Invites to this
+      // same server are allowed.
+      const forwarded = forwardedTexts(message);
+      const text = [message.content, ...forwarded].filter(Boolean).join('\n');
+      const hits = text ? await foreignInvites(message.guild, findInvites(text), client) : [];
+      if (hits.length) {
+        await handleLinkViolation(message, client, hits, {
+          edited: !!opts.edited,
+          forwarded: forwarded.length > 0 && !findInvites(message.content).length,
+          disguised: wasDisguised(text),
+          text,
+        });
+        return true;
+      }
     }
 
     if (settings.badWords) {
@@ -263,53 +277,114 @@ async function handleLockedLinkAttempt(message, secondsLeft) {
 }
 
 // ── Link filter action ──────────────────────────────────────────────────
-async function handleLinkViolation(message, client) {
-  const originalContent = message.content;
-  const channelId = message.channel.id;
-  const platform = restrictedPlatform(originalContent);
+
+/** Text of messages forwarded into this one (Discord's "Forward"). */
+function forwardedTexts(message) {
+  try {
+    const snaps = message.messageSnapshots;
+    if (!snaps?.size) return [];
+    return [...snaps.values()].map(s => s?.content ?? s?.message?.content ?? '').filter(Boolean);
+  } catch { return []; }
+}
+
+// Invite code → the guild it leads to, so this server's own invites (and
+// its vanity URL) pass. Cached; a code that won't resolve counts as foreign.
+const inviteHome = new Map();
+async function foreignInvites(guild, hits, client) {
+  const out = [];
+  for (const h of hits) {
+    if (h.platform !== 'Discord' || !h.code) { out.push(h); continue; }
+    const code = h.code.toLowerCase();
+    if (guild.vanityURLCode && guild.vanityURLCode.toLowerCase() === code) continue;
+    let home = inviteHome.get(code);
+    if (!home || home.at < Date.now() - 10 * 60_000) {
+      const inv = await client?.fetchInvite?.(h.code).catch(() => null);
+      home = { id: inv?.guild?.id || null, at: Date.now() };
+      inviteHome.set(code, home);
+      if (inviteHome.size > 500) inviteHome.delete(inviteHome.keys().next().value);
+    }
+    if (home.id !== guild.id) out.push(h);
+  }
+  return out;
+}
+
+// Three invites inside two minutes is spam, not a slip: a short timeout.
+const recentInvites = new Map();
+const BURST = { count: 3, windowMs: 2 * 60_000, timeoutMs: 10 * 60_000 };
+function burstOf(guildId, userId) {
+  const key = `${guildId}:${userId}`;
+  const now = Date.now();
+  const list = (recentInvites.get(key) || []).filter(t => now - t < BURST.windowMs);
+  list.push(now);
+  recentInvites.set(key, list);
+  if (recentInvites.size > 2000) for (const [k, v] of recentInvites) if (!v.some(t => now - t < BURST.windowMs)) recentInvites.delete(k);
+  return list.length;
+}
+
+const PLATFORM_LINE = {
+  Discord: ['💬', 'invites to other servers'],
+  Telegram: ['✈️', 'Telegram groups and channels'],
+  WhatsApp: ['📱', 'WhatsApp chats and groups'],
+};
+
+async function handleLinkViolation(message, client, hits, ctx = {}) {
+  const guild = message.guild, author = message.author, channel = message.channel;
+  const originalContent = ctx.text || message.content || '';
+  const kinds = [...new Set(hits.map(h => h.platform))];
+  const platform = kinds.length === 1 ? kinds[0] : 'invite';
 
   try { await message.delete(); } catch { return; }
   suppressDeleteLog(message.id);
 
-  // Track for staff action buttons (no user-facing "request approval")
-  const request = createRequest({
-    guildId: message.guild.id, channelId,
-    userId: message.author.id, userTag: message.author.tag,
-    originalContent,
-  });
-  updateRequest(request.id, {
-    status: 'reported',
-    reason: `Auto-detected ${platform} invite`,
-    link: request.link || originalContent.slice(0, 400),
-  });
+  // Tracked so the staff buttons under the report (dismiss, kick, ban…) work.
+  const request = createRequest({ guildId: guild.id, channelId: channel.id, userId: author.id, userTag: author.tag, originalContent });
+  updateRequest(request.id, { status: 'reported', reason: `Auto-detected ${platform} invite`, link: hits[0].url.slice(0, 400) });
 
-  // In-channel warning — ping them first (no DM)
-  const warn = await message.channel.send({
-    content:
-      `${message.author} **Invite removed**\n` +
-      `That **${platform}** link isn't allowed here — keeps the room free of off-platform spam.\n` +
-      `Charts, news, and normal sites are fine. Staff have been notified.`,
-    allowedMentions: { users: [message.author.id] },
-  }).catch(() => null);
-  if (warn) setTimeout(() => warn.delete().catch(() => {}), 20_000);
+  // A real warning, counted with /warn's and subject to the auto-punish limit.
+  // The report below is the log entry, so the warning doesn't post its own.
+  let warn = { caseId: null, warnCount: null, autoPunish: null };
+  try {
+    warn = await issueWarning(guild, { id: client.user.id, tag: 'Auto-Mod' }, author, message.member,
+      `Auto-Mod: posted a ${platform} invite link`, { log: false });
+  } catch { /* the removal stands either way */ }
 
-  // Staff card in moderation log channel
-  const logCh = getModLogChannel(message.guild);
-  if (logCh) {
-    const card = buildRequestCardEmbed(
-      { ...request, status: 'reported', reason: `Auto-detected ${platform} invite` },
-      message.guild,
-    );
-    card
-      .setTitle(`🔗 ${platform} invite removed`)
-      .setFooter({ text: `Report #${request.id} • Dismiss or take action` });
-    await logCh.send({
-      embeds: [card],
-      components: [buildRequestCardRow(request.id)],
-    }).catch((err) => console.warn('[automod] mod-log post failed:', err.message));
-  } else {
-    console.warn('[automod] No moderation log channel set — restricted link deleted but not reported.');
+  // Spamming invites: time them out for a few minutes.
+  let timedOut = false;
+  if (burstOf(guild.id, author.id) >= BURST.count && message.member?.moderatable && !message.member.isCommunicationDisabled?.()) {
+    timedOut = await message.member.timeout(BURST.timeoutMs, 'Auto-Mod: repeated invite links').then(() => true).catch(() => false);
   }
+
+  // In the channel: plain text, the member tagged.
+  const how = ctx.edited ? 'editing an invite into a message' : ctx.forwarded ? 'forwarding an invite link' : `posting ${kinds.length === 1 ? `a **${platform}**` : 'an'} invite link`;
+  const [icon, what] = PLATFORM_LINE[platform] || ['🔗', 'invite links to other platforms'];
+  const done = warn.autoPunish ? ({ kick: 'kicked', ban: 'banned', mute: 'muted' }[warn.autoPunish.action] || warn.autoPunish.action) : null;
+  const lines = [
+    `⛔ ${author} has been warned for ${how}.`,
+    `-# ${icon} ${what[0].toUpperCase()}${what.slice(1)} aren't allowed here${warn.warnCount ? ` · warning ${warn.warnCount}` : ''} · staff have the details`,
+  ];
+  if (timedOut) lines.push(`-# ⏳ Muted for ${BURST.timeoutMs / 60_000} minutes for repeated invites.`);
+  if (done) lines.push(`🤖 ${author} was automatically **${done}** after reaching **${warn.autoPunish.threshold}** warnings.`);
+  await channel.send({ content: lines.join('\n'), allowedMentions: { users: [author.id] } }).catch(() => null);
+
+  // The report in the mod log, with the staff buttons.
+  const logCh = getModLogChannel(guild);
+  if (!logCh) { console.warn('[automod] No moderation log channel set — invite deleted but not reported.'); return; }
+  const member = message.member;
+  const caught = [ctx.edited && 'edited in after posting', ctx.forwarded && 'inside a forwarded message', ctx.disguised && 'disguised (spaces, look-alike letters or hidden characters)'].filter(Boolean);
+  const body = originalContent.length > 700 ? `${originalContent.slice(0, 700)}…` : originalContent;
+  const card = new EmbedBuilder()
+    .setTitle(`🔗 ${platform === 'invite' ? 'Invite links' : `${platform} invite`} removed`)
+    .setDescription(`${author} posted ${hits.length === 1 ? 'an invite' : `${hits.length} invites`} in ${channel}${caught.length ? `\n-# ${caught.join(' · ')}` : ''}`)
+    .addFields(
+      { name: '👤 Member', value: `\`${author.tag}\`\nAccount ${humanAge(snowflakeTime(author.id))} old${member?.joinedTimestamp ? ` · here ${humanAge(member.joinedTimestamp)}` : ''}`, inline: true },
+      { name: '⚠️ Warning', value: `${warn.warnCount ? `#${warn.warnCount}` : '—'}${warn.caseId ? ` · case \`${warn.caseId}\`` : ''}${timedOut ? '\n⏳ timed out 10 min' : ''}${done ? `\n🤖 auto-${done}` : ''}`, inline: true },
+      { name: '🧭 Where it led', value: hits.slice(0, 6).map(h => `${(PLATFORM_LINE[h.platform] || ['🔗'])[0]} \`${defang(h.url).slice(0, 90)}\``).join('\n'), inline: false },
+      { name: '📝 Message', value: `\`\`\`\n${(body || '(no text)').replace(/```/g, 'ˋˋˋ')}\n\`\`\``, inline: false },
+    )
+    .setFooter({ text: `Report #${request.id} • Dismiss or take action` })
+    .setTimestamp();
+  await logCh.send({ embeds: [card], components: [buildRequestCardRow(request.id)], allowedMentions: { parse: [] } })
+    .catch(err => console.warn('[automod] mod-log post failed:', err.message));
 }
 
 async function handleLinkRequestButton(interaction, requestId) {
