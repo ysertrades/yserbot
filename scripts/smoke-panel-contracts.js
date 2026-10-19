@@ -120,6 +120,20 @@ mustInclude('err.buttons', read('events/interactionCreate.js'), "id.startsWith('
 mustInclude('err.panel', read('web/server.js'), "p === '/api/panel-error'", 'the panel reports its own errors');
 mustMatch('err.panelcsrf', read('web/server.js'), /\/api\/panel-error'\) \{[\s\S]{0,200}csrfValid/, 'panel error reports are CSRF-checked');
 mustInclude('err.redact', errSrc, "'[bot-token]'", 'bot tokens are redacted from reports');
+// Invite filter: Discord / Telegram / WhatsApp, disguised or not, in edits
+// and forwards; warned in plain text, reported in the mod log.
+{
+  const ig = require(path.join(root, 'utils/inviteGuard'));
+  const must = ['discord . gg / abc1', 'ｄｉｓｃｏｒｄ．ｇｇ／ａｂｃｄ', 'disc​ord.gg/abcd', 'discord(dot)gg/abcd', 'dsc.gg/abc', 't.me/+grp', 'tg://resolve?domain=x', 'chat.whatsapp.com/Ab1', 'wa.link/x1', 'whatsapp.com/channel/0029'];
+  const never = ['tradingview.com/chart', 'the discord server', 'discord.com/channels/1/2/3', 'telegram is an app', 'e.g. fine'];
+  const missed = must.filter(s => !ig.findInvites(s).length), wrong = never.filter(s => ig.findInvites(s).length);
+  if (missed.length || wrong.length) fail('invite.detect', `missed: ${missed.join(' | ')}; false hits: ${wrong.join(' | ')}`); else pass('invite.detect');
+  const am = read('commands/moderation/automod.js');
+  mustInclude('invite.warntext', am, '`⛔ ${author} has been warned for ${how}.`', 'the in-channel warning is plain text tagging the member');
+  mustInclude('invite.warnrecord', am, "`Auto-Mod: posted a ${platform} invite link`, { log: false }", 'a real warning is recorded, logged once (by the report)');
+  mustInclude('invite.edits', read('events/messageUpdate.js'), "handleMessage(newMessage, client, { edited: true })", 'invites edited in are caught');
+  mustInclude('invite.forwards', am, 'function forwardedTexts(message)', 'forwarded invites are caught');
+}
 // Toasts: the stacked, animated ones (toasts.css), smooth on phones.
 const toastCss = read('web/public/toasts.css');
 mustInclude('toast.css', html, 'href="/toasts.css"', 'index.html loads toasts.css');

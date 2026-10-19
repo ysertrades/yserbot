@@ -13,7 +13,9 @@ const { sendModLog, dmUser } = require('./modLog');
  * `moderator` is `{ id, tag }` — a real staff member for `/warn`, or a
  * synthetic `{ id: client.user.id, tag: 'Auto-Mod' }` for automated warns.
  */
-async function issueWarning(guild, moderator, targetUser, member, reason) {
+// opts.log: false when the caller posts its own, richer mod-log report (the
+// invite filter), so the warning isn't logged twice. The DM still goes.
+async function issueWarning(guild, moderator, targetUser, member, reason, opts = {}) {
   // Numbered and written in one step by modActions, so two warnings issued
   // close together cannot be handed the same case id.
   const { id: caseId } = appendCase(guild.id, {
@@ -23,7 +25,7 @@ async function issueWarning(guild, moderator, targetUser, member, reason) {
   const warnCount = warningsFor(guild.id, targetUser.id).length;
 
   await dmUser(targetUser, 'warn', guild, reason, { caseId });
-  await sendModLog(guild, 'warn', targetUser, moderator, reason, { caseId });
+  if (opts.log !== false) await sendModLog(guild, 'warn', targetUser, moderator, reason, { caseId });
 
   let autoPunish = null;
   const config       = readJson('config.json', {});
