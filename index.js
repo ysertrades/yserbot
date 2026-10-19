@@ -5,7 +5,7 @@ const { Client, Collection, GatewayIntentBits, Partials, Events, Options} = requ
 const { connect: connectMongo } = require('./utils/mongoStorage');
 const { warm: warmRenderCache } = require('./utils/dynamicEmbedImages');
 const { start: startPanel } = require('./web/server');
-const { configure: configureErrorReporter, reportAndLog } = require('./utils/errorReporter');
+const { configure: configureErrorReporter, reportAndLog, report } = require('./utils/errorReporter');
 
 const client = new Client({
   makeCache: Options.cacheWithLimits({
@@ -38,8 +38,18 @@ configureErrorReporter(client);
 
 client.on('error', (err) => reportAndLog(err, { area: 'Discord client' }));
 client.on('shardError', (err, shardId) => reportAndLog(err, { area: 'Discord shard', shardId }));
-client.on('warn', (info) => console.warn('[CLIENT WARN]', info));
-client.on('shardDisconnect', (event, shardId) => console.warn(`[SHARD ${shardId} DISCONNECTED]`, event?.code));
+client.on('warn', (info) => {
+  console.warn('[CLIENT WARN]', info);
+  report(String(info), { area: 'Discord client warning', severity: 'low' }).catch(() => {});
+});
+client.on('shardDisconnect', (event, shardId) => {
+  console.warn(`[SHARD ${shardId} DISCONNECTED]`, event?.code);
+  // 4004: the token was rejected; 4014: an intent isn't enabled in the
+  // developer portal. Neither recovers by itself.
+  const fatal = { 4004: 'The bot token was rejected', 4013: 'Invalid gateway intents', 4014: 'A privileged intent is not enabled in the Developer Portal' }[event?.code];
+  if (fatal) report(`${fatal} (close code ${event.code})`, { area: 'Discord gateway', severity: 'critical', shardId }).catch(() => {});
+  else if (event?.code && event.code !== 1000) report(`Gateway disconnected (close code ${event.code})`, { area: 'Discord gateway', severity: 'low', shardId, dedupeMs: 60 * 60 * 1000 }).catch(() => {});
+});
 client.on('shardReconnecting', (shardId) => console.warn(`[SHARD ${shardId} RECONNECTING]`));
 client.on('shardResume', (shardId, replayed) => console.log(`[SHARD ${shardId} RESUMED] replayed ${replayed} events`));
 

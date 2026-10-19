@@ -157,6 +157,14 @@ function record(guildId, userId, { ip, device, fingerprint, userAgent, messageId
   } else if (sameFpAndIp.length) {
     status = 'flagged'; reason = 'same browser and connection as another account'; matchedWith = sameFpAndIp;
   }
+  // Which signals the first match shares, for the report: lets staff see at a
+  // glance how strong the match is (device alone is near-certain).
+  const first = matchedWith[0] && users[matchedWith[0]];
+  const signals = first ? {
+    device: !!(mine.dev && first.dev === mine.dev),
+    browser: !!(mine.fp && first.fp === mine.fp),
+    connection: !!(mine.ip && first.ip === mine.ip),
+  } : null;
 
   const prev = users[userId] || {};
   users[userId] = {
@@ -170,7 +178,50 @@ function record(guildId, userId, { ip, device, fingerprint, userAgent, messageId
   };
   if (users[userId].status === 'verified') markDrop(s, guildId, messageId, userId);
   writeJson(FILE, s);
-  return { status: users[userId].status, reason, matchedWith, notes };
+  return { status: users[userId].status, reason, matchedWith, notes, signals };
+}
+
+/* ── alt cases (one per catch; the report and the panel act on the same one) ── */
+
+const MAX_CASES_PER_GUILD = 100;
+
+function caseId() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (const b of crypto.randomBytes(4)) out += abc[b % abc.length];
+  return `AC-${out}`;
+}
+
+function openCase(guildId, data) {
+  const s = store();
+  if (!s.cases) s.cases = {};
+  const g = s.cases[guildId] || (s.cases[guildId] = {});
+  const id = caseId();
+  g[id] = { id, at: Date.now(), status: 'open', history: [], ...data };
+  const ids = Object.keys(g);
+  if (ids.length > MAX_CASES_PER_GUILD) {
+    ids.sort((a, b) => (g[a].at || 0) - (g[b].at || 0));
+    for (const old of ids.slice(0, ids.length - MAX_CASES_PER_GUILD)) delete g[old];
+  }
+  writeJson(FILE, s);
+  return g[id];
+}
+
+function getCase(guildId, id) {
+  return store().cases?.[guildId]?.[id] || null;
+}
+
+function updateCase(guildId, id, patch) {
+  const s = store();
+  const c = s.cases?.[guildId]?.[id];
+  if (!c) return null;
+  Object.assign(c, typeof patch === 'function' ? patch(c) : patch);
+  writeJson(FILE, s);
+  return c;
+}
+
+function listCases(guildId, limit = 20) {
+  return Object.values(store().cases?.[guildId] || {}).sort((a, b) => b.at - a.at).slice(0, limit);
 }
 
 /**
@@ -218,6 +269,15 @@ function summary(guildId, guild = null) {
     verified: rows.filter(r => r.status === 'verified').length,
     flagged: rows.filter(r => r.status !== 'verified').sort((a, b) => b.at - a.at).slice(0, 50),
     recent: rows.filter(r => r.status === 'verified').sort((a, b) => b.at - a.at).slice(0, 10),
+    // The alt cases (what the mod-log report acts on), newest first; the held
+    // rows above link to theirs by caseId.
+    cases: listCases(guildId, 15).map(c => ({
+      id: c.id, at: c.at, status: c.status, reason: c.reason || null, signals: c.signals || null,
+      userId: c.userId, name: name(c.userId),
+      matchedWith: (c.matchedWith || []).map(m => ({ userId: m, name: name(m) })),
+      prize: c.giveaway?.prize || null, dropId: c.giveaway?.dropId || null,
+      history: (c.history || []).slice(-5),
+    })),
   };
 }
 
@@ -236,4 +296,5 @@ function forget(guildId, userId) {
 module.exports = {
   TOKEN_TTL_MS, isEnabled, setEnabled, makeToken, readToken,
   record, statusOf, entryOf, setOverride, summary, forget,
+  openCase, getCase, updateCase, listCases,
 };

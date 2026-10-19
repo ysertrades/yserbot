@@ -4286,5 +4286,43 @@ input[type="search"]::-webkit-search-cancel-button {
 /* Giveaway entry check card */
 .ev-top { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 0.6rem; margin: 0.6rem 0 0.8rem; }
 @media (max-width: 40rem) { .ev-top { grid-template-columns: 1fr; } }
-.ev-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.ev-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
 .ev-row .actions { margin-top: 0.4rem; }
+/* Alt cases: one card each, a coloured edge for where it stands, the match
+   as a row of lit chips, and the same actions as the mod-log dropdown. */
+.ev-cases { display: grid; gap: 0.55rem; margin-bottom: 0.8rem; }
+.ev-cases-h { margin: 0.2rem 0 0; font-size: 0.72rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ev-case { --tone: var(--soft); position: relative; padding: 0.75rem 0.85rem 0.75rem 1rem; border-radius: 14px; border: 1px solid var(--rule); background: var(--sunken); overflow: hidden; }
+.ev-case::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--tone); opacity: .9; }
+.ev-case.tone-bad { --tone: #f23f43; } .ev-case.tone-good { --tone: var(--good, #22c55e); } .ev-case.tone-warn { --tone: var(--warn, #f59e0b); }
+.ev-case.closed { opacity: .72; }
+.ev-case-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.ev-case-status { font-size: 0.68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
+  color: var(--tone, var(--soft)); background: color-mix(in srgb, var(--tone, #888) 14%, transparent); }
+.ev-case-status.tone-bad { --tone: #ff7a7d; } .ev-case-status.tone-good { --tone: var(--good, #22c55e); } .ev-case-status.tone-warn { --tone: var(--warn, #f59e0b); } .ev-case-status.tone-muted { --tone: var(--soft); }
+.ev-case-id { font: 600 0.72rem/1 var(--mono, ui-monospace, monospace); color: var(--soft); }
+.ev-case-at { margin-left: auto; font-size: 0.74rem; color: var(--muted); }
+.ev-case-who { margin: 0.45rem 0 0.4rem; font-size: 0.9rem; color: var(--soft); }
+.ev-case-who b { color: var(--ink); font-weight: 600; }
+.ev-sig { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.ev-sig-chip { font-size: 0.72rem; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--rule); color: var(--muted); }
+.ev-sig-chip.on { color: #ffb3b5; border-color: rgba(242,63,67,.45); background: rgba(242,63,67,.12); }
+.ev-sig-word { margin-left: 0.2rem; font-size: 0.74rem; font-style: italic; color: var(--soft); }
+.ev-case-last { margin-top: 0.35rem; }
+.ev-case-acts { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.55rem; }
+.ev-case-acts .btn.danger { color: #ff8a8d; }
+/* Bot health: one row per incident, the severity as its left edge. */
+.inc-list { display: grid; gap: 0.45rem; margin-top: 0.6rem; }
+.inc { --sev: var(--warn, #f59e0b); position: relative; padding: 0.6rem 0.8rem 0.6rem 0.95rem; border-radius: 12px; border: 1px solid var(--rule); background: var(--sunken); overflow: hidden; }
+.inc::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--sev); }
+.inc.sev-critical { --sev: #ff3b5c; } .inc.sev-high { --sev: #f23f43; } .inc.sev-medium { --sev: var(--warn, #f59e0b); } .inc.sev-low { --sev: #eab308; }
+.inc.done { opacity: .6; }
+.inc-head { display: flex; align-items: center; gap: 0.5rem; }
+.inc-sev { font-size: 0.66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; color: var(--sev); background: color-mix(in srgb, var(--sev) 14%, transparent); }
+.inc-title { font-size: 0.88rem; color: var(--ink); }
+.inc-at { margin-left: auto; font-size: 0.74rem; color: var(--muted); white-space: nowrap; }
+.inc-msg { margin: 0.3rem 0 0.15rem; font: 0.78rem/1.4 var(--mono, ui-monospace, monospace); color: var(--soft); overflow-wrap: anywhere; }
+.inc-meta { margin: 0; }
+.inc-ok { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.6rem; padding: 0.7rem 0.85rem; border-radius: 12px; border: 1px dashed var(--rule); color: var(--soft); font-size: 0.85rem; }
+.inc-ok-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--good, #22c55e); box-shadow: 0 0 0 4px color-mix(in srgb, var(--good, #22c55e) 20%, transparent); }
+.ev-case-acts .btn.armed { background: rgba(242,63,67,.16); border-color: rgba(242,63,67,.6); color: #fff; }

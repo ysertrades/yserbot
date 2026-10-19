@@ -534,6 +534,21 @@ Object.assign(OPS, {
       announce(ctx.client, guildId, ctx.session, `🛡️ **Giveaway entry check** ${on ? 'on' : 'off'}`, 'moderation').catch(() => {});
       return { ok: true, changed: [on ? 'entry check on' : 'entry check off'] };
     }
+    // An alt case from the report: the same actions as its mod-log dropdown,
+    // and the report message updates to match.
+    if (body?.caseId) {
+      const guild = ctx.client.guilds.cache.get(guildId);
+      if (!guild) return { error: 'unknown_server' };
+      const alt = require('../utils/altReports');
+      if (!alt.ACTIONS[body.action]) return { error: 'bad_action' };
+      // Panel access is Manage Server; kicking or banning still needs the
+      // matching Discord permission on the person doing it.
+      const member = ctx.session.uid ? await guild.members.fetch(ctx.session.uid).catch(() => null) : null;
+      if (!member) return { error: 'forbidden', detail: 'Could not confirm your permissions in this server.' };
+      const out = await alt.act(guild, String(body.caseId).slice(0, 12), body.action, { id: ctx.session.uid, name: ctx.session.name, member, via: 'panel' });
+      if (out.error) return { error: out.error, detail: out.text };
+      return { ok: true, changed: [out.text] };
+    }
     const userId = String(body?.userId || '');
     if (!/^\d{5,25}$/.test(userId)) return { error: 'bad_user' };
     const decision = body.decision === 'verified' ? 'verified' : body.decision === 'flagged' ? 'flagged' : null;
@@ -999,7 +1014,7 @@ async function apply(op, guildId, body, ctx) {
   try {
     return await handler(guildId, body, ctx);
   } catch (err) {
-    console.error('[writes]', op, err);
+    require('../utils/errorReporter').reportAndLog(err, { area: 'Panel save', guildId, path: `/${op}` });
     return { error: 'internal', detail: String(err && err.message || err).slice(0, 200) };
   }
 }

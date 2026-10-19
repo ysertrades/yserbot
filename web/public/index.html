@@ -613,6 +613,15 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
         <div id="ev-body"></div>
       </div>
 
+      <div class="panel" id="incidents-card">
+        <div class="queue-head">
+          <h2>Bot health</h2>
+          <span class="pill" id="inc-state"></span>
+        </div>
+        <p class="hint">Errors and problems the bot ran into in this server, read and explained. Each one is also posted to the mod log.</p>
+        <div id="inc-body"></div>
+      </div>
+
       <div class="panel" id="channel-locks-card">
         <div id="channel-locks-root"></div>
       </div>

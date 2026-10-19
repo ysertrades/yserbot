@@ -186,6 +186,8 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
       return { name: b.name, caption: b.caption, accent: b.accent, logoUrl: b.logoUrl, watermark: b.watermark, isDefault: !b.version };
     })(),
     entryVerify: (function () { try { return require('../utils/entryVerify').summary(guildId, guild); } catch { return null; } })(),
+    // What went wrong in this server lately (utils/errorReporter.js).
+    incidents: (function () { try { return require('../utils/errorReporter').incidentsFor(guildId); } catch { return []; } })(),
     whop: whopPanel.read(guildId, guild),
     botProfile: session ? botProfile.read(guildId, client, session) : null,
     panelLog: {
