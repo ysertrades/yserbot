@@ -34,6 +34,9 @@ const FIELDS = [
   { key: 'reportRoles',    path: ['reportRoles'],    type: 'roles',   label: 'Report handler roles' },
   { key: 'modRoles',       path: ['cmdSetup', 'modRoles'],   type: 'roles', label: 'Moderator roles' },
   { key: 'adminRoles',     path: ['cmdSetup', 'adminRoles'], type: 'roles', label: 'Admin roles' },
+  // Pinged on the mod-log alerts that need a person: an alt caught by the
+  // giveaway entry check, and bot errors in this server.
+  { key: 'alertRoles',     path: ['alertRoles'],             type: 'roles', label: 'Staff pinged for alerts (alts, bot errors)' },
   // Warning punishment is edited on the Moderation screen only. A second copy
   // here defaulted its action to "none" and wrote that back on every Settings
   // save, quietly switching off whatever Moderation had set.

@@ -2536,6 +2536,7 @@ function renderModerationForm() {
     );
   }
   try { renderEntryVerify(); } catch (e) { console.warn('[panel] entry verify', e); }
+  try { renderIncidents(); } catch (e) { console.warn('[panel] incidents', e); }
   renderModDeck();
 }
 
@@ -2543,6 +2544,70 @@ function renderModerationForm() {
  * Giveaway entry check: the on/off switch, how many are verified, and every
  * account held because its device matched another — approve, keep, or reset.
  */
+/**
+ * Moderation → Bot health: what the error watch caught in this server lately
+ * (utils/errorReporter.js). Severity as a coloured edge, how often, where.
+ */
+function renderIncidents() {
+  const host = $('#inc-body');
+  const list = state.overview?.incidents;
+  if (!host || !Array.isArray(list)) return;
+  const sig = JSON.stringify(list);
+  if (host.dataset.sig === sig) return;
+  host.dataset.sig = sig;
+  const open = list.filter(i => i.status === 'open');
+  const pill = $('#inc-state');
+  const worst = open.some(i => i.severity === 'critical' || i.severity === 'high') ? 'bad' : open.length ? 'warn' : 'on';
+  if (pill) { pill.textContent = open.length ? `${open.length} OPEN` : 'ALL GOOD'; pill.className = `pill ${worst === 'on' ? 'on' : 'off'}`; }
+  if (!list.length) {
+    const ok = el('div', 'inc-ok');
+    ok.append(el('span', 'inc-ok-dot'), el('span', null, 'No problems caught. The watch is on: crashes, failed commands and buttons, permissions, deleted channels, panel errors and lag.'));
+    return host.replaceChildren(ok);
+  }
+  const rows = el('div', 'inc-list');
+  const SEVW = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' };
+  for (const i of list) {
+    const r = el('div', `inc sev-${i.severity}${i.status !== 'open' ? ' done' : ''}`);
+    const head = el('div', 'inc-head');
+    head.append(el('span', 'inc-sev', SEVW[i.severity] || i.severity), el('b', 'inc-title', i.title), el('span', 'inc-at', relativeTime(i.last || i.at)));
+    r.append(head, el('p', 'inc-msg', i.message));
+    const meta = [i.area, i.where, i.count > 1 ? `${i.count}×` : null, i.status !== 'open' ? `${i.status}${i.by ? ` by ${i.by}` : ''}` : null, i.id].filter(Boolean).join(' · ');
+    r.append(el('p', 'hint inc-meta', meta));
+    rows.append(r);
+  }
+  host.replaceChildren(rows);
+}
+
+/* The panel reports its own errors to the bot's error watch, so a screen that
+   broke in someone's browser shows up in the mod log like any other bug.
+   Throttled: one report per distinct message, at most a few per minute. */
+(function watchPanelErrors() {
+  const seen = new Set();
+  let budget = 4;
+  setInterval(() => { budget = 4; }, 60000);
+  window.__reportPanelError = (kind, err, extra = {}) => {
+    try {
+      if (!state?.csrf || budget <= 0) return;
+      const message = String(err?.message || err || 'error').slice(0, 300);
+      const k = kind + '|' + message;
+      if (seen.has(k)) return;
+      seen.add(k); budget--;
+      const stack = String(err?.stack || '').split('\n').slice(0, 6).join('\n');
+      fetch('/api/panel-error', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-csrf-token': state.csrf, ...authHeaders() },
+        body: JSON.stringify({ kind, name: err?.name, message, stack, guildId: state.guildId || null, view: state.view || null, ...extra }),
+      }).catch(() => {});
+    } catch (_) { /* reporting must never break the page */ }
+  };
+  window.addEventListener('error', e => {
+    // Script errors from other origins carry no detail; skip them.
+    if (!e || !e.error && /^Script error/.test(e.message || '')) return;
+    window.__reportPanelError('page', e.error || e.message, { where: e.filename ? `${String(e.filename).split('/').pop()}:${e.lineno}` : null });
+  });
+  window.addEventListener('unhandledrejection', e => window.__reportPanelError('page', e.reason || 'Unhandled rejection'));
+})();
+
 function renderEntryVerify() {
   const host = $('#ev-body');
   const d = state.overview?.entryVerify;
@@ -2567,14 +2632,77 @@ function renderEntryVerify() {
   });
   const stats = el('div', 'ev-stats');
   const stat = (n, l, tone) => { const s = el('div', `mod-tile${n ? ` tone-${tone}` : ''}`); s.append(el('span', 'n', num(n)), el('span', 'l', l)); return s; };
-  stats.append(stat(d.verified, 'Verified', 'info'), stat(d.flagged.length, 'On hold', 'bad'));
+  const cases = d.cases || [];
+  const removed = cases.filter(c => c.status === 'kicked' || c.status === 'banned').length;
+  stats.append(stat(d.verified, 'Verified', 'info'), stat(d.flagged.length, 'On hold', 'bad'), stat(removed, 'Alts removed', 'warn'));
   top.append(sw, stats);
 
+  // Alt cases: the same ones the mod-log report shows, with the same actions.
+  // Acting here edits that report, so the channel and the panel agree.
+  const caseList = el('div', 'ev-cases');
+  if (cases.length) caseList.append(el('h4', 'ev-cases-h', 'Alt cases'));
+  const STATUS = { open: ['Needs review', 'bad'], held: ['On hold', 'bad'], approved: ['Approved', 'good'], reset: ['Reset', 'muted'], 'timed out': ['Timed out', 'warn'], kicked: ['Kicked', 'warn'], banned: ['Banned', 'warn'] };
+  const ACTS = [
+    ['approve', 'Approve', 'primary'], ['hold', 'Keep held', ''], ['reset', 'Reset', ''],
+    ['timeout', 'Time out 24h', ''], ['kick', 'Kick', 'danger'], ['ban', 'Ban', 'danger'],
+  ];
+  for (const c of cases) {
+    const [label, tone] = STATUS[c.status] || [c.status, 'muted'];
+    const closed = c.status === 'kicked' || c.status === 'banned';
+    const card = el('div', `ev-case tone-${tone}${closed ? ' closed' : ''}`);
+    const head = el('div', 'ev-case-head');
+    head.append(el('span', `ev-case-status tone-${tone}`, label), el('code', 'ev-case-id', c.id), el('span', 'ev-case-at', relativeTime(c.at)));
+    const who = el('p', 'ev-case-who');
+    who.append(el('b', null, c.name || c.userId), document.createTextNode(' looks like '), el('b', null, (c.matchedWith || []).map(m => m.name || m.userId).join(', ') || 'another member'));
+    // The match, as a three-step meter: which signals the two accounts share.
+    const sig = el('div', 'ev-sig');
+    const s = c.signals || {};
+    for (const [k, l] of [['device', 'Device'], ['browser', 'Browser'], ['connection', 'Connection']]) sig.append(el('span', `ev-sig-chip${s[k] ? ' on' : ''}`, l));
+    sig.append(el('span', 'ev-sig-word', s.device ? 'near-certain' : (s.browser && s.connection) ? 'strong' : 'possible'));
+    card.append(head, who, sig);
+    if (c.prize || c.dropId) card.append(el('p', 'hint', `🎁 ${c.prize || 'Giveaway'}${c.dropId ? ` · ${c.dropId}` : ''}`));
+    const last = (c.history || []).slice(-1)[0];
+    if (last) card.append(el('p', 'hint ev-case-last', `${label} by ${last.by || 'staff'}${last.via === 'panel' ? ' on the panel' : ' in Discord'} · ${relativeTime(last.at)}`));
+    if (!closed) {
+      const acts = el('div', 'actions ev-case-acts');
+      const current = { approved: 'approve', held: 'hold', reset: 'reset', 'timed out': 'timeout' }[c.status];
+      for (const [action, text, cls] of ACTS) {
+        if (action === current) continue; // already where it stands
+        const b = el('button', `btn small ${cls}`, text);
+        b.type = 'button';
+        let armed = false;
+        b.addEventListener('click', async () => {
+          // Kick and ban take a second tap: there is no undo for those.
+          if ((action === 'kick' || action === 'ban') && !armed) {
+            armed = true; b.textContent = `Tap again to ${text.toLowerCase()}`; b.classList.add('armed');
+            setTimeout(() => { armed = false; b.textContent = text; b.classList.remove('armed'); }, 3000);
+            return;
+          }
+          b.disabled = true;
+          const out = await post('entryverify', { caseId: c.id, action }, { quiet: true });
+          b.disabled = false;
+          if (!out) return;
+          toast(out.changed?.[0] || 'Done.', 'good');
+          try {
+            const fresh = await get(`/api/guild/${state.guildId}`);
+            if (fresh?.entryVerify && state.overview) { state.overview.entryVerify = fresh.entryVerify; renderEntryVerify(); }
+          } catch (_) {}
+        });
+        acts.append(b);
+      }
+      card.append(acts);
+    }
+    caseList.append(card);
+  }
+
+  // Held members with no case (held before cases existed, or by hand).
+  const inCase = new Set(cases.filter(c => c.status === 'open' || c.status === 'held').map(c => c.userId));
+  const heldRest = d.flagged.filter(f => !inCase.has(f.userId));
   const list = el('div', 'rows ev-list');
-  if (!d.flagged.length) {
-    list.append(el('p', 'mod-empty', 'Nobody on hold'));
+  if (!heldRest.length) {
+    if (!cases.length) list.append(el('p', 'mod-empty', 'Nobody on hold'));
   } else {
-    for (const f of d.flagged) {
+    for (const f of heldRest) {
       const r = el('div', 'gaw ev-row');
       const head = el('div', 'gaw-top');
       head.append(el('span', 'kind sev-warn', 'HELD'), el('span', 'nm', f.name || f.userId));
@@ -2607,7 +2735,7 @@ function renderEntryVerify() {
       list.append(r);
     }
   }
-  host.replaceChildren(top, list);
+  host.replaceChildren(top, caseList, list);
 }
 
 /**

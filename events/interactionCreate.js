@@ -267,7 +267,7 @@ module.exports = {
         await command.execute(interaction, client);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        reportAndLog(err, { area: 'Slash command', command: interaction.commandName, guildId: interaction.guildId });
+        reportAndLog(err, { area: 'Slash command', command: interaction.commandName, guildId: interaction.guildId, channelId: interaction.channelId, userId: interaction.user?.id });
         const reply = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(reply).catch(() => {});
         else await interaction.reply(reply).catch(() => {});
@@ -279,6 +279,11 @@ module.exports = {
     if (interaction.isButton()) {
       const id = interaction.customId;
       try {
+
+        // Error-watch report: Mark fixed / Mute 24h
+        if (id.startsWith('errinc:')) {
+          return await require('../utils/errorReporter').handleButton(interaction);
+        }
 
         // Giveaway — setup panel buttons
         if (id.startsWith('gaw_setup:')) {
@@ -782,7 +787,7 @@ module.exports = {
 
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        reportAndLog(err, { area: 'Button interaction', customId: id, guildId: interaction.guildId });
+        reportAndLog(err, { area: 'Button interaction', customId: id, guildId: interaction.guildId, channelId: interaction.channelId, userId: interaction.user?.id });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -840,7 +845,7 @@ module.exports = {
         }
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        reportAndLog(err, { area: 'Modal interaction', customId: id, guildId: interaction.guildId });
+        reportAndLog(err, { area: 'Modal interaction', customId: id, guildId: interaction.guildId, channelId: interaction.channelId, userId: interaction.user?.id });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -883,6 +888,9 @@ module.exports = {
           return await client.commands.get('econcal')?.handleWeekdaySelect(interaction);
         if (id.startsWith('report_reason_select:'))
           return await client.commands.get('report')?.handleReasonSelect(interaction);
+        // The action dropdown under an alt report in the mod log
+        if (id.startsWith('altcase:'))
+          return await require('../utils/altReports').handleSelect(interaction);
 
         // Generic fallback (existing sel_* pattern)
         const [system, ...args] = id.split(':');
@@ -890,7 +898,7 @@ module.exports = {
         if (handler?.handleSelect) await handler.handleSelect(interaction, args, client);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        reportAndLog(err, { area: 'Select interaction', customId: id, guildId: interaction.guildId });
+        reportAndLog(err, { area: 'Select interaction', customId: id, guildId: interaction.guildId, channelId: interaction.channelId, userId: interaction.user?.id });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -905,7 +913,7 @@ module.exports = {
           return await client.commands.get('report')?.handleUserSelect(interaction);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        reportAndLog(err, { area: 'User select interaction', customId: id, guildId: interaction.guildId });
+        reportAndLog(err, { area: 'User select interaction', customId: id, guildId: interaction.guildId, channelId: interaction.channelId, userId: interaction.user?.id });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -922,7 +930,7 @@ module.exports = {
           return await client.commands.get('econcal')?.handleRoleSelect(interaction);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        reportAndLog(err, { area: 'Role select interaction', customId: id, guildId: interaction.guildId });
+        reportAndLog(err, { area: 'Role select interaction', customId: id, guildId: interaction.guildId, channelId: interaction.channelId, userId: interaction.user?.id });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});
@@ -942,7 +950,7 @@ module.exports = {
           return await client.commands.get('econcal')?.handlePostChannelSelect(interaction);
       } catch (err) {
         if (isUnknownInteractionError(err)) return;
-        reportAndLog(err, { area: 'Channel select interaction', customId: id, guildId: interaction.guildId });
+        reportAndLog(err, { area: 'Channel select interaction', customId: id, guildId: interaction.guildId, channelId: interaction.channelId, userId: interaction.user?.id });
         const rep = { embeds: [embedUtil.error('Error', 'An unexpected error occurred.')], flags: EPHEMERAL_FLAG };
         if (interaction.replied || interaction.deferred) await interaction.followUp(rep).catch(() => {});
         else await interaction.reply(rep).catch(() => {});

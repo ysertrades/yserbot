@@ -446,14 +446,14 @@ async function route(req, res, client) {
     const result = ev.record(t.g, t.u, {
       ip, device: body.device, fingerprint: body.fingerprint, userAgent: req.headers['user-agent'], messageId: t.m || null,
     });
-    if (result.status === 'flagged') {
-      // Staff hear about it in the mod log, with who it matched.
-      try {
-        const { getModLogChannel } = require('../utils/modConfig');
-        const ch = getModLogChannel(guild);
-        const names = (result.matchedWith || []).map(id => `<@${id}>`).join(', ');
-        if (ch) ch.send({ content: `🛡️ **Entry check flagged** <@${t.u}> — ${result.reason}${names ? ` (${names})` : ''}. Review it on the panel's Moderation tab.`, allowedMentions: { parse: [] } }).catch(() => {});
-      } catch { /* the decision stands either way */ }
+    if (result.status === 'flagged' && result.reason) {
+      // A fresh catch: staff get the alt report in the mod log (mentions,
+      // the alert-role ping, and the action dropdown) and a case on the panel.
+      // A member already held by staff earlier carries no new reason.
+      require('../utils/altReports').send(guild, {
+        userId: t.u, matchedWith: result.matchedWith, reason: result.reason, signals: result.signals,
+        giveaway: { prize: saved?.prize || null, dropId: info.dropId, messageId: t.m || null, channelId: t.c || null },
+      }).catch(err => console.error('[altReports]', err.message));
     }
     return json(res, 200, { ...info, status: result.status, reason: result.reason });
   }
@@ -671,6 +671,27 @@ async function route(req, res, client) {
       return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(csrfSession), token: renewed || null }, headers);
     }
     if (p === '/api/health')    return json(res, 200, api.health(client));
+
+    /* -- the panel page reporting its own errors (utils/errorReporter.js) --
+     * Signed-in only, CSRF-checked and rate limited, so a page elsewhere
+     * can't flood the reports. */
+    if (p === '/api/panel-error') {
+      if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
+      if (!auth.csrfValid(session, req.headers['x-csrf-token'])) return json(res, 403, { error: 'bad_csrf' });
+      if (rateLimited(`panelerr:${session.uid}`, { max: 12, windowMs: 10 * 60 * 1000 })) return json(res, 429, { error: 'rate_limited' });
+      let body;
+      try { body = await readJsonBody(req); } catch (err) { return json(res, 400, { error: err.message }); }
+      const guildId = /^\d{5,25}$/.test(String(body?.guildId || '')) && auth.canAccessGuild(session, String(body.guildId), client) ? String(body.guildId) : null;
+      const err = new Error(String(body?.message || 'Panel error').slice(0, 300));
+      err.name = /^(TypeError|ReferenceError|SyntaxError|RangeError)$/.test(body?.name) ? body.name : 'PanelError';
+      err.stack = `${err.name}: ${err.message}\n${String(body?.stack || '').slice(0, 800)}`;
+      require('../utils/errorReporter').report(err, {
+        area: body?.kind === 'api' ? 'Panel request' : 'Panel page', source: 'panel', guildId,
+        view: String(body?.view || '').slice(0, 30) || null, path: String(body?.path || '').slice(0, 60) || null,
+        where: String(body?.where || '').slice(0, 80) || null, userId: session.uid,
+      }).catch(() => {});
+      return json(res, 200, { ok: true });
+    }
     if (p === '/api/templates') return json(res, 200, { templates: preview.listTemplates() });
 
     /* -- the Whop embed link ----------------------------------------------
@@ -959,7 +980,7 @@ async function route(req, res, client) {
       try {
         result = await writes.apply(op, guildId, body, { client, session, guild });
       } catch (err) {
-        console.error('[Panel] write failed:', op, err);
+        require('../utils/errorReporter').reportAndLog(err, { area: 'Panel save', guildId, path: `/${op}` });
         return json(res, 500, { error: 'internal', detail: String(err.message || err).slice(0, 200) });
       }
       if (result.error) return json(res, 400, result);
@@ -1041,7 +1062,7 @@ function start(client) {
     const forGuild = (/\/api\/guild\/(\d{5,25})/.exec(req.url || '') || [])[1]
       || (/[?&]g=(\d{5,25})/.exec(req.url || '') || [])[1] || null;
     Promise.resolve(brand.run(forGuild, () => route(req, res, client))).catch(err => {
-      console.error('[Panel] request failed:', err);
+      require('../utils/errorReporter').reportAndLog(err, { area: 'Panel server', guildId: forGuild, path: String(req.url || '').split('?')[0].slice(0, 60) });
       if (!res.writableEnded) json(res, 500, { error: 'internal_error' });
     });
   });

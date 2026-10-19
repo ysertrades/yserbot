@@ -102,6 +102,24 @@ mustMatch('sidebar.motion.ids', sbCss, /#sections\.sidebar-nav > button \{ overf
 mustMatch('sidebar.motion.tiles', sbCss, /#sections\.sidebar-nav > button \.nav-ico-wrap \{\s*transition: width/, 'icon squares grow, not snap');
 mustNotMatch('sidebar.railbtn.visible', sbCss, /data-sb="rail"\] \.sb-toggle \{[^}]*opacity: 0/, 'the expand button stays visible when collapsed');
 mustMatch('sidebar.railbtn.slot', sbCss, /data-sb="rail"\] \.sidebar-brand \{ padding-bottom: \d+px !important; \}/, 'the brand row makes room for it (app.css pins the padding with !important)');
+// Alt reports: a plain message (mentions, not an embed), the alert roles
+// pinged and users never, an action dropdown, the same case on the panel.
+const altSrc = read('utils/altReports.js');
+mustNotMatch('alt.noembed', altSrc, /EmbedBuilder|embeds:/, 'the alt report is a plain message so accounts show as mentions');
+mustInclude('alt.mentions', altSrc, "allowedMentions: { parse: [], roles: roles, users: [] }", 'pings the alert roles, never the accounts');
+mustInclude('alt.dropdown', read('events/interactionCreate.js'), "id.startsWith('altcase:')", 'the dropdown is routed');
+mustInclude('alt.setting', read('web/settings.js'), "key: 'alertRoles'", 'staff to ping are picked in Settings');
+mustInclude('alt.server', read('web/server.js'), "require('../utils/altReports').send(guild", 'a fresh catch posts the report');
+mustInclude('alt.panel', app, "post('entryverify', { caseId: c.id, action }", 'the panel acts on the same case');
+// Error watch: everything is caught, read, and posted with fix buttons.
+const errSrc = read('utils/errorReporter.js');
+mustInclude('err.console', errSrc, 'function watchConsole()', 'console.error is watched');
+mustInclude('err.health', errSrc, 'function auditGuild(guild)', 'channels the bot cannot post in are found');
+mustInclude('err.modlog', errSrc, 'modLogFor(context.guildId)', "a server's incidents go to its mod log");
+mustInclude('err.buttons', read('events/interactionCreate.js'), "id.startsWith('errinc:')", 'Mark fixed / Mute are routed');
+mustInclude('err.panel', read('web/server.js'), "p === '/api/panel-error'", 'the panel reports its own errors');
+mustMatch('err.panelcsrf', read('web/server.js'), /\/api\/panel-error'\) \{[\s\S]{0,200}csrfValid/, 'panel error reports are CSRF-checked');
+mustInclude('err.redact', errSrc, "'[bot-token]'", 'bot tokens are redacted from reports');
 // Appearance: search and the "changed" switch are one bar, not two shapes.
 mustInclude('appear.onebar.js', app, "el('button', 'appear-changed'", 'the changed switch is the inset pill');
 mustMatch('appear.onebar.css', css, /\.appear-tools \{[^}]*height: 40px/, 'the bar has one fixed height');
