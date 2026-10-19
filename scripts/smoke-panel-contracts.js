@@ -120,6 +120,20 @@ mustInclude('err.buttons', read('events/interactionCreate.js'), "id.startsWith('
 mustInclude('err.panel', read('web/server.js'), "p === '/api/panel-error'", 'the panel reports its own errors');
 mustMatch('err.panelcsrf', read('web/server.js'), /\/api\/panel-error'\) \{[\s\S]{0,200}csrfValid/, 'panel error reports are CSRF-checked');
 mustInclude('err.redact', errSrc, "'[bot-token]'", 'bot tokens are redacted from reports');
+// Toasts: the stacked, animated ones (toasts.css), smooth on phones.
+const toastCss = read('web/public/toasts.css');
+mustInclude('toast.css', html, 'href="/toasts.css"', 'index.html loads toasts.css');
+mustInclude('toast.fn', app, "node.className = `qtoast ${kind}`;", 'toast() builds the new pills');
+mustNotMatch('toast.oldel', html, /id="toast"/, 'the old single toast element is gone');
+mustNotMatch('toast.noblur', toastCss, /backdrop-filter|filter:\s*blur/, 'no blur in the toasts');
+// Mod log: every embed there is dark, at the one place they all pass through.
+mustInclude('modlog.dark.install', read('index.js'), "require('./utils/modLogTheme').install()", 'dark mod-log embeds are installed at startup');
+mustMatch('modlog.dark.paths', read('utils/modLogTheme.js'), /'TextChannel', 'NewsChannel', 'ThreadChannel'[\s\S]*Message\?\.prototype, 'edit'[\s\S]*'MessageComponentInteraction'/, 'send, edit and button updates are all covered');
+// Link previews: one short line each.
+for (const f of ['home.html', 'index.html']) {
+  const m = /property="og:description" content="([^"]*)"/.exec(read('web/public/' + f));
+  if (!m || m[1].length > 70) fail(`og.short.${f}`, `${f} og:description should be one short line (got ${m ? m[1].length : 0} chars)`); else pass(`og.short.${f}`);
+}
 // Appearance: search and the "changed" switch are one bar, not two shapes.
 mustInclude('appear.onebar.js', app, "el('button', 'appear-changed'", 'the changed switch is the inset pill');
 mustMatch('appear.onebar.css', css, /\.appear-tools \{[^}]*height: 40px/, 'the bar has one fixed height');

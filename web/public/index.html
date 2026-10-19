@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex, nofollow">
-<meta name="description" content="Your server's control room. Sign in with Discord and run giveaways, ranks, market news, tickets and moderation from one place. One tap, no passwords.">
+<meta name="description" content="Your whole server, one tap away.">
 <!-- The link card when the panel's address is shared. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Quant Bot · for Discord">
 <meta property="og:url" content="https://yser.apps.bot-hosting.cloud/">
 <meta property="og:title" content="Quant Bot — the control room for your server">
-<meta property="og:description" content="Sign in with Discord and run giveaways, ranks, market news, tickets and moderation from one place. One tap, no passwords, straight to your overview.">
+<meta property="og:description" content="Your whole server, one tap away.">
 <meta property="og:image" content="https://yser.apps.bot-hosting.cloud/og-home.png?v=1">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -50,6 +50,7 @@
 <link rel="stylesheet" href="/login.css">
 <script defer src="/shell-am.js"></script>
 <link rel="stylesheet" href="/sidebar.css">
+<link rel="stylesheet" href="/toasts.css">
 <script defer src="/sidebar.js"></script>
 <link rel="preload" href="/panel-app.js" as="script">
 <!-- The launch splash. Inline so it is styled on the very first frame, before
@@ -711,7 +712,6 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
   </section>
 </main>
 
-<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <!-- One sheet, reused. Whatever opens it fills #sheet-body and #sheet-actions,
      so the giveaway detail and the embed preview share the same entrance, the

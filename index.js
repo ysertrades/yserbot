@@ -6,6 +6,8 @@ const { connect: connectMongo } = require('./utils/mongoStorage');
 const { warm: warmRenderCache } = require('./utils/dynamicEmbedImages');
 const { start: startPanel } = require('./web/server');
 const { configure: configureErrorReporter, reportAndLog, report } = require('./utils/errorReporter');
+// Every embed posted to (or edited in) a server's mod log comes out dark.
+console.log(`[modLogTheme] dark mod-log embeds on ${require('./utils/modLogTheme').install()} send paths`);
 
 const client = new Client({
   makeCache: Options.cacheWithLimits({
