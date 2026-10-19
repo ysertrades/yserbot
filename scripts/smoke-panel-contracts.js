@@ -127,7 +127,7 @@ mustInclude('toast.fn', app, "node.className = `qtoast ${kind}`;", 'toast() buil
 mustNotMatch('toast.oldel', html, /id="toast"/, 'the old single toast element is gone');
 mustNotMatch('toast.noblur', toastCss, /backdrop-filter|filter:\s*blur/, 'no blur in the toasts');
 // Mod log: every embed there is dark, at the one place they all pass through.
-mustInclude('modlog.dark.install', read('index.js'), "require('./utils/modLogTheme').install()", 'dark mod-log embeds are installed at startup');
+mustMatch('modlog.dark.install', read('index.js'), /require\(['"]\.\/utils\/modLogTheme['"]\)\.install\(\)/, 'dark mod-log embeds are installed at startup');
 mustMatch('modlog.dark.paths', read('utils/modLogTheme.js'), /'TextChannel', 'NewsChannel', 'ThreadChannel'[\s\S]*Message\?\.prototype, 'edit'[\s\S]*'MessageComponentInteraction'/, 'send, edit and button updates are all covered');
 // Link previews: one short line each.
 for (const f of ['home.html', 'index.html']) {
