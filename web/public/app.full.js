@@ -227,14 +227,125 @@ function duration(ms) {
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 }
 
-let toastTimer;
+/* ── toasts (styles in toasts.css) ─────────────────────────────────────────
+   A small stack of dark pills, newest in front. Each springs up into place,
+   its icon draws itself (a tick, an alert, an info mark), a light line runs
+   across its top edge in the kind's colour, and a ring around the close
+   button counts down the time left. Older ones tuck in behind, smaller;
+   hovering the stack fans it out and pauses every countdown. The same
+   message again bumps a ×2 counter instead of stacking a copy. Swipe or tap
+   × to dismiss. Same call as ever: toast(message, 'good' | 'bad' | ''). */
+const TOASTS = { host: null, list: [], paused: false };
+const TOAST_ICON = {
+  good: '<path class="draw" d="M6.5 12.5l3.6 3.6L17.5 8.6"/>',
+  bad: '<path class="draw" d="M12 7v6.2"/><path class="draw dot" d="M12 16.9v.2"/>',
+  info: '<path class="draw" d="M12 11v5.6"/><path class="draw dot" d="M12 7.4v.2"/>',
+};
+function toastHost() {
+  if (TOASTS.host) return TOASTS.host;
+  const h = document.createElement('section');
+  h.className = 'qtoasts';
+  h.setAttribute('aria-label', 'Notifications');
+  h.setAttribute('aria-live', 'polite');
+  const open = on => { h.classList.toggle('open', on); TOASTS.paused = on; TOASTS.list.forEach(t => (on ? pauseToast(t) : runToast(t))); layoutToasts(); };
+  h.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') open(true); });
+  h.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') open(false); });
+  document.body.append(h);
+  return (TOASTS.host = h);
+}
+function layoutToasts() {
+  const live = TOASTS.list.filter(t => !t.leaving);
+  const opened = TOASTS.host?.classList.contains('open');
+  let y = 0;
+  live.forEach((t, i) => {
+    const n = t.node;
+    n.style.zIndex = String(50 - i);
+    if (opened) {
+      n.style.transform = `translate3d(${t.dx || 0}px, ${-y}px, 0) scale(1)`;
+      n.style.opacity = '1';
+    } else {
+      n.style.transform = `translate3d(${t.dx || 0}px, ${-i * 11}px, 0) scale(${1 - i * 0.055})`;
+      n.style.opacity = i > 2 ? '0' : String(1 - i * 0.18);
+    }
+    n.classList.toggle('behind', !opened && i > 0);
+    y += n.offsetHeight + 10;
+  });
+  if (TOASTS.host) TOASTS.host.style.height = opened ? `${Math.max(0, y - 10)}px` : `${live[0]?.node.offsetHeight || 0}px`;
+}
+function runToast(t) {
+  if (t.leaving || TOASTS.paused) return;
+  clearTimeout(t.timer);
+  t.started = performance.now();
+  t.node.style.setProperty('--left', `${t.left}ms`);
+  t.node.classList.remove('paused');
+  t.timer = setTimeout(() => dismissToast(t), t.left);
+}
+function pauseToast(t) {
+  if (t.leaving) return;
+  clearTimeout(t.timer);
+  if (t.started) t.left = Math.max(400, t.left - (performance.now() - t.started));
+  t.node.classList.add('paused');
+}
+function restartToast(t) {
+  t.left = t.dur;
+  const ring = t.node.querySelector('.ring');
+  ring.style.animation = 'none'; void ring.getBoundingClientRect(); ring.style.animation = '';
+  t.node.style.setProperty('--dur', `${t.dur}ms`);
+  runToast(t);
+}
+function dismissToast(t) {
+  if (!t || t.leaving) return;
+  t.leaving = true;
+  clearTimeout(t.timer);
+  const n = t.node;
+  n.classList.add('out');
+  n.style.transform = `translate3d(${t.dx ? Math.sign(t.dx) * 140 : 0}px, 14px, 0) scale(.94)`;
+  n.style.opacity = '0';
+  setTimeout(() => { n.remove(); TOASTS.list = TOASTS.list.filter(x => x !== t); layoutToasts(); }, 280);
+  layoutToasts();
+}
 function toast(message, kind = '') {
-  const t = $('#toast');
-  t.textContent = message;
-  t.className = `toast ${kind}`;
-  t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+  kind = kind === 'good' || kind === 'bad' ? kind : 'info';
+  message = String(message ?? '');
+  const host = toastHost();
+  const same = TOASTS.list.find(t => !t.leaving && t.msg === message && t.kind === kind);
+  if (same) {
+    same.count += 1;
+    same.badge.textContent = `×${same.count}`;
+    same.node.classList.remove('bump'); void same.node.offsetWidth; same.node.classList.add('bump');
+    restartToast(same);
+    return;
+  }
+  const node = document.createElement('div');
+  node.className = `qtoast ${kind}`;
+  node.setAttribute('role', kind === 'bad' ? 'alert' : 'status');
+  const ic = document.createElement('span'); ic.className = 'qt-ic';
+  ic.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TOAST_ICON[kind]}</svg>`;
+  const text = document.createElement('span'); text.className = 'qt-text'; text.textContent = message;
+  const badge = document.createElement('span'); badge.className = 'qt-n';
+  const close = document.createElement('button'); close.type = 'button'; close.className = 'qt-x'; close.setAttribute('aria-label', 'Dismiss');
+  close.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle class="track" cx="12" cy="12" r="10"/><circle class="ring" cx="12" cy="12" r="10"/><path d="M9 9l6 6M15 9l-6 6"/></svg>';
+  node.append(ic, text, badge, close);
+  const dur = kind === 'bad' ? 5600 : 3600;
+  const t = { node, msg: message, kind, count: 1, badge, dur, left: dur, timer: 0, started: 0, leaving: false, dx: 0 };
+  node.style.setProperty('--dur', `${dur}ms`);
+  // starts just below its place, then springs up into it
+  node.style.transform = 'translate3d(0, 26px, 0) scale(.9)';
+  node.style.opacity = '0';
+  host.prepend(node);
+  TOASTS.list.unshift(t);
+  close.addEventListener('click', () => dismissToast(t));
+  // swipe sideways to dismiss
+  let sx = null;
+  node.addEventListener('pointerdown', e => { if (e.target.closest('.qt-x')) return; sx = e.clientX; node.setPointerCapture?.(e.pointerId); node.classList.add('drag'); });
+  node.addEventListener('pointermove', e => { if (sx == null) return; t.dx = e.clientX - sx; node.style.transform = `translate3d(${t.dx}px, 0, 0)`; node.style.opacity = String(1 - Math.min(1, Math.abs(t.dx) / 220)); });
+  const up = () => { if (sx == null) return; sx = null; node.classList.remove('drag'); if (Math.abs(t.dx) > 70) dismissToast(t); else { t.dx = 0; layoutToasts(); } };
+  node.addEventListener('pointerup', up); node.addEventListener('pointercancel', up);
+  // at most four on screen
+  const live = TOASTS.list.filter(x => !x.leaving);
+  if (live.length > 4) dismissToast(live[live.length - 1]);
+  requestAnimationFrame(() => requestAnimationFrame(() => { node.classList.add('in'); layoutToasts(); }));
+  if (TOASTS.paused) node.classList.add('paused'); else runToast(t);
 }
 
 /* ── network ───────────────────────────────────────────────────────────── */

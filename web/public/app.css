@@ -805,17 +805,7 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outlin
 .keys { list-style: none; margin: 0.7rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
 .keys li { font-family: var(--mono); font-size: 0.85rem; background: var(--raised); border: 1px solid var(--rule); border-radius: 8px; padding: 0.45rem 0.65rem; }
 
-/* ── toast ───────────────────────────────────────────────────────────── */
-.toast {
-  position: fixed; z-index: 20;
-  left: 50%; transform: translateX(-50%);
-  bottom: max(1.2rem, env(safe-area-inset-bottom));
-  background: var(--raised); border: 1px solid var(--rule);
-  border-radius: 12px; padding: 0.7rem 1rem; font-size: 0.87rem;
-  box-shadow: 0 10px 32px rgba(0,0,0,0.55); max-width: calc(100vw - 2rem);
-}
-.toast.bad { border-color: var(--warn); color: var(--warn); }
-.toast.good { border-color: var(--good); }
+/* (toasts: see toasts.css) */
 
 /* ── motion ─────────────────────────────────────────────────────────────── */
 :root {
@@ -891,7 +881,6 @@ input, textarea, select { transition: border-color var(--fast) var(--ease), back
 html[data-entered] .item[open] .body,
 html[data-entered] .embed-box[open] .body { animation: none; }
 
-.toast { animation: rise var(--mid) var(--ease) both; }
 
 .skeleton {
   border-radius: 9px; min-height: 1rem;
@@ -4187,7 +4176,6 @@ body > .cselect-menu .cselect-option.is-selected{
 .feat-card, .mod-shield, .mod-tile, .whop-stat, .owner-stat, .gaw-step, .whop-track, .whop-group { animation: ui-pop .3s cubic-bezier(.2,.8,.2,1) both; }
 html[data-entered] .feat-card, html[data-entered] .mod-shield, html[data-entered] .mod-tile, html[data-entered] .whop-stat,
 html[data-entered] .owner-stat, html[data-entered] .gaw-step, html[data-entered] .whop-track, html[data-entered] .whop-group { animation: none; }
-.toast { transition: transform .25s cubic-bezier(.2,.8,.2,1), opacity .25s; }
 .btn.primary { transition: filter .15s, transform .12s, box-shadow .2s; }
 @media (hover: hover) { .btn.primary:hover:not(:disabled) { box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); } }
 @media (prefers-reduced-motion: reduce) {

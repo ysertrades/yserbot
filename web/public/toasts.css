@@ -1,0 +1,72 @@
+/* Panel toasts (built by toast() in app.full.js).
+   Dark pills, newest in front, older ones tucked in behind; hover fans the
+   stack out. Everything moves with transform and opacity only (no layout
+   animation, no backdrop blur), so it stays smooth on phones. */
+.qtoasts { position: fixed; z-index: 4500; right: 20px; bottom: max(20px, env(safe-area-inset-bottom));
+  width: min(380px, calc(100vw - 24px)); height: 0; pointer-events: none;
+  transition: height .35s cubic-bezier(.2, .8, .2, 1); }
+@media (max-width: 900px) { .qtoasts { right: auto; left: 50%; margin-left: calc(min(380px, calc(100vw - 24px)) / -2); bottom: max(14px, env(safe-area-inset-bottom)); } }
+
+.qtoast { --k: #7c8cff; position: absolute; left: 0; right: 0; bottom: 0; pointer-events: auto; touch-action: pan-y;
+  display: flex; align-items: center; gap: 11px; padding: 10px 10px 10px 11px; border-radius: 16px;
+  background: linear-gradient(180deg, #17181d 0%, #111216 100%); color: #e9eaef;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07), inset 0 1px 0 rgba(255, 255, 255, .06), 0 18px 40px -14px rgba(0, 0, 0, .75), 0 4px 12px -6px rgba(0, 0, 0, .5);
+  font: 500 13.5px/1.35 var(--sans, system-ui, sans-serif); transform-origin: 50% 100%; overflow: hidden; cursor: default; user-select: none;
+  transition: transform .5s cubic-bezier(.2, 1.25, .35, 1), opacity .3s ease; will-change: transform; }
+.qtoast.good { --k: #3ccf7a; }
+.qtoast.bad { --k: #ff7a7d; }
+.qtoast.drag, .qtoast.out { transition: transform .26s cubic-bezier(.4, 0, .6, 1), opacity .26s ease; }
+.qtoast.drag { transition: none; cursor: grabbing; }
+
+/* a line of the kind's colour runs across the top edge as it arrives */
+.qtoast::before { content: ''; position: absolute; left: 14px; right: 14px; top: 0; height: 1.5px; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--k), transparent); transform: scaleX(0); opacity: .9; }
+.qtoast.in::before { animation: qt-line .7s .08s cubic-bezier(.2, .8, .2, 1) both; }
+/* a soft wash of the colour behind the icon */
+.qtoast::after { content: ''; position: absolute; left: -30px; top: -30px; width: 110px; height: 110px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--k) 22%, transparent), transparent 70%); }
+/* tucked-in cards show only their edge until the stack fans out */
+.qtoast.behind .qt-text, .qtoast.behind .qt-ic, .qtoast.behind .qt-x, .qtoast.behind .qt-n { opacity: 0; }
+
+/* the icon chip; its mark draws itself */
+.qt-ic { position: relative; z-index: 1; flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px;
+  color: var(--k); background: color-mix(in srgb, var(--k) 15%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k) 30%, transparent);
+  transition: opacity .3s; }
+.qt-ic svg { width: 17px; height: 17px; }
+.qt-ic .draw { stroke-dasharray: 22; stroke-dashoffset: 22; }
+.qtoast.in .qt-ic .draw { animation: qt-draw .5s .18s cubic-bezier(.3, .7, .2, 1) forwards; }
+.qtoast.in .qt-ic .draw.dot { animation-delay: .5s; }
+.qtoast.good.in .qt-ic { animation: qt-pop .55s .05s cubic-bezier(.3, 1.6, .5, 1) both; }
+.qtoast.bad.in .qt-ic { animation: qt-shake .5s .15s cubic-bezier(.36, .07, .19, .97) both; }
+.qtoast.info.in .qt-ic { animation: qt-pop .55s .05s cubic-bezier(.3, 1.6, .5, 1) both; }
+
+.qt-text { position: relative; z-index: 1; flex: 1; min-width: 0; overflow-wrap: anywhere; transition: opacity .3s; }
+.qt-n { position: relative; z-index: 1; flex: none; font: 700 11px/1 var(--mono, ui-monospace, monospace); color: var(--k); }
+.qt-n:empty { display: none; }
+.qtoast.bump .qt-n { animation: qt-pop .45s cubic-bezier(.3, 1.6, .5, 1); }
+.qtoast.bump .qt-ic { animation: qt-pop .45s cubic-bezier(.3, 1.6, .5, 1); }
+
+/* close: a countdown ring round the × */
+.qt-x { position: relative; z-index: 1; flex: none; width: 28px; height: 28px; padding: 0; margin: 0; border: 0; border-radius: 50%; background: transparent;
+  color: #8b8e99; cursor: pointer; display: grid; place-items: center; transition: color .2s, background-color .2s, opacity .3s; }
+.qt-x svg { width: 24px; height: 24px; fill: none; stroke-linecap: round; transform: rotate(-90deg); }
+.qt-x path { stroke: currentColor; stroke-width: 1.8; transform: rotate(90deg); transform-origin: 12px 12px; }
+.qt-x .track { stroke: rgba(255, 255, 255, .07); stroke-width: 1.6; }
+.qt-x .ring { stroke: var(--k); stroke-width: 1.6; stroke-dasharray: 62.84; stroke-dashoffset: 0; opacity: .8;
+  animation: qt-count var(--dur, 3600ms) linear forwards; }
+.qtoast.paused .qt-x .ring { animation-play-state: paused; }
+@media (hover: hover) { .qt-x:hover { color: #fff; background: rgba(255, 255, 255, .06); } }
+.qt-x:focus-visible { outline: 2px solid var(--k); outline-offset: 1px; }
+
+@keyframes qt-line { from { transform: scaleX(0); opacity: 0; } 40% { opacity: 1; } to { transform: scaleX(1); opacity: .55; } }
+@keyframes qt-draw { to { stroke-dashoffset: 0; } }
+@keyframes qt-pop { from { transform: scale(.6); } }
+@keyframes qt-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-3px) rotate(-6deg); } 40% { transform: translateX(3px) rotate(5deg); } 60% { transform: translateX(-2px) rotate(-3deg); } 80% { transform: translateX(1px); } }
+@keyframes qt-count { to { stroke-dashoffset: 62.84; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .qtoast { transition: opacity .2s ease; }
+  .qtoast.in::before, .qtoast.in .qt-ic, .qtoast.bump .qt-n, .qtoast.bump .qt-ic { animation: none; }
+  .qt-ic .draw { stroke-dashoffset: 0; }
+  .qtoast.in .qt-ic .draw { animation: none; }
+}
