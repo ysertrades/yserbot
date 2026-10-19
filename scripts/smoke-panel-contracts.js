@@ -100,6 +100,12 @@ mustNotMatch('sidebar.nodrawer', sbCss, /max-width: 900px/, 'the phone drawer is
 // in the collapsed state may use display:none (it can't be animated).
 mustMatch('sidebar.motion.ids', sbCss, /#sections\.sidebar-nav > button \{ overflow: hidden !important;\s*transition: padding/, 'nav button transition beats the #sections rule');
 mustMatch('sidebar.motion.tiles', sbCss, /#sections\.sidebar-nav > button \.nav-ico-wrap \{\s*transition: width/, 'icon squares grow, not snap');
+mustNotMatch('sidebar.railbtn.visible', sbCss, /data-sb="rail"\] \.sb-toggle \{[^}]*opacity: 0/, 'the expand button stays visible when collapsed');
+mustMatch('sidebar.railbtn.slot', sbCss, /data-sb="rail"\] \.sidebar-brand \{ padding-bottom: \d+px !important; \}/, 'the brand row makes room for it (app.css pins the padding with !important)');
+// Appearance: search and the "changed" switch are one bar, not two shapes.
+mustInclude('appear.onebar.js', app, "el('button', 'appear-changed'", 'the changed switch is the inset pill');
+mustMatch('appear.onebar.css', css, /\.appear-tools \{[^}]*height: 40px/, 'the bar has one fixed height');
+mustMatch('appear.nowrap', css, /\.appear-changed \{[^}]*white-space: nowrap/, 'the switch label never wraps');
 mustNotMatch('sidebar.motion.nodisplay', sbCss, /data-sb="rail"\][^{]*\{[^}]*display: none/, 'the collapsed state fades things, never display:none');
 mustMatch('sidebar.lsguard', read('web/public/sidebar.js'), /try \{ return localStorage\.getItem/, 'sidebar state read is guarded');
 // The link card Discord builds when /home or the panel is shared: a large

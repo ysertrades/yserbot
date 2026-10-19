@@ -6609,9 +6609,16 @@ function renderAppearanceIndex() {
   search.placeholder = 'Find a message…';
   search.autocomplete = 'off';
   search.value = state.appearanceQuery || '';
-  const changedOnly = el('button', 'chip-toggle' + (state.appearanceChanged ? ' on' : ''), 'Changed only');
+  search.setAttribute('aria-label', 'Find a message');
+  // One bar: the search field, and at its end a switch for "only what this
+  // server changed", carrying the count so it says what it will show.
+  const changedCount = groups.reduce((n, g) => n + g.entries.filter(e => e.changed).length, 0);
+  const changedOnly = el('button', 'appear-changed' + (state.appearanceChanged ? ' on' : ''));
   changedOnly.type = 'button';
+  changedOnly.title = 'Show only the messages you changed';
   changedOnly.setAttribute('aria-pressed', String(!!state.appearanceChanged));
+  changedOnly.append(el('span', 'appear-changed-dot'), el('span', 'appear-changed-label', 'Changed'));
+  if (changedCount) changedOnly.append(el('span', 'appear-changed-n', String(changedCount)));
   changedOnly.addEventListener('click', () => { state.appearanceChanged = !state.appearanceChanged; renderAppearanceIndex(); });
   tools.append(search, changedOnly);
   nodes.push(tools);
