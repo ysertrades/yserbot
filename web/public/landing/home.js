@@ -97,6 +97,77 @@
     paint(target()); cur = target();
   }
 
+  // Ranks that pay out: the ladder, climbed. Each bar is a level; as it rises the
+  // pill rolls up to the rank it pays out, its XP line fills, "+XP" floats off
+  // the bar and the role chip names the role handed out. The gold bar is the top
+  // rank: a little burst, the role given, a hold, then the climb starts over.
+  // It only runs while the card is on screen. Without the script (or with
+  // reduced motion) the card keeps its still picture: Lv 12 · Trader.
+  const lv = document.getElementById('lv');
+  if (lv && !reduce) {
+    const RANKS = [['Lv 1', 'Newcomer', '#8b8b92'], ['Lv 2', 'Rookie', '#9aa3ff'], ['Lv 4', 'Member', '#7c8bff'], ['Lv 6', 'Regular', '#6574ff'],
+      ['Lv 8', 'Analyst', '#4d5cff'], ['Lv 10', 'Strategist', '#3343ff'], ['Lv 12', 'Trader', '#2233f5'], ['Lv 15', 'Legend', '#f5b84b']];
+    const bars = [...lv.querySelectorAll('.bars i')], pill = lv.querySelector('.lvpill'), roll = lv.querySelector('.lv-roll'),
+      xp = lv.querySelector('.lv-xp i'), who = lv.querySelector('.lv-who'), role = lv.querySelector('.lv-role'), dot = lv.querySelector('.lv-dot');
+    const GAINS = [120, 180, 240, 320, 410, 520, 880];
+    let timers = [], running = false;
+    const at = (ms, f) => timers.push(setTimeout(f, ms));
+    const rankText = (i) => `${RANKS[i][0]} · ${RANKS[i][1]}`;
+    function rollTo(i) {   // the old rank slides up and out, the new one rises in under it
+      const old = roll.querySelector('b:not(.out)'), next = document.createElement('b');
+      next.textContent = rankText(i); next.className = 'in';
+      if (old) { old.classList.remove('in'); old.classList.add('out'); setTimeout(() => old.remove(), 420); }
+      roll.append(next);
+      pill.classList.remove('pop'); void pill.offsetWidth; pill.classList.add('pop');
+      pill.style.setProperty('--rk', RANKS[i][2]);
+    }
+    function plus(bar, n) {   // "+XP", floating off the top of the bar that just rose
+      const p = document.createElement('span'); p.className = 'lv-plus'; p.textContent = `+${n} XP`;
+      p.style.left = `${bar.offsetLeft + bar.offsetWidth / 2}px`; p.style.bottom = `${lv.clientHeight - bar.offsetTop + 6}px`;
+      lv.append(p); setTimeout(() => p.remove(), 1300);
+    }
+    function burst() {   // the top rank: flat gold and green flecks thrown out from the pill
+      for (let k = 0; k < 10; k++) {
+        const s = document.createElement('i'), a = (k / 10) * Math.PI * 2 + Math.random() * 0.4, d = 26 + Math.random() * 22;
+        s.className = 'lv-fleck'; s.style.setProperty('--dx', `${Math.cos(a) * d}px`); s.style.setProperty('--dy', `${Math.sin(a) * d}px`);
+        s.style.background = k % 3 ? '#f5b84b' : '#3ccf7a';
+        pill.append(s); setTimeout(() => s.remove(), 900);
+      }
+    }
+    function setRole(i, given) {
+      role.textContent = given ? `${RANKS[i][1]} role given` : i ? `Role · ${RANKS[i][1]}` : '@alice';
+      dot.style.background = RANKS[i][2];
+      who.classList.toggle('given', !!given);
+      who.classList.remove('pop'); void who.offsetWidth; who.classList.add('pop');
+    }
+    function cycle() {
+      timers.forEach(clearTimeout); timers = [];
+      lv.classList.add('run'); pill.classList.remove('gold');
+      bars.forEach((b) => b.classList.remove('on', 'flash'));
+      roll.innerHTML = `<b>${rankText(0)}</b>`; pill.style.setProperty('--rk', RANKS[0][2]); setRole(0);
+      xp.style.transition = 'none'; xp.style.transform = 'scaleX(0)';
+      const STEP = 560;
+      bars.forEach((b, i) => {
+        const t = 500 + i * STEP;
+        at(t - STEP + 120, () => { xp.style.transition = `transform ${STEP - 140}ms linear`; xp.style.transform = 'scaleX(1)'; });   // the XP line fills toward the next level
+        at(t, () => {
+          b.classList.add('on', 'flash'); plus(b, GAINS[i]);
+          rollTo(i + 1); setRole(i + 1);
+          xp.style.transition = 'none'; xp.style.transform = 'scaleX(0)';
+          if (i === bars.length - 1) { pill.classList.add('gold'); burst(); at(450, () => setRole(i + 1, true)); }
+        });
+      });
+      const end = 500 + bars.length * STEP + 2400;
+      at(end, () => bars.forEach((b) => b.classList.remove('on', 'flash')));   // the bars sink, and the climb begins again
+      at(end + 650, () => { if (running) cycle(); });
+    }
+    const start = () => { if (running) return; running = true; cycle(); };
+    const stop = () => { running = false; timers.forEach(clearTimeout); timers = []; };
+    if ('IntersectionObserver' in window) new IntersectionObserver((es) => es.forEach((e) => (e.isIntersecting ? start() : stop())), { threshold: 0.35 }).observe(lv);
+    else start();
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); else if (lv.getBoundingClientRect().top < innerHeight && lv.getBoundingClientRect().bottom > 0) start(); });
+  }
+
   // Live numbers: aggregate counts only, counted up once.
   const fmt = n => Number(n).toLocaleString('en-US');
   function countUp(el, to, suffix = '') {
