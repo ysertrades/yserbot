@@ -203,6 +203,38 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 .bars i:nth-child(5) { animation-delay: .32s; } .bars i:nth-child(6) { animation-delay: .4s; } .bars i.top { animation-delay: .48s; background: linear-gradient(180deg, var(--gold), #e2683c); }
 @keyframes grow { 0% { transform: scaleY(.05); } 30%, 85% { transform: scaleY(1); } 100% { transform: scaleY(.05); } }
 .lvpill { position: absolute; right: 16px; top: 14px; font: 500 12px/1 var(--mono); padding: 6px 10px; border-radius: 999px; background: rgba(245,184,75,.15); color: var(--gold); }
+/* the climb (home.js): the pill rolls through the ranks, the chip names the role */
+.lv { padding-top: 56px; }
+.lv-roll { display: grid; overflow: hidden; height: 1em; min-width: 16ch; text-align: right; }
+.lv-roll b { grid-area: 1 / 1; font-weight: 500; white-space: nowrap; }
+.lv-roll b.in { animation: lv-in .42s var(--ease) both; } .lv-roll b.out { animation: lv-out .42s var(--ease) both; }
+@keyframes lv-in { from { transform: translateY(110%); opacity: 0; } }
+@keyframes lv-out { to { transform: translateY(-110%); opacity: 0; } }
+.lv-xp { display: none; }
+.lv.run .lvpill { display: grid; gap: 5px; background: rgba(255,255,255,.07); color: #e9eaee; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); transition: background-color .4s, color .4s, box-shadow .4s; }
+.lv.run .lv-xp { display: block; height: 2px; border-radius: 2px; background: rgba(255,255,255,.1); overflow: hidden; }
+.lv.run .lv-xp i { display: block; height: 100%; background: var(--rk, #4d5cff); transform: scaleX(0); transform-origin: left; }
+.lvpill.pop { animation: lv-pop .45s var(--ease); }
+@keyframes lv-pop { 40% { scale: 1.08; } }
+.lv.run .lvpill.gold { background: var(--gold); color: var(--ink); box-shadow: 0 0 0 4px rgba(245,184,75,.18); }
+.lv.run .lvpill.gold .lv-xp { opacity: 0; }
+.lv-fleck { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 1.5px; pointer-events: none; animation: lv-fleck .85s var(--ease) both; }
+@keyframes lv-fleck { from { transform: translate(-50%, -50%) scale(1.2); opacity: 1; } to { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(120deg) scale(.4); opacity: 0; } }
+.lv-who { position: absolute; left: 16px; top: 14px; display: none; align-items: center; gap: 7px; font: 500 12px/1 var(--mono); color: #c9ccd4; padding: 6px 10px 6px 8px; border-radius: 999px; background: rgba(255,255,255,.05); }
+.lv.run .lv-who { display: inline-flex; }
+/* a narrow card has no room for both side by side: the chip drops under the pill */
+.lv { container-type: inline-size; }
+@container (max-width: 310px) { .lv.run .bars { margin-top: 30px; height: 128px; } .lv.run .lv-who { top: 52px; left: auto; right: 16px; } }
+.lv-dot { width: 8px; height: 8px; border-radius: 50%; background: #8b8b92; transition: background-color .3s; }
+.lv-who.pop { animation: lv-pop .4s var(--ease); }
+.lv-who.given { background: rgba(60,207,122,.14); color: var(--live); }
+.lv-plus { position: absolute; transform: translateX(-50%); font: 600 10px/1 var(--mono); color: #b9c0ff; white-space: nowrap; pointer-events: none; animation: lv-plus 1.2s var(--ease) both; }
+@keyframes lv-plus { from { opacity: 0; translate: 0 6px; } 20% { opacity: 1; } to { opacity: 0; translate: 0 -22px; } }
+/* the bars rise one at a time, on the climb's beat, instead of the looping keyframes */
+.lv.run .bars i { animation: none; transform: scaleY(.05); transition: transform .5s cubic-bezier(.34, 1.45, .5, 1); }
+.lv.run .bars i.on { transform: scaleY(1); }
+.lv.run .bars i.flash { animation: lv-flash .6s var(--ease); }
+@keyframes lv-flash { 0% { filter: brightness(1.7); } }
 
 /* news: headlines drop onto the stack */
 .nw { display: grid; align-content: start; gap: 8px; }
@@ -228,6 +260,35 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
 .sw.s2, .sw.s2::after { animation-delay: .3s; } .sw.s3, .sw.s3::after { animation-delay: .6s; } .sw.s4, .sw.s4::after { animation-delay: .9s; }
 @keyframes swbg { 0%, 10% { background: rgba(255,255,255,.12); } 22%, 85% { background: var(--live); } 100% { background: rgba(255,255,255,.12); } }
 @keyframes swk { 0%, 10% { transform: none; background: #c9ccd4; } 22%, 85% { transform: translateX(16px); background: #fff; } 100% { transform: none; } }
+
+/* ── the small details, each on its card's own beat ── */
+/* giveaways: the winner's row lights up as its stamp lands, its number turns green */
+.queue li { animation: gw-row 6s var(--ease) infinite; }
+.queue li i { animation: gw-num 6s var(--ease) infinite; }
+.queue li:nth-child(2), .queue li:nth-child(2) i { animation-delay: .6s; } .queue li:nth-child(3), .queue li:nth-child(3) i { animation-delay: 1.2s; }
+@keyframes gw-row { 0%, 10% { background: rgba(255,255,255,.04); } 14% { background: rgba(60,207,122,.16); } 34%, 100% { background: rgba(255,255,255,.04); } }
+@keyframes gw-num { 0%, 11% { background: rgba(255,255,255,.08); color: inherit; } 15%, 80% { background: var(--live); color: #0c0d10; } 92%, 100% { background: rgba(255,255,255,.08); color: inherit; } }
+/* verification: what the ring is doing, in words */
+.vr { gap: 10px; }
+.vr-cap { display: grid; font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.vr-cap b { grid-area: 1 / 1; text-align: center; font-weight: 600; }
+.vr-cap .a { color: #7d8190; animation: vr-a 4.5s var(--ease) infinite; } .vr-cap .b { color: var(--live); opacity: 0; animation: vr-b 4.5s var(--ease) infinite; }
+@keyframes vr-a { 0%, 44% { opacity: 1; } 50%, 92% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes vr-b { 0%, 50% { opacity: 0; transform: translateY(5px); } 58%, 85% { opacity: 1; transform: none; } 95%, 100% { opacity: 0; } }
+/* news: the LIVE tags breathe */
+.live-tag { animation: tag-live 1.8s ease-out infinite; }
+@keyframes tag-live { 0% { box-shadow: 0 0 0 0 rgba(226,104,60,.55); } 70%, 100% { box-shadow: 0 0 0 6px rgba(226,104,60,0); } }
+/* tickets: how long each has waited, and the oldest one asks for attention */
+.tk .row { grid-template-columns: 110px 1fr 34px; }
+.tk .row small { font: 500 11px/1 var(--mono); color: #7d8190; text-align: right; animation: tk-ago 5s var(--ease) infinite; }
+@keyframes tk-ago { 0%, 30% { opacity: 0; } 40%, 85% { opacity: 1; } 100% { opacity: 0; } }
+.tk .row.old b { display: inline-flex; align-items: center; gap: 7px; }
+.tk .row.old b::after { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--hot); animation: tk-alert 1.4s ease-out infinite; }
+@keyframes tk-alert { 0% { box-shadow: 0 0 0 0 rgba(248,113,113,.6); } 70%, 100% { box-shadow: 0 0 0 6px rgba(248,113,113,0); } }
+/* moderation: a check pops beside each switch as it turns on */
+.tg span::after { content: ' ✓'; color: var(--live); font-weight: 700; display: inline-block; opacity: 0; animation: md-ok 5s var(--ease) infinite; }
+.tg:nth-child(2) span::after { animation-delay: .3s; } .tg:nth-child(3) span::after { animation-delay: .6s; } .tg:nth-child(4) span::after { animation-delay: .9s; }
+@keyframes md-ok { 0%, 20% { opacity: 0; transform: scale(.4); } 26% { opacity: 1; transform: scale(1.25); } 30%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 
 /* ── how it works ────────────────────────────────────────────────────── */
 .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; position: relative; }
@@ -361,5 +422,6 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; color: var
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .js .reveal, .js .stage { opacity: 1; transform: none; filter: none; }
   .stamp, .news { opacity: 1; } .vr .fill { stroke-dashoffset: 0; } .vr .check { stroke-dashoffset: 0; } .bars i, .age::after { transform: none; }
+  .vr-cap .a { opacity: 0; } .vr-cap .b, .tk .row small, .tg span::after { opacity: 1; }
   .window { --tilt: 0deg !important; --sc: 1 !important; }
 }

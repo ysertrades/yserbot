@@ -130,9 +130,11 @@
 
     <article class="f reveal">
       <div class="f-copy"><h3>Ranks that pay out</h3><p>Members earn XP by chatting. Each level can hand out a role, automatically.</p></div>
-      <div class="screen lv">
+      <!-- home.js climbs the ladder here: each bar is a level, the pill rolls to the rank it pays out -->
+      <div class="screen lv" id="lv">
         <div class="bars"><i style="--h:18%"></i><i style="--h:26%"></i><i style="--h:34%"></i><i style="--h:44%"></i><i style="--h:56%"></i><i style="--h:70%"></i><i class="top" style="--h:92%"></i></div>
-        <span class="lvpill">Lv 12 · Trader</span>
+        <span class="lv-who"><i class="lv-dot"></i><span class="lv-role">@alice</span></span>
+        <span class="lvpill"><span class="lv-roll"><b>Lv 12 · Trader</b></span><i class="lv-xp"><i></i></i></span>
       </div>
     </article>
 
@@ -148,9 +150,9 @@
     <article class="f reveal">
       <div class="f-copy"><h3>Tickets, by age</h3><p>Every open ticket in one queue, coloured by how long it has waited.</p></div>
       <div class="screen tk">
-        <div class="row"><b>#ticket-mia</b><span class="age" style="--w:22%;--c:#3ccf7a"></span></div>
-        <div class="row"><b>#ticket-joe</b><span class="age" style="--w:58%;--c:#eab308"></span></div>
-        <div class="row"><b>#ticket-kai</b><span class="age" style="--w:90%;--c:#f87171"></span></div>
+        <div class="row"><b>#ticket-mia</b><span class="age" style="--w:22%;--c:#3ccf7a"></span><small>4m</small></div>
+        <div class="row"><b>#ticket-joe</b><span class="age" style="--w:58%;--c:#eab308"></span><small>38m</small></div>
+        <div class="row old"><b>#ticket-kai</b><span class="age" style="--w:90%;--c:#f87171"></span><small>2h</small></div>
       </div>
     </article>
 
