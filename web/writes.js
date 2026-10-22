@@ -627,6 +627,43 @@ Object.assign(OPS, {
       `✉️ DM sent to <@${r.userId}>`, 'moderation');
     return r;
   },
+  /** Journal feed: an outside journal's trades, posted to a channel through a signed webhook (utils/journalFeed.js). */
+  async journalfeed(guildId, body, ctx) {
+    const jf = require('../utils/journalFeed');
+    const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId) || null;
+    const base = (require('./auth').config().baseUrl || '').replace(/\/+$/, '');
+    const op = String(body?.op || 'status');
+    const textChannel = (id) => { const c = guild?.channels?.cache?.get(String(id || '')); return c && c.isTextBased?.() && !c.isThread?.() ? c : null; };
+    const feedId = String(body?.feedId || '');
+    let r = { ok: true };
+    if (op === 'create') {
+      const c = textChannel(body.channelId); if (!c) return { error: 'bad_channel', detail: 'Pick a text channel for the trades.' };
+      r = jf.create(guildId, { name: body.name, channelId: c.id }); if (r.error) return r;
+      announce(ctx.client, guildId, ctx.session, `📒 **Journal feed** "${String(body.name || 'Journal').slice(0, 40)}" created → <#${c.id}>`, 'settings').catch(() => {});
+    } else if (op === 'rotate') {
+      r = jf.rotate(guildId, feedId); if (r.error) return { error: 'no_feed', detail: 'That feed no longer exists.' };
+      announce(ctx.client, guildId, ctx.session, '📒 **Journal feed** secret rotated: the old one stopped working', 'settings').catch(() => {});
+    } else if (op === 'update') {
+      const patch = {};
+      if ('enabled' in body) patch.enabled = !!body.enabled;
+      if ('name' in body) patch.name = String(body.name || '').trim().slice(0, 40) || 'Journal';
+      if ('channelId' in body) { const c = textChannel(body.channelId); if (!c) return { error: 'bad_channel', detail: 'Pick a text channel for the trades.' }; patch.channelId = c.id; }
+      if (!jf.updateFeed(guildId, feedId, patch)) return { error: 'no_feed', detail: 'That feed no longer exists.' };
+    } else if (op === 'delete') {
+      r = jf.remove(guildId, feedId); if (r.error) return { error: 'no_feed', detail: 'That feed no longer exists.' };
+      announce(ctx.client, guildId, ctx.session, '📒 **Journal feed** deleted: its link stopped working', 'settings').catch(() => {});
+    } else if (op === 'test') {   // a sample card, posted exactly as a real trade would be, without touching the feed's history
+      const f = jf.feedsOf(guildId).find((x) => x.id === feedId); if (!f) return { error: 'no_feed', detail: 'That feed no longer exists.' };
+      const c = textChannel(f.channelId); if (!c) return { error: 'bad_channel', detail: 'The feed’s channel is gone. Pick another.' };
+      const t = jf.readTrade({ id: 'test', trader: ctx.session?.name || 'Test', symbol: 'NQ', side: 'Long', pnl: 840.5, r: 2.1, qty: 2, entry: 21480.25, exit: 21501.25, setup: 'Opening range', session: 'NY AM', notes: 'A test card from the panel. Real trades from the journal will look like this.' });
+      try { await c.send(jf.card(t, f)); } catch (e) { return { error: 'send_failed', detail: /Missing (Permissions|Access)/i.test(e.message) ? `The bot can't post in #${c.name}. Give it View, Send Messages and Embed Links there.` : e.message }; }
+      r = { ok: true, tested: c.name };
+    } else if (op !== 'status') return { error: 'bad_op' };
+    const channels = guild ? [...guild.channels.cache.values()].filter((c) => c.isTextBased?.() && !c.isThread?.() && c.type !== 2 && c.type !== 13)
+      .sort((a, b) => (a.rawPosition ?? 0) - (b.rawPosition ?? 0)).map((c) => ({ id: c.id, name: c.name })) : [];
+    return { ...r, feeds: jf.view(guildId, guild, base), channels, max: jf.MAX_FEEDS };
+  },
+
   async channellock(guildId, body, ctx) {
     const r = await moderationPanel.channelLockOp(guildId, body, ctx);
     if (r.error) return r;

@@ -55,6 +55,7 @@ const RATE_LIMIT = { windowMs: 60_000, max: Number(process.env.PANEL_RATE_LIMIT)
 const AUTH_RATE_LIMIT = { windowMs: 60_000, max: 30 };
 // The public verification page: a handful of reads and one write per member.
 const VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 20 };
+const JOURNAL_FEED_RATE_LIMIT = { windowMs: 60_000, max: 120 };   // an outside journal's trades: generous, still bounded
 // Kick, Ban, Manage Channels, Add Reactions, View Channel, Send Messages,
 // Manage Messages, Embed Links, Attach Files, Read History, External Emoji,
 // Manage Roles, Manage Threads, Moderate Members.
@@ -208,6 +209,21 @@ function redirect(res, location, headers = {}) {
 }
 
 /** Reads a JSON body, refusing anything oversized or malformed. */
+/** the exact bytes that were sent: a signature is checked over these, never over re-serialised JSON */
+function readRawBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    const onData = (chunk) => {
+      size += chunk.length;
+      if (size > limit) { req.off('data', onData); req.resume(); reject(new Error('body_too_large')); return; }
+      chunks.push(chunk);
+    };
+    req.on('data', onData);
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -456,6 +472,33 @@ async function route(req, res, client) {
       }).catch(err => console.error('[altReports]', err.message));
     }
     return json(res, 200, { ...info, status: result.status, reason: result.reason });
+  }
+
+  /* -- journal feed: an outside trading journal posts its trades here ------
+   * Public on purpose, like /verify: the caller is another website's server,
+   * with no panel session. What proves it is that site is the HMAC signature
+   * made with the feed's own secret (utils/journalFeed.js); anything unsigned,
+   * altered or older than five minutes is refused before it reaches Discord. */
+  const hookMatch = /^\/hooks\/journal\/([\w-]{10,40})$/.exec(p);
+  if (hookMatch) {
+    if (req.method !== 'POST') return json(res, 405, { error: 'use_post' });
+    const jf = require('../utils/journalFeed');
+    if (rateLimited(`jfeed:${hookMatch[1]}`, JOURNAL_FEED_RATE_LIMIT) || rateLimited(`jfeed-ip:${clientIp(req)}`, JOURNAL_FEED_RATE_LIMIT)) {
+      return json(res, 429, { error: 'rate_limited', detail: 'Too many trades at once. Retry in a minute.' });
+    }
+    let raw;
+    try { raw = await readRawBody(req, 64 * 1024); }
+    catch (err) { return json(res, err.message === 'body_too_large' ? 413 : 400, { error: err.message }); }
+    const found = jf.findFeed(hookMatch[1]);
+    if (!found) return json(res, 404, { error: 'unknown_feed' });
+    const bad = jf.verify(found.feed, req.headers, raw);
+    if (bad) return json(res, 401, { error: bad });
+    let body;
+    try { body = JSON.parse(raw.toString('utf8') || '{}'); } catch (_) { return json(res, 400, { error: 'bad_json' }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json(res, 400, { error: 'bad_json' });
+    const out = await jf.deliver(client, found.guildId, found.feed, body);
+    try { live.nudge(found.guildId); } catch (_) {}
+    return json(res, out.status, out.body);
   }
 
   if (p === '/terms' || p === '/terms/') return serveStatic(res, 'terms.html');
@@ -995,7 +1038,7 @@ async function route(req, res, client) {
       // Ops that change nothing answer without an overview at all. The
       // participants sheet polls one every 8s, and each poll used to rebuild
       // the full overview for every open sheet.
-      if (op === 'giveawayparticipants' || op === 'imageupload') {
+      if (op === 'giveawayparticipants' || op === 'imageupload' || op === 'journalfeed') {
         return json(res, 200, result);
       }
       // Hand back the refreshed overview so the page never has to guess what
