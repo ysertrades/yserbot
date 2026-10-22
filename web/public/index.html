@@ -564,6 +564,10 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
         <form id="form-whop" class="form"></form>
         <div id="whop-courses" class="whop-courses"></div>
       </div>
+
+      <!-- Journal feed: another journal site's trades, posted here through a
+           signed webhook. Drawn by journal-feed-ui.js. -->
+      <div class="panel" id="journal-feed-root"></div>
     </div>
 
     <div class="section" data-section="automation">
@@ -736,6 +740,7 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
 <script src="/app.js"></script>
 <script src="/leveling-ui.js"></script>
 <script src="/channel-locks-ui.js"></script>
+<script src="/journal-feed-ui.js"></script>
 <script src="/desk-ui.js"></script>
 </body>
 </html>
