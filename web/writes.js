@@ -627,6 +627,36 @@ Object.assign(OPS, {
       `✉️ DM sent to <@${r.userId}>`, 'moderation');
     return r;
   },
+  /** Live countdowns: a dark card that counts down in a channel, with separate post and end pings (utils/countdown.js). */
+  async countdown(guildId, body, ctx) {
+    const cdx = require('../utils/countdown');
+    const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId) || null;
+    const op = String(body?.op || 'status');
+    let r = { ok: true };
+    if (op === 'create') {
+      r = await cdx.create(ctx.client, guildId, body, ctx.session); if (r.error) return r;
+      announce(ctx.client, guildId, ctx.session, `⏳ **Countdown** "${String(body.title || '').slice(0, 60)}" posted → #${r.channel}`, 'settings').catch(() => {});
+    } else if (op === 'end') {
+      const cd = cdx.listOf(guildId).find((x) => x.id === String(body?.id || '') && x.status === 'running');
+      if (!cd) return { error: 'no_countdown', detail: 'That countdown is not running.' };
+      await cdx.finish(ctx.client, guildId, cd, Date.now());
+    } else if (op === 'remove') {
+      r = await cdx.remove(ctx.client, guildId, String(body?.id || '')); if (r.error) return r;
+    } else if (op === 'preview') {   // the card as it would look now, drawn without posting anything
+      const { renderCountdown } = require('../utils/countdownVisual');
+      const tz = cdx.TZS.includes(body?.tz) ? body.tz : 'America/New_York';
+      let endsAt = cdx.zonedToUtc(body?.when, tz); if (!Number.isFinite(endsAt)) endsAt = Date.now() + 2 * 86400000 + 5 * 3600000;
+      const now = Date.now(), cd = { title: String(body?.title || '').trim().slice(0, 80) || 'Your event', kicker: String(body?.kicker || '').trim().slice(0, 28) || null,
+        note: String(body?.note || '').trim().slice(0, 26) || null, endTitle: String(body?.endTitle || '').trim().slice(0, 40) || null, tz, endsAt, createdAt: now - 3600000 };
+      const png = await renderCountdown(cd, body?.ended ? endsAt + 60000 : now);
+      return { ok: true, image: png ? `data:image/png;base64,${png.toString('base64')}` : null, endsAt };
+    } else if (op !== 'status') return { error: 'bad_op' };
+    const channels = guild ? [...guild.channels.cache.values()].filter((c) => c.isTextBased?.() && !c.isThread?.() && c.type !== 2 && c.type !== 13)
+      .sort((a, b) => (a.rawPosition ?? 0) - (b.rawPosition ?? 0)).map((c) => ({ id: c.id, name: c.name })) : [];
+    const roles = guild ? [...guild.roles.cache.values()].filter((x) => x.id !== guild.id && !x.managed).sort((a, b) => b.position - a.position).map((x) => ({ id: x.id, name: x.name })) : [];
+    return { ...r, countdowns: cdx.view(guildId), channels, roles, tzs: cdx.TZS, max: cdx.MAX_RUNNING };
+  },
+
   async channellock(guildId, body, ctx) {
     const r = await moderationPanel.channelLockOp(guildId, body, ctx);
     if (r.error) return r;

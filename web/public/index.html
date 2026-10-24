@@ -594,6 +594,10 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
           <div id="reply-composer"></div>
         </article>
       </div>
+
+      <!-- Live countdowns: a dark card that counts down in a channel, with its
+           own ping on post and on end. Drawn by countdown-ui.js. -->
+      <div class="panel" id="countdown-root"></div>
     </div>
 
     <!-- ── Engagement ──────────────────────────────────────────────────── -->
@@ -736,6 +740,7 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
 <script src="/app.js"></script>
 <script src="/leveling-ui.js"></script>
 <script src="/channel-locks-ui.js"></script>
+<script src="/countdown-ui.js"></script>
 <script src="/desk-ui.js"></script>
 </body>
 </html>

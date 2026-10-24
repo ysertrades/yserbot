@@ -995,7 +995,7 @@ async function route(req, res, client) {
       // Ops that change nothing answer without an overview at all. The
       // participants sheet polls one every 8s, and each poll used to rebuild
       // the full overview for every open sheet.
-      if (op === 'giveawayparticipants' || op === 'imageupload') {
+      if (op === 'giveawayparticipants' || op === 'imageupload' || op === 'countdown') {
         return json(res, 200, result);
       }
       // Hand back the refreshed overview so the page never has to guess what
