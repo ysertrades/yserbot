@@ -117,6 +117,7 @@ module.exports = {
   startEconCalRunner(client);
         startNewsFeedRunner(client);
         startWhopRunner(client);
+        try { require('../utils/countdown').startCountdownRunner(client); } catch (e) { console.warn('[countdown] not started:', e.message); }
         seedDefaultContent(client);
         await restoreGiveaways(client).catch(err => console.error('[GIVEAWAY RESTORE]', err));
     },
