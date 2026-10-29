@@ -1580,17 +1580,33 @@ function renderOverviewHero() {
     el('span', 'ov-hello-k', `${hello}${state.me?.name ? `, ${state.me.name}` : ''}`),
     el('b', 'ov-hello-v', d.guild?.name || 'Your server'),
   );
+  // The board's floating button group: stroke icons, the first one lit.
   const quick = el('div', 'ov-quick');
+  quick.setAttribute('role', 'toolbar');
+  quick.setAttribute('aria-label', 'Quick actions');
   const QUICK = [
-    { icon: '🎁', label: 'New giveaway', goto: 'giveaways' },
-    { icon: '✍️', label: 'Write a message', goto: 'composer' },
-    { icon: '🛡️', label: 'Moderation', goto: 'moderation' },
-    { icon: '🏷️', label: 'Brand', goto: 'settings' },
+    { icon: 'M3.5 8h17v4.5h-17zM5 12.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-6.5M12 8v12.5M12 8S10.5 3.5 8 4.2C6 4.8 7 8 12 8zM12 8s1.5-4.5 4-3.8C18 4.8 17 8 12 8z', label: 'New giveaway', goto: 'giveaways' },
+    { icon: 'M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4', label: 'Write a message', goto: 'composer' },
+    { icon: 'M12 3l7.5 3v5.5c0 4.6-3.2 8.2-7.5 9.5-4.3-1.3-7.5-4.9-7.5-9.5V6L12 3z', label: 'Moderation', goto: 'moderation' },
+    { icon: 'M3 12V4h8l9 9-8 8-9-9zM7.5 8.5h.01', label: 'Brand', goto: 'settings' },
   ];
+  const EMOJI = { giveaways: '🎁', composer: '✍️', moderation: '🛡️', settings: '🏷️' };
+  // The redesign preview (charts-shell.js) draws stroke icons; the current look keeps its emoji.
+  const strokes = root.classList.contains('qb-charts');
   for (const q of QUICK) {
     const b = el('button', 'ov-quick-btn');
     b.type = 'button';
-    b.append(el('span', null, q.icon), document.createTextNode(q.label));
+    if (strokes) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', q.icon);
+      svg.append(path);
+      b.append(svg, document.createTextNode(q.label));
+    } else {
+      b.append(el('span', null, EMOJI[q.goto]), document.createTextNode(q.label));
+    }
     b.addEventListener('click', () => { try { showSection(q.goto); } catch (_) {} });
     quick.append(b);
   }
