@@ -4,16 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#07080c">
+<meta name="theme-color" content="#111112">
 <title>Verify — one person, one entry</title>
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+<link rel="preload" href="/fonts/Inter-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="stylesheet" href="/verify.css">
 </head>
 <body data-state="loading">
-  <!-- Floating particles behind everything; nothing else moves back there. -->
+  <!-- Confetti only, when a check passes. -->
   <canvas class="fx" id="fx" aria-hidden="true"></canvas>
+
+  <header class="top">
+    <span class="crumbs"><b id="brand-name">QuantLab</b><span class="sep">/</span><span>Entry check</span></span>
+    <a class="ghost" href="/privacy" target="_blank" rel="noopener">Privacy</a>
+  </header>
 
   <main class="stage">
     <section class="card" id="card">
@@ -24,12 +30,11 @@
           <img class="mark server" id="server-icon" alt="" hidden>
           <span class="mark server ph" id="server-ph" aria-hidden="true">?</span>
         </div>
-        <p class="kicker"><span id="brand-name">QuantLab</span> · entry check</p>
         <h1 id="title">One person, one entry</h1>
         <p class="sub" id="sub">Hold the shield for a second — that's it.</p>
         <div class="tags">
-          <p class="prize" id="prize" hidden><span>🎁</span><b id="prize-name"></b></p>
-          <p class="drop" id="drop" hidden><span>Drop ID</span><b id="drop-id"></b></p>
+          <p class="prize" id="prize" hidden><span>Prize</span><b id="prize-name"></b></p>
+          <p class="drop" id="drop" hidden><span>Drop</span><b id="drop-id"></b></p>
         </div>
       </header>
 
@@ -67,9 +72,8 @@
       </div>
 
       <footer class="foot">
-        <span class="lock">🔒</span>
+        <svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"/></svg>
         <span>Each giveaway is verified on its own. We check this device and connection against other accounts in this server, stored only as one-way hashes. No sign-in, nothing installed.</span>
-        <a href="/privacy" target="_blank" rel="noopener">Privacy</a>
       </footer>
     </section>
   </main>

@@ -20,6 +20,10 @@
  * or neon, so "celebratory" still reads as "calm, geometric, craft" rather
  * than hype.
  *
+ * With @napi-rs/canvas (every host the bot runs on) the banner is the ticket
+ * design at the bottom of this file, drawn crisp at 2×; the pixel-font
+ * version below is only the fallback.
+ *
  * Every line is editable in Studio. The defaults are written to make sense
  * unchanged, so a server that never opens Studio still gets a usable banner.
  */
@@ -75,10 +79,11 @@ const PRIZE_DEFAULTS = {
 };
 
 /**
+ * The pixel-font banner, kept for hosts without @napi-rs/canvas.
  * @param {object} [copy] pill / heading / subtitle / tagline overrides
  * @returns {Buffer} PNG image data
  */
-function generatePrizeGiveawayBannerImage(copy = {}) {
+function legacyPrizeBanner(copy = {}) {
   const { pill, heading, subtitle, tagline, dropId, noEntries } = { ...PRIZE_DEFAULTS, ...copy };
   const empty = !!noEntries;
   const W = 1000, H = 400;
@@ -231,4 +236,266 @@ function confetti(png, W, H) {
   });
 }
 
-module.exports = { generatePrizeGiveawayBannerImage, PRIZE_DEFAULTS };
+// ── The ticket banner ────────────────────────────────────────────────────────
+//
+// The whole banner is a giveaway ticket: a dark card with a perforated stub on
+// the left, notched top and bottom where it would tear off. The stub holds the
+// gift, drawn flat and crisp at 2×: the lid has lifted off and an entry ticket
+// is rising out of the box with the drop's ID printed on it. The copy sits on
+// the right, the heading's last word in the serif italic, the way the countdown
+// card ends. Countdown card palette and bundled fonts; no glows or gradients.
+
+const path = require('path');
+const fs = require('fs');
+
+let Canvas = null;
+try { Canvas = require('@napi-rs/canvas'); } catch { /* falls back to the pixel banner */ }
+
+const TK = {
+  ink: '#0b0c0f', card: '#14161b', rim: 'rgba(255,255,255,0.06)', text: '#f4f5f7', muted: '#8b8f99', faint: 'rgba(255,255,255,0.14)',
+  accent: '#4f6dff', deep: '#2b3a9e', soft: '#8d9bff', ribbon: '#dfe3ff', paper: '#f4f5f7', rose: '#e86076',
+};
+const TSANS = '"CD Sans", "Segoe UI", Arial, sans-serif', TMONO = '"CD Mono", Consolas, monospace', TSERIF = '"CD Serif", Georgia, serif';
+
+let ticketFonts = false;
+function registerFonts() {
+  if (ticketFonts || !Canvas) return;
+  const dir = path.join(__dirname, '..', 'assets', 'fonts', 'countdown');
+  const reg = (file, alias) => { try { const p = path.join(dir, file); if (fs.existsSync(p)) Canvas.GlobalFonts.registerFromPath(p, alias); } catch { /* system face */ } };
+  reg('Inter-ExtraBold.ttf', 'CD Sans');
+  reg('Inter-SemiBold.ttf', 'CD Sans');
+  reg('JetBrainsMono-Regular.ttf', 'CD Mono');
+  reg('InstrumentSerif-Italic.ttf', 'CD Serif');
+  ticketFonts = true;
+}
+
+// The banner renders synchronously, but images decode asynchronously, so the
+// Quantbot mark is loaded once up front (dynamicEmbedImages.warm awaits it
+// before the boot render); until it is ready the signature row shows the name only.
+let markImg = null, markLoading = null;
+function preloadPrizeMark() {
+  if (!Canvas) return Promise.resolve(null);
+  if (!markLoading) {
+    const file = [path.join(__dirname, '..', 'Quantbot.jpg'), path.join(__dirname, '..', 'web', 'public', 'Quantbot.jpg')].find((p) => { try { return fs.existsSync(p); } catch { return false; } });
+    markLoading = file ? Canvas.loadImage(fs.readFileSync(file)).then((img) => (markImg = img)).catch(() => null) : Promise.resolve(null);
+  }
+  return markLoading;
+}
+preloadPrizeMark();
+
+/** "GIVEAWAY DROP. ONE WINNER" → "Giveaway drop. One winner"; text with any lower case is left as written */
+const calm = (s) => {
+  const t = String(s || '').trim();
+  if (!t || t !== t.toUpperCase()) return t;
+  return t.toLowerCase().replace(/(^|[.!?]\s+)([a-z])/g, (m, a, b) => a + b.toUpperCase());
+};
+
+function wrapLines(x, text, maxW, maxLines) {
+  const words = String(text || '').split(/\s+/).filter(Boolean), lines = [];
+  let cur = '';
+  for (const w of words) {
+    const t = cur ? `${cur} ${w}` : w;
+    if (x.measureText(t).width <= maxW || !cur) cur = t; else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    let last = kept[maxLines - 1];
+    while (last.length > 1 && x.measureText(`${last}…`).width > maxW) last = last.slice(0, -1);
+    kept[maxLines - 1] = `${last.replace(/\s+$/, '')}…`;
+    return kept;
+  }
+  return lines;
+}
+
+/** a four-point sparkle, flat */
+function sparkle(x, cx, cy, r, color) {
+  x.fillStyle = color; x.beginPath();
+  x.moveTo(cx, cy - r);
+  x.quadraticCurveTo(cx + r * 0.16, cy - r * 0.16, cx + r, cy);
+  x.quadraticCurveTo(cx + r * 0.16, cy + r * 0.16, cx, cy + r);
+  x.quadraticCurveTo(cx - r * 0.16, cy + r * 0.16, cx - r, cy);
+  x.quadraticCurveTo(cx - r * 0.16, cy - r * 0.16, cx, cy - r);
+  x.fill();
+}
+
+/** one entry ticket, centred on (px, py), with its side notches cut clean through */
+function entryTicket(x, px, py, rot, code, stamp = '') {
+  x.save(); x.translate(px, py); x.rotate(rot);
+  const tw = 112, th = 64;
+  x.save(); x.beginPath(); x.roundRect(-tw / 2, -th / 2, tw, th, 8); x.clip();
+  x.fillStyle = TK.paper; x.beginPath(); x.roundRect(-tw / 2, -th / 2, tw, th, 8);
+  x.moveTo(-tw / 2 + 7, 0); x.arc(-tw / 2, 0, 7, 0, Math.PI * 2);
+  x.moveTo(tw / 2 + 7, 0); x.arc(tw / 2, 0, 7, 0, Math.PI * 2);
+  x.fill('evenodd'); x.restore();
+  x.strokeStyle = 'rgba(11,12,15,0.25)'; x.lineWidth = 1.5; x.setLineDash([3, 4]);
+  x.beginPath(); x.moveTo(-tw / 2 + 30, -th / 2 + 8); x.lineTo(-tw / 2 + 30, th / 2 - 8); x.stroke(); x.setLineDash([]);
+  sparkle(x, -tw / 2 + 15, 0, 8, TK.accent);
+  if (!stamp) {
+    x.fillStyle = TK.ink; x.font = `600 10px ${TMONO}`; x.letterSpacing = '2px';
+    x.fillText('ENTRY', -tw / 2 + 40, -6);
+    x.font = `600 12px ${TMONO}`; x.letterSpacing = '1px'; x.fillStyle = '#2a2d35';
+    x.fillText(code, -tw / 2 + 40, 12);
+    x.letterSpacing = '0px';
+  } else {   // once the draw is done the ticket's face carries a rubber stamp instead
+    x.save(); x.translate(15, 0); x.rotate(-0.16);
+    x.font = `600 13px ${TMONO}`; x.letterSpacing = '2px';
+    const sw = x.measureText(stamp).width + 18;
+    x.fillStyle = TK.paper; x.beginPath(); x.roundRect(-sw / 2, -13, sw, 26, 6); x.fill();
+    x.strokeStyle = TK.accent; x.lineWidth = 2.5; x.beginPath(); x.roundRect(-sw / 2, -13, sw, 26, 6); x.stroke();
+    x.fillStyle = TK.accent; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(stamp, 1, 1);
+    x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.letterSpacing = '0px';
+    x.restore();
+  }
+  x.restore();
+}
+
+/**
+ * The open gift: box, lifted lid with its bow, and an entry ticket rising out.
+ * `pose` moves it for the drawing animation (giftDrawVisual.js); without one it
+ * is the banner's still.
+ *   lid: { dy, rot }  extra lift and tilt for the lid
+ *   tickets: [{ dx, rise, rot, code }]  rise 1 = out like the banner's, 0 = hidden in the box
+ *   twinkle: [s, s, s]  sparkle scales
+ */
+function openGift(x, cx, cy, dropId, pose = null) {
+  const bw = 156, bh = 112, bx = cx - bw / 2, by = cy + 6;
+  const code = dropId ? `QL-${String(dropId).toUpperCase().slice(0, 8)}` : 'NO. 0001';
+  const tickets = pose?.tickets || [{ dx: 0, rise: 1, rot: 0, code }];
+
+  // the box's back wall, seen through the open top
+  x.fillStyle = TK.deep; x.beginPath(); x.roundRect(bx + 6, by - 14, bw - 12, 22, 6); x.fill();
+
+  // the tickets, rising from inside, tilted; a lowered one sits hidden behind the front
+  // (kept inside the box's walls below its rim, so a sinking ticket never pokes out the side)
+  x.save(); x.beginPath(); x.rect(cx - 400, by - 400, 800, 386); x.rect(bx + 6, by - 14, bw - 12, bh + 14); x.clip();
+  for (const tk of tickets) {
+    if (tk.rise <= 0) continue;
+    entryTicket(x, cx + 4 + (tk.dx || 0), by + 44 - tk.rise * 78, -0.09 + (tk.rot || 0), tk.code || code, tk.stamp || pose?.stamp || '');
+  }
+  x.restore();
+
+  // the box: a flat slab shadow, the front, the ribbon
+  x.fillStyle = TK.deep; x.beginPath(); x.roundRect(bx + 10, by + 10, bw, bh, 14); x.fill();
+  x.fillStyle = TK.accent; x.beginPath(); x.roundRect(bx, by, bw, bh, 14); x.fill();
+  x.fillStyle = TK.ribbon; x.fillRect(cx - 13, by, 26, bh);
+  x.fillStyle = 'rgba(255,255,255,0.14)'; x.fillRect(bx + 14, by + 12, 4, bh - 24);   // one crisp highlight line
+
+  // the lid, lifted and tipped back, with the bow riding on it
+  x.save(); x.translate(cx - 16, by - 86 - (pose?.lid?.dy || 0)); x.rotate(-0.22 + (pose?.lid?.rot || 0));
+  const lw = 176, lh = 36;
+  x.fillStyle = TK.deep; x.beginPath(); x.roundRect(-lw / 2 + 8, -lh / 2 + 8, lw, lh, 10); x.fill();
+  x.fillStyle = TK.soft; x.beginPath(); x.roundRect(-lw / 2, -lh / 2, lw, lh, 10); x.fill();
+  x.fillStyle = TK.ribbon; x.fillRect(-13, -lh / 2, 26, lh);
+  // bow: two loops and two tails, flat
+  x.fillStyle = TK.ribbon;
+  const loop = (dir) => {
+    x.beginPath(); x.moveTo(0, -lh / 2 + 2);
+    x.bezierCurveTo(dir * 18, -lh / 2 - 46, dir * 62, -lh / 2 - 30, dir * 38, -lh / 2 - 4);
+    x.bezierCurveTo(dir * 26, -lh / 2 + 6, dir * 10, -lh / 2 + 4, 0, -lh / 2 + 2);
+    x.fill();
+  };
+  loop(-1); loop(1);
+  x.fillStyle = TK.ink; // the loops' holes, so they read as ribbon and not blobs
+  x.beginPath(); x.ellipse(-24, -lh / 2 - 18, 7, 4, -0.7, 0, Math.PI * 2); x.ellipse(24, -lh / 2 - 18, 7, 4, 0.7, 0, Math.PI * 2); x.fill();
+  x.fillStyle = TK.paper; x.beginPath(); x.roundRect(-9, -lh / 2 - 8, 18, 14, 5); x.fill();
+  x.restore();
+
+  // a few sparkles where the lid came off
+  const tw = pose?.twinkle || [1, 1, 1];
+  sparkle(x, cx + 84, by - 92, 11 * tw[0], TK.paper);
+  sparkle(x, cx + 64, by - 128, 6 * tw[1], TK.soft);
+  sparkle(x, cx - 92, by - 30, 7 * tw[2], TK.soft);
+}
+
+/**
+ * @param {object} [copy] pill / heading / subtitle / tagline overrides, plus dropId, noEntries and
+ *   drawn (the reveal card: the gift's ticket is stamped DRAWN)
+ * @returns {Buffer} PNG image data
+ */
+function generatePrizeGiveawayBannerImage(copy = {}) {
+  if (!Canvas) return legacyPrizeBanner(copy);
+  registerFonts();
+  const { pill, heading, subtitle, tagline, dropId, noEntries, drawn } = { ...PRIZE_DEFAULTS, ...copy };
+  const empty = !!noEntries;
+  const W = 1000, H = 400, S = 2, STUB = 330;
+  const cv = Canvas.createCanvas(W * S, H * S), x = cv.getContext('2d');
+  x.scale(S, S);
+  x.fillStyle = TK.ink; x.fillRect(0, 0, W, H);
+
+  // the ticket: card, rim, the two tear-off notches and the perforation
+  const M = 18;
+  x.fillStyle = TK.card; x.beginPath(); x.roundRect(M, M, W - M * 2, H - M * 2, 26); x.fill();
+  x.strokeStyle = TK.rim; x.lineWidth = 1.5; x.beginPath(); x.roundRect(M + 0.75, M + 0.75, W - M * 2 - 1.5, H - M * 2 - 1.5, 25.5); x.stroke();
+  x.fillStyle = TK.ink; x.beginPath(); x.arc(STUB, M, 20, 0, Math.PI * 2); x.arc(STUB, H - M, 20, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = TK.faint; x.lineWidth = 2; x.lineCap = 'round'; x.setLineDash([2, 10]);
+  x.beginPath(); x.moveTo(STUB, M + 34); x.lineTo(STUB, H - M - 34); x.stroke(); x.setLineDash([]);
+
+  // a faint dot grid on the stub only, never behind the copy
+  x.fillStyle = 'rgba(255,255,255,0.035)';
+  for (let gy = 48; gy < H - 40; gy += 22) for (let gx = 48; gx < STUB - 24; gx += 22) { x.beginPath(); x.arc(gx, gy, 1.3, 0, Math.PI * 2); x.fill(); }
+
+  openGift(x, 172, 196, dropId, drawn && !noEntries ? { stamp: 'DRAWN' } : null);
+
+  // ── copy ─────────────────────────────────────────────────────────────────
+  const L = STUB + 52, R = W - 62, width = R - L;
+  if (pill && String(pill).trim()) {
+    x.font = `600 13px ${TMONO}`; x.letterSpacing = '2px';
+    const label = String(pill).toUpperCase().slice(0, 20), pw = x.measureText(label).width + 40;
+    x.fillStyle = 'rgba(79,109,255,0.16)'; x.beginPath(); x.roundRect(R - pw, 46, pw, 30, 15); x.fill();
+    x.fillStyle = TK.accent; x.beginPath(); x.arc(R - pw + 16, 61, 4, 0, Math.PI * 2); x.fill();
+    x.fillStyle = TK.soft; x.textBaseline = 'middle'; x.fillText(label, R - pw + 28, 62); x.textBaseline = 'alphabetic';
+    x.letterSpacing = '0px';
+  }
+  x.fillStyle = empty ? TK.rose : TK.accent; x.beginPath(); x.arc(L + 6, 92, 6, 0, Math.PI * 2); x.fill();
+  x.font = `600 15px ${TMONO}`; x.letterSpacing = '3px'; x.fillStyle = empty ? TK.rose : TK.soft; x.textBaseline = 'middle';
+  x.fillText(String(subtitle || '').toUpperCase().slice(0, 34), L + 24, 93);
+  x.textBaseline = 'alphabetic'; x.letterSpacing = '0px';
+
+  // the heading: all but its last word in the sans, the last word in the serif italic
+  const words = calm(heading || 'Giveaway drop').split(/\s+/), tail = words.length > 1 ? words.pop() : '', lead = words.join(' ');
+  let size = 72;
+  const measure = () => {
+    x.font = `800 ${size}px ${TSANS}`; x.letterSpacing = `${-size * 0.03}px`;
+    const a = x.measureText(lead ? `${lead} ` : '').width;
+    x.font = `400 ${size * 1.12}px ${TSERIF}`; x.letterSpacing = '0px';
+    return a + x.measureText(tail || '').width;
+  };
+  while (size > 36 && measure() > width) size -= 2;
+  const hy = 182;
+  x.font = `800 ${size}px ${TSANS}`; x.letterSpacing = `${-size * 0.03}px`; x.fillStyle = TK.text;
+  x.fillText(lead || tail, L - 3, hy);
+  if (lead && tail) {
+    const lw = x.measureText(`${lead} `).width;
+    x.letterSpacing = '0px'; x.font = `400 ${size * 1.12}px ${TSERIF}`; x.fillStyle = empty ? TK.rose : TK.soft;
+    x.fillText(tail, L - 3 + lw, hy);
+  }
+  x.letterSpacing = '0px';
+
+  x.font = `600 19px ${TSANS}`; x.fillStyle = TK.muted;
+  wrapLines(x, calm(tagline), width, 2).forEach((l, i) => x.fillText(l, L, 236 + i * 30));
+
+  // signature row: the Quantbot mark, and the drop ID on the right
+  const sy = H - M - 52;
+  x.strokeStyle = TK.rim; x.lineWidth = 1.5; x.beginPath(); x.moveTo(L, sy - 28); x.lineTo(R, sy - 28); x.stroke();
+  const img = markImg;
+  if (img) {
+    x.save(); x.beginPath(); x.arc(L + 16, sy, 16, 0, Math.PI * 2); x.clip();
+    const s = Math.max(32 / img.width, 32 / img.height);
+    x.drawImage(img, L + 16 - (img.width * s) / 2, sy - (img.height * s) / 2, img.width * s, img.height * s);
+    x.restore();
+  }
+  x.font = `600 13px ${TMONO}`; x.letterSpacing = '2px'; x.fillStyle = TK.muted; x.textBaseline = 'middle';
+  x.fillText('QUANTBOT', L + 44, sy + 1);
+  if (dropId) {
+    const id = `QL-${String(dropId).toUpperCase().slice(0, 12)}`;
+    x.textAlign = 'right'; x.fillStyle = TK.soft; x.fillText(id, R, sy + 1);
+    x.fillStyle = TK.muted; x.fillText('DROP', R - x.measureText(id).width - 14, sy + 1);
+    x.textAlign = 'left';
+  }
+  x.textBaseline = 'alphabetic'; x.letterSpacing = '0px';
+
+  return cv.toBuffer('image/png');
+}
+
+module.exports = { generatePrizeGiveawayBannerImage, preloadPrizeMark, PRIZE_DEFAULTS, openGift, registerFonts, TK };

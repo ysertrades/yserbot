@@ -103,7 +103,8 @@
   function size() { fx.width = Math.round(innerWidth * DPR); fx.height = Math.round(innerHeight * DPR); }
   size();
   addEventListener('resize', function () { clearTimeout(resizeT); resizeT = setTimeout(size, 120); });
-  var COUNT = innerWidth < 500 ? 32 : 46;
+  // The page is flat now (the charts app's look): no ambient particles, the canvas is only for confetti.
+  var COUNT = 0;
   for (var i = 0; i < COUNT; i++) dots.push({ x: Math.random(), y: Math.random(), r: Math.random() * 2.2 + 1.4, v: Math.random() * .016 + .006, sway: Math.random() * 6.283, a: Math.random() * .45 + .2 });
   function frame(now) {
     var dt = last ? Math.min(.05, (now - last) / 1000) : .016;
@@ -139,7 +140,7 @@
     if (reduce) return;
     var r = shield.getBoundingClientRect(), d = DPR;
     var cx = (r.left + r.width / 2) * d, cy = (r.top + r.height / 2) * d;
-    var colors = ['#22c55e', '#8b9cff', '#f5c451', '#ec4899', '#06b6d4', '#ffffff'];
+    var colors = ['#2f6bff', '#8d9bff', '#22c55e', '#f2f2f3', '#dfe3ff'];
     for (var n = 0; n < 140; n++) {
       var ang = Math.random() * Math.PI * 2, sp = (Math.random() * 9 + 4) * d;
       bits.push({ x: cx, y: cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 6 * d, rot: Math.random() * 6, vr: (Math.random() - .5) * .4, s: (Math.random() * 8 + 5) * d, c: colors[n % colors.length], life: 90 + Math.random() * 50 });

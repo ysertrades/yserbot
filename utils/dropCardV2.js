@@ -109,6 +109,19 @@ function buildClosedV2({
 }
 
 /**
+ * Between the timer running out and the reveal card: the gift-box GIF, a
+ * divider and one large line. `gifName` is the attachment sent with it.
+ */
+function buildDrawingV2({ winnersCount, gifName }) {
+  const n = Number(winnersCount) || 1;
+  const kids = [];
+  const gallery = gifName ? media('attachment://' + gifName) : null;
+  if (gallery) { kids.push(gallery); kids.push(separator(true)); }
+  kids.push(text('# 🎲 Drawing ' + (n === 1 ? 'winner' : 'winners') + '…'));
+  return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
+}
+
+/**
  * Nobody entered — keep Components V2 so the live Enter card is fully replaced.
  * Classic embeds cannot overwrite a V2 message (that left Enter stuck on screen).
  */
@@ -135,5 +148,5 @@ function buildEmptyV2({
   return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
 }
 
-module.exports = { IS_COMPONENTS_V2, buildLiveV2, buildClosedV2, buildEmptyV2 };
+module.exports = { IS_COMPONENTS_V2, buildLiveV2, buildClosedV2, buildEmptyV2, buildDrawingV2 };
 

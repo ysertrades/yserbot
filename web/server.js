@@ -266,6 +266,8 @@ const TYPES = {
   // origin so the panel's content policy stays at 'self' — pulling it from a
   // font CDN would have meant widening style-src and font-src for everything.
   '.woff2': 'font/woff2',
+  // Inter, self-hosted for the entry check page on the same terms.
+  '.ttf': 'font/ttf',
 };
 
 /**

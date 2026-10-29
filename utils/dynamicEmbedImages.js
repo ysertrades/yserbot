@@ -20,7 +20,7 @@ const { generateRiskGuideImage } = require('./riskGuideVisual');
 const { generateNewsfeedGuideImage } = require('./newsfeedGuideVisual');
 const { generateTradingViewBannerImage } = require('./tradingViewVisual');
 const { generateWhopBannerImage } = require('./whopVisual');
-const { generatePrizeGiveawayBannerImage } = require('./prizeGiveawayVisual');
+const { generatePrizeGiveawayBannerImage, preloadPrizeMark } = require('./prizeGiveawayVisual');
 const { memoizeRender } = require('./renderCache');
 const { copyForDynamicKey } = require('./bannerCopy');
 
@@ -68,6 +68,7 @@ async function warm() {
   } catch (err) {
     console.warn('[RenderCache] quant logo preload:', err.message);
   }
+  await preloadPrizeMark();
   // Memory: warm only prize giveaway banner at boot; other templates lazy on first use.
   for (const [key, entry] of Object.entries(DYNAMIC_IMAGES)) {
     if (key !== 'prizeGiveawayBanner') continue;
