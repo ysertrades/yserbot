@@ -132,10 +132,104 @@ html.sbx[data-sb="rail"] .sidebar .bar-right .who, html.sbx[data-sb="rail"] .sid
 .content-toolbar .crumb-guild:empty, .content-toolbar .crumb-guild:empty + .crumb-sep { display: none; }
 .content-toolbar .workspace-section-label { font: 600 14px/1 Inter, system-ui, sans-serif !important; letter-spacing: 0 !important; margin: 0 !important; }
 
-/* the page head: the section's name with a serif tail */
-.page-head { padding: 26px 0 6px; }
-.workspace-body .page-head .page-title { margin: 0 !important; color: #f2f2f3 !important; font: 700 30px/1.15 Inter, system-ui, sans-serif !important; letter-spacing: -.03em !important; text-transform: none !important; }
-@media (max-width: 900px) { .page-head { padding-top: 18px; } .workspace-body .page-head .page-title { font-size: 25px !important; } }
+/* ── the top bar, as on the board: 60px, the breadcrumb names the page (no
+      big title below it), the section's jump tabs on the right ──────────── */
+@media (min-width: 901px) {
+  html.qb-charts .workspace-body { padding: 0 28px 32px !important; gap: 0 !important; border: 0 !important; border-radius: 0 !important; }
+  html.qb-charts .workspace-body > .content-toolbar { height: 60px !important; box-sizing: border-box !important; margin: 0 -28px !important; padding: 0 24px 0 28px !important; }
+  html.qb-charts .workspace-body > .section { padding-top: 24px !important; margin-top: 0 !important; }
+}
+.content-toolbar .toolbar-right { gap: 10px !important; min-width: 0; }
+.tb-tabs { position: relative; display: flex; align-items: center; gap: 0; padding: 3px; border-radius: 12px; background: #1b1b1d; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tb-tabs::-webkit-scrollbar { display: none; }
+.tb-tabs[hidden] { display: none !important; }
+.tb-ind { position: absolute; top: 3px; left: 0; height: calc(100% - 6px); width: 0; border-radius: 9px; background: #2a2a2d; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); opacity: 0; pointer-events: none; }
+.tb-tab { position: relative; z-index: 1; flex: none; height: 32px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; color: #8e8e94; font: 500 13px/1 Inter, system-ui, sans-serif; cursor: pointer; white-space: nowrap; transition: color .2s cubic-bezier(.32,.72,0,1); }
+@media (hover: hover) { .tb-tab:hover { color: #e4e4e7; } }
+.tb-tab.on { color: #f2f2f3; }
+.tb-tab:focus-visible { outline: none; box-shadow: inset 0 0 0 2px rgba(47,107,255,.55); }
+@media (max-width: 900px) { .tb-tabs { display: none !important; } }
+
+/* ── card titles in sentence case, as on the board ("Posted to #news",
+      "Scheduled posts", "Quick action"), not small capitals ─────────────── */
+.workspace-body .section .panel > h2, .workspace-body .section article > h2,
+.workspace-body .section .queue-head > h2, .workspace-body .section .panel-head > h2, .workspace-body .section .card-head > h2 {
+  font: 600 15px/1.25 Inter, system-ui, sans-serif !important; letter-spacing: -.01em !important; text-transform: none !important; color: #f2f2f3 !important;
+}
+
+/* ── the side rail, as on the board: one flush column from the top bar to the
+      foot of the page, its blocks divided by hairlines instead of boxed ──── */
+@media (min-width: 1180px) {
+  html.qb-charts .section.has-cols:not([data-section="settings"]) { padding-top: 0 !important; }
+  html.qb-charts .section.has-cols:not([data-section="settings"]) > .sec-cols {
+    gap: 0 !important; align-items: stretch !important; margin: 0 -28px -32px 0; min-height: calc(100vh - 60px);
+    grid-template-columns: minmax(0, 1fr) 380px !important;
+  }
+  html.qb-charts .section[data-section="giveaways"] > .sec-cols { grid-template-columns: minmax(0, 1fr) 420px !important; }
+  html.qb-charts .section.has-cols:not([data-section="settings"]) .sec-main { align-self: start; padding: 24px 28px 32px 0; }
+  html.qb-charts .section.has-cols:not([data-section="settings"]) .sec-side {
+    gap: 0 !important; padding: 24px 22px 32px; background: #141415; border-left: 1px solid rgba(255,255,255,.06);
+  }
+  html.qb-charts .workspace-body .sec-side > .panel, html.qb-charts .workspace-body .sec-side > article {
+    background: transparent !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important;
+    padding: 0 0 22px !important; margin: 0 0 22px !important; border-bottom: 1px solid rgba(255,255,255,.06) !important;
+  }
+  html.qb-charts .workspace-body .sec-side > :last-child { border-bottom: 0 !important; margin-bottom: 0 !important; padding-bottom: 0 !important; }
+  html.qb-charts .workspace-body .sec-side > .panel > h2, html.qb-charts .workspace-body .sec-side > article > h2,
+  html.qb-charts .workspace-body .sec-side .queue-head > h2 { font: 700 16px/1.2 Inter, system-ui, sans-serif !important; }
+  /* Settings: the index is a flush column on the left that stays in view */
+  html.qb-charts .section.has-cols[data-section="settings"] { padding-top: 0 !important; }
+  html.qb-charts .section[data-section="settings"] > .sec-cols-left { gap: 0 !important; align-items: stretch !important; margin: 0 0 -32px -28px; min-height: calc(100vh - 60px); grid-template-columns: 240px minmax(0, 1fr) !important; }
+  html.qb-charts .section[data-section="settings"] > .sec-cols-left > .sec-side { padding: 24px 14px; border-right: 1px solid rgba(255,255,255,.06); }
+  html.qb-charts .section[data-section="settings"] > .sec-cols-left > .sec-main { padding: 24px 0 32px 28px; }
+  html.qb-charts .sec-cols-left .set-nav { position: sticky !important; top: 84px !important; background: transparent !important; box-shadow: none !important; padding: 0 !important; }
+  /* Composer and Appearance: the message library is a flush column on the left */
+  html.qb-charts .section[data-section="composer"], html.qb-charts .section[data-section="appearance"] { padding-top: 0 !important; }
+  html.qb-charts .section[data-section="composer"] > .composer, html.qb-charts .section[data-section="appearance"] > .composer {
+    gap: 0 !important; align-items: stretch !important; margin: 0 0 -32px -28px; min-height: calc(100vh - 60px); grid-template-columns: 300px minmax(0, 1fr) !important; }
+  html.qb-charts .section > .composer > .tpl-list { background: transparent !important; box-shadow: none !important; border-radius: 0 !important; border-right: 1px solid rgba(255,255,255,.06) !important; padding: 24px 12px !important; }
+  html.qb-charts .section > .composer > #composer-body, html.qb-charts .section > .composer > #appearance-body { padding: 24px 0 32px 28px !important; min-width: 0; background: transparent !important; box-shadow: none !important; border: 0 !important; border-radius: 0 !important; }
+  html.qb-charts .section > .composer > .tpl-list #tpl-index { max-height: calc(100vh - 150px) !important; }
+  /* Studio: the banner copy is the rail beside the stage */
+  html.qb-charts .section[data-section="studio"] { padding-top: 0 !important; }
+  html.qb-charts .section[data-section="studio"] .studio { display: grid !important; grid-template-columns: minmax(0, 1fr) 380px !important; gap: 0 !important; align-items: stretch !important; margin: 0 -28px -32px 0; min-height: calc(100vh - 60px); }
+  html.qb-charts .section[data-section="studio"] .studio > .stage { align-self: start; margin: 24px 28px 32px 0 !important; }
+  html.qb-charts .section[data-section="studio"] .studio > .editor { background: #141415 !important; box-shadow: none !important; border: 0 !important; border-left: 1px solid rgba(255,255,255,.06) !important; border-radius: 0 !important; padding: 24px 22px 32px !important; margin: 0 !important; position: static !important; }
+}
+/* a block reached from a jump tab is lit for a moment (charts-shell.js) */
+.workspace-body .section .panel, .workspace-body .section article { scroll-margin-top: 76px; }
+
+/* ── motion: the charts app's easing everywhere a surface reacts ───────── */
+.btn, .chip-toggle, .seg-opt, .sidebar-nav.sections > button, .composer .tpl-entry, .appear-seg-btn, .cselect-trigger, .tb-tab,
+input[type="text"], textarea {
+  transition: background-color .18s cubic-bezier(.32,.72,0,1), box-shadow .18s cubic-bezier(.32,.72,0,1), color .18s cubic-bezier(.32,.72,0,1), transform .18s cubic-bezier(.32,.72,0,1) !important;
+}
+.btn:active:not(:disabled), .tb-tab:active, .chip-toggle:active { transform: scale(.97); }
+
+/* ── dropdowns: the trigger grows into the list (charts-shell.js) ───────── */
+.cselect-menu.cs-morph { opacity: 1 !important; transform: none !important; transition: none !important; padding: 0 6px 6px !important; border-radius: 16px !important;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: #1c1c1e !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 18px 30px -14px rgba(0,0,0,.7) !important; }
+.cselect-menu.cs-morph.cs-up { padding: 6px 6px 0 !important; }
+.cselect-menu.cs-morph.is-leaving { pointer-events: none !important; }
+.cs-lid { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; margin: 0 -6px 6px; padding: 0 14px; box-sizing: border-box;
+  background: #1c1c1e; border-bottom: 1px solid rgba(255,255,255,.06); color: #f2f2f3; font: 500 14px/1 Inter, system-ui, sans-serif; cursor: pointer; }
+.cs-up .cs-lid { top: auto; bottom: 0; margin: 6px -6px 0; border-bottom: 0; border-top: 1px solid rgba(255,255,255,.06); }
+.cs-lid-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-lid-chev { display: grid; color: #8e8e94; flex: none; }
+.cs-hl { position: absolute; top: 0; left: 0; z-index: 0; border-radius: 12px; background: rgba(255,255,255,.07); opacity: 0; pointer-events: none; }
+.cselect-menu.cs-morph .cselect-option { position: relative; z-index: 1; display: flex !important; align-items: center; gap: 10px; min-height: 38px; padding: 0 10px !important; border-radius: 12px !important;
+  background: transparent !important; color: #e4e4e7 !important; font: 500 14px/1.2 Inter, system-ui, sans-serif !important; }
+.cselect-menu.cs-morph .cselect-option.is-selected { color: #fff !important; font-weight: 600 !important; }
+.cselect-menu.cs-morph .cselect-option.is-selected::after { content: ""; margin-left: auto; flex: none; width: 16px; height: 16px; background: #f2f2f3;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / contain no-repeat; }
+.cselect-menu.cs-morph .cselect-option:disabled { color: #5d5d62 !important; }
+.cselect-menu.cs-morph .cselect-group { position: relative; z-index: 1; padding: 10px 10px 4px !important; color: #7d7d83 !important; font: 500 11px/14px Inter, system-ui, sans-serif !important; letter-spacing: .04em !important; text-transform: uppercase; }
+.cselect-menu.cs-morph .cselect-search { position: relative; z-index: 1; }
+.cs-ghost { position: fixed; z-index: 4001; box-sizing: border-box; padding: 0 6px; border-radius: 16px; background: #1c1c1e; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); pointer-events: none; overflow: hidden; display: flex; flex-direction: column; }
+.cs-ghost.cs-up { justify-content: flex-end; }
+.cs-ghost .cs-lid { position: static; margin: 0 -6px; border: 0; }
 
 /* the sidebar's status: one clean line and five dots (each dot names its system on hover);
    the detailed rows stay in the page, only folded away */
@@ -227,6 +321,14 @@ html.sbx[data-sb="rail"] .sb-status-line { justify-content: center; grid-templat
 .owner-stat .n { font-size: 20px !important; }
 .tix-stat .l, .mod-tile .l, .owner-stat .l { color: #77777d !important; font: 600 11px/1 Inter, system-ui, sans-serif !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
 .lvl-podium-xp { font-family: Inter, system-ui, sans-serif !important; font-weight: 700 !important; letter-spacing: -.02em !important; }
+
+/* Automation: its "Automation" card title repeated the top bar, so the head is
+   just the stat tiles, styled like every other stat row */
+.section[data-section="automation"] .auto-head { background: transparent !important; box-shadow: none !important; padding: 0 !important; border-radius: 0 !important; }
+.section[data-section="automation"] .auto-head > .queue-head { display: none !important; }
+.auto-stat { display: flex !important; flex-direction: column-reverse !important; align-items: flex-start !important; justify-content: flex-end !important; gap: 10px !important; padding: 16px !important; background: #141415 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06) !important; border-radius: 16px !important; }
+.auto-stat .n { font: 700 24px/1 Inter, system-ui, sans-serif !important; letter-spacing: -.02em !important; }
+.auto-stat .l { color: #77777d !important; font: 600 11px/1 Inter, system-ui, sans-serif !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
 
 /* ── Feature switches (Feeds, Moderation): flat cards, the on ones edged
       in blue instead of washed with it ─────────────────────────────────── */
