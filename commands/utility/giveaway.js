@@ -22,7 +22,7 @@ const { buildLiveV2, buildClosedV2, buildEmptyV2, buildDrawingV2, IS_COMPONENTS_
 const { renderGiftDrawGif } = require('../../utils/giftDrawVisual');
 
 // How long the "Drawing winners…" card shows before the reveal card replaces it.
-const DRAWING_MS = 4000;
+const DRAWING_MS = 6000;
 
 /**
  * Turn a panel banner value into something Components V2 can show.
@@ -1085,6 +1085,20 @@ async function revealGiveaway(message, interaction) {
   const [shortId, data] = entry;
 
   const uid = interaction.user.id;
+  const sign = `${guildBrand(guildId)}™`;
+  // Somebody who never entered has no box to open; say so and leave the record alone.
+  const entrantIds = new Set((data.entrants || []).map(String));
+  if (!entrantIds.has(String(uid)) && !(data.currentWinners || []).map(String).includes(String(uid))) {
+    return {
+      ok: true,
+      shortId,
+      ephemeral: true,
+      content:
+        `👀 You didn't enter this giveaway, keep an eye on this channel to catch the next one.\n\n`
+        + `Drop ID: \`QL-${shortId}\`\n\n`
+        + sign,
+    };
+  }
   const opened = new Set(data.openedBy || []);
   // Allow re-open any time — same personal result, no lock-out
   const winners = new Set(data.currentWinners || []);
@@ -1099,14 +1113,18 @@ async function revealGiveaway(message, interaction) {
 
   const prize = data.prize || 'this drop';
   if (isWinner) {
+    // "a" or "an" by the prize's first letter; left out when the prize already starts with one
+    const article = /^(a|an|the)\s/i.test(prize) ? '' : (/^[aeiou]/i.test(prize) ? 'an ' : 'a ');
+    const sent = data.prizeSentTo?.[String(uid)]?.ok === true;
     return {
       ok: true,
       shortId,
       ephemeral: true,
       content:
-        `You won **${prize}**.\n`
-        + `A prize message will be sent to your DMs shortly.\n`
-        + `Drop ID: \`QL-${shortId}\``,
+        `🎉 You won ${article}**${prize}**\n\n`
+        + (sent ? `A prize message has been sent to your DMs.\n` : `A prize message will be sent to your DMs shortly.\n`)
+        + `Drop ID: \`QL-${shortId}\`\n\n`
+        + sign,
     };
   }
   return {
@@ -1114,9 +1132,10 @@ async function revealGiveaway(message, interaction) {
     shortId,
     ephemeral: true,
     content:
-      `Not this time — **${prize}** went to someone else.\n`
-      + `Better luck on the next drop.\n`
-      + `Drop ID: \`QL-${shortId}\``,
+      `🎟️ Not your ticket this time.\n\n`
+      + `**${prize}** went to another entry, the next drop could be yours.\n`
+      + `Drop ID: \`QL-${shortId}\`\n\n`
+      + sign,
   };
 }
 

@@ -33,10 +33,13 @@ function accentFor(guildId, fallback) {
   return b.accent ? parseInt(b.accent.slice(1), 16) : fallback;
 }
 
-function wrap(guildId, kids, accent) {
+// The cards that answer Finish verification sit in a dark frame, whatever the brand accent.
+const DARK = 0x0b0c0f;
+
+function wrap(guildId, kids, accent, { dark = false } = {}) {
   return {
     flags: EPHEMERAL | IS_V2,
-    components: [v2.container(kids.filter(Boolean), accentFor(guildId, accent))],
+    components: [v2.container(kids.filter(Boolean), dark ? DARK : accentFor(guildId, accent))],
   };
 }
 
@@ -68,7 +71,7 @@ function checkCard(interaction, messageId, channelId, meta, { notYet = false } =
     ),
     v2.text(`-# ${meta?.dropId ? `Drop ID QL-${meta.dropId} · ` : ''}Every drop has its own check · link works once, expires in ${minutes} min · Protected by ${b.name}`),
   ];
-  return wrap(g, kids, notYet ? 0xF59E0B : 0x2233F5);
+  return wrap(g, kids, notYet ? 0xF59E0B : 0x2233F5, { dark: notYet });
 }
 
 function enteredCard(interaction, meta, messageId) {
@@ -85,7 +88,7 @@ function enteredCard(interaction, meta, messageId) {
       `Verified and entered${prize}. Good luck${interaction.member?.displayName ? `, ${interaction.member.displayName}` : ''}.`,
       number ? `-# Entry #${number} · use Check entry on the drop any time` : '-# Use Check entry on the drop any time',
     ].join('\n')),
-  ], 0x22C55E);
+  ], 0x22C55E, { dark: true });
 }
 
 function heldCard(interaction, meta) {
@@ -96,13 +99,13 @@ function heldCard(interaction, meta) {
       `This device was already used to verify another account here, so your entry${prize} can't go through automatically.`,
       '-# If that\'s a mistake — a shared family computer, say — ask a moderator. They can approve you in one tap.',
     ].join('\n')),
-  ], 0xF23F43);
+  ], 0xF23F43, { dark: true });
 }
 
 function noteCard(text) {
   return {
     flags: EPHEMERAL | IS_V2,
-    components: [v2.container([v2.text(String(text || 'Done.'))])],
+    components: [v2.container([v2.text(String(text || 'Done.'))], DARK)],
   };
 }
 
