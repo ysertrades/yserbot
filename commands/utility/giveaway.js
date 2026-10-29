@@ -19,7 +19,7 @@ const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments'
 const messageStyle = require('../../utils/messageStyle');
 
 const { buildLiveV2, buildClosedV2, buildEmptyV2, buildDrawingV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
-const { renderGiftDrawGif } = require('../../utils/giftDrawVisual');
+const { drawingGif } = require('../../utils/giftDrawVisual');
 
 // How long the "Drawing winners…" card shows before the reveal card replaces it.
 const DRAWING_MS = 6000;
@@ -931,7 +931,7 @@ async function endGiveaway(message, meta) {
   // shuffling tickets for a few seconds before the reveal card lands. If the
   // GIF can't be drawn or the edit fails, it goes straight to the reveal.
   try {
-    const gif = renderGiftDrawGif({ dropId: shortId });
+    const gif = drawingGif();
     const gifName = 'giveaway_drawing.gif';
     await message.edit({
       ...buildDrawingV2({ winnersCount, gifName: gif ? gifName : null }),

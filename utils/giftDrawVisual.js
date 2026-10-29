@@ -66,4 +66,20 @@ function renderGiftDrawGif({ dropId = null, scale = 1.25, fps = 25 } = {}) {
   return gif.finish();
 }
 
-module.exports = { renderGiftDrawGif };
+// The size the shipped GIF is rendered at: 640 × 320, 20 fps, about 190 KB, so it loads fast.
+const DRAWING_GIF_OPTS = { scale: 1, fps: 20 };
+
+let shipped = null;
+/**
+ * The drawing GIF for the giveaway card: the pre-rendered file in
+ * assets/giveaway (scripts/render-drawing-gif.js), drawn here only if it is missing.
+ * @returns {Buffer|null}
+ */
+function drawingGif() {
+  if (shipped) return shipped;
+  try { shipped = require('fs').readFileSync(require('path').join(__dirname, '..', 'assets', 'giveaway', 'drawing.gif')); }
+  catch { shipped = renderGiftDrawGif(DRAWING_GIF_OPTS); }
+  return shipped;
+}
+
+module.exports = { renderGiftDrawGif, drawingGif, DRAWING_GIF_OPTS };
