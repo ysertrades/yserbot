@@ -220,6 +220,31 @@ html.sbx[data-sb="rail"] .sb-status-line { justify-content: center; grid-templat
 .drop-card { background: #1b1b1d !important; border: 0 !important; box-shadow: none !important; border-radius: 16px !important; }
 .drop-card .drop-card-title { font: 700 20px/1.2 Inter, system-ui, sans-serif !important; letter-spacing: -.02em !important; }
 
+/* ── Stat tiles across Tickets, Moderation and Owner, as on the artboards:
+      the label on top, the number in Inter ─────────────────────────────── */
+.tix-stat, .mod-tile, .owner-stat { display: flex !important; flex-direction: column-reverse !important; align-items: flex-start !important; justify-content: flex-end !important; gap: 10px !important; background: #141415 !important; background-image: none !important; border: 0 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06) !important; border-radius: 16px !important; }
+.tix-stat .n, .mod-tile .n, .owner-stat .n { font: 700 24px/1 Inter, system-ui, sans-serif !important; letter-spacing: -.02em !important; }
+.owner-stat .n { font-size: 20px !important; }
+.tix-stat .l, .mod-tile .l, .owner-stat .l { color: #77777d !important; font: 600 11px/1 Inter, system-ui, sans-serif !important; letter-spacing: .08em !important; text-transform: uppercase !important; }
+.lvl-podium-xp { font-family: Inter, system-ui, sans-serif !important; font-weight: 700 !important; letter-spacing: -.02em !important; }
+
+/* ── Feature switches (Feeds, Moderation): flat cards, the on ones edged
+      in blue instead of washed with it ─────────────────────────────────── */
+.feed-power, .mod-shield { background: #1b1b1d !important; background-image: none !important; border: 0 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06) !important; }
+.feed-power.on, .mod-shield.on { background: #1b1b1d !important; background-image: none !important; box-shadow: inset 0 0 0 1px rgba(47,107,255,.45) !important; }
+.mod-shield-state, .pill.on, .pill.live, .pill.off, .desk-pill { background-image: none !important; }
+.whop-thumb { background-image: none !important; background-color: #222225 !important; }
+
+/* ── Leveling, as on its artboard: flat bars, no sheen ─────────────────── */
+.lvl-hero2::before, .lvl-ladder::before { background: rgba(255,255,255,.06) !important; background-image: none !important; }
+.lvl-pace { background: #1b1b1d !important; background-image: none !important; }
+.lvl-card-ic { background: #222225 !important; background-image: none !important; box-shadow: none !important; }
+.lvl-podium-bar-fill, .lvl-board-bar-fill, .lvl-curve-bar { background: #2f6bff !important; background-image: none !important; box-shadow: none !important; }
+.lvl-curve-bar.mark { background: #f5b84b !important; }
+
+/* ── Owner, as on its artboard: the bot card flat ───────────────────────── */
+.owner-bot { background: #1b1b1d !important; background-image: none !important; border: 0 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06) !important; }
+
 /* a wrapper whose blocks moved into the columns is folded away */
 .section.has-cols .grid:empty { display: none !important; }
 @media (min-width: 1180px) {
