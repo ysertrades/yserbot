@@ -90,6 +90,7 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
             tagline: endedTagline,
             dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
             noEntries,
+            prize: prizeText, winners: w, state: noEntries ? 'empty' : 'won',
           };
           copy.tagline = endedTagline;
           copy.heading = endedHeading;
@@ -103,6 +104,7 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
             heading: copy.heading && copy.heading !== 'PRIZE DROP' ? copy.heading : 'GIVEAWAY DROP',
             subtitle: w === 1 ? 'ONE WINNER TAKES IT' : (w + ' WINNERS TAKE IT'),
             dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
+            prize: prizeText, winners: w, state: 'live',
           };
         }
       }
@@ -244,7 +246,7 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
 
   if (!bannerUrl && imageUrl) {
     try {
-      const resolved = resolveGiveawayBanner(imageUrl, guild.id, { winners, dropId });
+      const resolved = resolveGiveawayBanner(imageUrl, guild.id, { winners, dropId, prize });
       bannerUrl = resolved.url;
       bannerFiles = resolved.files || [];
     } catch (err) {
@@ -609,7 +611,7 @@ async function postGiveaway(guild, hostId, hostAvatarUrl, data) {
   const iconUrl = guildBrandAvatar(guild.id, guild) || hostAvatarUrl || null;
 
   // Always the same V2 layout. Banner (if any) sits in the MediaGallery slot.
-  const resolved = resolveGiveawayBanner(imageUrl, guildId, { winners, dropId });
+  const resolved = resolveGiveawayBanner(imageUrl, guildId, { winners, dropId, prize });
 
   const v2 = buildLiveV2({
     prize,

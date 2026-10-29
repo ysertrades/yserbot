@@ -40,8 +40,15 @@ const DYNAMIC_IMAGES = {
   newsfeedGuide:    { filename: 'newsfeed_guide.png',   generate: memoizeRender(generateNewsfeedGuideImage,   { name: 'newsfeedGuide',    max: 1 }) },
   tradingViewBanner: { filename: 'tradingview_banner.png', takesCopy: true, generate: memoizeRender(generateTradingViewBannerImage, { name: 'tradingViewBanner', max: 1 }) },
   whopBanner:        { filename: 'whop_banner.png',        takesCopy: true, generate: memoizeRender(generateWhopBannerImage,        { name: 'whopBanner',        max: 1 }) },
-  prizeGiveawayBanner: { filename: 'prize_giveaway_banner.png', takesCopy: true, generate: memoizeRender(generatePrizeGiveawayBannerImage, { name: 'prizeGiveawayBanner', max: 8 }) },
+  prizeGiveawayBanner: { filename: 'prize_giveaway_banner.png', takesCopy: true, generate: memoizeRender(renderGiveawayBanner, { name: 'prizeGiveawayBanner', max: 8 }) },
 };
+
+/** The giveaway banner: the crisp canvas ticket card, or the old pixel banner if canvas is missing on this host. */
+function renderGiveawayBanner(copy = {}) {
+  try { const buf = require('./giveawayCardVisual').generateGiveawayCard(copy); if (buf) return buf; }
+  catch (err) { console.warn('[GIVEAWAY] card render failed, using the pixel banner:', err.message); }
+  return generatePrizeGiveawayBannerImage(copy);
+}
 
 /**
  * Renders one dynamic image, applying the guild's saved banner wording when
@@ -68,6 +75,8 @@ async function warm() {
   } catch (err) {
     console.warn('[RenderCache] quant logo preload:', err.message);
   }
+  // the giveaway card draws the Quantbot logo; let it decode before the warm render is cached
+  try { await require('./giveawayCardVisual').ready(); } catch (_) { /* renders without it */ }
   // Memory: warm only prize giveaway banner at boot; other templates lazy on first use.
   for (const [key, entry] of Object.entries(DYNAMIC_IMAGES)) {
     if (key !== 'prizeGiveawayBanner') continue;
