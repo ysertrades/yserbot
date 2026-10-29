@@ -137,14 +137,14 @@ function generateGiveawayCard(copy = {}) {
 
   // ── right: the ticket ─────────────────────────────────────────────────────
   const TX = 720, TY = 40, TW = W - TX - 44, TH = H - 80, stub = TX + TW - 128, notch = 15;
-  x.save();
-  x.beginPath(); x.roundRect(TX, TY, TW, TH, 22);
-  // the notches at the tear line, cut out of the ticket
-  x.moveTo(stub + notch, TY); x.arc(stub, TY, notch, 0, Math.PI * 2, true);
-  x.moveTo(stub + notch, TY + TH); x.arc(stub, TY + TH, notch, 0, Math.PI * 2, true);
-  x.fillStyle = C.card; x.fill('evenodd');
-  x.restore();
+  rr(x, TX, TY, TW, TH, 22); x.fillStyle = C.card; x.fill();
   x.strokeStyle = C.rim; x.lineWidth = 1.5; rr(x, TX + .75, TY + .75, TW - 1.5, TH - 1.5, 21.5); x.stroke();
+  // the notches at the tear line: half-circle bites out of the top and bottom edges, filled with the ground
+  // (so nothing shows past the ticket's edge), then their inner curve traced with the ticket's own rim
+  for (const [ny, a0, a1] of [[TY, 0, Math.PI], [TY + TH, Math.PI, Math.PI * 2]]) {
+    x.fillStyle = C.ink; x.beginPath(); x.arc(stub, ny, notch, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = C.rim; x.lineWidth = 1.5; x.beginPath(); x.arc(stub, ny, notch - .75, a0, a1); x.stroke();
+  }
   // perforation down the tear line
   x.fillStyle = 'rgba(255,255,255,0.13)';
   for (let py = TY + notch + 12; py < TY + TH - notch - 6; py += 13) { x.beginPath(); x.arc(stub, py, 2.2, 0, Math.PI * 2); x.fill(); }
@@ -168,14 +168,15 @@ function generateGiveawayCard(copy = {}) {
   x.fillText(state === 'won' ? 'DRAWN' : state === 'empty' ? 'CLOSED' : 'ADMIT ONE', 0, 6);
   x.restore();
   // the stamp across the ticket once it's over
-  if (state !== 'live') {   // stamped over the barcode, clear of the winner count
-    x.save(); x.translate(TX + (stub - TX) / 2 + 8, TY + TH - 56); x.rotate(-0.12);
-    rr(x, -95, -34, 190, 64, 12); x.fillStyle = C.card; x.fill();
+  if (state !== 'live') {   // stamped in the open space beside the winner count: clear of the number and the barcode
     const label = state === 'won' ? 'DRAWN' : 'VOID';
-    x.font = `800 34px ${SANS}`; x.letterSpacing = '5px'; const sw = x.measureText(label).width + 44;
-    x.strokeStyle = col; x.globalAlpha = 0.9; x.lineWidth = 3.5; rr(x, -sw / 2, -32, sw, 60, 10); x.stroke();
-    x.fillStyle = col; x.textAlign = 'center'; x.fillText(label, 3, 12);
-    x.restore(); x.globalAlpha = 1;
+    x.save();
+    x.font = `800 26px ${SANS}`; x.letterSpacing = '4px';
+    const sw = x.measureText(label).width + 34, sx = stub - 26 - sw / 2 - 4, sy = TY + 168;
+    x.translate(sx, sy); x.rotate(-0.1);
+    x.strokeStyle = col; x.lineWidth = 3; rr(x, -sw / 2, -24, sw, 46, 9); x.stroke();
+    x.fillStyle = col; x.textAlign = 'center'; x.fillText(label, 2, 9);
+    x.restore();
   }
   return cv.toBuffer('image/png');
 }
