@@ -732,6 +732,36 @@ function pollHandoff(id) {
   }, 1500);
 }
 
+/**
+ * Early access: signed in, but the bot is in none of this account's servers and
+ * it is not one of the bot's owners. One page instead of an empty panel, the
+ * same words as the landing page's Add to Discord card.
+ */
+function showLocked(me) {
+  const src = discordAvatarUrl(me.user);
+  for (const id of ['#lk-avatar', '#lk-who-img']) {
+    const img = $(id);
+    img.src = src;
+    img.onerror = () => { img.style.visibility = 'hidden'; };
+  }
+  $('#lk-name').textContent = me.user?.name || 'you';
+  $('#lk-switch').addEventListener('click', async (e) => {
+    e.preventDefault();
+    try {
+      await fetch('/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { ...authHeaders(), 'x-csrf-token': me.csrf || '' },
+      });
+    } catch { /* the local clear and the reload still happen */ }
+    state.token = null;
+    remember(null);
+    location.replace('/');
+  });
+  root.dataset.state = 'locked';
+  bootReady();
+}
+
 function showSetup(missing) {
   $('#setup-missing').replaceChildren(...missing.map(k => el('li', null, k)));
   root.dataset.state = 'setup';
@@ -12309,6 +12339,9 @@ async function main() {
 
   state.csrf = me.csrf;
   if (me.token) { state.token = me.token; remember(me.token); }
+  // Early access: no server with the bot in it and not an owner means nothing
+  // to manage, so the panel is not shown at all.
+  if (!me.isOwner && !(me.guilds || []).length) return showLocked(me);
   state.guilds = me.guilds;
   state.homeGuildIds = new Set((me.guilds || []).map(g => g.id));
   state.me = me.user;
