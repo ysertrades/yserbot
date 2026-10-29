@@ -90,7 +90,7 @@ html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button .nav-ico
 html.sbx[data-sb="rail"] body .app-shell #sections.sidebar-nav > button[aria-current="true"] .nav-ico-wrap { background: #1f1f22 !important; color: #2f6bff !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08) !important; }
 /* the work area sits flat on the ground, like the charts app: no inner frame */
 @media (min-width: 901px) {
-  .workspace { margin: 0 !important; border: 0 !important; border-radius: 0 !important; background: #111112 !important; }
+  html.qb-charts body .app-shell .workspace { margin: 0 !important; border: 0 !important; border-radius: 0 !important; background: #111112 !important; box-shadow: none !important; }
 }
 
 /* ── overview: no gradient washes, numbers in Inter ─────────────────────── */
@@ -189,6 +189,36 @@ html.sbx[data-sb="rail"] .sb-status-line { justify-content: center; grid-templat
 .section[data-section="overview"] .tile .tile-ic { display: none !important; }
 .section[data-section="overview"] .tile .l { order: -1; font: 600 11px/1 Inter, system-ui, sans-serif !important; letter-spacing: .08em !important; text-transform: uppercase !important; color: #77777d !important; }
 .section[data-section="overview"] .tile .n { font: 700 28px/1 Inter, system-ui, sans-serif !important; letter-spacing: -.02em !important; }
+
+/* ── Composer and Appearance, as on their artboards: a library column of
+      quiet rows, the open one lit, the editor beside it ───────────────────── */
+.composer .tpl-list { background: #141415 !important; border: 0 !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06) !important; border-radius: 18px !important; padding: 14px 10px !important; }
+.composer .tpl-list-head { padding: 0 6px 10px !important; }
+.composer .tpl-list-head h2 { font: 600 15px/1 Inter, system-ui, sans-serif !important; letter-spacing: -.01em !important; text-transform: none !important; color: #f2f2f3 !important; }
+.composer .tpl-entry { background: transparent !important; border: 0 !important; box-shadow: none !important; border-radius: 10px !important; padding: 9px 10px !important; }
+@media (hover: hover) { .composer .tpl-entry:hover { background: rgba(255,255,255,.04) !important; } }
+.composer .tpl-entry[aria-current="true"] { background: #1f1f22 !important; box-shadow: inset 3px 0 0 #2f6bff !important; }
+.composer .tpl-entry .nm { font: 600 13px/1.2 Inter, system-ui, sans-serif !important; color: #f2f2f3 !important; }
+.composer .tpl-entry .mt, .composer .tpl-entry .snip { color: #77777d !important; }
+.composer .tpl-kind { border: 0 !important; border-radius: 6px !important; background: rgba(255,255,255,.06) !important; color: #a2a2a8 !important; font: 600 10px/1 Inter, system-ui, sans-serif !important; letter-spacing: .04em !important; padding: 3px 6px !important; }
+.composer .tpl-kind.k-embed { background: rgba(47,107,255,.16) !important; color: #8db0ff !important; }
+.composer .tpl-kind.k-v2 { background: rgba(34,197,94,.14) !important; color: #4ade80 !important; }
+/* Appearance's categories: the charts app's segmented control */
+.appear-seg { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 2px !important; padding: 3px !important; border-radius: 12px !important; background: #1b1b1d !important; box-shadow: none !important; border: 0 !important; }
+.appear-seg-btn { height: 30px !important; border: 0 !important; border-radius: 9px !important; background: transparent !important; box-shadow: none !important; color: #8e8e94 !important; font: 500 12px/1 Inter, system-ui, sans-serif !important; }
+.appear-seg-btn.on { background: #2a2a2d !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06) !important; color: #f2f2f3 !important; }
+.appear-dot { box-shadow: none !important; }
+
+/* ── Studio, as on its artboard: the banner on a dark stage ─────────────── */
+.studio .stage { background: #0e0e0f !important; border-radius: 20px !important; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06) !important; padding: 28px !important; }
+.studio .stage-frame { background: transparent !important; box-shadow: none !important; border: 0 !important; }
+.studio .stage-frame img, .studio .stage-frame canvas { border-radius: 14px !important; box-shadow: 0 24px 50px -24px rgba(0,0,0,.8) !important; }
+.studio .stage-foot { color: #6d6d73 !important; }
+.studio .editor h2 { font: 700 16px/1 Inter, system-ui, sans-serif !important; text-transform: none !important; letter-spacing: -.01em !important; color: #f2f2f3 !important; }
+
+/* ── Giveaways, as on its artboard: each live drop a card of its own ────── */
+.drop-card { background: #1b1b1d !important; border: 0 !important; box-shadow: none !important; border-radius: 16px !important; }
+.drop-card .drop-card-title { font: 700 20px/1.2 Inter, system-ui, sans-serif !important; letter-spacing: -.02em !important; }
 
 /* a wrapper whose blocks moved into the columns is folded away */
 .section.has-cols .grid:empty { display: none !important; }
