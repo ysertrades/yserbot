@@ -1,0 +1,83 @@
+/* Early access: the "Admins only" page a signed-in member sees when the bot is in none
+   of their servers. The sign-in page's bright studio and handshake, with the line between
+   you and the bot cut by a padlock that snaps shut. Scoped to the locked view. */
+html[data-state="locked"] .view[data-view="locked"] { display: flex; }
+html[data-state="locked"] .bar { display: none !important; }
+html[data-state="locked"] body { background: #f9fbfb !important; }
+
+.view[data-view="locked"] .lk {
+  --ink: #15171c; --soft: #5b5f6b; --grey: #8b8b92; --line: rgba(26,33,51,.1); --blurple: #5865f2; --sh: 26, 33, 51;
+  --sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --ease: cubic-bezier(.22, .8, .2, 1);
+  position: fixed; inset: 0; z-index: 40; overflow: hidden auto; color: var(--ink); font-family: var(--sans);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; text-align: center;
+  padding: max(28px, env(safe-area-inset-top, 0px)) 16px max(28px, env(safe-area-inset-bottom, 0px));
+  background: radial-gradient(1100px 700px at 50% 10%, #ffffff 0%, #f9fbfb 45%, #f2f3f6 100%);
+}
+.view[data-view="locked"] .lk::before { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+  background-image: linear-gradient(rgba(var(--sh), .045) 1px, transparent 1px), linear-gradient(90deg, rgba(var(--sh), .045) 1px, transparent 1px);
+  background-size: 32px 32px; mask-image: radial-gradient(70% 60% at 50% 35%, #000 20%, transparent 80%); }
+
+/* ── the cut handshake: you · wire · padlock · wire · the bot ───────────── */
+.lk-art { position: relative; display: flex; align-items: center; margin-bottom: 8px; }
+.lk-tile { width: 76px; height: 76px; border-radius: 22px; overflow: hidden; flex: none; background: #e9ebf1;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 18px 34px -16px rgba(var(--sh), .55), 0 4px 10px -4px rgba(var(--sh), .25);
+  animation: lk-in .7s var(--ease) both; }
+.lk-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lk-tile.you { border-radius: 50%; animation-name: lk-in-left; }
+.lk-tile.bot { animation-name: lk-in-right; }
+@keyframes lk-in-left { from { opacity: 0; transform: translateX(26px) scale(.9); } }
+@keyframes lk-in-right { from { opacity: 0; transform: translateX(-26px) scale(.9); } }
+.lk-wire { width: 220px; height: 60px; margin: 0 -10px; overflow: visible; }
+.lk-wire path { fill: none; stroke: rgba(var(--sh), .22); stroke-width: 2.2; stroke-linecap: round; stroke-dasharray: 2 7; }
+.lk-wire .l { animation: lk-draw .9s var(--ease) .2s both; }
+.lk-wire .r { animation: lk-draw .9s var(--ease) .3s both; }
+@keyframes lk-draw { from { opacity: 0; } }
+/* the padlock sits where the two lines would have met */
+.lk-lock { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; display: grid; place-items: center; border-radius: 15px;
+  background: var(--ink); color: #fff; box-shadow: 0 14px 26px -12px rgba(var(--sh), .7), inset 0 1px 0 rgba(255,255,255,.14);
+  animation: lk-lock-in .6s var(--ease) .55s both, lk-lock-bob 5s ease-in-out 1.6s infinite; }
+.lk-lock svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; overflow: visible; }
+.lk-lock rect { fill: currentColor; }
+.lk-lock .hole { stroke: var(--ink); }
+.lk-lock .shackle { transform-origin: 16px 11px; animation: lk-shackle .7s var(--ease) .85s both; }
+@keyframes lk-lock-in { from { opacity: 0; transform: translateY(-14px) scale(.7); } 70% { transform: translateY(2px) scale(1.06); } }
+@keyframes lk-shackle { 0% { transform: translateY(-3px) rotate(-30deg); } 60% { transform: translateY(1px) rotate(0); } 80% { transform: translateY(-1px); } 100% { transform: none; } }
+@keyframes lk-lock-bob { 50% { transform: translateY(-4px); } }
+
+/* ── the words ──────────────────────────────────────────────────────────── */
+.lk-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 6px; border-radius: 999px; background: #fff; color: var(--ink) !important; text-decoration: none;
+  font-weight: 500; font-size: 14px; box-shadow: 0 1px 1px rgba(var(--sh), .06), 0 8px 22px -12px rgba(var(--sh), .35); }
+.lk-badge img { width: 22px; height: 22px; border-radius: 7px; }
+.lk-badge span { color: var(--grey); font-weight: 400; padding-left: 8px; border-left: 1px solid var(--line); }
+.lk-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #f5b84b; }
+.view[data-view="locked"] .lk h1 { margin: 0; font: 500 clamp(40px, 6vw, 68px)/1.0 var(--sans) !important; letter-spacing: -.045em !important; color: var(--ink) !important; text-wrap: balance; }
+.lk h1 em { display: block; font: italic 400 1.1em/1.05 "Instrument Serif", Georgia, serif; letter-spacing: -.01em; color: var(--grey); }
+.lk-lead { margin: 0; max-width: 31em; font-size: 17px; line-height: 1.55; color: var(--soft); }
+.lk-who { margin: 0; display: inline-flex; align-items: center; gap: 8px; padding: 5px 14px 5px 5px; border-radius: 999px; background: rgba(255,255,255,.75); box-shadow: inset 0 0 0 1px var(--line); font-size: 14px; color: var(--soft); }
+.lk-who img { width: 26px; height: 26px; border-radius: 50%; }
+.lk-who b { color: var(--ink); font-weight: 600; }
+.lk-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.lk-btn { display: inline-flex; align-items: center; height: 50px; padding: 0 24px; border-radius: 999px; font: 500 16px/1 var(--sans); text-decoration: none; transition: transform .25s var(--ease); }
+.lk-btn.ink { background: var(--ink); color: #fff !important; box-shadow: 0 10px 24px -12px rgba(var(--sh), .7), inset 0 1px 0 rgba(255,255,255,.12); }
+.lk-btn.ghost { background: #fff; color: var(--ink) !important; box-shadow: inset 0 0 0 1px rgba(26,33,51,.14), 0 6px 16px -12px rgba(var(--sh), .4); }
+@media (hover: hover) { .lk-btn:hover { transform: translateY(-2px); } }
+.lk-btn:active { transform: scale(.98); }
+.lk-fine { margin: 4px 0 0; display: flex; gap: 8px; font-size: 13px; color: var(--grey); }
+.lk-fine a { color: var(--soft) !important; text-decoration: none; }
+
+/* staged entrance under the art */
+.lk > *:not(.lk-art) { animation: lk-rise .6s var(--ease) both; }
+.lk > .lk-badge { animation-delay: .35s; } .lk > h1 { animation-delay: .45s; } .lk > .lk-lead { animation-delay: .55s; }
+.lk > .lk-who { animation-delay: .62s; } .lk > .lk-actions { animation-delay: .7s; } .lk > .lk-fine { animation-delay: .78s; }
+@keyframes lk-rise { from { opacity: 0; transform: translateY(10px); } }
+
+@media (max-width: 480px) {
+  .lk-tile { width: 62px; height: 62px; border-radius: 18px; }
+  .lk-wire { width: 150px; }
+  .lk-lead { font-size: 15.5px; }
+  .lk-actions { width: 100%; flex-direction: column; } .lk-btn { justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lk *, .lk > * { animation: none !important; }
+}

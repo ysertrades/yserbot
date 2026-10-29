@@ -48,6 +48,7 @@
 <link rel="stylesheet" href="/desk.css">
 <link rel="stylesheet" href="/shell-am.css">
 <link rel="stylesheet" href="/login.css">
+<link rel="stylesheet" href="/locked.css">
 <script defer src="/shell-am.js"></script>
 <link rel="stylesheet" href="/sidebar.css">
 <link rel="stylesheet" href="/toasts.css">
@@ -154,6 +155,29 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
         </div></div>
         <img class="lg-float f1" src="/logo-256.jpg" alt=""><img class="lg-float f2 soft" src="/logo-256.jpg" alt="">
       </div>
+    </div>
+  </section>
+
+  <!-- Signed in, but the bot is in none of your servers (early access): the
+       sign-in handshake again, with the line cut by a padlock. showLocked() in
+       app.full.js fills in who you are. -->
+  <section class="view" data-view="locked">
+    <div class="lk">
+      <div class="lk-art" aria-hidden="true">
+        <span class="lk-tile you"><img id="lk-avatar" alt="" referrerpolicy="no-referrer"></span>
+        <svg class="lk-wire" viewBox="0 0 240 60" preserveAspectRatio="none"><path class="l" d="M4 30 C 40 6, 80 6, 102 30"/><path class="r" d="M138 30 C 160 54, 200 54, 236 30"/></svg>
+        <span class="lk-lock"><svg viewBox="0 0 24 24"><path class="shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="10" rx="3"/><path class="hole" d="M12 15v2"/></svg></span>
+        <span class="lk-tile bot"><img src="/logo-256.jpg" alt=""></span>
+      </div>
+      <a class="lg-badge lk-badge" href="/home"><img src="/logo-64.jpg" alt="" width="22" height="22">Quant Bot<i class="lk-dot"></i><span>Early access</span></a>
+      <h1>Admins only. <em>for now.</em></h1>
+      <p class="lk-lead">Quant Bot is in early access, so only admins can open the panel. Got an invite? Sign in with the Discord account it was sent to.</p>
+      <p class="lk-who"><img id="lk-who-img" alt="" referrerpolicy="no-referrer"><span>Signed in as <b id="lk-name">you</b></span></p>
+      <div class="lk-actions">
+        <a class="lk-btn ink" href="/home">Back to Quant Bot</a>
+        <a class="lk-btn ghost" id="lk-switch" href="/auth/logout">Use another account</a>
+      </div>
+      <p class="lk-fine"><a href="/terms" target="_blank" rel="noopener">Terms</a><span aria-hidden="true">&middot;</span><a href="/privacy" target="_blank" rel="noopener">Privacy</a></p>
     </div>
   </section>
 
