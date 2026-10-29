@@ -18,7 +18,11 @@ const { parseDuration } = require('../../utils/duration');
 const { applyEmbedImage, replaceFiles } = require('../../utils/embedAttachments');
 const messageStyle = require('../../utils/messageStyle');
 
-const { buildLiveV2, buildClosedV2, buildEmptyV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
+const { buildLiveV2, buildClosedV2, buildEmptyV2, buildDrawingV2, IS_COMPONENTS_V2 } = require('../../utils/dropCardV2');
+const { renderGiftDrawGif } = require('../../utils/giftDrawVisual');
+
+// How long the "Drawing winners…" card shows before the reveal card replaces it.
+const DRAWING_MS = 4000;
 
 /**
  * Turn a panel banner value into something Components V2 can show.
@@ -90,6 +94,7 @@ function resolveGiveawayBanner(imageUrl, guildId, opts = {}) {
             tagline: endedTagline,
             dropId: opts.dropId ? String(opts.dropId) : (copy.dropId || ''),
             noEntries,
+            drawn: !noEntries,
           };
           copy.tagline = endedTagline;
           copy.heading = endedHeading;
@@ -922,6 +927,23 @@ async function endGiveaway(message, meta) {
   };
   writeJson('giveaways_ended.json', allEnded);
 
+  // The winners are already picked and saved; the card shows the gift box
+  // shuffling tickets for a few seconds before the reveal card lands. If the
+  // GIF can't be drawn or the edit fails, it goes straight to the reveal.
+  try {
+    const gif = renderGiftDrawGif({ dropId: shortId });
+    const gifName = 'giveaway_drawing.gif';
+    await message.edit({
+      ...buildDrawingV2({ winnersCount, gifName: gif ? gifName : null }),
+      content: null,
+      embeds: [],
+      ...replaceFiles(gif ? [{ attachment: gif, name: gifName }] : []),
+    });
+    await new Promise((resolve) => setTimeout(resolve, DRAWING_MS));
+  } catch (err) {
+    console.warn('[GIVEAWAY END] drawing card skipped:', err.message ?? err);
+  }
+
   const iconUrl = guildBrandAvatar(message.guild?.id, message.guild) || null;
   const closedBanner = resolveGiveawayBanner(imageUrl, message.guild?.id, {
     winners: winnersCount,
@@ -945,7 +967,8 @@ async function endGiveaway(message, meta) {
       ...closed,
       content: null,
       embeds: [],
-      files: closedBanner.files.length ? closedBanner.files : undefined,
+      // attachments: [] drops the drawing GIF so only the reveal banner stays
+      ...replaceFiles(closedBanner.files),
     });
   } catch (err) {
     console.error('[GIVEAWAY END] Could not update the giveaway message:', err.message ?? err);
