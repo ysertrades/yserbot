@@ -471,9 +471,17 @@ async function route(req, res, client) {
   // Add the bot to a server. A curated permission set rather than
   // Administrator: kick, ban, timeout, manage roles/channels/messages/threads,
   // and the ordinary read/send/embed/attach/react/history.
+  // Early access: only the bot's owners, signed in to the panel, can add it.
+  // Everyone else lands back on the landing page, which explains why.
+  if (p === '/api/public/invite-access') {
+    const s = auth.sessionFor(req);
+    return json(res, 200, { allowed: !!(s && auth.isOwner(s.uid)) });
+  }
   if (p === '/invite') {
     const id = auth.config().clientId;
     if (!id) return send(res, 503, 'The bot is not configured yet.', { 'content-type': 'text/plain' });
+    const s = auth.sessionFor(req);
+    if (!(s && auth.isOwner(s.uid))) return redirect(res, '/home?invite=closed');
     const to = new URL('https://discord.com/oauth2/authorize');
     to.searchParams.set('client_id', id);
     to.searchParams.set('scope', 'bot applications.commands');

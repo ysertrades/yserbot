@@ -1,0 +1,49 @@
+/* Early-access card for "Add to Discord" (invite-gate.js): one of the landing page's dark
+   panel cards, dropping in at the top for five seconds. Flat, crisp, no glow. */
+.gate { position: fixed; left: 0; right: 0; top: max(16px, env(safe-area-inset-top)); z-index: 60; display: flex; justify-content: center; padding: 0 16px; pointer-events: none; }
+.gate-card { position: relative; display: flex; gap: 14px; align-items: flex-start; width: min(100%, 440px); padding: 16px 16px 18px; border-radius: 20px; overflow: hidden;
+  background: var(--card, #0c0d10); color: #f4f5f7; box-shadow: inset 0 0 0 1px var(--cardline, rgba(255,255,255,.07)), 0 18px 40px -18px rgba(26,33,51,.55);
+  opacity: 0; transform: translateY(-18px) scale(.96); transition: opacity .25s var(--ease), transform .45s var(--ease); }
+.gate.on { pointer-events: auto; }
+.gate.on .gate-card { opacity: 1; transform: none; animation: gate-in .6s var(--ease) both; }
+@keyframes gate-in { 0% { transform: translateY(-22px) scale(.94); } 60% { transform: translateY(3px) scale(1.01); } 100% { transform: none; } }
+
+/* the logo tile wearing a padlock that snaps shut */
+.gate-mark { position: relative; flex: none; width: 44px; height: 44px; }
+.gate-mark img { width: 44px; height: 44px; border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+.gate-lock { position: absolute; right: -7px; bottom: -7px; width: 24px; height: 24px; padding: 3px; border-radius: 9px; background: #f4f5f7; color: #0c0d10; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.gate-lock rect { fill: currentColor; }
+.gate-lock .hole { stroke: #f4f5f7; }
+.gate-lock .shackle { transform-origin: 16px 11px; }
+.gate.on .gate-lock .shackle { animation: gate-shackle .7s var(--ease) .25s both; }
+@keyframes gate-shackle { 0% { transform: translateY(-3px) rotate(-28deg); } 55% { transform: translateY(1px) rotate(0); } 75% { transform: translateY(-1px); } 100% { transform: none; } }
+.gate.on .gate-lock { animation: gate-lock-pop .5s var(--ease) .55s both; }
+@keyframes gate-lock-pop { 0%, 100% { transform: none; } 40% { transform: scale(1.18); } }
+
+.gate-copy { min-width: 0; }
+.gate-copy b { display: block; font: 600 16px/1.25 var(--sans); letter-spacing: -.01em; }
+.gate-copy b em { color: #8b8f99; font-size: 18px; }
+.gate-copy p { margin: 4px 0 12px; font-size: 13.5px; line-height: 1.45; color: #a3a7b1; }
+.gate-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.gate-btn, .gate-x { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border: 0; border-radius: 999px; font: 500 13.5px/1 var(--sans); text-decoration: none; cursor: pointer; }
+.gate-btn { background: var(--blurple, #5865f2); color: #fff; }
+.gate-btn svg { width: 16px; height: 16px; fill: currentColor; }
+.gate-x { background: transparent; color: #c9ccd3; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+@media (hover: hover) { .gate-btn:hover { background: #6772f5; } .gate-x:hover { background: rgba(255,255,255,.06); } }
+
+/* five seconds, drained along the bottom edge; holding still while hovered */
+.gate-time { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.06); }
+.gate-time i { position: absolute; inset: 0; background: #f4f5f7; transform-origin: left; transform: scaleX(0); }
+.gate.on .gate-time i { animation: gate-drain var(--ms, 5000ms) linear both; }
+.gate.on.held .gate-time i { animation-play-state: paused; }
+@keyframes gate-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* the button that was pressed says no */
+.gate-no { animation: gate-no .45s ease; }
+@keyframes gate-no { 20%, 60% { translate: -5px 0; } 40%, 80% { translate: 5px 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gate.on .gate-card, .gate.on .gate-lock, .gate.on .gate-lock .shackle { animation: none; }
+  .gate-card { transform: none; }
+}
