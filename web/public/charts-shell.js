@@ -16,21 +16,19 @@
   var root = document.documentElement;
   var el = function (tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
-  /* ── the preview switch ──────────────────────────────────────────────────
-   * Off by default, so the panel looks exactly as before. ?preview=charts
-   * turns it on for this browser, ?preview=off turns it back off. */
-  var KEY = 'qb-charts-preview';
-  try {
-    var asked = new URLSearchParams(location.search).get('preview');
-    if (asked === 'charts') localStorage.setItem(KEY, '1');
-    if (asked === 'off') localStorage.removeItem(KEY);
-  } catch (e) { /* storage blocked: stays off */ }
-  var on = false;
-  try { on = localStorage.getItem(KEY) === '1'; } catch (e) { on = false; }
-  if (!on) return;
+  /* The redesign is on for everyone: index.html carries the qb-charts class
+   * and charts-skin.css, so the first paint is already in the new look. The
+   * old preview switch's flag is cleared so it never lingers. */
   root.classList.add('qb-charts');
-  var css = el('link'); css.rel = 'stylesheet'; css.href = '/charts-skin.css';
-  document.head.appendChild(css);
+  try { localStorage.removeItem('qb-charts-preview'); } catch (e) { /* storage blocked */ }
+
+  /* The skin is for the panel itself: the sign-in, locked, offline and setup
+   * pages have their own designs, so the stylesheet is only live while the
+   * panel view is showing (data-state="panel"). */
+  var skin = $('charts-skin');
+  var skinFor = function () { if (skin) skin.disabled = root.dataset.state !== 'panel'; };
+  skinFor();
+  new MutationObserver(skinFor).observe(root, { attributes: true, attributeFilter: ['data-state'] });
 
   /* ── the shell's extra pieces (ids kept; only additions and moves) ─────── */
   function shell() {
