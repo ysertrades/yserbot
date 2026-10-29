@@ -126,7 +126,7 @@ function clearCookie(name) {
   return `${name}=; Path=/; HttpOnly; Secure; SameSite=${sameSite()}; Max-Age=0${partitioned()}`;
 }
 
-function authorizeUrl({ popup = false, handoff = null } = {}) {
+function authorizeUrl({ popup = false, handoff = null, pick = false } = {}) {
   const c = config();
   const state = sign({
     n: crypto.randomBytes(16).toString('base64url'),
@@ -140,7 +140,9 @@ function authorizeUrl({ popup = false, handoff = null } = {}) {
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', 'identify guilds');
   url.searchParams.set('state', state);
-  url.searchParams.set('prompt', 'none');
+  // pick: Discord shows its screen (with "Not you?") instead of reusing the
+  // account it last approved, so "Use another account" can actually switch.
+  url.searchParams.set('prompt', pick ? 'consent' : 'none');
   return { url: url.toString(), state };
 }
 
@@ -188,6 +190,8 @@ async function completeLogin(code, client) {
   if (manageable.length === 0 && !c.ownerIds.includes(user.id)) {
     const err = new Error('no_manageable_guilds');
     err.code = 'no_manageable_guilds';
+    // Name and avatar only, so the early-access page can say who was turned away.
+    err.who = { id: user.id, name: user.global_name || user.username, avatar: user.avatar || null };
     throw err;
   }
   return {

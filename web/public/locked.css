@@ -25,6 +25,12 @@ html[data-state="locked"] body { background: #f9fbfb !important; }
   animation: lk-in .7s var(--ease) both; }
 .lk-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .lk-tile.you { border-radius: 50%; animation-name: lk-in-left; }
+.lk-dmark { display: none; }
+/* no account to show: Discord's mark on blurple, like the sign-in handshake */
+.lk-tile.you.mark { border-radius: 22px; display: grid; place-items: center; background: linear-gradient(180deg, #7480ff, var(--blurple)); }
+.lk-tile.you.mark img { display: none; }
+.lk-tile.you.mark .lk-dmark { display: block; width: 40px; height: 40px; fill: #fff; }
+.lk-who[hidden] { display: none; }
 .lk-tile.bot { animation-name: lk-in-right; }
 @keyframes lk-in-left { from { opacity: 0; transform: translateX(26px) scale(.9); } }
 @keyframes lk-in-right { from { opacity: 0; transform: translateX(-26px) scale(.9); } }

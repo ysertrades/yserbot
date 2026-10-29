@@ -164,7 +164,7 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
   <section class="view" data-view="locked">
     <div class="lk">
       <div class="lk-art" aria-hidden="true">
-        <span class="lk-tile you"><img id="lk-avatar" alt="" referrerpolicy="no-referrer"></span>
+        <span class="lk-tile you" id="lk-you"><img id="lk-avatar" alt="" referrerpolicy="no-referrer"><svg class="lk-dmark" viewBox="0 0 24 24"><path d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18 18 0 0 0-5.6 0L8.6 3a19.5 19.5 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18a19.8 19.8 0 0 0 6 3l1.3-2.1c-.7-.3-1.4-.6-2-1l.5-.4a14 14 0 0 0 12.2 0l.5.4-2 1 1.3 2.1a19.7 19.7 0 0 0 6-3c.5-5.1-.8-9.6-3.6-13.6ZM8.1 15.3c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm7.8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg></span>
         <svg class="lk-wire" viewBox="0 0 240 60" preserveAspectRatio="none"><path class="l" d="M4 30 C 40 6, 80 6, 102 30"/><path class="r" d="M138 30 C 160 54, 200 54, 236 30"/></svg>
         <span class="lk-lock"><svg viewBox="0 0 24 24"><path class="shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/><rect x="5" y="11" width="14" height="10" rx="3"/><path class="hole" d="M12 15v2"/></svg></span>
         <span class="lk-tile bot"><img src="/logo-256.jpg" alt=""></span>
@@ -172,7 +172,7 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
       <a class="lg-badge lk-badge" href="/home"><img src="/logo-64.jpg" alt="" width="22" height="22">Quant Bot<i class="lk-dot"></i><span>Early access</span></a>
       <h1>Admins only. <em>for now.</em></h1>
       <p class="lk-lead">Quant Bot is in early access, so only admins can open the panel. Got an invite? Sign in with the Discord account it was sent to.</p>
-      <p class="lk-who"><img id="lk-who-img" alt="" referrerpolicy="no-referrer"><span>Signed in as <b id="lk-name">you</b></span></p>
+      <p class="lk-who" id="lk-who"><img id="lk-who-img" alt="" referrerpolicy="no-referrer"><span>Signed in as <b id="lk-name">you</b></span></p>
       <div class="lk-actions">
         <a class="lk-btn ink" href="/home">Back to Quant Bot</a>
         <a class="lk-btn ghost" id="lk-switch" href="/auth/logout">Use another account</a>

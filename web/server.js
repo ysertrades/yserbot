@@ -558,6 +558,7 @@ async function route(req, res, client) {
     const { url: to, state } = auth.authorizeUrl({
       popup: url.searchParams.get('popup') === '1',
       handoff: url.searchParams.get('h'),
+      pick: url.searchParams.get('pick') === '1',
     });
     return redirect(res, to, { 'set-cookie': auth.cookie(auth.STATE_COOKIE, state, auth.STATE_TTL_MS) });
   }
@@ -597,7 +598,20 @@ async function route(req, res, client) {
     } catch (err) {
       const reason = err.code === 'no_manageable_guilds' ? 'no_access' : 'login_failed';
       if (reason === 'login_failed') console.error('[Panel] login failed:', err.message);
-      return redirect(res, `/?error=${reason}`, { 'set-cookie': auth.clearCookie(auth.STATE_COOKIE) });
+      const cookies = [auth.clearCookie(auth.STATE_COOKIE)];
+      // Turned away (early access): no session is made, but the page gets the
+      // account's name and avatar for five minutes, so the "Admins only" page can
+      // show who is signed in to Discord. Readable by the page on purpose; it
+      // grants nothing.
+      if (reason === 'no_access' && err.who) {
+        const who = Buffer.from(JSON.stringify({
+          id: String(err.who.id || '').slice(0, 25),
+          name: String(err.who.name || '').slice(0, 64),
+          avatar: err.who.avatar ? String(err.who.avatar).slice(0, 64) : null,
+        })).toString('base64url');
+        cookies.push(`qb_denied=${who}; Path=/; Secure; SameSite=Lax; Max-Age=300`);
+      }
+      return redirect(res, `/?error=${reason}`, { 'set-cookie': cookies });
     }
   }
 

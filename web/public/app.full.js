@@ -352,8 +352,16 @@ function toast(message, kind = '') {
 
 const authHeaders = () => (state.token ? { authorization: `Bearer ${state.token}` } : {});
 
-async function get(path) {
-  const res = await fetch(path, { credentials: 'same-origin', headers: authHeaders() });
+async function get(path, { timeoutMs = 0 } = {}) {
+  let signal, timer;
+  if (timeoutMs) {
+    const ctl = new AbortController();
+    timer = setTimeout(() => ctl.abort(), timeoutMs);
+    signal = ctl.signal;
+  }
+  let res;
+  try { res = await fetch(path, { credentials: 'same-origin', headers: authHeaders(), signal }); }
+  finally { clearTimeout(timer); }
   if (!res.ok) {
     const err = new Error(`${path} → ${res.status}`);
     err.status = res.status;
@@ -597,6 +605,12 @@ function showLogin() {
   if (embedded) wireEmbeddedLogin();
 
   const code = new URLSearchParams(location.search).get('error');
+  // Signed in to Discord fine, but no server here runs the bot: the early-access
+  // page, not a red line under the sign-in button.
+  if (code === 'no_access') {
+    try { history.replaceState(null, '', location.pathname); } catch (_) {}
+    return showLocked({ user: takeDeniedUser(), signedIn: false });
+  }
   if (code) {
     const p = $('#login-error');
     p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
@@ -738,28 +752,93 @@ function pollHandoff(id) {
  * same words as the landing page's Add to Discord card.
  */
 function showLocked(me) {
-  const src = discordAvatarUrl(me.user);
-  for (const id of ['#lk-avatar', '#lk-who-img']) {
-    const img = $(id);
-    img.src = src;
-    img.onerror = () => { img.style.visibility = 'hidden'; };
+  const user = me?.user || null;
+  if (user?.id) {
+    const src = discordAvatarUrl(user);
+    for (const id of ['#lk-avatar', '#lk-who-img']) {
+      const img = $(id);
+      img.src = src;
+      img.onerror = () => { img.style.visibility = 'hidden'; };
+    }
+    $('#lk-name').textContent = user.name || 'you';
+  } else {
+    // Turned away at sign-in with nothing to show: Discord's own mark stands in.
+    $('#lk-you').classList.add('mark');
+    $('#lk-who').hidden = true;
   }
-  $('#lk-name').textContent = me.user?.name || 'you';
+  // Discord's account screen, so a different account can be picked.
+  const pick = '/auth/login?pick=1';
   $('#lk-switch').addEventListener('click', async (e) => {
     e.preventDefault();
-    try {
-      await fetch('/auth/logout', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { ...authHeaders(), 'x-csrf-token': me.csrf || '' },
-      });
-    } catch { /* the local clear and the reload still happen */ }
-    state.token = null;
-    remember(null);
-    location.replace('/');
+    if (me?.signedIn) {
+      try {
+        await fetch('/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { ...authHeaders(), 'x-csrf-token': me.csrf || '' },
+        });
+      } catch { /* the local clear and the redirect still happen */ }
+      state.token = null;
+      remember(null);
+    }
+    location.replace(pick);
   });
   root.dataset.state = 'locked';
   bootReady();
+}
+
+/** Who sign-in just turned away (early access), from the server's five-minute cookie. */
+function takeDeniedUser() {
+  const m = document.cookie.match(/(?:^|;\s*)qb_denied=([A-Za-z0-9_-]+)/);
+  if (!m) return null;
+  document.cookie = 'qb_denied=; Path=/; Max-Age=0; Secure; SameSite=Lax';
+  try {
+    const u = JSON.parse(atob(m[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return /^\d{5,25}$/.test(String(u.id || '')) ? { id: String(u.id), name: String(u.name || ''), avatar: u.avatar || null } : null;
+  } catch { return null; }
+}
+
+/**
+ * /api/me with a time limit and a few retries. On a phone the first request
+ * after opening the panel from the landing page could hang with no answer (or
+ * land while the bot was restarting), which left "Loading…" on screen until a
+ * manual reload. Real answers (401, 503 setup) come back at once, untouched.
+ */
+async function getMe() {
+  const waits = [0, 1200, 2500, 4000];
+  let last;
+  for (let i = 0; i < waits.length; i++) {
+    if (waits[i]) {
+      setLoadingText('Still connecting…');
+      await new Promise(r => setTimeout(r, waits[i]));
+    }
+    try { return await get('/api/me', { timeoutMs: 6000 }); }
+    catch (err) {
+      last = err;
+      if (err.status && err.status < 500) throw err;
+      if (err.status === 503 && err.body?.missing) throw err;
+    }
+  }
+  throw last;
+}
+
+function setLoadingText(text) {
+  const p = document.querySelector('.view[data-view="loading"] .muted');
+  if (p) p.textContent = text;
+}
+
+function showOffline() {
+  const box = document.querySelector('.view[data-view="loading"] .panel');
+  if (box) {
+    const again = el('button', 'btn primary', 'Try again');
+    again.type = 'button';
+    again.addEventListener('click', () => location.reload());
+    box.replaceChildren(el('p', 'muted', 'Couldn’t reach Quant Bot just now. It may be restarting.'), again);
+  }
+  root.dataset.state = 'loading';
+  bootReady();
+  // The loading view stays hidden until the page counts as booted; this screen must show regardless.
+  root.classList.add('booted');
 }
 
 function showSetup(missing) {
@@ -12308,9 +12387,13 @@ async function main() {
 
   let me;
   try {
-    me = await get('/api/me');
+    me = await getMe();
   } catch (err) {
     if (err.status === 503 && err.body?.missing) return showSetup(err.body.missing);
+    // No answer at all (the request hung or the bot was restarting): say so and
+    // offer a retry, rather than a "Loading…" that never ends or a sign-in page
+    // for somebody who is signed in.
+    if (!err.status || err.status >= 500) return showOffline();
 
     // A stored token that no longer works is worse than none — it would keep
     // failing silently on every load. Throwing it away and asking once more is
@@ -12323,9 +12406,10 @@ async function main() {
       state.token = null;
       remember(null);
       try {
-        me = await get('/api/me');
+        me = await getMe();
       } catch (retry) {
         if (retry.status === 503 && retry.body?.missing) return showSetup(retry.body.missing);
+        if (!retry.status || retry.status >= 500) return showOffline();
         return showLogin();
       }
     } else {
@@ -12341,7 +12425,7 @@ async function main() {
   if (me.token) { state.token = me.token; remember(me.token); }
   // Early access: no server with the bot in it and not an owner means nothing
   // to manage, so the panel is not shown at all.
-  if (!me.isOwner && !(me.guilds || []).length) return showLocked(me);
+  if (!me.isOwner && !(me.guilds || []).length) return showLocked({ ...me, signedIn: true });
   state.guilds = me.guilds;
   state.homeGuildIds = new Set((me.guilds || []).map(g => g.id));
   state.me = me.user;
