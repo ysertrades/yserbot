@@ -84,6 +84,47 @@
     return sha256(parts.join('§'));
   }
 
+  /* ── location: the device's own fix, never a guess from the address ─────── */
+  /*
+   * Watches for up to 8 seconds and keeps the most accurate reading (a phone's
+   * first answer is often a rough Wi-Fi one that GPS then sharpens), stopping
+   * early once it is within 25 m. The server compares it only when it is
+   * within 100 m, and keeps only a one-way hash of the ~40 m area.
+   */
+  function getLocation(mode) {
+    if (mode === 'off') return Promise.resolve(null);
+    if (!navigator.geolocation) return Promise.resolve({ error: 'unavailable' });
+    return new Promise(function (resolve) {
+      var best = null, id = null, finished = false;
+      function finish(v) {
+        if (finished) return;
+        finished = true;
+        if (id !== null) try { navigator.geolocation.clearWatch(id); } catch (e) {}
+        resolve(v || (best ? { lat: best.latitude, lon: best.longitude, acc: best.accuracy } : { error: 'unavailable' }));
+      }
+      setTimeout(function () { finish(null); }, 8000);
+      try {
+        id = navigator.geolocation.watchPosition(function (p) {
+          if (!best || p.coords.accuracy < best.accuracy) best = p.coords;
+          if (best.accuracy <= 25) finish(null);
+        }, function (err) {
+          if (err && err.code === 1) finish({ error: 'denied' });
+          else if (!best && err && err.code === 3) { /* keep waiting for the timeout */ }
+          else if (!best) finish({ error: 'unavailable' });
+        }, { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 });
+      } catch (e) { finish({ error: 'unavailable' }); }
+    });
+  }
+
+  /* ── the logo: the first of the server's, the bot's, ours that loads ────── */
+  function setLogo(list) {
+    var img = $('brand-logo'), i = 0;
+    if (!img || !list || !list.length) return;
+    img.onload = function () { img.classList.add('ready'); };
+    img.onerror = function () { i += 1; if (i < list.length) img.src = list[i]; else { img.onerror = null; img.src = '/logo-128.jpg'; } };
+    img.src = list[0];
+  }
+
   /* ── particles + confetti on one canvas ─────────────────────────────────── */
   /*
    * Smooth on any phone: motion is per second, not per frame (so 60 Hz and
@@ -166,14 +207,17 @@
       setText('sub', 'One person, one entry — and that’s you.');
       setText('next', '');
       $('next').innerHTML = 'Now tap <b>Finish verification</b> on the giveaway to lock in your entry.';
-      [1, 2, 3].forEach(function (n) { step(n, 'ok'); });
+      [1, 2, 3, 4].forEach(function (n) { step(n, 'ok'); });
       confetti();
       if (navigator.vibrate) try { navigator.vibrate([18, 40, 18]); } catch (e) {}
     } else if (kind === 'flagged') {
+      var why = String((data && data.reason) || '');
       setText('title', 'Entry on hold');
-      setText('sub', 'This device already verified another account in this server.');
-      $('next').textContent = 'If that’s a mistake (a shared computer, say), a moderator can approve you in one tap.';
-      step(1, 'ok'); step(2, 'ok'); step(3, 'bad');
+      setText('sub', /location/.test(why) ? 'Another account in this server already verified from this same place.'
+        : /internet connection/.test(why) ? 'Another account in this server already verified on this same internet connection.'
+        : 'This device already verified another account in this server.');
+      $('next').textContent = 'Living with someone who entered too, or on a shared computer? A moderator can approve you in one tap.';
+      step(1, 'ok'); step(2, 'ok'); step(3, 'ok'); step(4, 'bad');
     } else {
       $('next').textContent = '';
     }
@@ -192,18 +236,25 @@
     setState('checking');
     $('hold-hint').textContent = 'Checking…';
     shield.disabled = true;
+    [1, 2, 3, 4].forEach(function (n) { step(n, ''); });
     step(1, 'run');
+    var mode = (info && info.location) || 'required';
+    var locP = getLocation(mode);   // asks for permission right after the hold
     var dev = deviceId();
     var fpP = fingerprint();
     await wait(650);
     step(1, 'ok'); step(2, 'run');
     var fp = await fpP;
     await wait(650);
-    step(2, 'ok'); step(3, 'run');
+    step(2, 'ok');
+    if (mode !== 'off') step(3, 'run');
+    var location = await locP;
+    if (mode !== 'off') { await wait(350); step(3, location && !location.error ? 'ok' : 'skip'); }
+    step(4, 'run');
     var started = Date.now();
     var out = null, status = 0;
     try {
-      var r = await fetch('/api/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t: token, device: dev, fingerprint: fp }) });
+      var r = await fetch('/api/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ t: token, device: dev, fingerprint: fp, location: location }) });
       status = r.status;
       out = await r.json().catch(function () { return {}; });
     } catch (e) { out = null; }
@@ -211,6 +262,19 @@
     var left = 700 - (Date.now() - started);
     if (left > 0) await wait(left);
     if (!out) return fail('No connection', 'Check your internet and try again.', null), resetHold();
+    // Fixable answers: the link is not used up, so holding again retries.
+    if (out.status === 'vpn') {
+      step(1, 'bad'); step(4, '');
+      setText('title', 'Switch off your VPN');
+      setText('sub', 'VPNs, proxies and iCloud Private Relay hide which connection you’re on. Turn it off, then hold the shield again.');
+      return resetHold('Hold again');
+    }
+    if (out.status === 'need_location') {
+      step(3, 'bad'); step(4, '');
+      setText('title', 'Allow location to enter');
+      setText('sub', 'This server checks that two accounts aren’t entering from the same place. Your position is never stored — only a one-way code for a small area. Allow location for this page (in your browser’s site settings if it doesn’t ask), then hold again.');
+      return resetHold('Hold again');
+    }
     if (status === 409 && out.status) return showResult(out.status === 'verified' ? 'verified' : 'flagged', out);
     if (status === 410 || out.error === 'expired') return fail('This link has expired', 'Links last 15 minutes and work once.', out.returnUrl);
     if (out.error) return fail('That link doesn’t work', 'Open a fresh one from the giveaway in Discord.', out.returnUrl);
@@ -236,11 +300,11 @@
     cancelAnimationFrame(holdRaf);
     holdRaf = requestAnimationFrame(tickHold);
   }
-  function resetHold() {
+  function resetHold(hint) {
     done = false;
     shield.disabled = false;
     setState('ready');
-    $('hold-hint').textContent = 'Press & hold';
+    $('hold-hint').textContent = hint || 'Press & hold';
     setP(0);
   }
   function stopHold() {
@@ -277,7 +341,8 @@
     } catch (e) { return fail('No connection', 'Check your internet and reload.', null); }
 
     setText('brand-name', info.brand || 'QuantLab');
-    if (info.logo) $('brand-logo').src = info.logo;
+    setLogo(info.logos || (info.logo ? [info.logo] : []));
+    if (info.location === 'off') { var ls = document.querySelector('.steps li[data-step="3"]'); if (ls) ls.hidden = true; }
     if (info.accent) document.documentElement.style.setProperty('--accent', info.accent);
     if (info.serverIcon) { var si = $('server-icon'); si.src = info.serverIcon; si.hidden = false; $('server-ph').hidden = true; }
     else setText('server-ph', String(info.server || '?').charAt(0).toUpperCase());

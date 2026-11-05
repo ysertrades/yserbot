@@ -169,8 +169,14 @@ function currentLogo() {
   return l && l.data ? l : null;
 }
 
+/** True when this server's saved logo link was tried and no longer loads (e.g. an expired Discord attachment). */
+function logoFailed(guildId) {
+  const have = logos.get(guildId);
+  return !!(have && have.failed && have.url === getBrand(guildId).logoUrl);
+}
+
 module.exports = {
   DEFAULTS, getBrand, setBrand,
   run, enter, current, currentGuildId, cacheKey, guildIdOf,
-  warmLogo, warmAll, currentLogo,
+  warmLogo, warmAll, currentLogo, logoFailed,
 };

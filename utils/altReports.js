@@ -13,7 +13,7 @@
  *   @Staff
  *   ### 🛡️ Alt caught · entry held
  *   @alt looks like a second account of @main
- *   **Match** 🟥 device · ⬜ browser · ⬜ connection — near-certain
+ *   **Match** 🟥 device · ⬜ browser · ⬜ network · ⬜ location — near-certain
  *   > 🆕 @alt — created 3 days ago · joined 2 hours ago
  *   > 👤 @main — created 2 years ago · joined 8 months ago
  *   **Giveaway** 🎁 Nitro · QL-12 · jump
@@ -48,15 +48,17 @@ const ts = (ms, style = 'R') => (ms ? `<t:${Math.floor(ms / 1000)}:${style}>` : 
 
 function strength(sig) {
   if (!sig) return '';
-  if (sig.device) return 'near-certain';
-  if (sig.browser && sig.connection) return 'strong';
+  const net = sig.network ?? sig.connection;
+  if (sig.device || (sig.location && net)) return 'near-certain';
+  if (sig.location || (sig.browser && net)) return 'strong';
   return 'possible';
 }
 
 function signalLine(sig) {
   if (!sig) return null;
   const s = (on, name) => `${on ? '🟥' : '⬜'} ${name}`;
-  return `**Match** ${s(sig.device, 'device')} · ${s(sig.browser, 'browser')} · ${s(sig.connection, 'connection')} — *${strength(sig)}*`;
+  const net = sig.network ?? sig.connection;
+  return `**Match** ${s(sig.device, 'device')} · ${s(sig.browser, 'browser')} · ${s(net, 'network')} · ${s(sig.location, 'location')} — *${strength(sig)}*`;
 }
 
 function accountLine(guild, userId, icon) {

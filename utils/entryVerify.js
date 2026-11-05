@@ -10,12 +10,27 @@
  * already verified in that server:
  *
  *   device token  — a random id the page keeps in that browser. The same id
- *                   on a second account is the same browser: blocked.
+ *                   on a second account is the same browser: held.
  *   fingerprint   — screen, timezone, graphics and similar. Phones of one
- *                   model share it, so on its own it only notes; together
- *                   with the same connection it blocks.
- *   connection    — the IP the page was opened from. Households, schools and
- *                   mobile networks share one, so on its own it only notes.
+ *                   model share it, so on its own it only notes.
+ *   network       — the internet connection the page was opened from: the
+ *                   public IPv4 address, or the /64 block for IPv6 (every
+ *                   device on one home connection gets its own IPv6 address
+ *                   inside that block). Every device on one Wi-Fi shares it,
+ *                   so a second account on it is held — except on a mobile
+ *                   carrier, where strangers share addresses, so there it
+ *                   only notes. A VPN, proxy or data-centre address is turned
+ *                   away with "switch it off and try again" (utils/ipIntel.js).
+ *   location      — the device's own position (GPS / Wi-Fi), asked for by the
+ *                   page, never guessed from the address. Only a fix the
+ *                   device reports as accurate to 100 m or better is compared;
+ *                   it is reduced to ~40 m map cells (utils/geocell.js), and a
+ *                   second account within the block around one is held. This
+ *                   is what catches someone who switches network to dodge.
+ *                   Each server picks: required (default), optional, or off.
+ *
+ * A match never removes anyone: it holds the entry for staff to approve or act
+ * on, because a shared house or office is a real thing.
  *
  * Nothing raw is stored. Each signal is an HMAC of the value, keyed per
  * server, so the bot can tell two accounts match without being able to read
@@ -24,6 +39,7 @@
 
 const crypto = require('node:crypto');
 const { readJson, writeJson } = require('./jsonStorage');
+const { cellsAround } = require('./geocell');
 
 const FILE = 'entryverify.json';
 const TOKEN_TTL_MS = 15 * 60 * 1000;
@@ -73,6 +89,20 @@ function setEnabled(guildId, on) {
   return !!on;
 }
 
+const LOCATION_MODES = ['required', 'optional', 'off'];
+/** required (default): no entry without sharing it · optional: compared when shared · off: never asked. */
+function locationMode(guildId) {
+  const m = store().settings[guildId]?.location;
+  return LOCATION_MODES.includes(m) ? m : 'required';
+}
+function setLocationMode(guildId, mode) {
+  if (!LOCATION_MODES.includes(mode)) return null;
+  const s = store();
+  s.settings[guildId] = { ...(s.settings[guildId] || {}), location: mode };
+  writeJson(FILE, s);
+  return mode;
+}
+
 /* ── one-time links ─────────────────────────────────────────────────────── */
 
 const b64 = buf => Buffer.from(buf).toString('base64url');
@@ -117,53 +147,108 @@ function usableIp(ip) {
   return v;
 }
 
+/** The connection a device sits on: an IPv4 address, or the /64 block of an IPv6 one. */
+function networkOf(ip) {
+  const v = usableIp(ip);
+  if (!v || !v.includes(':')) return v;
+  const [head, tail = ''] = v.toLowerCase().split('::');
+  const a = head ? head.split(':') : [];
+  const b = tail ? tail.split(':') : [];
+  const full = [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill('0'), ...b];
+  return full.slice(0, 4).map(g => g.replace(/^0+(?=.)/, '')).join(':') + '::/64';
+}
+
+const MAX_LOCATION_ERROR_M = 100;
+
+/**
+ * Checks what has to be right before anything is recorded; the page shows the
+ * answer and the one-time link stays usable for another try.
+ * @returns {null | { status: 'vpn'|'need_location' }}
+ */
+function precheck(guildId, { intel, location }) {
+  if (intel?.ok && intel.vpn) return { status: 'vpn' };
+  if (locationMode(guildId) === 'required' && location?.error === 'denied') return { status: 'need_location' };
+  return null;
+}
+
 /**
  * Records a verification and decides it.
- * @returns {{ status: 'verified'|'flagged', reason?: string, matchedWith?: string[], notes: string[] }}
+ * location: { lat, lon, acc } from the device, or { error: 'denied'|'unavailable' }.
+ * intel: from utils/ipIntel.js ({ ok, mobile, vpn }).
+ * @returns {{ status: 'verified'|'flagged'|'vpn'|'need_location', reason?: string, matchedWith?: string[], notes: string[] }}
  */
-function record(guildId, userId, { ip, device, fingerprint, userAgent, messageId = null }) {
+function record(guildId, userId, { ip, device, fingerprint, userAgent, messageId = null, location = null, intel = null }) {
+  const early = precheck(guildId, { intel, location });
+  if (early) return { ...early, notes: [] };
+
   const s = store();
   const users = s.users[guildId] || (s.users[guildId] = {});
+  const mode = locationMode(guildId);
+  const fix = mode !== 'off' && location && Number.isFinite(location.lat) && Number.isFinite(location.lon)
+    && Math.abs(location.lat) <= 90 && Math.abs(location.lon) <= 180 ? location : null;
+  const precise = !!(fix && Number.isFinite(fix.acc) && fix.acc > 0 && fix.acc <= MAX_LOCATION_ERROR_M);
+  let loc = null;
+  if (precise) {
+    const { cell, near } = cellsAround(fix.lat, fix.lon);
+    loc = { cell: hashSignal(guildId, 'loc', cell), near: near.map(c => hashSignal(guildId, 'loc', c)) };
+  }
   const mine = {
     ip: hashSignal(guildId, 'ip', usableIp(ip)),
+    net: hashSignal(guildId, 'net', networkOf(ip)),
+    mobile: !!intel?.mobile,
     dev: hashSignal(guildId, 'dev', String(device || '').slice(0, 80)),
     fp: hashSignal(guildId, 'fp', String(fingerprint || '').slice(0, 200)),
+    loc,
   };
 
   const sameDevice = [];
-  const sameFpAndIp = [];
-  const sameIp = [];
+  const sameLocation = [];
+  const sameNetwork = [];
+  const sharedMobile = [];
   const sameFp = [];
   for (const [otherId, o] of Object.entries(users)) {
     if (otherId === String(userId) || !o) continue;
+    // Older records (before networks were kept) compare on the exact address.
+    const net = !!(mine.net && (o.net ? o.net === mine.net : o.ip && o.ip === mine.ip));
     if (mine.dev && o.dev === mine.dev) sameDevice.push(otherId);
-    else if (mine.fp && mine.ip && o.fp === mine.fp && o.ip === mine.ip) sameFpAndIp.push(otherId);
-    else {
-      if (mine.ip && o.ip === mine.ip) sameIp.push(otherId);
-      if (mine.fp && o.fp === mine.fp) sameFp.push(otherId);
-    }
+    else if (loc && o.loc?.cell && loc.near.includes(o.loc.cell)) sameLocation.push(otherId);
+    else if (net && (mine.mobile || o.mobile)) sharedMobile.push(otherId);
+    else if (net) sameNetwork.push(otherId);
+    if (mine.fp && o.fp === mine.fp && o.dev !== mine.dev) sameFp.push(otherId);
   }
 
+  const n = (k, label) => `${label} ${k.length} other account${k.length === 1 ? '' : 's'}`;
   const notes = [];
-  if (sameIp.length) notes.push(`same connection as ${sameIp.length} other account${sameIp.length === 1 ? '' : 's'}`);
-  if (sameFp.length) notes.push(`same browser profile as ${sameFp.length} other account${sameFp.length === 1 ? '' : 's'}`);
-  if (!mine.ip) notes.push('connection not checked');
+  if (sharedMobile.length) notes.push(n(sharedMobile, 'shares a mobile-carrier address with'));
+  if (sameFp.length) notes.push(n(sameFp, 'same browser profile as'));
+  if (!mine.net) notes.push('connection not checked');
+  if (intel && !intel.ok && mine.net) notes.push('connection type unknown');
+  if (mine.mobile) notes.push('on mobile data');
+  if (mode !== 'off') {
+    if (!fix) notes.push(location?.error === 'denied' ? 'location not shared' : 'location unavailable on this device');
+    else if (!precise) notes.push(`location too rough to compare (±${Math.round(fix.acc || 0)} m)`);
+  }
 
   let status = 'verified';
   let reason = null;
   let matchedWith = [];
   if (sameDevice.length) {
     status = 'flagged'; reason = 'same device as another account'; matchedWith = sameDevice;
-  } else if (sameFpAndIp.length) {
-    status = 'flagged'; reason = 'same browser and connection as another account'; matchedWith = sameFpAndIp;
+  } else if (sameLocation.length) {
+    status = 'flagged'; reason = 'same location as another account (within about 50 m)'; matchedWith = sameLocation;
+  } else if (sameNetwork.length) {
+    status = 'flagged'; reason = 'same internet connection as another account'; matchedWith = sameNetwork;
   }
   // Which signals the first match shares, for the report: lets staff see at a
   // glance how strong the match is (device alone is near-certain).
   const first = matchedWith[0] && users[matchedWith[0]];
+  const firstNet = !!(first && mine.net && (first.net ? first.net === mine.net : first.ip === mine.ip));
   const signals = first ? {
     device: !!(mine.dev && first.dev === mine.dev),
     browser: !!(mine.fp && first.fp === mine.fp),
-    connection: !!(mine.ip && first.ip === mine.ip),
+    network: firstNet,
+    connection: firstNet,   // the name older reports and panels read
+    location: !!(loc && first.loc?.cell && loc.near.includes(first.loc.cell)),
   } : null;
 
   const prev = users[userId] || {};
@@ -266,6 +351,7 @@ function summary(guildId, guild = null) {
   }));
   return {
     enabled: isEnabled(guildId),
+    location: locationMode(guildId),
     verified: rows.filter(r => r.status === 'verified').length,
     flagged: rows.filter(r => r.status !== 'verified').sort((a, b) => b.at - a.at).slice(0, 50),
     recent: rows.filter(r => r.status === 'verified').sort((a, b) => b.at - a.at).slice(0, 10),
@@ -294,7 +380,8 @@ function forget(guildId, userId) {
 }
 
 module.exports = {
-  TOKEN_TTL_MS, isEnabled, setEnabled, makeToken, readToken,
+  TOKEN_TTL_MS, isEnabled, setEnabled, locationMode, setLocationMode, LOCATION_MODES,
+  makeToken, readToken, precheck, networkOf,
   record, statusOf, entryOf, setOverride, summary, forget,
   openCase, getCase, updateCase, listCases,
 };

@@ -45,10 +45,40 @@ body { min-height: 100dvh; overflow-x: hidden; overscroll-behavior: none; -webki
 .mark { width: 40px; height: 40px; border-radius: 11px; object-fit: cover; background: var(--field); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .07); animation: pop .5s var(--ease) both .1s; }
 .mark.server { border-radius: 50%; animation-delay: .25s; }
 .mark.ph { display: grid; place-items: center; font-weight: 700; color: var(--muted); }
+/* Until a picture is actually loaded, a flat tile that breathes, never a broken "?" image. */
+.mark-wrap { position: relative; width: 40px; height: 40px; border-radius: 11px; background: var(--field); animation: pop .5s var(--ease) both .1s; }
+.mark-wrap .mark { position: absolute; inset: 0; opacity: 0; transition: opacity .35s var(--ease); animation: none; }
+.mark-wrap .mark.ready { opacity: 1; }
+.mark-wrap:not(:has(.mark.ready))::before,
+.mark.ph:empty::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: rgb(255 255 255 / .05); animation: breathe 1.4s ease-in-out infinite; }
+.mark.ph:empty { position: relative; }
+@keyframes breathe { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+/* A small status badge on the bot's picture: the answer lands here too. */
+.mark-badge { position: absolute; right: -4px; bottom: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); box-shadow: 0 0 0 2px var(--panel); display: grid; place-items: center; }
+.mark-badge::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); opacity: .8; }
+body[data-state="checking"] .mark-badge::after { animation: dot .9s ease-in-out infinite; }
+body[data-state="verified"] .mark-badge { background: var(--good); animation: pop .4s var(--ease); }
+body[data-state="verified"] .mark-badge::after { width: 3px; height: 6px; border-radius: 0; background: none; border: solid #fff; border-width: 0 1.6px 1.6px 0; transform: translateY(-1px) rotate(45deg); opacity: 1; }
+body[data-state="flagged"] .mark-badge { background: var(--bad); animation: pop .4s var(--ease); }
+body[data-state="flagged"] .mark-badge::after { width: 6px; height: 1.6px; border-radius: 1px; background: #fff; opacity: 1; }
+/* The link: idle shimmer, a pulse travelling bot → server while checking, solid with the answer. */
 .link-dots { display: inline-flex; gap: 4px; }
-.link-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); opacity: .3; animation: dot 1.4s ease-in-out infinite; }
-.link-dots i:nth-child(2) { animation-delay: .2s; }
-.link-dots i:nth-child(3) { animation-delay: .4s; }
+.link-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); opacity: .3; animation: dot 1.4s ease-in-out infinite; transition: background-color .3s, opacity .3s, transform .3s; }
+.link-dots i:nth-child(2) { animation-delay: .15s; }
+.link-dots i:nth-child(3) { animation-delay: .3s; }
+.link-dots i:nth-child(4) { animation-delay: .45s; }
+.link-dots i:nth-child(5) { animation-delay: .6s; }
+body[data-state="checking"] .link-dots i { background: var(--accent); animation: travel .8s ease-in-out infinite; }
+body[data-state="checking"] .link-dots i:nth-child(2) { animation-delay: .1s; }
+body[data-state="checking"] .link-dots i:nth-child(3) { animation-delay: .2s; }
+body[data-state="checking"] .link-dots i:nth-child(4) { animation-delay: .3s; }
+body[data-state="checking"] .link-dots i:nth-child(5) { animation-delay: .4s; }
+body[data-state="verified"] .link-dots i { background: var(--good); opacity: 1; animation: none; }
+body[data-state="flagged"] .link-dots i { background: var(--bad); opacity: 1; animation: none; }
+@keyframes travel { 0%, 100% { opacity: .25; transform: none; } 40% { opacity: 1; transform: scale(1.5); } }
+.steps li.skip { color: var(--muted); }
+.steps li.skip .dot { box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / .14); }
+.steps li.skip .dot::after { content: ''; position: absolute; left: 4px; top: 7px; width: 8px; height: 1.5px; background: var(--muted); }
 @keyframes dot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 @keyframes pop { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
 
@@ -150,7 +180,7 @@ body[data-state="error"] .ring-fill { stroke: var(--warn); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-iteration-count: 1 !important; }
   .card, .result, .mark, .steps li.ok .dot { animation: fade-only 300ms ease-out both !important; }
-  .shield, .shield *, .pulse, .link-dots i, .steps li.run .dot { animation: none !important; }
+  .shield, .shield *, .pulse, .link-dots i, .steps li.run .dot, .mark-badge, .mark-badge::after, .mark-wrap::before, .mark.ph::before { animation: none !important; }
   .shield.holding { transform: none; }
   .fx { display: none; }
   body[data-state="verified"] .g-check, body[data-state="flagged"] .g-lock { stroke-dashoffset: 0; }

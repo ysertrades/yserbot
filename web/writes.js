@@ -534,6 +534,14 @@ Object.assign(OPS, {
       announce(ctx.client, guildId, ctx.session, `🛡️ **Giveaway entry check** ${on ? 'on' : 'off'}`, 'moderation').catch(() => {});
       return { ok: true, changed: [on ? 'entry check on' : 'entry check off'] };
     }
+    // Location: required | optional | off.
+    if ('location' in (body || {})) {
+      const mode = ev.setLocationMode(guildId, String(body.location));
+      if (!mode) return { error: 'bad_location_mode' };
+      const words = { required: 'required', optional: 'optional', off: 'off' };
+      announce(ctx.client, guildId, ctx.session, `📍 **Entry check location** ${words[mode]}`, 'moderation').catch(() => {});
+      return { ok: true, changed: [`location ${words[mode]}`] };
+    }
     // An alt case from the report: the same actions as its mod-log dropdown,
     // and the report message updates to match.
     if (body?.caseId) {
