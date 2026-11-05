@@ -612,6 +612,8 @@ function showLogin() {
     return showLocked({ user: takeDeniedUser(), signedIn: false });
   }
   if (code) {
+    // Read once; the address bar goes back to the bare page.
+    try { history.replaceState(null, '', location.pathname); } catch (_) {}
     const p = $('#login-error');
     p.textContent = LOGIN_ERRORS[code] || 'Login failed.';
     p.classList.remove('soft');
@@ -12121,6 +12123,7 @@ function showSection(name) {
 
   const prev = root.dataset.section;
   root.dataset.section = name;
+  showPath(name);
   const titleEl = document.getElementById('here');
   if (titleEl) titleEl.textContent = (SECTION_NAMES && SECTION_NAMES[name]) || name;
   for (const s of document.querySelectorAll('.section')) {
@@ -12215,15 +12218,35 @@ function initSections() {
       // another admin made from a different device in between.
       if (b.dataset.goto === 'owner') loadOwnerConsole();
       paintBar();
-      history.replaceState(null, '', `?g=${state.guildId}&s=${b.dataset.goto}`);
     });
   }
 }
 
+/*
+ * Clean addresses: the open tab is the path (bot.yser.app/overview), and the
+ * server you picked is remembered in this browser instead of riding in the
+ * URL. Old ?g=…&s=… links still open where they used to, then tidy up.
+ * Only a path that is one of the panel's own tabs is rewritten, so a host that
+ * mounts the panel at its own address (Whop's /experiences/…) keeps it.
+ */
+const GUILD_KEY = 'qb.guild';
+function sectionFromPath() {
+  const seg = location.pathname.replace(/^\/+|\/+$/g, '');
+  return /^[a-z-]+$/.test(seg) && document.querySelector(`#sections button[data-goto="${seg}"]`) ? seg : null;
+}
+function showPath(section) {
+  if (!section) return;
+  if (location.pathname !== '/' && !sectionFromPath()) return;
+  try { history.replaceState(null, '', `/${section}${location.hash}`); } catch (_) {}
+}
+function rememberGuild(id) { try { localStorage.setItem(GUILD_KEY, id); } catch (_) {} }
+function recallGuild() { try { return localStorage.getItem(GUILD_KEY); } catch (_) { return null; } }
+
 async function selectGuild(id) {
   const switched = state.guildId !== id;
   state.guildId = id;
-  history.replaceState(null, '', `?g=${id}&s=${root.dataset.section}`);
+  rememberGuild(id);
+  showPath(root.dataset.section);
   renderGuildPicker();
   // Only drop the previous overview when the server actually changes.
   // Clearing it on every select (including retries) is what left the panel
@@ -12457,13 +12480,18 @@ async function main() {
   root.dataset.state = 'panel';
   offerStorageAccess();
 
+  // The tab comes from the path (/composer); an old link's ?s= still works.
+  // The server: an old link's ?g=, else the one picked last in this browser.
   const params = new URLSearchParams(location.search);
-  const wanted = params.get('g');
+  const wanted = params.get('g') || recallGuild();
   // Always through showSection, including for the default — it is what puts
   // data-active on a section, and without it nothing would be visible at all.
-  const section = params.get('s');
+  const section = sectionFromPath() || params.get('s');
   const known = section && document.querySelector(`#sections button[data-goto="${section}"]`);
   showSection(known ? section : (root.dataset.section || 'overview'));
+  if (params.has('g') || params.has('s')) {
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (_) {}
+  }
 
   paintBar();
 
