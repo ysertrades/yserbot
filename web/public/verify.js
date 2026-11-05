@@ -3,7 +3,10 @@
  * The entry check page.
  *
  * The link the bot handed out carries a signed one-time code (?t=…) saying
- * which member and which giveaway this is for — no sign-in. Pressing and
+ * which member and which giveaway this is for — no sign-in. The server moves
+ * that code into a short-lived cookie and lands the member on plain /verify,
+ * so the page normally has no code of its own and the API reads the cookie;
+ * an old link that still shows ?t= works the same way. Pressing and
  * holding the shield reads three things from this browser and sends them:
  *
  *   device      — a random id this browser keeps (localStorage + cookie)
@@ -263,11 +266,11 @@
 
   /* ── load: who this is for ──────────────────────────────────────────────── */
   async function load() {
-    if (!token) return fail('Missing link', 'Open this page from the Verify me button on a giveaway.', null);
     try {
-      var r = await fetch('/api/verify/info?t=' + encodeURIComponent(token));
+      var r = await fetch('/api/verify/info' + (token ? '?t=' + encodeURIComponent(token) : ''));
       info = await r.json();
       if (!r.ok) {
+        if (info && info.error === 'missing_link') return fail('Missing link', 'Open this page from the Verify me button on a giveaway.', null);
         if (info && info.error === 'bad_link') return fail('That link doesn’t work', 'Open a fresh one from the giveaway in Discord.', null);
         return fail('Something went wrong', 'Try the link again in a moment.', null);
       }

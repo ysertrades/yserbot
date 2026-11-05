@@ -55,6 +55,11 @@ const RATE_LIMIT = { windowMs: 60_000, max: Number(process.env.PANEL_RATE_LIMIT)
 const AUTH_RATE_LIMIT = { windowMs: 60_000, max: 30 };
 // The public verification page: a handful of reads and one write per member.
 const VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 20 };
+// Holds the entry-check code after /verify?t=… redirects to the bare /verify.
+// The code itself expires after 15 minutes; the cookie outlives it a little so
+// an expired link still shows "expired" rather than "missing".
+const VERIFY_COOKIE = 'qb_verify';
+const VERIFY_COOKIE_TTL_MS = 30 * 60 * 1000;
 // Kick, Ban, Manage Channels, Add Reactions, View Channel, Send Messages,
 // Manage Messages, Embed Links, Attach Files, Read History, External Emoji,
 // Manage Roles, Manage Threads, Moderate Members.
@@ -413,7 +418,13 @@ async function route(req, res, client) {
    * Public on purpose: the member opening this has no panel session. What
    * proves who they are is the signed one-time code in the link the bot gave
    * them privately in Discord (utils/entryVerify.js). */
-  if (p === '/verify' || p === '/verify/') return serveStatic(res, 'verify.html');
+  // The link in Discord carries the code (?t=…); the address bar should not.
+  // It moves into a short-lived cookie and the member lands on plain /verify.
+  if (p === '/verify' || p === '/verify/') {
+    const t = url.searchParams.get('t');
+    if (t) return redirect(res, '/verify', { 'set-cookie': auth.cookie(VERIFY_COOKIE, t, VERIFY_COOKIE_TTL_MS) });
+    return serveStatic(res, 'verify.html');
+  }
   if (p === '/api/verify/info' || p === '/api/verify') {
     const ev = require('../utils/entryVerify');
     const ip = clientIp(req);
@@ -423,7 +434,9 @@ async function route(req, res, client) {
       try { body = await readJsonBody(req); }
       catch (err) { return json(res, 400, { error: err.message }); }
     }
-    const t = ev.readToken(req.method === 'POST' ? body.t : url.searchParams.get('t'));
+    const raw = (req.method === 'POST' ? body.t : url.searchParams.get('t')) || auth.parseCookies(req)[VERIFY_COOKIE];
+    if (!raw) return json(res, 400, { error: 'missing_link' });
+    const t = ev.readToken(raw);
     if (!t) return json(res, 400, { error: 'bad_link' });
     const guild = client.guilds.cache.get(t.g);
     if (!guild) return json(res, 404, { error: 'unknown_server' });
