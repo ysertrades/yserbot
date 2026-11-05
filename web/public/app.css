@@ -4275,6 +4275,10 @@ input[type="search"]::-webkit-search-cancel-button {
 .ev-top { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 0.6rem; margin: 0.6rem 0 0.8rem; }
 @media (max-width: 40rem) { .ev-top { grid-template-columns: 1fr; } }
 .ev-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+.ev-loc { grid-column: 1 / -1; display: grid; gap: 0.35rem; padding: 0.7rem 0.8rem; border: 1px solid var(--rule); border-radius: 12px; }
+.ev-loc-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.ev-loc-seg { display: flex; gap: 0.35rem; }
+.ev-loc .hint { margin: 0; }
 .ev-row .actions { margin-top: 0.4rem; }
 /* Alt cases: one card each, a coloured edge for where it stands, the match
    as a row of lit chips, and the same actions as the mod-log dropdown. */

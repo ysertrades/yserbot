@@ -60,6 +60,15 @@ const VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 20 };
 // an expired link still shows "expired" rather than "missing".
 const VERIFY_COOKIE = 'qb_verify';
 const VERIFY_COOKIE_TTL_MS = 30 * 60 * 1000;
+
+/** The device position the entry check page sends, checked: { lat, lon, acc } or { error }. */
+function readLocation(v) {
+  if (!v || typeof v !== 'object') return null;
+  if (v.error === 'denied' || v.error === 'unavailable') return { error: v.error };
+  const lat = Number(v.lat), lon = Number(v.lon), acc = Number(v.acc);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon, acc: Number.isFinite(acc) && acc > 0 ? acc : Infinity };
+}
 // Kick, Ban, Manage Channels, Add Reactions, View Channel, Send Messages,
 // Manage Messages, Embed Links, Attach Files, Read History, External Emoji,
 // Manage Roles, Manage Threads, Moderate Members.
@@ -444,8 +453,17 @@ async function route(req, res, client) {
     const saved = t.m ? client.commands?.get('giveaway')?.getActiveGiveaway?.(t.m) : null;
     const returnUrl = t.c && t.m ? `https://discord.com/channels/${t.g}/${t.c}/${t.m}` : `https://discord.com/channels/${t.g}`;
     const member = guild.members.cache.get(t.u);
+    // The page tries these in order and shows the first that loads: the
+    // server's own logo (a Discord attachment link can expire, which used to
+    // leave a broken "?" image), then the bot's profile picture, then ours.
+    const logos = [
+      b.logoUrl && !brand.logoFailed?.(t.g) ? b.logoUrl : null,
+      client.user?.displayAvatarURL?.({ size: 128, extension: 'png' }) || null,
+      '/logo-128.jpg',
+    ].filter(Boolean);
     const info = {
-      brand: b.name, logo: b.logoUrl || '/logo-128.jpg', accent: b.accent || null,
+      brand: b.name, logo: logos[0], logos, accent: b.accent || null,
+      location: ev.locationMode(t.g),
       server: guild.name, serverIcon: guild.iconURL({ size: 128, extension: 'png' }) || null,
       user: member?.displayName || member?.user?.username || null,
       prize: saved?.prize || null, returnUrl,
@@ -454,12 +472,19 @@ async function route(req, res, client) {
     };
     if (req.method !== 'POST') return json(res, 200, info);
     if (t.expired) return json(res, 410, { error: 'expired', ...info });
-    // Each link verifies once.
     if (usedVerifyCodes.has(t.n)) return json(res, 409, { error: 'used', ...info });
+    // A VPN, or location refused where it is required, is answered before the
+    // link is spent, so the member can fix it and try again on the same link.
+    const location = readLocation(body.location);
+    const intel = await require('../utils/ipIntel').lookup(ev.networkOf(ip) ? String(ip).replace(/^::ffff:/, '') : null);
+    const early = ev.precheck(t.g, { intel, location });
+    if (early) return json(res, 200, { ...info, status: early.status });
+    // Each link verifies once.
     usedVerifyCodes.set(t.n, t.e);
     for (const [n, exp] of usedVerifyCodes) if (exp < Date.now()) usedVerifyCodes.delete(n);
     const result = ev.record(t.g, t.u, {
       ip, device: body.device, fingerprint: body.fingerprint, userAgent: req.headers['user-agent'], messageId: t.m || null,
+      location, intel,
     });
     if (result.status === 'flagged' && result.reason) {
       // A fresh catch: staff get the alt report in the mod log (mentions,

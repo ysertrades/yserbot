@@ -2859,6 +2859,33 @@ function renderEntryVerify() {
   stats.append(stat(d.verified, 'Verified', 'info'), stat(d.flagged.length, 'On hold', 'bad'), stat(removed, 'Alts removed', 'warn'));
   top.append(sw, stats);
 
+  // Location: the device's own position, compared within ~50 m.
+  const mode = d.location || 'required';
+  const loc = el('div', 'ev-loc');
+  const locHead = el('div', 'ev-loc-head');
+  locHead.append(el('b', null, '📍 Location check'));
+  const seg = el('div', 'ev-loc-seg');
+  for (const [m, label] of [['required', 'Required'], ['optional', 'Optional'], ['off', 'Off']]) {
+    const b = el('button', 'chip-toggle', label);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(mode === m));
+    b.addEventListener('click', async () => {
+      if (mode === m) return;
+      b.disabled = true;
+      const out = await post('entryverify', { location: m }, { quiet: true });
+      b.disabled = false;
+      if (out) { d.location = m; host.dataset.sig = ''; renderEntryVerify(); toast(`Location check ${label.toLowerCase()}.`, 'good'); }
+    });
+    seg.append(b);
+  }
+  locHead.append(seg);
+  loc.append(locHead, el('p', 'hint', {
+    required: 'Members share their device location to enter. Two accounts within about 50 m of each other are held, even on different networks. Only a fix the device reports as accurate to 100 m is compared, and only a one-way hash of the area is kept.',
+    optional: 'Compared when a member shares it; nobody is turned away for not sharing. Network and device are always checked.',
+    off: 'Not asked. Device and network are still checked: every account on one Wi-Fi is held, and VPNs are turned away.',
+  }[mode]));
+  top.append(loc);
+
   // Alt cases: the same ones the mod-log report shows, with the same actions.
   // Acting here edits that report, so the channel and the panel agree.
   const caseList = el('div', 'ev-cases');
@@ -2878,9 +2905,10 @@ function renderEntryVerify() {
     who.append(el('b', null, c.name || c.userId), document.createTextNode(' looks like '), el('b', null, (c.matchedWith || []).map(m => m.name || m.userId).join(', ') || 'another member'));
     // The match, as a three-step meter: which signals the two accounts share.
     const sig = el('div', 'ev-sig');
-    const s = c.signals || {};
-    for (const [k, l] of [['device', 'Device'], ['browser', 'Browser'], ['connection', 'Connection']]) sig.append(el('span', `ev-sig-chip${s[k] ? ' on' : ''}`, l));
-    sig.append(el('span', 'ev-sig-word', s.device ? 'near-certain' : (s.browser && s.connection) ? 'strong' : 'possible'));
+    const s = { ...(c.signals || {}) };
+    s.network = s.network ?? s.connection;   // older cases call it connection
+    for (const [k, l] of [['device', 'Device'], ['browser', 'Browser'], ['network', 'Network'], ['location', 'Location']]) sig.append(el('span', `ev-sig-chip${s[k] ? ' on' : ''}`, l));
+    sig.append(el('span', 'ev-sig-word', (s.device || (s.location && s.network)) ? 'near-certain' : (s.location || (s.browser && s.network)) ? 'strong' : 'possible'));
     card.append(head, who, sig);
     if (c.prize || c.dropId) card.append(el('p', 'hint', `🎁 ${c.prize || 'Giveaway'}${c.dropId ? ` · ${c.dropId}` : ''}`));
     const last = (c.history || []).slice(-1)[0];

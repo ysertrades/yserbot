@@ -24,11 +24,13 @@
   <main class="stage">
     <section class="card" id="card">
       <header class="head">
+        <!-- The bot and the server, linked: the link fills in as the check runs
+             and turns green (or red) with the answer. -->
         <div class="marks">
-          <img class="mark brand" id="brand-logo" src="/logo-128.jpg" alt="">
-          <span class="link-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="mark-wrap brand"><img class="mark brand" id="brand-logo" alt=""><span class="mark-badge" aria-hidden="true"></span></span>
+          <span class="link-dots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
           <img class="mark server" id="server-icon" alt="" hidden>
-          <span class="mark server ph" id="server-ph" aria-hidden="true">?</span>
+          <span class="mark server ph" id="server-ph" aria-hidden="true"></span>
         </div>
         <h1 id="title">One person, one entry</h1>
         <p class="sub" id="sub">Hold the shield for a second — that's it.</p>
@@ -60,7 +62,8 @@
       <ol class="steps" id="steps" aria-live="polite">
         <li data-step="1"><span class="dot"></span><span>Securing your connection</span></li>
         <li data-step="2"><span class="dot"></span><span>Reading this device</span></li>
-        <li data-step="3"><span class="dot"></span><span>Checking for duplicate accounts</span></li>
+        <li data-step="3"><span class="dot"></span><span>Confirming your location</span></li>
+        <li data-step="4"><span class="dot"></span><span>Checking for duplicate accounts</span></li>
       </ol>
 
       <div class="result" id="result" hidden>
@@ -73,7 +76,7 @@
 
       <footer class="foot">
         <svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"/></svg>
-        <span>Each giveaway is verified on its own. We check this device and connection against other accounts in this server, stored only as one-way hashes. No sign-in, nothing installed.</span>
+        <span>Each giveaway is verified on its own. We compare this device, your internet connection and roughly where you are (a ~40 m area, never your exact position) with other accounts in this server — all kept only as one-way hashes. No sign-in, nothing installed.</span>
       </footer>
     </section>
   </main>
