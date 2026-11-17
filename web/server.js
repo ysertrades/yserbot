@@ -417,6 +417,20 @@ async function route(req, res, client) {
   if (p === '/healthz') return json(res, 200, { ok: true });
   if (p === '/panel-app.js') return panelApp.serve(res, send);
 
+  // Pictures uploaded from the panel (utils/imageStore.js). Public because
+  // Discord itself fetches them for embeds and cards; the name is the image's
+  // own hash, so a link can only be known by someone who was given it.
+  const img = /^\/i\/([a-f0-9]{32})\.(png|jpg|webp|gif)$/.exec(p);
+  if (img) {
+    const found = await require('../utils/imageStore').load(img[1], img[2]).catch(() => null);
+    if (!found) return send(res, 404, 'Not found', { 'content-type': 'text/plain; charset=utf-8' });
+    return send(res, 200, found.buf, {
+      'content-type': found.type,
+      'cache-control': 'public, max-age=31536000, immutable',
+      'cross-origin-resource-policy': 'cross-origin',
+    });
+  }
+
   // The legal pages, on purpose without a session and without a redirect.
   // A terms or privacy link has to open for somebody who has never logged in
   // — a reviewer, a member deciding whether to use the bot, Discord's own app

@@ -8395,102 +8395,134 @@ function renderBotProfile() {
   }
 
 
-  // ── Server display image (this server only) ───────────────────────────
-  nodes.push(el('h2', null, 'Bot image in this server'));
+  // ── The bot's picture in this server ──────────────────────────────────
+  // Its real Discord profile picture here (member list, chat, mentions) and
+  // the image on its cards. A chat preview shows it the way members will see
+  // it, next to the picture every other server keeps.
+  nodes.push(el('h2', null, 'Bot picture in this server'));
   nodes.push(el('p', 'hint',
-    'Used on giveaway cards and branded embeds here. This does not change the bot’s Discord avatar worldwide — only the operator can change that.'));
+    'Changes the bot’s profile picture in this server — member list, chat and mentions — and on its giveaway cards and embeds. Other servers keep their own.'));
   if (bp.canEditServerImage || bp.canEditNickname) {
-    const imgDraft = { url: guild.brandAvatar || '' };
-    if (guild.brandAvatar) {
-      const prev = el('img');
-      prev.src = guild.brandAvatar;
-      prev.alt = '';
-      prev.style.cssText = 'width:64px;height:64px;border-radius:12px;object-fit:cover;display:block;margin:0.4rem 0';
-      nodes.push(prev);
-    }
-    nodes.push(textField('Image URL (https)', imgDraft.url, v => { imgDraft.url = v.trim(); }, {
-      placeholder: 'https://…',
-    }));
-    // High-quality upload (same path as before) — baked at 1024² then sent to Discord CDN
-    const fileRow = el('div', 'field');
-    fileRow.append(el('span', null, 'Or upload'));
+    const imgDraft = { url: guild.brandAvatar || '', data: null };
+    const shownName = guild.nickname || guild.displayName || g.globalName || 'Bot';
+    const pictureNow = () => imgDraft.data || imgDraft.url || guild.serverAvatarUrl || g.avatarUrl || '';
+
+    const face = (src, cls) => {
+      const f = el('span', `bp-face ${cls || ''}`.trim());
+      const paint = (s) => {
+        f.replaceChildren();
+        if (s) {
+          const i = el('img'); i.src = s; i.alt = ''; i.referrerPolicy = 'no-referrer';
+          i.onerror = () => { i.remove(); f.textContent = shownName.slice(0, 1).toUpperCase(); };
+          f.append(i);
+        } else f.textContent = shownName.slice(0, 1).toUpperCase();
+      };
+      paint(src);
+      f.paint = paint;
+      return f;
+    };
+
+    // Chat preview: how the bot posts in this server.
+    const chat = el('div', 'bp-chat');
+    const chatFace = face(pictureNow());
+    const msg = el('div', 'bp-msg');
+    const head = el('div', 'bp-head');
+    head.append(el('b', null, shownName), el('span', 'bp-app', 'APP'), el('span', 'bp-time', 'Today at 9:30'));
+    msg.append(head, el('p', null, '🎉 A new giveaway just started — tap Enter to join.'));
+    chat.append(chatFace, msg);
+
+    // This server against everywhere else, so the scope is plain to see.
+    const scope = el('div', 'bp-scope');
+    const here = el('div', 'bp-side bp-here');
+    const hereFace = face(pictureNow(), 'lg');
+    here.append(hereFace, el('span', null, 'This server'));
+    const away = el('div', 'bp-side');
+    away.append(face(g.avatarUrl, 'lg'), el('span', null, 'Other servers'));
+    scope.append(here, el('span', 'bp-arrow', '≠'), away);
+
+    const repaint = () => { const s = pictureNow(); chatFace.paint(s); hereFace.paint(s); };
+
+    const card = el('div', 'bp-card');
+    card.append(chat, scope);
+    nodes.push(card);
+
+    // Choose a photo → frame it in the circle → save.
     const fileInput = el('input');
     fileInput.type = 'file';
     fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
-    fileInput.style.cssText = 'display:block;margin-top:0.35rem';
-    const uploadHint = el('p', 'hint', 'PNG / JPG / WebP. Framed at high resolution so it stays sharp on the giveaway card.');
-    const studioHost = el('div');
-    studioHost.style.cssText = 'display:none;margin-top:0.75rem';
+    fileInput.hidden = true;
+    const pick = el('button', 'btn small', 'Choose photo');
+    pick.type = 'button';
+    pick.addEventListener('click', () => fileInput.click());
+    const studioHost = el('div', 'bp-studio');
+    studioHost.hidden = true;
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files && fileInput.files[0];
+      fileInput.value = '';
       if (!file) return;
       try {
         const img = await loadImageElement(file);
-        studioHost.style.display = '';
+        studioHost.hidden = false;
+        studioHost.replaceChildren();
+        box.dataset.dirty = '1';
         openAvatarStudio(studioHost, img, file.name, (dataUrl) => {
-          imgDraft.url = '';
           imgDraft.data = dataUrl;
-          uploadHint.textContent = (file.name || 'Photo') + ' · framed and ready to save';
-          // Live preview under the uploader
-          let prev = studioHost.parentElement?.querySelector('img.brand-prev');
-          if (!prev) {
-            prev = el('img', 'brand-prev');
-            prev.alt = '';
-            prev.style.cssText = 'width:64px;height:64px;border-radius:12px;object-fit:cover;display:block;margin:0.4rem 0';
-            studioHost.parentElement?.insertBefore(prev, studioHost);
-          }
-          prev.src = dataUrl;
+          repaint();
         });
       } catch (err) {
         console.warn(err);
+        toast('That file could not be opened as a picture.', 'bad');
       }
     });
-    fileRow.append(fileInput, uploadHint, studioHost);
-    nodes.push(fileRow);
+
+    // A link works too, folded away so the photo stays the obvious path.
+    const linkWrap = el('details', 'bp-link');
+    linkWrap.append(el('summary', null, 'Use an image link instead'));
+    linkWrap.append(textField('Image link (https)', imgDraft.url, v => {
+      imgDraft.url = v.trim();
+      imgDraft.data = null;
+      box.dataset.dirty = '1';
+      repaint();
+    }, { placeholder: 'https://…' }));
 
     const imgActions = el('div', 'actions');
-    const saveImg = el('button', 'btn primary small', 'Save server image');
+    const saveImg = el('button', 'btn primary small', 'Save picture');
     saveImg.type = 'button';
+    const finish = async (res, okMsg) => {
+      box.dataset.dirty = '0';
+      delete box.dataset.sig;
+      try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
+      renderBotProfile();
+      if (res?.discordAvatar === 'failed') toast(`Saved for cards, but Discord did not take it: ${res.detail || 'try again in a minute'}.`, 'bad');
+      else if (res?.detail) toast(res.detail, 'bad');
+      else toast(okMsg, 'good');
+    };
     saveImg.addEventListener('click', async () => {
-      if (!imgDraft.data && !(imgDraft.url && imgDraft.url.trim())) {
-        toast('Pick a photo or paste an https image URL first.', 'bad');
-        return;
-      }
+      if (!imgDraft.data && !imgDraft.url) { toast('Choose a photo or paste an https image link first.', 'bad'); return; }
       saveImg.disabled = true;
       saveImg.textContent = 'Saving…';
       try {
-        const payload = imgDraft.data
-          ? { data: imgDraft.data }
-          : { url: String(imgDraft.url || '').trim() };
-        const res = await post('bot-profile-server-image', payload);
-        if (res?.ok) {
-          imgDraft.data = null;
-          if (res.overview) state.overview = res.overview;
-          else try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
-          renderBotProfile();
-          toast('Server bot image saved.', 'good');
-        } else if (res?.unchanged) {
-          toast('That image is already set for this server.');
-        }
+        const payload = imgDraft.data ? { data: imgDraft.data } : { url: imgDraft.url };
+        const res = await post('bot-profile-server-image', payload, { quiet: true });
+        if (res?.ok) await finish(res, 'Picture updated in this server.');
+        else if (res?.unchanged) toast('That picture is already set here.');
       } finally {
         saveImg.disabled = false;
-        saveImg.textContent = 'Save server image';
+        saveImg.textContent = 'Save picture';
       }
     });
-    const clearImg = el('button', 'btn small', 'Clear image');
+    const clearImg = el('button', 'btn small', 'Use the normal picture');
     clearImg.type = 'button';
     clearImg.addEventListener('click', async () => {
       clearImg.disabled = true;
       try {
-        const res = await post('bot-profile-server-image', { url: '' });
-        if (res?.ok || res?.unchanged) {
-          try { state.overview = await get(`/api/guild/${state.guildId}`); } catch {}
-          renderBotProfile();
-        }
+        const res = await post('bot-profile-server-image', { url: '' }, { quiet: true });
+        if (res?.ok) await finish(res, 'Back to the normal picture in this server.');
       } finally { clearImg.disabled = false; }
     });
-    imgActions.append(saveImg, clearImg);
-    nodes.push(imgActions);
+    imgActions.append(pick, saveImg);
+    if (guild.brandAvatar || guild.serverAvatarUrl) imgActions.append(clearImg);
+    nodes.push(fileInput, studioHost, imgActions, linkWrap);
   }
 
   // ── Global identity (owner only) ──────────────────────────────────────
@@ -8581,7 +8613,7 @@ function renderBotProfile() {
     globalActions.append(saveGlobal);
     nodes.push(globalActions);
   } else if (!bp.canEditGlobal && !bp.canEditPresence) {
-    nodes.push(el('p', 'hint', 'Only the bot operator can change global name, avatar, bio and status.'));
+    nodes.push(el('p', 'hint', 'The bot’s name, picture, bio and status everywhere else are set by the bot operator.'));
   }
 
   // ── Reset everything the panel controls back to defaults ─────────────
