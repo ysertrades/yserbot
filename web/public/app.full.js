@@ -368,8 +368,21 @@ async function get(path, { timeoutMs = 0 } = {}) {
     err.body = await res.json().catch(() => ({}));
     throw err;
   }
-  return res.json();
+  const data = await res.json();
+  // A server's data that arrives after you switched away from it must never
+  // be drawn into, or saved over, the server now on screen.
+  const forGuild = /^\/api\/guild\/(\d+)/.exec(path)?.[1];
+  if (forGuild && state.guildId && forGuild !== state.guildId) throw staleError(path);
+  return data;
 }
+
+function staleError(path) {
+  const err = new Error(`${path} → answered after the server changed`);
+  err.stale = true;
+  return err;
+}
+// Dropped answers are expected, not failures: keep them out of the console.
+window.addEventListener('unhandledrejection', e => { if (e.reason?.stale) e.preventDefault(); });
 
 /**
  * @param {object} opts
@@ -390,9 +403,10 @@ async function sendDropPrize(shortId, text) {
 // every few seconds). Their answer must not replace the overview: doing so
 // re-rendered the whole panel on every poll, which is what made it flicker.
 async function post(op, body, { quiet = false, readOnly = false } = {}) {
+  const forGuild = state.guildId;
   let res;
   try {
-    res = await fetch(`/api/guild/${state.guildId}/${op}`, {
+    res = await fetch(`/api/guild/${forGuild}/${op}`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json', 'x-csrf-token': state.csrf, ...authHeaders() },
@@ -412,6 +426,14 @@ async function post(op, body, { quiet = false, readOnly = false } = {}) {
     toast([known || `That change did not save (${code}).`, why].filter(Boolean).join(' — '), 'bad');
     console.warn('[Panel write failed]', op, res.status, data);
     return null;
+  }
+  // Saved to the server it was meant for, but you have moved on since: its
+  // overview is not this server's, so none of it is applied here.
+  if (forGuild !== state.guildId) {
+    if (!quiet && !readOnly) toast('Saved to the server you were on.', 'good');
+    delete data.overview;
+    delete data.featureToggles;
+    return readOnly ? null : data;
   }
   if (readOnly) return data;
   if (data.unchanged) { if (!quiet) toast('Nothing to change.'); return data; }
@@ -934,28 +956,119 @@ function renderGuildPicker() {
     }
     b.append(el('span', null, g.name));
     if (g.id === state.guildId) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => selectGuild(g.id));
+    b.addEventListener('click', () => switchServer(g.id));
     return b;
   }));
-  let back = document.getElementById('guild-back-home');
-  const onForeign = state.guildId && home.size && !home.has(state.guildId);
-  if (onForeign) {
-    const homeG = state.guilds.find(g => home.has(g.id));
-    if (!back) {
-      back = el('button', 'btn small', '');
-      back.type = 'button';
-      back.id = 'guild-back-home';
-      if (host.parentNode) host.parentNode.insertBefore(back, host.nextSibling);
-    }
-    back.textContent = homeG ? ('← ' + (homeG.name || 'Your server')) : '← Your server';
-    back.onclick = () => {
-      const id = (homeG && homeG.id) ? homeG.id : [...home][0];
-      if (id) selectGuild(id);
-    };
-    back.hidden = false;
-  } else if (back) {
-    back.hidden = true;
+  // Getting around is the switcher's job; there is no separate "back" button.
+  document.getElementById('guild-back-home')?.remove();
+  wireServerSwitcher();
+  renderServersCard();
+}
+
+/*
+ * Server switching from anywhere: the server's name in the header opens a
+ * sheet of every server you manage, and Settings has the same list as a card.
+ * Each row shows the server's icon, size and whether it is the one open now.
+ */
+function serverRow(g, after) {
+  const current = g.id === state.guildId;
+  const row = el('button', `srv-row${current ? ' current' : ''}`);
+  row.type = 'button';
+  if (current) row.setAttribute('aria-current', 'true');
+  const ico = el('span', 'srv-ico');
+  if (g.icon) {
+    const i = el('img');
+    i.src = g.icon; i.alt = ''; i.referrerPolicy = 'no-referrer'; i.loading = 'lazy';
+    i.onerror = () => { i.remove(); ico.textContent = (g.name || '?').slice(0, 1).toUpperCase(); };
+    ico.append(i);
+  } else ico.textContent = (g.name || '?').slice(0, 1).toUpperCase();
+  const text = el('span', 'srv-text');
+  text.append(el('b', null, g.name || 'Server'), el('span', 'srv-meta', `${num(g.members)} member${g.members === 1 ? '' : 's'}`));
+  const tail = el('span', 'srv-tail');
+  tail.append(el('i', 'srv-dot'), document.createTextNode(current ? 'Open now' : 'Switch'));
+  row.append(ico, text, tail);
+  row.addEventListener('click', () => {
+    if (after) after();
+    if (!current) switchServer(g.id);
+  });
+  return row;
+}
+
+/*
+ * Switching to another of your servers starts the panel over for it.
+ *
+ * Every tab keeps its own drafts, forms, caches and timers for the server on
+ * screen, and swapping the server underneath them in place is how one
+ * server's settings could end up saved to another. A fresh load for the new
+ * server leaves nothing of the old one behind. A short card says where you
+ * are going so the reload reads as a switch, not a flash.
+ */
+async function switchServer(id) {
+  if (!id || id === state.guildId) return;
+  const g = state.guilds.find(x => x.id === id);
+  // Servers opened from the owner console are not in your own list, and a
+  // reload would land on your first server instead; they switch in place.
+  if (!(state.homeGuildIds || new Set()).has(id)) return selectGuild(id).catch(reportLoadFailure);
+  if (typeof composerIsDirty === 'function' && composerIsDirty() && !await askConfirm({
+    title: 'Discard your changes?',
+    message: `“${state.draft?.name || 'This message'}” has edits that are not saved yet.`,
+    confirmLabel: 'Discard and switch', danger: true,
+  })) return;
+  rememberGuild(id);
+  const card = el('div', 'srv-going');
+  card.setAttribute('role', 'status');
+  const ico = el('span', 'srv-ico');
+  if (g?.icon) { const i = el('img'); i.src = g.icon; i.alt = ''; i.referrerPolicy = 'no-referrer'; i.onerror = () => { i.remove(); ico.textContent = (g.name || '?').slice(0, 1).toUpperCase(); }; ico.append(i); }
+  else ico.textContent = (g?.name || '?').slice(0, 1).toUpperCase();
+  const text = el('span', 'srv-text');
+  text.append(el('span', 'srv-meta', 'Switching to'), el('b', null, g?.name || 'Server'));
+  card.append(ico, text);
+  document.body.append(card);
+  requestAnimationFrame(() => card.classList.add('in'));
+  // The tab stays the same; ?g= would be dropped by the boot anyway.
+  setTimeout(() => location.reload(), 260);
+}
+
+function sortedGuilds() {
+  return [...state.guilds].sort((a, b) => (a.id === state.guildId ? -1 : b.id === state.guildId ? 1 : String(a.name || '').localeCompare(String(b.name || ''))));
+}
+
+function openServerSwitcher() {
+  const list = el('div', 'srv-list');
+  list.append(...sortedGuilds().map(g => serverRow(g, closeSheet)));
+  const hint = el('p', 'hint srv-hint', 'Servers show up here on their own once the bot is in them and you own or manage them.');
+  openSheet('Switch server', [list, hint]);
+}
+
+function wireServerSwitcher() {
+  const sid = document.querySelector('#server .server-id');
+  if (!sid) return;
+  const many = state.guilds.length > 1;
+  sid.classList.toggle('switchable', many);
+  if (!many) { sid.removeAttribute('role'); sid.removeAttribute('tabindex'); return; }
+  sid.setAttribute('role', 'button');
+  sid.setAttribute('tabindex', '0');
+  sid.setAttribute('aria-label', 'Switch server');
+  if (!sid.querySelector('.srv-switch')) {
+    const chip = el('span', 'srv-switch');
+    chip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></svg>';
+    sid.append(chip);
   }
+  const count = sid.querySelector('.srv-switch');
+  count.dataset.n = String(state.guilds.length);
+  if (!sid.dataset.wired) {
+    sid.dataset.wired = '1';
+    sid.addEventListener('click', () => { if (sid.classList.contains('switchable')) openServerSwitcher(); });
+    sid.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && sid.classList.contains('switchable')) { e.preventDefault(); openServerSwitcher(); } });
+  }
+}
+
+function renderServersCard() {
+  const host = $('#servers-list');
+  if (!host) return;
+  host.replaceChildren(...sortedGuilds().map(g => serverRow(g)));
+  const pill = $('#servers-count');
+  if (pill) { pill.textContent = String(state.guilds.length); pill.className = 'pill on'; }
 }
 
 /* ── overview ──────────────────────────────────────────────────────────── */
@@ -10549,13 +10662,18 @@ function renderOwnerConsole() {
     const openBtn = el('button', 'btn primary small', 'Open panel');
     openBtn.type = 'button';
     openBtn.addEventListener('click', async () => {
+      // One of your own servers: a clean switch, landing on its overview.
+      if (state.homeGuildIds?.has(g.id)) {
+        try { history.replaceState(null, '', `/overview${location.hash}`); } catch (_) {}
+        return switchServer(g.id);
+      }
       if (!state.guilds.some(x => x.id === g.id)) {
         state.guilds = [...state.guilds, { id: g.id, name: g.name, icon: g.icon, members: g.members }];
       }
       renderGuildPicker();
       await selectGuild(g.id).catch(reportLoadFailure);
       showSection('overview');
-      toast(`Opened ${g.name}. Click your server pill to return.`, 'good');
+      toast(`Opened ${g.name}. Tap the server name to switch back.`, 'good');
     });
     const leaveBtn = el('button', 'btn small danger', 'Leave server');
     leaveBtn.type = 'button';

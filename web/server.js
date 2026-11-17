@@ -730,7 +730,7 @@ async function route(req, res, client) {
       // one, when there is one — or every write on this page load would fail
       // with a stale token until the next reload.
       const csrfSession = renewed ? auth.verify(renewed, auth.config().secret) : session;
-      return json(res, 200, { ...api.me(session, client), csrf: auth.csrfFor(csrfSession), token: renewed || null }, headers);
+      return json(res, 200, { ...(await api.me(session, client)), csrf: auth.csrfFor(csrfSession), token: renewed || null }, headers);
     }
     if (p === '/api/health')    return json(res, 200, api.health(client));
 
