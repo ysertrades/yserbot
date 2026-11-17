@@ -117,6 +117,8 @@ async function fetchMessage(client, cd) {
 }
 
 async function redraw(client, guildId, cd, now) {
+  // The minute timer runs outside any server; the card carries this server's brand.
+  require('./brand').enter(guildId);
   const msg = await fetchMessage(client, cd);
   if (msg === 'gone') { patch(guildId, cd.id, { status: 'gone', error: 'The card was deleted in Discord.' }); return; }
   if (!msg) return;   // channel not reachable right now: try again next minute

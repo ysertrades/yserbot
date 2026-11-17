@@ -4391,3 +4391,8 @@ html { touch-action: manipulation; }
 .bp-link { margin-top: 10px; }
 .bp-link summary { cursor: pointer; color: var(--soft); font-size: 13px; padding: 4px 0; }
 .bp-link[open] summary { margin-bottom: 6px; }
+
+/* Owner-only parts of the bot profile carry a small lock tag. */
+.bp-owner-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bp-owner-tag { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 7px; border-radius: 999px; border: 1px solid var(--blue-line); background: var(--blue-bg); color: var(--accent-2); font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: none; }
+.bp-owner-tag svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }

@@ -113,9 +113,49 @@ function cacheKey() {
   const id = currentGuildId();
   if (!id) return '';
   const b = all()[id];
-  if (!b) return '';
   const logo = logos.get(id);
-  return `${id}:${b.version || 0}:${logo && logo.data ? 'L' : ''}`;
+  const hasLogo = !!(logo && logo.data);
+  if (!b && !hasLogo) return '';
+  return `${id}:${b ? b.version || 0 : 0}:${hasLogo ? logo.url : ''}`;
+}
+
+/**
+ * The short code in front of a drop ID, from the brand's own initials:
+ * QuantLab → QL, YSER Lab → YL, Apex Trading Group → ATG. Styled names
+ * (𝗬𝗦𝗘𝗥 𝓛𝓪𝓫) are read as their plain letters first.
+ */
+function prefixOf(name) {
+  const plain = String(name || '').normalize('NFKC').replace(/[^A-Za-z0-9 ]+/g, ' ').trim();
+  const words = plain.split(/\s+/).filter(Boolean);
+  let p = '';
+  if (words.length > 1) p = words.map((w) => w[0]).join('');
+  else if (words.length === 1) {
+    const caps = words[0].replace(/[^A-Z]/g, '');
+    p = caps.length >= 2 && caps.length < words[0].length ? caps : words[0].slice(0, 2);
+  }
+  p = p.toUpperCase().slice(0, 3);
+  return p.length >= 2 ? p : 'QL';
+}
+
+/** "YL-7F2A": a drop's ID as this server shows it. */
+function dropRef(id, guildId) {
+  if (id == null || id === '') return '';
+  const b = guildId ? getBrand(guildId) : current();
+  // The ID itself is kept exactly as is: rerolls look it up by it.
+  return `${prefixOf(b.name)}-${String(id)}`;
+}
+
+/**
+ * Who signs a drawn card: the server's brand name and logo when it has set
+ * them in Settings, otherwise Quantbot. `img` is the full-size picture for
+ * canvas drawing, or null to use the card's own Quantbot mark.
+ */
+function signature() {
+  const id = currentGuildId();
+  const custom = !!(id && all()[id]);
+  const b = current();
+  const l = id ? logos.get(id) : null;
+  return { name: custom ? b.name : 'Quantbot', img: l && l.img ? l.img : null, accent: b.accent || null };
 }
 
 /** Best guess at which server a Discord event belongs to. */
@@ -128,15 +168,39 @@ function guildIdOf(x) {
 
 const LOGO_SIZE = 64;
 
-async function warmLogo(guildId) {
-  const b = getBrand(guildId);
-  if (!b.logoUrl) { logos.delete(guildId); return null; }
-  const have = logos.get(guildId);
-  if (have && have.url === b.logoUrl) return have;
+/** The bot's own picture in that server (Settings → Bot picture), if set. */
+function serverPicture(guildId) {
   try {
-    const res = await fetch(b.logoUrl, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) throw new Error(`http ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
+    const u = readJson('config.json', {})[guildId]?.brandAvatar;
+    return typeof u === 'string' && /^https:\/\//i.test(u) ? u : null;
+  } catch { return null; }
+}
+
+/** The logo a server's cards use: its brand logo, else its bot picture. */
+function logoSource(guildId) {
+  return getBrand(guildId).logoUrl || serverPicture(guildId);
+}
+
+async function fetchLogo(url) {
+  const store = require('./imageStore');
+  const own = /\/i\/([a-f0-9]{32})\.(png|jpg|webp|gif)$/.exec(url);
+  if (own && store.isOwnUrl(url)) {
+    const found = await store.load(own[1], own[2]);
+    if (!found) throw new Error('not in the image store');
+    return found.buf;
+  }
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`http ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function warmLogo(guildId) {
+  const src = logoSource(guildId);
+  if (!src) { logos.delete(guildId); return null; }
+  const have = logos.get(guildId);
+  if (have && have.url === src) return have;
+  try {
+    const buf = await fetchLogo(src);
     if (buf.length > 8 * 1024 * 1024) throw new Error('too large');
     const { createCanvas, loadImage } = require('@napi-rs/canvas');
     const img = await loadImage(buf);
@@ -144,19 +208,22 @@ async function warmLogo(guildId) {
     const s = Math.min(img.width, img.height);
     c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, LOGO_SIZE, LOGO_SIZE);
     const data = c.getContext('2d').getImageData(0, 0, LOGO_SIZE, LOGO_SIZE).data;
-    const out = { url: b.logoUrl, w: LOGO_SIZE, h: LOGO_SIZE, data };
+    // `img` is the whole picture, for the canvas cards that draw it large.
+    const out = { url: src, w: LOGO_SIZE, h: LOGO_SIZE, data, img };
     logos.set(guildId, out);
     return out;
   } catch (err) {
     console.warn(`[brand] logo for ${guildId} could not load:`, err.message);
-    logos.set(guildId, { url: b.logoUrl, failed: true });
+    logos.set(guildId, { url: src, failed: true });
     return null;
   }
 }
 
 /** Loads every saved custom logo — called once the bot is up. */
 async function warmAll() {
-  for (const id of Object.keys(all())) {
+  let pictured = [];
+  try { pictured = Object.keys(readJson('config.json', {})).filter((id) => serverPicture(id)); } catch { /* none */ }
+  for (const id of new Set([...Object.keys(all()), ...pictured])) {
     try { await warmLogo(id); } catch { /* one bad link never stops the rest */ }
   }
 }
@@ -175,8 +242,15 @@ function logoFailed(guildId) {
   return !!(have && have.failed && have.url === getBrand(guildId).logoUrl);
 }
 
+/** After the bot picture changes: drop the old logo and load the new one. */
+function refreshLogo(guildId) {
+  logos.delete(guildId);
+  return warmLogo(guildId).catch(() => null);
+}
+
 module.exports = {
   DEFAULTS, getBrand, setBrand,
   run, enter, current, currentGuildId, cacheKey, guildIdOf,
-  warmLogo, warmAll, currentLogo, logoFailed,
+  warmLogo, warmAll, currentLogo, logoFailed, refreshLogo,
+  prefixOf, dropRef, signature, serverPicture,
 };

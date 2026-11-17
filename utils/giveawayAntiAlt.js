@@ -88,7 +88,7 @@ async function reportSuspicious(guild, { messageId, dropId, prize, userId, analy
     .setDescription(
       `**User:** <@${userId}> (\`${userId}\`)\n` +
       `**Giveaway:** ${prize || '—'}\n` +
-      `**Drop ID:** QL-${dropId || '—'}\n\n` +
+      `**Drop ID:** ${dropId ? require('./brand').dropRef(dropId) : '—'}\n\n` +
       analysis.reasons.map(r => `• ${r}`).join('\n') +
       `\n\n**Related young accounts in this drop:** ${cohortMentions}\n\n` +
       `_Discord does not expose IPs to bots. Signals use account age + server join timing._`,

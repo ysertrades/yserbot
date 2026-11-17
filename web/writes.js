@@ -981,6 +981,8 @@ Object.assign(OPS, {
 
     conf[guildId].brandAvatar = url;
     writeJson('config.json', conf);
+    // Cards with no brand logo of their own sign with this picture.
+    require('../utils/brand').refreshLogo(guildId);
 
     // Discord: set it, or with no picture go back to the bot's normal avatar.
     let discordAvatar = 'skipped';

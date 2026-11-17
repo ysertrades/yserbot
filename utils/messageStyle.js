@@ -1033,6 +1033,13 @@ function fill(text, tokens = {}) {
     try { b = require('./brand').current().name || b; } catch { /* default */ }
     tokens = { ...tokens, brand: b };
   }
+  // Drop IDs carry the server's own initials (YL-7F2A for YSER Lab), including
+  // in templates saved back when every one said QL-.
+  if (text.includes('QL-{id}')) {
+    let p = 'QL';
+    try { const br = require('./brand'); p = br.prefixOf(br.current().name); } catch { /* default */ }
+    text = text.split('QL-{id}').join(`${p}-{id}`);
+  }
   const resolve = name => {
     if (Object.hasOwn(tokens, name)) {
       const v = tokens[name];

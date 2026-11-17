@@ -186,7 +186,8 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     appearance: appearance.read(guildId),
     brand: (function () {
       const b = require('../utils/brand').getBrand(guildId);
-      return { name: b.name, caption: b.caption, accent: b.accent, logoUrl: b.logoUrl, watermark: b.watermark, isDefault: !b.version };
+      const br = require('../utils/brand');
+      return { name: b.name, caption: b.caption, accent: b.accent, logoUrl: b.logoUrl, watermark: b.watermark, isDefault: !b.version, dropPrefix: br.prefixOf(b.name) };
     })(),
     entryVerify: (function () { try { return require('../utils/entryVerify').summary(guildId, guild); } catch { return null; } })(),
     // What went wrong in this server lately (utils/errorReporter.js).

@@ -1063,6 +1063,9 @@ function wireServerSwitcher() {
   }
 }
 
+/** The drop code prefix for this server: its brand initials, e.g. YL for YSER Lab. */
+function dropPfx() { return state.overview?.brand?.dropPrefix || 'QL'; }
+
 function renderServersCard() {
   const host = $('#servers-list');
   if (!host) return;
@@ -5332,7 +5335,7 @@ async function openGiveawayParticipants(messageId, meta = {}) {
     hero.append(count);
     const metaLine = el('div', 'roster-meta');
     if (res.prize) metaLine.append(el('span', 'roster-prize', res.prize));
-    if (res.dropId) metaLine.append(el('span', 'roster-id mono', `QL-${res.dropId}`));
+    if (res.dropId) metaLine.append(el('span', 'roster-id mono', `${dropPfx()}-${res.dropId}`));
     if (young) {
       const flag = el('span', 'roster-flag', `${young} young account${young === 1 ? '' : 's'}`);
       flag.title = 'Account age under 14 days';
@@ -5624,7 +5627,7 @@ function renderGiveaways() {
     top.append(
       el('span', 'kind prize', 'PRIZE'),
       el('span', 'nm', x.title || 'Drop'),
-      el('span', 'idtag', x.shortId ? `QL-${x.shortId}` : ''),
+      el('span', 'idtag', x.shortId ? `${dropPfx()}-${x.shortId}` : ''),
     );
     d.append(top);
     d.append(el('p', 'hint', `${num(x.entrants)} entered · ${x.winners} winner${x.winners === 1 ? '' : 's'}`));
@@ -5709,7 +5712,7 @@ function buildLiveDropCard(x, { phase }) {
   }
 
   d.append(el('p', 'hint', `${num(x.entrants || 0)} entrants · ${x.winners || 1} winner${(x.winners || 1) === 1 ? '' : 's'}`));
-  if (x.shortId) d.append(el('p', 'hint mono', `QL-${x.shortId}`));
+  if (x.shortId) d.append(el('p', 'hint mono', `${dropPfx()}-${x.shortId}`));
 
   const act = el('div', 'actions');
   if (phase === 'live') {
@@ -5858,7 +5861,7 @@ function openRestartGiveaway(x) {
     ));
   }
 
-  if (x.shortId) body.push(sheetRow('Previous drop', el('span', 'v mono', 'QL-' + x.shortId)));
+  if (x.shortId) body.push(sheetRow('Previous drop', el('span', 'v mono', dropPfx() + '-' + x.shortId)));
 
   const actions = [];
   const go = el('button', 'btn primary', 'Restart giveaway');
@@ -6003,7 +6006,7 @@ function openEndedGiveaway(x) {
     body.push(customBox);
 
     const buildMessage = () => {
-      const dropRef = x.shortId ? `QL-${x.shortId}` : '—';
+      const dropRef = x.shortId ? `${dropPfx()}-${x.shortId}` : '—';
       if (mode === 'giftcard') {
         // Without this an empty box sent a winner a DM with a blank code.
         if (!codeVal) return null;
@@ -8227,7 +8230,20 @@ function renderBotProfile() {
   const guild = bp.guild || {};
   const presence = bp.presence || { ...DEFAULT_PRESENCE };
 
-  // ── Live preview ──────────────────────────────────────────────────────
+  const owner = !!bp.isOwner;
+  // Marks what only the owner sees, so it is never mistaken for a server setting.
+  const ownerHead = (title) => {
+    const h = el('h2', 'bp-owner-head', title);
+    const tag = el('span', 'bp-owner-tag');
+    tag.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+    tag.append(document.createTextNode('Only you see this'));
+    h.append(tag);
+    return h;
+  };
+
+  // ── Live preview of the global identity (owner only) ───────────────────
+  if (owner) {
+  nodes.push(ownerHead('The bot everywhere'));
   const preview = el('div', 'gaw');
   const top = el('div', 'gaw-top');
   if (g.avatarUrl) {
@@ -8250,15 +8266,11 @@ function renderBotProfile() {
   preview.append(top);
   if (g.bio) preview.append(el('p', 'hint', g.bio));
   nodes.push(preview);
-
-  // Who can do what — shown so a failed save is not a mystery.
-  if (!bp.canEditPresence && !bp.canEditGlobal && !bp.canEditNickname) {
-    nodes.push(el('p', 'hint bad', 'You cannot edit this bot profile. Only the bot operator can change status, name, avatar and bio. Server nickname is locked until the operator allows it.'));
   }
 
   // ── Status mode + activity (owner only) ───────────────────────────────
-  if (bp.canEditPresence) {
-    nodes.push(el('h2', null, 'Status'));
+  if (bp.canEditPresence && owner) {
+    nodes.push(ownerHead('Status'));
     nodes.push(el('p', 'hint', 'How the bot appears in the member list. Saved so it survives a restart.'));
 
     const presenceDraft = {
@@ -8352,7 +8364,7 @@ function renderBotProfile() {
   const nickDraft = { nickname: guild.nickname || '' };
   if (bp.canEditNickname) {
     nodes.push(textField('Nickname', nickDraft.nickname, v => { nickDraft.nickname = v; }, {
-      placeholder: 'Leave empty to use the global name',
+      placeholder: 'Leave empty to use the bot’s name',
     }));
     nodes.push(el('p', 'hint', 'Only affects this server. Max 32 characters.'));
     const nickActions = el('div', 'actions');
@@ -8405,7 +8417,8 @@ function renderBotProfile() {
   if (bp.canEditServerImage || bp.canEditNickname) {
     const imgDraft = { url: guild.brandAvatar || '', data: null };
     const shownName = guild.nickname || guild.displayName || g.globalName || 'Bot';
-    const pictureNow = () => imgDraft.data || imgDraft.url || guild.serverAvatarUrl || g.avatarUrl || '';
+    const brandName = state.overview?.brand && !state.overview.brand.isDefault ? state.overview.brand.name : null;
+    const pictureNow = () => imgDraft.data || imgDraft.url || guild.serverAvatarUrl || guild.avatarUrl || g.avatarUrl || '';
 
     const face = (src, cls) => {
       const f = el('span', `bp-face ${cls || ''}`.trim());
@@ -8428,17 +8441,21 @@ function renderBotProfile() {
     const msg = el('div', 'bp-msg');
     const head = el('div', 'bp-head');
     head.append(el('b', null, shownName), el('span', 'bp-app', 'APP'), el('span', 'bp-time', 'Today at 9:30'));
-    msg.append(head, el('p', null, '🎉 A new giveaway just started — tap Enter to join.'));
+    msg.append(head, el('p', null, `🎉 A new ${brandName ? brandName + ' ' : ''}giveaway just started — tap Enter to join.`));
     chat.append(chatFace, msg);
 
     // This server against everywhere else, so the scope is plain to see.
+    // The "everywhere else" side is the bot's global picture: the owner's only.
     const scope = el('div', 'bp-scope');
     const here = el('div', 'bp-side bp-here');
     const hereFace = face(pictureNow(), 'lg');
     here.append(hereFace, el('span', null, 'This server'));
-    const away = el('div', 'bp-side');
-    away.append(face(g.avatarUrl, 'lg'), el('span', null, 'Other servers'));
-    scope.append(here, el('span', 'bp-arrow', '≠'), away);
+    scope.append(here);
+    if (owner && g.avatarUrl) {
+      const away = el('div', 'bp-side');
+      away.append(face(g.avatarUrl, 'lg'), el('span', null, 'Other servers'));
+      scope.append(el('span', 'bp-arrow', '≠'), away);
+    }
 
     const repaint = () => { const s = pictureNow(); chatFace.paint(s); hereFace.paint(s); };
 
@@ -8526,8 +8543,8 @@ function renderBotProfile() {
   }
 
   // ── Global identity (owner only) ──────────────────────────────────────
-  if (bp.canEditGlobal) {
-    nodes.push(el('h2', null, 'Global identity'));
+  if (bp.canEditGlobal && owner) {
+    nodes.push(ownerHead('Global identity'));
     nodes.push(el('p', 'hint', 'These change the bot in every server. Username changes are rate-limited by Discord. To change the picture, choose a new photo and save — there is no remove toggle.'));
 
     const globalDraft = {
@@ -8612,22 +8629,25 @@ function renderBotProfile() {
     });
     globalActions.append(saveGlobal);
     nodes.push(globalActions);
-  } else if (!bp.canEditGlobal && !bp.canEditPresence) {
-    nodes.push(el('p', 'hint', 'The bot’s name, picture, bio and status everywhere else are set by the bot operator.'));
   }
 
   // ── Reset everything the panel controls back to defaults ─────────────
-  if (bp.canEditPresence || bp.canEditNickname || bp.canEditGlobal) {
+  // The owner's reset also puts the status and bio back; anyone else's only
+  // touches this server, and is described that way.
+  if (owner || bp.canEditNickname) {
     nodes.push(el('h2', null, 'Reset'));
-    nodes.push(el('p', 'hint',
-      'Puts status back to Online · Watching QuantLab | /help, clears this server’s nickname, and clears the bio. Username and avatar are not changed (upload a new photo if you want a different picture).'));
+    nodes.push(el('p', 'hint', owner
+      ? 'Puts status back to Online · Watching QuantLab | /help, clears this server’s nickname, and clears the bio. Username and avatar are not changed.'
+      : 'Clears the bot’s nickname in this server.'));
 
     const resetAll = el('button', 'btn small danger', 'Reset to defaults');
     resetAll.type = 'button';
     resetAll.addEventListener('click', async () => {
       if (!await askConfirm({
-        title: 'Reset bot panel settings?',
-        message: 'Status → Online, activity → “QuantLab | /help”, this server’s nickname cleared, bio cleared. Username and avatar stay as they are.',
+        title: owner ? 'Reset bot panel settings?' : 'Clear the nickname?',
+        message: owner
+          ? 'Status → Online, activity → “QuantLab | /help”, this server’s nickname cleared, bio cleared. Username and avatar stay as they are.'
+          : 'The bot goes back to its own name in this server.',
         confirmLabel: 'Reset to defaults',
         danger: true,
       })) return;
@@ -8635,13 +8655,13 @@ function renderBotProfile() {
       resetAll.disabled = true;
       resetAll.textContent = 'Resetting…';
       try {
-        if (bp.canEditPresence) {
+        if (bp.canEditPresence && owner) {
           await post('bot-profile-presence', { ...DEFAULT_PRESENCE });
         }
         if (bp.canEditNickname) {
           await post('bot-profile-nick', { nickname: '' });
         }
-        if (bp.canEditGlobal) {
+        if (bp.canEditGlobal && owner) {
           await post('bot-profile-global', { bio: '' });
         }
         try { state.overview = await get(`/api/guild/${state.guildId}`); } catch { /* keep */ }

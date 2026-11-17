@@ -75,7 +75,7 @@ function buildLiveV2({
   ));
   // 4) Divider + footer
   kids.push(separator(true));
-  kids.push(text('-# Drop ID: QL-' + dropId + '  ·  ends ' + endsAt));
+  kids.push(text('-# Drop ID: ' + require('./brand').dropRef(dropId) + '  ·  ends ' + endsAt));
 
   return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
 }
@@ -103,7 +103,7 @@ function buildClosedV2({
     customId: 'giveaway_reveal', label: 'Reveal', style: 3, emoji: '🎁',
   })));
   kids.push(separator(true));
-  kids.push(text('-# Giveaway provided by ' + host + '  ·  Drop ID: QL-' + dropId));
+  kids.push(text('-# Giveaway provided by ' + host + '  ·  Drop ID: ' + require('./brand').dropRef(dropId)));
 
   return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
 }
@@ -143,7 +143,7 @@ function buildEmptyV2({
     customId: 'giveaway_ended', label: 'Ended — no entries', style: 2, emoji: '📭',
   })));
   kids.push(separator(true));
-  kids.push(text('-# Giveaway provided by ' + host + '  ·  Drop ID: QL-' + dropId));
+  kids.push(text('-# Giveaway provided by ' + host + '  ·  Drop ID: ' + require('./brand').dropRef(dropId)));
 
   return { flags: IS_COMPONENTS_V2, components: [container(kids)], embeds: [], content: null };
 }

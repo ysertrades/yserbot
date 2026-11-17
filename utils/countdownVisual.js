@@ -20,7 +20,7 @@ const path = require('path');
 const fs = require('fs');
 
 const W = 1200, H = 420, S = 1.5;
-const C = {
+const BASE = {
   ink: '#0b0c0f', card: '#14161b', rim: 'rgba(255,255,255,0.06)', text: '#f4f5f7', muted: '#8b8f99', faint: 'rgba(255,255,255,0.16)',
   accent: '#4f6dff', soft: '#8d9bff', live: '#3ccf7a', colon: '#2f323c',
 };
@@ -93,8 +93,19 @@ function wrap(x, text, maxW, maxLines) {
  * @param {number} now  ms; pass endsAt or later for the ended card
  * @returns {Promise<Buffer|null>} PNG
  */
+/** The card's colours, with the server's accent (Settings → Brand) when it has one. */
+function brandColors() {
+  let accent = null;
+  try { accent = require('./brand').current().accent; } catch { /* default */ }
+  if (!accent || !/^#[0-9a-f]{6}$/i.test(accent)) return BASE;
+  const rgb = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
+  const soft = '#' + rgb.map((v) => Math.round(v + (255 - v) * 0.38).toString(16).padStart(2, '0')).join('');
+  return { ...BASE, accent, soft };
+}
+
 async function renderCountdown(cd, now = Date.now()) {
   if (!Canvas) return null;
+  const C = brandColors();
   fonts();
   const cv = Canvas.createCanvas(W * S, H * S), x = cv.getContext('2d');
   x.scale(S, S);
@@ -121,17 +132,21 @@ async function renderCountdown(cd, now = Date.now()) {
   x.fillText(when.day, 52, y0);
   x.fillText(cd.note ? `${when.time} · ${String(cd.note).slice(0, 26)}` : when.time, 52, y0 + 26);
 
-  // the Quantbot mark, bottom left
-  const img = await logo();
+  // the signature, bottom left: the server's brand (Settings → Brand), else the Quantbot mark
+  let sig = { name: 'Quantbot', img: null };
+  try { sig = require('./brand').signature(); } catch { /* default */ }
+  const img = sig.img || await logo();
   if (img) {
     x.save(); x.beginPath(); x.arc(74, H - 62, 24, 0, Math.PI * 2); x.clip();
     const s = Math.max(48 / img.width, 48 / img.height);
     x.drawImage(img, 74 - (img.width * s) / 2, H - 62 - (img.height * s) / 2, img.width * s, img.height * s);
     x.restore();
     x.strokeStyle = C.rim; x.lineWidth = 1.5; x.beginPath(); x.arc(74, H - 62, 24, 0, Math.PI * 2); x.stroke();
-    x.font = `600 14px ${MONO}`; x.fillStyle = C.muted; x.letterSpacing = '2px'; x.textBaseline = 'middle';
-    x.fillText('QUANTBOT', 110, H - 61); x.letterSpacing = '0px'; x.textBaseline = 'alphabetic';
   }
+  x.font = `600 14px ${MONO}`; x.fillStyle = C.muted; x.letterSpacing = '2px'; x.textBaseline = 'middle';
+  let who = String(sig.name || 'Quantbot').normalize('NFKC').toUpperCase();
+  while (who.length > 1 && x.measureText(who).width > 360) who = who.slice(0, -1);
+  x.fillText(who, img ? 110 : 52, H - 61); x.letterSpacing = '0px'; x.textBaseline = 'alphabetic';
 
   // ── right: tiles, or the live block ────────────────────────────────────────
   const RX = 520, RW = W - RX - 44, TY = 44, TH = 206;

@@ -160,7 +160,7 @@ function legacyPrizeBanner(copy = {}) {
   drawFlowSignature(png, Math.round(176 - signatureWidth() / 2), 306, {
     chip: PURPLE, primary: TEXT, caption: SUBTLE,
     chipAlpha: 0.18, borderAlpha: 0.45, captionAlpha: 0.85,
-    captionText: dropId ? ('QL-' + String(dropId)).toUpperCase().slice(0, 16) : '',
+    captionText: dropId ? dropRef(String(dropId).toUpperCase()).slice(0, 16) : '',
   });
 
   return PNG.sync.write(png);
@@ -255,6 +255,39 @@ const TK = {
   ink: '#0b0c0f', card: '#14161b', rim: 'rgba(255,255,255,0.06)', text: '#f4f5f7', muted: '#8b8f99', faint: 'rgba(255,255,255,0.14)',
   accent: '#4f6dff', deep: '#2b3a9e', soft: '#8d9bff', ribbon: '#dfe3ff', paper: '#f4f5f7', rose: '#e86076',
 };
+const TK_BASE = { ...TK };
+
+/** The server's own drop code, e.g. "YL-7F2A" (utils/brand.js); QL- outside a server. */
+function dropRef(id) {
+  try { return require('./brand').dropRef(id); } catch { return `QL-${String(id).toUpperCase()}`; }
+}
+
+/** The server's brand: name, logo (full size) and accent; Quantbot when it has set none. */
+function brandSig() {
+  try { return require('./brand').signature(); } catch { return { name: 'Quantbot', img: null, accent: null }; }
+}
+
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mix = (h, to, t) => {
+  const a = hexRgb(h), b = hexRgb(to);
+  return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
+};
+
+/**
+ * Draws with the server's accent colour (Settings → Brand → Accent): the gift,
+ * ribbon, dots and stamp take it, shaded flat from that one colour. Rendering
+ * is synchronous, so the shared palette is swapped for the call and put back.
+ */
+function withBrandPalette(fn) {
+  const accent = brandSig().accent;
+  if (!accent || !/^#[0-9a-f]{6}$/i.test(accent)) return fn();
+  Object.assign(TK, {
+    accent, deep: mix(accent, '#0b0c0f', 0.45), soft: mix(accent, '#ffffff', 0.38), ribbon: mix(accent, '#ffffff', 0.84),
+  });
+  try { return fn(); } finally { Object.assign(TK, TK_BASE); }
+}
+const tint = (a) => { const [r, g, b] = hexRgb(TK.accent); return `rgba(${r},${g},${b},${a})`; };
+
 const TSANS = '"CD Sans", "Segoe UI", Arial, sans-serif', TMONO = '"CD Mono", Consolas, monospace', TSERIF = '"CD Serif", Georgia, serif';
 
 let ticketFonts = false;
@@ -334,7 +367,10 @@ function entryTicket(x, px, py, rot, code, stamp = '') {
   if (!stamp) {
     x.fillStyle = TK.ink; x.font = `600 10px ${TMONO}`; x.letterSpacing = '2px';
     x.fillText('ENTRY', -tw / 2 + 40, -6);
-    x.font = `600 12px ${TMONO}`; x.letterSpacing = '1px'; x.fillStyle = '#2a2d35';
+    // the code always fits on the ticket: smaller type for a longer code
+    let cs = 12;
+    do { x.font = `600 ${cs}px ${TMONO}`; x.letterSpacing = cs > 10 ? '1px' : '0.5px'; } while (x.measureText(code).width > tw - 48 && --cs > 7);
+    x.fillStyle = '#2a2d35';
     x.fillText(code, -tw / 2 + 40, 12);
     x.letterSpacing = '0px';
   } else {   // once the draw is done the ticket's face carries a rubber stamp instead
@@ -360,7 +396,7 @@ function entryTicket(x, px, py, rot, code, stamp = '') {
  */
 function openGift(x, cx, cy, dropId, pose = null) {
   const bw = 156, bh = 112, bx = cx - bw / 2, by = cy + 6;
-  const code = dropId ? `QL-${String(dropId).toUpperCase().slice(0, 8)}` : 'NO. 0001';
+  const code = dropId ? dropRef(String(dropId).toUpperCase().slice(0, 8)) : 'NO. 0001';
   const tickets = pose?.tickets || [{ dx: 0, rise: 1, rot: 0, code }];
 
   // the box's back wall, seen through the open top
@@ -416,6 +452,10 @@ function openGift(x, cx, cy, dropId, pose = null) {
 function generatePrizeGiveawayBannerImage(copy = {}) {
   if (!Canvas) return legacyPrizeBanner(copy);
   registerFonts();
+  return withBrandPalette(() => drawPrizeBanner(copy));
+}
+
+function drawPrizeBanner(copy) {
   const { pill, heading, subtitle, tagline, dropId, noEntries, drawn } = { ...PRIZE_DEFAULTS, ...copy };
   const empty = !!noEntries;
   const W = 1000, H = 400, S = 2, STUB = 330;
@@ -442,7 +482,7 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
   if (pill && String(pill).trim()) {
     x.font = `600 13px ${TMONO}`; x.letterSpacing = '2px';
     const label = String(pill).toUpperCase().slice(0, 20), pw = x.measureText(label).width + 40;
-    x.fillStyle = 'rgba(79,109,255,0.16)'; x.beginPath(); x.roundRect(R - pw, 46, pw, 30, 15); x.fill();
+    x.fillStyle = tint(0.16); x.beginPath(); x.roundRect(R - pw, 46, pw, 30, 15); x.fill();
     x.fillStyle = TK.accent; x.beginPath(); x.arc(R - pw + 16, 61, 4, 0, Math.PI * 2); x.fill();
     x.fillStyle = TK.soft; x.textBaseline = 'middle'; x.fillText(label, R - pw + 28, 62); x.textBaseline = 'alphabetic';
     x.letterSpacing = '0px';
@@ -475,20 +515,25 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
   x.font = `600 19px ${TSANS}`; x.fillStyle = TK.muted;
   wrapLines(x, calm(tagline), width, 2).forEach((l, i) => x.fillText(l, L, 236 + i * 30));
 
-  // signature row: the Quantbot mark, and the drop ID on the right
+  // signature row: the server's brand (Settings → Brand) or the Quantbot mark,
+  // and the drop ID on the right
   const sy = H - M - 52;
   x.strokeStyle = TK.rim; x.lineWidth = 1.5; x.beginPath(); x.moveTo(L, sy - 28); x.lineTo(R, sy - 28); x.stroke();
-  const img = markImg;
+  const sig = brandSig();
+  const img = sig.img || markImg;
   if (img) {
     x.save(); x.beginPath(); x.arc(L + 16, sy, 16, 0, Math.PI * 2); x.clip();
     const s = Math.max(32 / img.width, 32 / img.height);
     x.drawImage(img, L + 16 - (img.width * s) / 2, sy - (img.height * s) / 2, img.width * s, img.height * s);
     x.restore();
+    x.strokeStyle = TK.rim; x.lineWidth = 1.5; x.beginPath(); x.arc(L + 16, sy, 16, 0, Math.PI * 2); x.stroke();
   }
   x.font = `600 13px ${TMONO}`; x.letterSpacing = '2px'; x.fillStyle = TK.muted; x.textBaseline = 'middle';
-  x.fillText('QUANTBOT', L + 44, sy + 1);
+  let who = String(sig.name || 'Quantbot').normalize('NFKC').toUpperCase();
+  while (who.length > 1 && x.measureText(who).width > width * 0.5) who = who.slice(0, -1);
+  x.fillText(who, img ? L + 44 : L, sy + 1);
   if (dropId) {
-    const id = `QL-${String(dropId).toUpperCase().slice(0, 12)}`;
+    const id = dropRef(String(dropId).toUpperCase().slice(0, 12));
     x.textAlign = 'right'; x.fillStyle = TK.soft; x.fillText(id, R, sy + 1);
     x.fillStyle = TK.muted; x.fillText('DROP', R - x.measureText(id).width - 14, sy + 1);
     x.textAlign = 'left';
@@ -498,4 +543,4 @@ function generatePrizeGiveawayBannerImage(copy = {}) {
   return cv.toBuffer('image/png');
 }
 
-module.exports = { generatePrizeGiveawayBannerImage, preloadPrizeMark, PRIZE_DEFAULTS, openGift, registerFonts, TK };
+module.exports = { generatePrizeGiveawayBannerImage, preloadPrizeMark, PRIZE_DEFAULTS, openGift, registerFonts, TK, withBrandPalette, dropRef, brandSig };
