@@ -950,59 +950,62 @@ Object.assign(OPS, {
     }
     return botProfile.applyNickname(guildId, body?.nickname, ctx.client);
   },
+  // The bot's picture in one server: its real Discord profile picture there
+  // (member list, chat, mentions) and the image on its cards and embeds. Other
+  // servers keep their own, and the bot's global avatar is not touched.
   'bot-profile-server-image': async (guildId, body, ctx) => {
+    const store = require('../utils/imageStore');
     const conf = readJson('config.json', {});
     if (!conf[guildId]) conf[guildId] = {};
+    const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId);
+    if (!guild) return { error: 'unknown_guild' };
 
-    let url = String(body?.url || body?.brandAvatar || '').trim();
-    if (url === '') url = null;
+    let url = String(body?.url || body?.brandAvatar || '').trim() || null;
+    let image = null;                       // { buf, ext } when there is a picture to hand Discord
+    const hadUpload = typeof body?.data === 'string' && body.data.startsWith('data:image/');
 
-    // High-quality upload: data:image/...;base64,... → Discord CDN https URL
-    if (body?.data && typeof body.data === 'string' && body.data.startsWith('data:image/')) {
-      const mm = body.data.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
-      if (!mm) return { error: 'bad_image' };
-      const buf = Buffer.from(mm[2], 'base64');
-      // Keep quality high — allow up to ~2.5MB processed PNG
-      if (!buf.length || buf.length > 2.5 * 1024 * 1024) return { error: 'bad_image' };
-      try {
-        const { AttachmentBuilder } = require('discord.js');
-        const guild = ctx.guild || ctx.client.guilds.cache.get(guildId);
-        if (!guild) return { error: 'unknown_guild' };
-        const c = conf[guildId] || {};
-        let ch = guild.channels.cache.get(c.logsChannel || c.errorLogChannelId || c.modLogChannelId);
-        if (!ch?.isTextBased?.()) {
-          ch = guild.channels.cache.find(x =>
-            x.isTextBased?.() && x.viewable &&
-            x.permissionsFor?.(guild.members.me)?.has?.('AttachFiles')
-          );
-        }
-        if (!ch) return { error: 'no_upload_channel' };
-        const file = new AttachmentBuilder(buf, { name: `server_brand_${guildId}.png` });
-        // The message is kept on purpose: deleting it lets Discord expire the
-        // attachment, and the saved URL then stops loading a while later.
-        const msg = await ch.send({ files: [file] });
-        url = msg.attachments.first()?.url || null;
-        if (!url) return { error: 'bad_image' };
-      } catch (err) {
-        console.warn('[Panel] server image upload:', err.message);
-        return { error: 'bad_image' };
-      }
-    }
-
-    if (url && !/^https:\/\//i.test(url)) return { error: 'bad_image' };
-    if (url && url.length > 500) return { error: 'bad_image' };
-    // Only "unchanged" when there was no upload and the URL is identical.
-    // A fresh data upload always produces a new CDN URL and must save.
-    const hadUpload = !!(body?.data && String(body.data).startsWith('data:image/'));
-    if (!hadUpload && (conf[guildId].brandAvatar || null) === url) {
+    if (hadUpload) {
+      image = store.fromDataUrl(body.data);
+      if (!image) return { error: 'bad_image' };
+      if (image.buf.length > 2.5 * 1024 * 1024) return { error: 'body_too_large' };
+      const saved = await store.save(image.buf, { guildId });
+      if (!saved.ok) return saved;
+      url = saved.url;
+    } else if (url) {
+      if (!/^https:\/\//i.test(url) || url.length > 500) return { error: 'bad_image' };
+      if ((conf[guildId].brandAvatar || null) === url) return { unchanged: true };
+      image = await fetchImage(url);
+    } else if (!conf[guildId].brandAvatar && !guild.members?.me?.avatar) {
       return { unchanged: true };
     }
+
     conf[guildId].brandAvatar = url;
     writeJson('config.json', conf);
+
+    // Discord: set it, or with no picture go back to the bot's normal avatar.
+    let discordAvatar = 'skipped';
+    let detail = null;
+    if (image || !url) {
+      try {
+        const avatar = image ? `data:${image.ext === 'jpg' ? 'image/jpeg' : `image/${image.ext}`};base64,${image.buf.toString('base64')}` : null;
+        // Written out rather than Routes.guildMember, which escapes @me to %40me.
+        await ctx.client.rest.patch(`/guilds/${guildId}/members/@me`, { body: { avatar }, reason: `Panel: bot picture changed by ${ctx.session?.name || ctx.session?.uid || 'a manager'}` });
+        discordAvatar = image ? 'set' : 'reset';
+      } catch (err) {
+        discordAvatar = 'failed';
+        detail = String(err?.rawError?.message || err?.message || err).slice(0, 160);
+        console.warn('[Panel] server avatar:', detail);
+      }
+    } else {
+      detail = 'That link could not be loaded as a picture, so only the cards use it.';
+    }
+
     return {
       ok: true,
       guild: { brandAvatar: url },
-      changed: ['Server bot image'],
+      discordAvatar,
+      detail,
+      changed: ['Bot picture in this server'],
     };
   },
   'bot-profile-presence': async (_guildId, body, ctx) => {
@@ -1011,40 +1014,47 @@ Object.assign(OPS, {
     if (!auth.isOwner(ctx.session.uid)) return { error: 'forbidden' };
     return botProfile.applyPresence(body || {}, ctx.client);
   },
-  'imageupload': async (guildId, body, ctx) => {
-    if (!body?.data || typeof body.data !== 'string' || !body.data.startsWith('data:image/')) {
-      return { error: 'bad_image' };
-    }
-    const mm = body.data.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/i);
-    if (!mm) return { error: 'bad_image' };
-    const ext = mm[1].toLowerCase() === 'jpg' ? 'jpeg' : mm[1].toLowerCase();
-    const buf = Buffer.from(mm[2], 'base64');
-    if (buf.length > 7.5 * 1024 * 1024) return { error: 'body_too_large' };
-    const guild = ctx.guild || ctx.client?.guilds?.cache?.get(guildId);
-    if (!guild) return { error: 'unknown_guild' };
-    const conf = readJson('config.json', {})[guildId] || {};
-    let ch = guild.channels.cache.get(conf.logsChannel || conf.errorLogChannelId || conf.modLogChannelId);
-    if (!ch?.isTextBased?.()) {
-      ch = guild.channels.cache.find(x =>
-        x.isTextBased?.() && x.viewable &&
-        x.permissionsFor?.(guild.members.me)?.has?.('AttachFiles')
-      );
-    }
-    if (!ch) return { error: 'no_upload_channel' };
+  // Pictures picked in the panel (composer, banners, logos) are kept by the
+  // bot and linked from bot.yser.app/i/… — never posted into a channel.
+  'imageupload': async (guildId, body) => {
+    const store = require('../utils/imageStore');
+    const image = store.fromDataUrl(body?.data);
+    if (!image) return { error: 'bad_image' };
+    if (image.buf.length > 7.5 * 1024 * 1024) return { error: 'body_too_large' };
     try {
-      const { AttachmentBuilder } = require('discord.js');
-      const file = new AttachmentBuilder(buf, { name: `panel_upload.${ext === 'jpeg' ? 'jpg' : ext}` });
-      // Kept, not deleted — see bot-profile-server-image above.
-      const msg = await ch.send({ files: [file] });
-      const url = msg.attachments.first()?.url;
-      if (!url) return { error: 'upload_failed' };
-      return { ok: true, url };
+      const saved = await store.save(image.buf, { guildId });
+      return saved.ok ? { ok: true, url: saved.url } : saved;
     } catch (err) {
       console.warn('[Panel] imageupload:', err.message);
       return { error: 'upload_failed', detail: String(err.message || err).slice(0, 120) };
     }
   },
 });
+
+/**
+ * Loads a pasted https picture so Discord can be handed the image itself.
+ * Ours are read straight from the store; anything else is fetched with a
+ * short timeout and a size cap, and must really be an image.
+ */
+async function fetchImage(url) {
+  const store = require('../utils/imageStore');
+  try {
+    const own = /\/i\/([a-f0-9]{32})\.(png|jpg|webp|gif)$/.exec(url);
+    if (own && store.isOwnUrl(url)) {
+      const found = await store.load(own[1], own[2]);
+      return found ? { buf: found.buf, ext: own[2] } : null;
+    }
+    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    if (Number(res.headers.get('content-length') || 0) > 2.5 * 1024 * 1024) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > 2.5 * 1024 * 1024) return null;
+    const ext = store.sniff(buf);
+    return ext ? { buf, ext } : null;
+  } catch {
+    return null;
+  }
+}
 
 async function apply(op, guildId, body, ctx) {
   const handler = OPS[op];

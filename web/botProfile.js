@@ -160,6 +160,8 @@ function read(guildId, client, session) {
       nickname: member?.nickname || null,
       displayName: member?.displayName || me?.username || null,
       brandAvatar,
+      // The bot's own Discord picture in this server, when it has one.
+      serverAvatarUrl: member?.avatar ? member.avatarURL?.({ size: 256 }) || null : null,
     },
     presence: {
       status: liveStatus,

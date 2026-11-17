@@ -4369,3 +4369,25 @@ html { touch-action: manipulation; }
 .srv-going .srv-text { display: flex; flex-direction: column; gap: 2px; }
 .srv-going b { font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { .srv-going { transition: none; } }
+
+/* ── Bot picture in this server: chat preview + this server vs. the rest ── */
+.bp-card { display: grid; gap: 14px; margin: 10px 0 14px; padding: 14px; border: 1px solid var(--rule); border-radius: 14px; background: var(--sunken); }
+.bp-chat { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: #1a1a1e; }
+.bp-face { width: 40px; height: 40px; flex: none; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: var(--raised); color: var(--accent-2); font-weight: 700; }
+.bp-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bp-face.lg { width: 56px; height: 56px; font-size: 20px; }
+.bp-msg { min-width: 0; }
+.bp-msg p { margin: 2px 0 0; color: #dbdee1; font-size: 14px; line-height: 1.4; }
+.bp-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bp-head b { color: var(--ink); font-size: 15px; }
+.bp-app { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: #5865f2; color: #fff; letter-spacing: .02em; }
+.bp-time { font-size: 12px; color: var(--muted); }
+.bp-scope { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.bp-side { display: grid; justify-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.bp-side.bp-here { color: var(--ink); }
+.bp-side.bp-here .bp-face { box-shadow: 0 0 0 2px var(--sunken), 0 0 0 4px var(--accent-2); }
+.bp-arrow { color: var(--muted); font-size: 18px; }
+.bp-studio { margin: 10px 0; }
+.bp-link { margin-top: 10px; }
+.bp-link summary { cursor: pointer; color: var(--soft); font-size: 13px; padding: 4px 0; }
+.bp-link[open] summary { margin-bottom: 6px; }

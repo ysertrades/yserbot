@@ -28,6 +28,8 @@ const cache = new Map();
 
 // null = file-mode fallback, set to the real collection after connect()
 let col = null;
+// The database itself, for stores that keep their own collection (images).
+let dbRef = null;
 
 // ── Write-ahead retry queue ───────────────────────────────────────────────
 //
@@ -249,6 +251,7 @@ async function connect(uri) {
 
     const db = client.db('yser_bot');
     col = db.collection('bot_storage');
+    dbRef = db;
 
     // ── Drain any writes that were queued before we connected ────────────
     if (retryQueue.size > 0) {
@@ -360,4 +363,6 @@ function writeJson(fileName, data) {
     });
 }
 
-module.exports = { connect, readJson, writeJson };
+function db() { return dbRef; }
+
+module.exports = { connect, readJson, writeJson, db };
