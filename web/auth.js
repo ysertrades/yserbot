@@ -291,6 +291,43 @@ function staffGuildsFor(uid) {
   return Object.keys(staff).filter(guildId => uid in (staff[guildId] || {}));
 }
 
+/*
+ * The servers someone manages, worked out live from the bot's side.
+ *
+ * The list signed into the session is taken once, at sign-in, from Discord's
+ * own answer, so a server the bot joined afterwards (or a role granted
+ * since) never showed up until the next sign-in, and the only way in was the
+ * owner console. This asks the bot instead: every server it is in where the
+ * person is the owner, or holds Administrator or Manage Server right now.
+ * Kept for a few minutes, so a page load costs at most one member lookup per
+ * server, and a role taken away stops working on the next refresh.
+ */
+const LIVE_TTL_MS = 3 * 60 * 1000;
+const liveManaged = new Map();   // uid → { at, ids: Set }
+
+async function refreshManaged(uid, client) {
+  uid = String(uid);
+  const have = liveManaged.get(uid);
+  if (have && Date.now() - have.at < LIVE_TTL_MS) return have.ids;
+  const { allowlist } = config();
+  const ids = new Set();
+  for (const g of client.guilds.cache.values()) {
+    if (allowlist.length > 0 && !allowlist.includes(g.id)) continue;
+    if (g.ownerId === uid) { ids.add(g.id); continue; }
+    let m = g.members?.cache?.get(uid);
+    if (!m && typeof g.members?.fetch === 'function') m = await g.members.fetch(uid).catch(() => null);
+    try { if (m?.permissions?.has(MANAGE_GUILD)) ids.add(g.id); } catch { /* not a manager */ }
+  }
+  liveManaged.set(uid, { at: Date.now(), ids });
+  return ids;
+}
+
+/** The last live answer, if still fresh; null when there is none yet. */
+function managedNow(uid) {
+  const have = liveManaged.get(String(uid));
+  return have && Date.now() - have.at < LIVE_TTL_MS * 4 ? have.ids : null;
+}
+
 function listStaff(guildId) {
   const staff = readJson(STAFF_FILE, {})[guildId] || {};
   return Object.entries(staff).map(([userId, rec]) => ({ userId, ...rec }));
@@ -371,6 +408,7 @@ function canAccessGuild(session, guildId, client) {
   if (allowlist.length > 0 && !allowlist.includes(guildId)) return false;
 
   if (Array.isArray(session.guilds) && session.guilds.includes(guildId)) return true;
+  if (managedNow(session.uid)?.has(guildId)) return true;
   return staffGuildsFor(session.uid).includes(guildId);
 }
 
@@ -389,7 +427,7 @@ function csrfValid(session, token) {
 }
 
 module.exports = {
-  config, missingConfig, csrfFor, csrfValid, embeddable, isOwner,
+  config, missingConfig, csrfFor, csrfValid, embeddable, isOwner, refreshManaged, managedNow,
   parkHandoff, collectHandoff, refreshed, adoptable,
   mintEmbedLink, revokeEmbedLinks,
   staffGuildsFor, listStaff, grantStaff, revokeStaff,

@@ -956,6 +956,79 @@ function renderGuildPicker() {
   } else if (back) {
     back.hidden = true;
   }
+  wireServerSwitcher();
+  renderServersCard();
+}
+
+/*
+ * Server switching from anywhere: the server's name in the header opens a
+ * sheet of every server you manage, and Settings has the same list as a card.
+ * Each row shows the server's icon, size and whether it is the one open now.
+ */
+function serverRow(g, after) {
+  const current = g.id === state.guildId;
+  const row = el('button', `srv-row${current ? ' current' : ''}`);
+  row.type = 'button';
+  if (current) row.setAttribute('aria-current', 'true');
+  const ico = el('span', 'srv-ico');
+  if (g.icon) {
+    const i = el('img');
+    i.src = g.icon; i.alt = ''; i.referrerPolicy = 'no-referrer'; i.loading = 'lazy';
+    i.onerror = () => { i.remove(); ico.textContent = (g.name || '?').slice(0, 1).toUpperCase(); };
+    ico.append(i);
+  } else ico.textContent = (g.name || '?').slice(0, 1).toUpperCase();
+  const text = el('span', 'srv-text');
+  text.append(el('b', null, g.name || 'Server'), el('span', 'srv-meta', `${num(g.members)} member${g.members === 1 ? '' : 's'}`));
+  const tail = el('span', 'srv-tail');
+  tail.append(el('i', 'srv-dot'), document.createTextNode(current ? 'Open now' : 'Switch'));
+  row.append(ico, text, tail);
+  row.addEventListener('click', () => {
+    if (!current) selectGuild(g.id).catch(reportLoadFailure);
+    if (after) after();
+  });
+  return row;
+}
+
+function sortedGuilds() {
+  return [...state.guilds].sort((a, b) => (a.id === state.guildId ? -1 : b.id === state.guildId ? 1 : String(a.name || '').localeCompare(String(b.name || ''))));
+}
+
+function openServerSwitcher() {
+  const list = el('div', 'srv-list');
+  list.append(...sortedGuilds().map(g => serverRow(g, closeSheet)));
+  const hint = el('p', 'hint srv-hint', 'Servers show up here on their own once the bot is in them and you own or manage them.');
+  openSheet('Switch server', [list, hint]);
+}
+
+function wireServerSwitcher() {
+  const sid = document.querySelector('#server .server-id');
+  if (!sid) return;
+  const many = state.guilds.length > 1;
+  sid.classList.toggle('switchable', many);
+  if (!many) { sid.removeAttribute('role'); sid.removeAttribute('tabindex'); return; }
+  sid.setAttribute('role', 'button');
+  sid.setAttribute('tabindex', '0');
+  sid.setAttribute('aria-label', 'Switch server');
+  if (!sid.querySelector('.srv-switch')) {
+    const chip = el('span', 'srv-switch');
+    chip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></svg>';
+    sid.append(chip);
+  }
+  const count = sid.querySelector('.srv-switch');
+  count.dataset.n = String(state.guilds.length);
+  if (!sid.dataset.wired) {
+    sid.dataset.wired = '1';
+    sid.addEventListener('click', () => { if (sid.classList.contains('switchable')) openServerSwitcher(); });
+    sid.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && sid.classList.contains('switchable')) { e.preventDefault(); openServerSwitcher(); } });
+  }
+}
+
+function renderServersCard() {
+  const host = $('#servers-list');
+  if (!host) return;
+  host.replaceChildren(...sortedGuilds().map(g => serverRow(g)));
+  const pill = $('#servers-count');
+  if (pill) { pill.textContent = String(state.guilds.length); pill.className = 'pill on'; }
 }
 
 /* ── overview ──────────────────────────────────────────────────────────── */

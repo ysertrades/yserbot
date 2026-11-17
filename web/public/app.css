@@ -222,6 +222,33 @@ h2 {
 }
 .guilds:has(button:only-child) { display: none; }
 
+/* Server switcher: the server's name in the header is the switch (with
+   more than one server), opening a list of them; Settings has the same list. */
+.server-id.switchable { cursor: pointer; border-radius: 16px; padding: 4px 6px 4px 4px; margin: -4px -6px -4px -4px; transition: background-color .15s ease; -webkit-tap-highlight-color: transparent; }
+@media (hover: hover) { .server-id.switchable:hover { background: var(--sunken); } }
+.server-id.switchable:active { background: var(--raised); }
+.server-id.switchable:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 2px; }
+.srv-switch { display: none; position: relative; margin-left: auto; flex: none; width: 36px; height: 36px; border-radius: 11px; border: 1px solid var(--rule); background: var(--sunken); color: var(--soft); place-items: center; }
+.server-id.switchable .srv-switch { display: grid; }
+.srv-switch svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.srv-switch::after { content: attr(data-n); position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; background: var(--accent); color: #fff; font: 700 10px/17px var(--mono, monospace); text-align: center; box-shadow: 0 0 0 2px var(--bg, #111); }
+
+.srv-list { display: grid; gap: 6px; }
+.srv-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--rule); background: var(--sunken); color: var(--soft); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, transform .12s ease; }
+@media (hover: hover) { .srv-row:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--rule)); color: var(--ink); } }
+.srv-row:active { transform: scale(.985); }
+.srv-row.current { border-color: color-mix(in srgb, var(--accent) 55%, var(--rule)); background: var(--raised); color: var(--ink); }
+.srv-ico { flex: none; width: 40px; height: 40px; border-radius: 12px; overflow: hidden; display: grid; place-items: center; background: var(--raised); border: 1px solid var(--rule); color: var(--accent); font-weight: 700; }
+.srv-ico img { width: 100%; height: 100%; object-fit: cover; }
+.srv-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.srv-text b { color: var(--ink); font-size: .95rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srv-meta { color: var(--muted); font-size: .78rem; font-family: var(--mono); }
+.srv-tail { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .76rem; font-weight: 600; }
+.srv-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--rule); }
+.srv-row.current .srv-tail { color: var(--good, #22c55e); }
+.srv-row.current .srv-dot { background: var(--good, #22c55e); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good, #22c55e) 25%, transparent); }
+.srv-hint { margin: 10px 2px 0; }
+
 /* ── section nav ─────────────────────────────────────────────────────── */
 .sections {
   display: flex;

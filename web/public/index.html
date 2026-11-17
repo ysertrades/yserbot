@@ -453,6 +453,17 @@ html:not(.booted) .view[data-view="loading"]{visibility:hidden}
     <div class="section" data-section="settings">
       <nav class="set-nav" id="set-nav" aria-label="Settings sections"></nav>
 
+      <!-- Your servers: every server you manage that the bot is in, worked out
+           live (web/auth.js refreshManaged). Rendered by renderServersCard(). -->
+      <div class="panel" id="servers-card" data-nav="Servers">
+        <div class="queue-head">
+          <h2>Your servers</h2>
+          <span class="pill" id="servers-count"></span>
+        </div>
+        <p class="hint">Every server you own or manage that the bot is in. Tap one to switch; everything on this panel follows it.</p>
+        <div id="servers-list" class="srv-list"></div>
+      </div>
+
       <!-- Brand: the name, caption, colour and logo this server's cards sign
            with. Rendered by renderBrand(); saved through the brand op. -->
       <div class="panel brand-card" id="brand-card" data-nav="Brand">

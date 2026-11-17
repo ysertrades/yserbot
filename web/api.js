@@ -37,13 +37,16 @@ const appearance = require('./appearance');
 const whopPanel = require('./whop');
 const botProfile = require('./botProfile');
 
-function me(session, client) {
+async function me(session, client) {
   const owner = auth.isOwner(session.uid);
   // Top picker: only guilds this account owns/admins or holds a staff grant for.
   // Owner tab still lists every bot guild via /api/owner/guilds.
   // Do NOT inject client.guilds.cache here — that put other people's servers
   // in the picker. Overview crest still renders from the selected session guild.
-  const ids = new Set([...(session.guilds || []), ...auth.staffGuildsFor(session.uid)]);
+  // The live check adds servers this person manages that the sign-in list
+  // predates (the bot joined later, or a role was granted since).
+  const live = await auth.refreshManaged(session.uid, client).catch(() => null);
+  const ids = new Set([...(session.guilds || []), ...(live || []), ...auth.staffGuildsFor(session.uid)]);
 
   const guilds = [...ids]
     .filter(id => client.guilds.cache.has(id))
