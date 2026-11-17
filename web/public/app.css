@@ -4345,3 +4345,27 @@ input[type="search"]::-webkit-search-cancel-button {
 .inc-ok { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.6rem; padding: 0.7rem 0.85rem; border-radius: 12px; border: 1px dashed var(--rule); color: var(--soft); font-size: 0.85rem; }
 .inc-ok-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--good, #22c55e); box-shadow: 0 0 0 4px color-mix(in srgb, var(--good, #22c55e) 20%, transparent); }
 .ev-case-acts .btn.armed { background: rgba(242,63,67,.16); border-color: rgba(242,63,67,.6); color: #fff; }
+
+/* ── phones: the screen stays still ─────────────────────────────────────────
+   iOS zooms the page in whenever a field under 16px gets focus, and a quick
+   double tap on a button zooms too. Fields are 16px on touch screens and
+   double-tap zoom is off; pinching still zooms as normal. */
+html { touch-action: manipulation; }
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select, textarea, [contenteditable="true"], [contenteditable=""] { font-size: 16px !important; }
+}
+
+/* The card shown for the moment between picking a server and its panel. */
+.srv-going {
+  position: fixed; left: 50%; top: 50%; z-index: 9999;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px 14px 14px; border-radius: 18px;
+  background: var(--panel, #141414); border: 1px solid var(--line, #2a2a2a);
+  transform: translate(-50%, -46%) scale(.96); opacity: 0;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s ease;
+}
+.srv-going.in { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+.srv-going .srv-text { display: flex; flex-direction: column; gap: 2px; }
+.srv-going b { font-size: 16px; }
+@media (prefers-reduced-motion: reduce) { .srv-going { transition: none; } }
