@@ -150,24 +150,28 @@ function read(guildId, client, session) {
     canEditServerImage: true,
     canEditGlobal: owner,
     canEditPresence: owner,
-    global: {
+    // The bot's global identity and status are the owner's alone: nobody else
+    // is sent them at all, so the panel has nothing of them to show.
+    global: owner ? {
       username: me?.username || null,
       globalName: me?.globalName || me?.username || null,
       avatarUrl: me?.displayAvatarURL?.({ size: 256 }) || null,
       bio: me?.bio ?? null,
-    },
+    } : null,
     guild: {
       nickname: member?.nickname || null,
       displayName: member?.displayName || me?.username || null,
       brandAvatar,
       // The bot's own Discord picture in this server, when it has one.
       serverAvatarUrl: member?.avatar ? member.avatarURL?.({ size: 256 }) || null : null,
+      // What members of this server see right now.
+      avatarUrl: member?.displayAvatarURL?.({ size: 256 }) || me?.displayAvatarURL?.({ size: 256 }) || null,
     },
-    presence: {
+    presence: owner ? {
       status: liveStatus,
       activityType,
       activityText,
-    },
+    } : null,
   };
 }
 

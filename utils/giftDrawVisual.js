@@ -14,7 +14,8 @@
  */
 
 const { buildPalette, GifWriter } = require('./gifEncoder');
-const { openGift, registerFonts, TK } = require('./prizeGiveawayVisual');
+const { openGift, registerFonts, TK, withBrandPalette, dropRef, brandSig } = require('./prizeGiveawayVisual');
+const { memoizeRender } = require('./renderCache');
 
 let Canvas = null;
 try { Canvas = require('@napi-rs/canvas'); } catch { /* the drawing card shows text only without it */ }
@@ -30,7 +31,7 @@ function bump(u, at, width) {
 
 function pose(t, dropId) {
   const u = t / T;
-  const code = dropId ? `QL-${String(dropId).toUpperCase().slice(0, 8)}` : 'NO. 0001';
+  const code = dropId ? dropRef(String(dropId).toUpperCase().slice(0, 8)) : 'NO. 0001';
   const tickets = [
     { dx: 0, rot: 0, code, rise: bump(u, 0, 0.3) },
     { dx: -16, rot: 0.15, code: 'NO. 0412', rise: bump(u, 1 / 3, 0.3) },
@@ -57,14 +58,21 @@ function draw(x, t, dropId) {
 function renderGiftDrawGif({ dropId = null, scale = 1.25, fps = 25 } = {}) {
   if (!Canvas) return null;
   registerFonts();
-  const w = Math.round(W * scale), h = Math.round(H * scale), n = Math.round(T * fps);
-  const cv = Canvas.createCanvas(w, h), x = cv.getContext('2d');
-  const frame = (t) => { x.setTransform(scale, 0, 0, scale, 0, 0); draw(x, t, dropId); return x.getImageData(0, 0, w, h).data; };
-  const palette = buildPalette([frame(0), frame(T / 6), frame(T / 2)], [TK.card, TK.ink, TK.paper, TK.accent, TK.deep, TK.soft, TK.ribbon]);
-  const gif = new GifWriter(w, h, palette);
-  for (let i = 0; i < n; i++) gif.addFrame(frame(i / fps), 1000 / fps);
-  return gif.finish();
+  // In the server's accent colour when it has set one (Settings → Brand).
+  return withBrandPalette(() => {
+    const w = Math.round(W * scale), h = Math.round(H * scale), n = Math.round(T * fps);
+    const cv = Canvas.createCanvas(w, h), x = cv.getContext('2d');
+    const frame = (t) => { x.setTransform(scale, 0, 0, scale, 0, 0); draw(x, t, dropId); return x.getImageData(0, 0, w, h).data; };
+    const palette = buildPalette([frame(0), frame(T / 6), frame(T / 2)], [TK.card, TK.ink, TK.paper, TK.accent, TK.deep, TK.soft, TK.ribbon]);
+    const gif = new GifWriter(w, h, palette);
+    for (let i = 0; i < n; i++) gif.addFrame(frame(i / fps), 1000 / fps);
+    return gif.finish();
+  });
 }
+
+// A server with its own accent gets its own GIF, drawn once and kept (the
+// cache key carries the server and its brand version).
+const brandedGif = memoizeRender(function brandedDrawingGif() { return renderGiftDrawGif(DRAWING_GIF_OPTS); }, { name: 'drawingGif', max: 8 });
 
 // The size the shipped GIF is rendered at: 640 × 320, 20 fps, about 190 KB, so it loads fast.
 const DRAWING_GIF_OPTS = { scale: 1, fps: 20 };
@@ -76,6 +84,7 @@ let shipped = null;
  * @returns {Buffer|null}
  */
 function drawingGif() {
+  if (brandSig().accent) { try { const g = brandedGif(); if (g) return g; } catch { /* the shipped one below */ } }
   if (shipped) return shipped;
   try { shipped = require('fs').readFileSync(require('path').join(__dirname, '..', 'assets', 'giveaway', 'drawing.gif')); }
   catch { shipped = renderGiftDrawGif(DRAWING_GIF_OPTS); }

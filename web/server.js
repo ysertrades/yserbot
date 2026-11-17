@@ -472,6 +472,7 @@ async function route(req, res, client) {
     // leave a broken "?" image), then the bot's profile picture, then ours.
     const logos = [
       b.logoUrl && !brand.logoFailed?.(t.g) ? b.logoUrl : null,
+      brand.serverPicture?.(t.g) || null,   // the bot's picture in this server
       client.user?.displayAvatarURL?.({ size: 128, extension: 'png' }) || null,
       '/logo-128.jpg',
     ].filter(Boolean);
@@ -481,7 +482,7 @@ async function route(req, res, client) {
       server: guild.name, serverIcon: guild.iconURL({ size: 128, extension: 'png' }) || null,
       user: member?.displayName || member?.user?.username || null,
       prize: saved?.prize || null, returnUrl,
-      dropId: saved?.dropId ? `QL-${saved.dropId}` : null,
+      dropId: saved?.dropId ? brand.dropRef(saved.dropId, t.g) : null,
       status: ev.statusOf(t.g, t.u, t.m || null), expired: !!t.expired,
     };
     if (req.method !== 'POST') return json(res, 200, info);

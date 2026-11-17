@@ -298,7 +298,7 @@ async function refreshLiveGiveawayMessage(guild, messageId, entryCount) {
             .setDescription(
               [
                 'Live **Entries** counter could not be refreshed.',
-                '**Drop:** QL-' + String(dropId),
+                '**Drop:** ' + require('../../utils/brand').dropRef(dropId),
                 '**Prize:** ' + String(prize),
                 '**Entries (memory):** ' + String(entries),
                 '**Error:** `' + String(err.message || err).slice(0, 180) + '`',
@@ -1095,7 +1095,7 @@ async function revealGiveaway(message, interaction) {
       ephemeral: true,
       content:
         `👀 You didn't enter this giveaway, keep an eye on this channel to catch the next one.\n\n`
-        + `Drop ID: \`QL-${shortId}\`\n\n`
+        + `Drop ID: \`${require('../../utils/brand').dropRef(shortId)}\`\n\n`
         + sign,
     };
   }
@@ -1123,7 +1123,7 @@ async function revealGiveaway(message, interaction) {
       content:
         `🎉 You won ${article}**${prize}**\n\n`
         + (sent ? `A prize message has been sent to your DMs.\n` : `A prize message will be sent to your DMs shortly.\n`)
-        + `Drop ID: \`QL-${shortId}\`\n\n`
+        + `Drop ID: \`${require('../../utils/brand').dropRef(shortId)}\`\n\n`
         + sign,
     };
   }
@@ -1134,7 +1134,7 @@ async function revealGiveaway(message, interaction) {
     content:
       `🎟️ Not your ticket this time.\n\n`
       + `**${prize}** went to another entry, the next drop could be yours.\n`
-      + `Drop ID: \`QL-${shortId}\`\n\n`
+      + `Drop ID: \`${require('../../utils/brand').dropRef(shortId)}\`\n\n`
       + sign,
   };
 }
