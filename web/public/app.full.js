@@ -7450,11 +7450,20 @@ function renderAppearance() {
 function renderGiveawayForm(opts = {}) {
   const form = $('#form-gaw');
   if (!form) return;
+  // The pickers (host, channel, roles) are filled from this server's overview,
+  // so the form cannot be built before it has arrived. Built too early it kept
+  // "No admins loaded" for good, because a built form is never rebuilt below.
+  // The overview's own render calls this again the moment the data is in.
+  if (!state.overview || state.overview.guild?.id !== state.guildId) return;
+  const sameServer = form.dataset.guild === state.guildId;
   // Once the launch form is built, keep it. Live overview / tab focus must
-  // not rebuild and wipe prize, duration, winners, etc.
+  // not rebuild and wipe prize, duration, winners, etc. The one thing that
+  // follows the data is the host list, refreshed in place.
   // Pass { force: true } after a successful launch or when entering the tab.
-  if (form.dataset.ready === '1' && !opts.force) return;
-  if (isEditingPanel() && form.dataset.ready === '1') return;
+  // A form built for another server is never reused: its channels, roles and
+  // hosts are that server's.
+  if (form.dataset.ready === '1' && !opts.force && sameServer) { form._fillHost?.(); return; }
+  if (isEditingPanel() && form.dataset.ready === '1' && sameServer) return;
 
   const draft = {
     kind: 'prize',
@@ -7534,6 +7543,32 @@ function renderGiveawayForm(opts = {}) {
     }
   }));
 
+  // The host picker lives in its own slot so it can be refilled in place when
+  // the list of admins changes, without touching anything typed in the form.
+  const hostBox = el('div', 'host-slot');
+  let hostSig = null;
+  const fillHost = () => {
+    // Not while somebody has the list open.
+    if (hostBox.contains(document.activeElement)) return;
+    const admins = state.overview?.features?.admins || [];
+    const sig = `${state.guildId}:${admins.map(a => a.id).join(',')}`;
+    if (sig === hostSig) return;
+    hostSig = sig;
+    // A host who is no longer in the list is dropped; with none chosen, the
+    // person using the panel hosts, if they are an admin, else the first one.
+    if (draft.hostId && !admins.some(a => a.id === draft.hostId)) draft.hostId = null;
+    if (!draft.hostId && admins.length) draft.hostId = (admins.find(a => a.id === state.me?.id) || admins[0]).id;
+    hostBox.replaceChildren(select(
+      'Host (admin)',
+      draft.hostId || '',
+      admins.map(a => ({ value: a.id, label: a.name })),
+      v => { draft.hostId = v || null; },
+      { blank: admins.length ? 'Pick an admin' : 'Looking for admins…' },
+    ));
+  };
+  fillHost();
+  form._fillHost = fillHost;
+
   const parts = [
     textField('Prize name', '', v => { draft.prize = v; }, {
       placeholder: 'e.g. VIP role · $50 credit · 1-month membership',
@@ -7546,17 +7581,7 @@ function renderGiveawayForm(opts = {}) {
     ),
     winBox,
     durBox,
-    (() => {
-      const admins = state.overview?.features?.admins || [];
-      if (!draft.hostId && admins.length) draft.hostId = admins[0].id;
-      return select(
-        'Host (admin)',
-        draft.hostId || '',
-        admins.map(a => ({ value: a.id, label: a.name })),
-        v => { draft.hostId = v || null; },
-        { blank: admins.length ? 'Pick an admin' : 'No admins loaded — refresh the panel' },
-      );
-    })(),
+    hostBox,
     pickOne('Channel', 'channel', '', v => { draft.channelId = v; }, { blank: 'Where it posts' }),
     mentionPicker('Optional ping', null, v => { draft.mention = v; }),
     pickOne('Required role', 'role', '', v => { draft.requiredRoleId = v; }, { blank: 'Anyone can enter' }),
@@ -7730,6 +7755,7 @@ function renderGiveawayForm(opts = {}) {
 
   state.gawBump = () => {};
   form.dataset.ready = '1';
+  form.dataset.guild = state.guildId;
 
 }
 
