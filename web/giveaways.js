@@ -247,7 +247,10 @@ async function create(guildId, body, { guild, session, client }) {
 
   let hostId = session.uid;
   if (body.hostId) {
-    const hostMember = guild.members.cache.get(String(body.hostId));
+    // Looked up if the bot has not cached them: an admin the member list
+    // missed is still a valid host.
+    const hostMember = guild.members.cache.get(String(body.hostId))
+      || await guild.members.fetch(String(body.hostId)).catch(() => null);
     const ok = hostMember
       && !hostMember.user?.bot
       && (hostMember.permissions?.has?.('Administrator')
@@ -425,7 +428,8 @@ async function restartEmpty(guildId, body, { guild, client, session }) {
     mention = `<@&${body.mention}>`;
   }
 
-  const hostId = body.hostId && guild.members.cache.get(String(body.hostId))
+  const hostId = body.hostId && (guild.members.cache.get(String(body.hostId))
+      || await guild.members.fetch(String(body.hostId)).catch(() => null))
     ? String(body.hostId)
     : (rec.hostId || session?.uid);
   const imageUrl = body.imageUrl != null ? body.imageUrl : (rec.imageUrl || 'dynamic:prizeGiveawayBanner');

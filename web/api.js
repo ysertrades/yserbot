@@ -83,8 +83,37 @@ async function ensureMembers(guild) {
   memberFetchedAt.set(guild.id, Date.now());
   const fetching = guild.members.fetch({ time: 4_000 }).catch(err => {
     console.warn('[Panel] could not fetch the member list:', err.message);
+    // A failed fetch is tried again in 15 seconds, not 5 minutes: until it
+    // works the member and host lists are short.
+    memberFetchedAt.set(guild.id, Date.now() - MEMBER_TTL_MS + 15_000);
   });
   if (!last) await fetching;
+}
+
+const hostMissAt = new Map();   // "guild:user" → when a look-up found nobody
+
+/**
+ * The Host picker is filled from the members the bot has cached, and the bulk
+ * member fetch can come back short on a big or just-joined server. The owner
+ * and whoever has the panel open are always fine hosts when they can manage
+ * the server, so any that are missing are looked up one by one and added.
+ */
+async function completeAdmins(feat, guild, session) {
+  if (!feat || !Array.isArray(feat.admins)) return;
+  const have = new Set(feat.admins.map(a => a.id));
+  let added = false;
+  for (const id of new Set([guild.ownerId, session?.uid].filter(Boolean).map(String))) {
+    if (have.has(id)) continue;
+    const key = `${guild.id}:${id}`;
+    if (Date.now() - (hostMissAt.get(key) || 0) < 60_000) continue;
+    const m = guild.members?.cache?.get(id) || await guild.members?.fetch?.(id).catch(() => null);
+    let ok = false;
+    try { ok = !!m && !m.user?.bot && (id === String(guild.ownerId) || m.permissions?.has?.('Administrator') || m.permissions?.has?.('ManageGuild')); } catch { /* not a host */ }
+    if (!ok) { hostMissAt.set(key, Date.now()); continue; }
+    feat.admins.push({ id: m.id, name: m.displayName || m.user?.username || m.id });
+    added = true;
+  }
+  if (added) feat.admins.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Everything the overview screen shows for one guild. */
@@ -109,6 +138,8 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
   const casesList = Array.isArray(casesRaw) ? casesRaw : Object.values(casesRaw || {});
   const known    = listSources();
   const giveawayState = giveaways.list(guildId, guild);
+  const featuresNow = features.read(guildId, guild);
+  await completeAdmins(featuresNow, guild, session);
 
   return {
     guild: {
@@ -177,7 +208,7 @@ async function guildOverview(guildId, client, session = null, opts = {}) {
     },
     giveaways: giveawayState,
     settings: settings.read(guildId, guild, { ownerOnly: !!session && auth.isOwner(session.uid) }),
-    features: features.read(guildId, guild),
+    features: featuresNow,
     featureToggles: featureToggles.read(guildId),
     tickets: tickets.read(guildId, guild),
     polls: pollsPanel.read(guildId, guild),
@@ -226,4 +257,4 @@ function health(client) {
   };
 }
 
-module.exports = { me, guildOverview, health, ensureMembers };
+module.exports = { me, guildOverview, health, ensureMembers, completeAdmins };
