@@ -38,15 +38,32 @@ function impactColor(guildId, impact) {
   return map[impact] || 0x9397EE;
 }
 
+// New York time, daylight saving included. This was a fixed UTC-4, which is
+// only New York in summer: from November to March an 8:30 release read 9:30.
+const NY_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York', hourCycle: 'h23',
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+
+/** Minutes New York is ahead of UTC at this instant: -240 in summer, -300 in winter. */
+function nyOffsetMin(timestampMs) {
+  const p = Object.fromEntries(NY_PARTS.formatToParts(new Date(timestampMs)).map(x => [x.type, x.value]));
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+  return Math.round((asUtc - Math.floor(timestampMs / 1000) * 1000) / 60000);
+}
+
+// A Date whose UTC fields read as New York wall time.
 function toDisplay(timestampMs) {
-  return new Date(timestampMs - 4 * 60 * 60000);
+  return new Date(timestampMs + nyOffsetMin(timestampMs) * 60000);
 }
 
 function formatWhen(timestampMs) {
   const d = toDisplay(timestampMs);
+  const off = nyOffsetMin(timestampMs);
+  const zone = `UTC-${String(Math.abs(off) / 60).padStart(2, '0')}:00`;
   return {
     dateLine: `${MONTH[d.getUTCMonth()]} ${d.getUTCDate()}`,
-    timeLine: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} (UTC-04:00)`,
+    timeLine: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} (${zone})`,
     dayName: WEEKDAY[d.getUTCDay()],
     mon: MONTH[d.getUTCMonth()],
     date: d.getUTCDate(),
